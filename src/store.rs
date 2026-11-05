@@ -86,7 +86,7 @@ where
 {
     type Rejection = Error;
 
-    #[allow(clippy::unused_async_trait_impl)]
+    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
     async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         AppContext::from_ref(state)
             .shared_store

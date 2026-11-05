@@ -294,7 +294,7 @@ pub struct AuthUser(pub Claims);
 impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
     type Rejection = Rejection;
 
-    #[allow(clippy::unused_async_trait_impl)]
+    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Fail closed: without the middleware there is nothing to verify
         // against, so this must never let the request through.

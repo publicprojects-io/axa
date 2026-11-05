@@ -1,4 +1,4 @@
-//! PostgreSQL pooling, migrations, and test resets over sqlx.
+//! `PostgreSQL` pooling, migrations, and test resets over sqlx.
 //!
 //! This crate holds the operations every service repeats. It does not wrap
 //! queries: a service writes its own SQL with `sqlx::query!`, so a reviewer
