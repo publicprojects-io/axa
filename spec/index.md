@@ -94,6 +94,8 @@ fixed once and an auditor reads it once.
 | CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production` (writing them to stderr was seen once by hand, and is **unverified** by a test) |
 | CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
 | CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
+| CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CSP` names one, and an empty `HTTP_CSP` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
+| CFG-20 | `HSTS_MAX_AGE_SECONDS` sets the HSTS lifetime, one year by default. | `the_hsts_max_age_can_be_set`, `production_sends_a_strict_policy_by_default` |
 
 The variables are listed in `README.md`.
 
@@ -121,7 +123,7 @@ CORS, timeout, compression, body limit.
 | MID-2 | A caller's request id keeps only alphanumerics, `-`, `_`, and `@`, up to 255 characters. | `request_id_keeps_safe_text_and_strips_the_rest` |
 | MID-3 | A UUID is minted when nothing usable remains. | `request_id_is_minted_when_nothing_usable_remains` |
 | MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `security_headers_do_not_replace_a_handlers_own` |
-| MID-5 | `strict-transport-security` is sent when `hsts` is set. | `responses_carry_request_id_and_security_headers` |
+| MID-5 | `strict-transport-security` is sent when `hsts` is set, for `hsts_max_age` seconds. | `responses_carry_request_id_and_security_headers`, `the_hsts_max_age_is_configurable` |
 | MID-6 | A panic in a handler becomes a `500`. | `a_panic_becomes_a_500` |
 | MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
@@ -131,6 +133,8 @@ CORS, timeout, compression, body limit.
 | MID-12 | One route can accept a larger body than the service-wide limit. | `one_route_can_accept_a_larger_body` |
 | MID-13 | A route or group can state its own timeout where it is declared, with `Routes::add_with_timeout` or `Routes::timeout`. It replaces the limit in force, longer or shorter, and beats `timeout_overrides`. A route's limit beats its group's. Other routes are still cut off. | `a_route_with_a_longer_limit_outlives_the_stack_and_others_do_not`, `a_route_is_still_cut_off_at_its_own_limit`, `a_group_limit_applies_and_a_routes_own_limit_beats_it`, `a_routes_own_limit_beats_a_timeout_override`, `a_route_limit_covers_one_method_on_a_shared_path` |
 | MID-14 | A route's limit applies even where `REQUEST_TIMEOUT_SECONDS` is `0`, and a route limit of zero means no limit. | `a_shorter_route_limit_applies_with_the_stack_timeout_off`, `a_zero_route_limit_means_no_limit` |
+| MID-15 | `content-security-policy` is sent when a policy is set, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `no_policy_means_no_csp_header`, `a_handler_may_set_its_own_policy` |
+| MID-16 | A policy that is not a valid header value refuses to boot. | `a_policy_that_is_not_a_header_value_refuses_to_boot` |
 
 ### 4.5 Errors
 
@@ -173,6 +177,7 @@ RFC 9457.
 |---|---|---|
 | CLI-1 | `start` takes `--worker`, `--all`, `--binding`, and `--port`. | `start_takes_its_options` |
 | CLI-2 | `--worker` and `--all` conflict. | `worker_and_all_conflict` |
+| CLI-7 | `--server-and-worker` is accepted for `--all`, so deployment scripts written for Loco keep working. | `the_older_spelling_of_all_still_works` |
 | CLI-3 | `db down` defaults to one step. | `database_commands_parse` |
 | CLI-4 | `task` takes a name and `key:value` parameters, and values may contain colons. | `task_takes_a_name_and_parameters`, `task_arguments_keep_colons_in_values` |
 | CLI-5 | A parameter with no colon is refused. | `task_argument_without_a_colon_is_refused` |
@@ -220,6 +225,8 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | LOG-2 | Level and format names parse, with safe defaults. | `levels_parse_and_print`, `formats_parse` |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
 | SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
+| SRV-3 | `server::run` runs a server, a job queue, or both, and logs which. With neither it is an error. | `nothing_to_run_is_an_error`, `a_server_alone_stops_when_told`, `a_worker_alone_stops_when_told` |
+| SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 
 ### 4.12 SeaORM support
 
@@ -275,6 +282,11 @@ stated here and proved by their own tests.
 | OAP-2 | `axa-openapi` | Swagger UI is one exact version, and every remote file carries an integrity hash. | `the_page_pins_an_exact_version_with_integrity_hashes` |
 | OAP-3 | `axa-openapi` | A title or URL cannot inject markup. | `the_title_cannot_inject_markup`, `the_spec_url_cannot_break_out_of_the_script` |
 | OAP-4 | `axa-openapi` | Bearer authentication is declared and required, keeping other components. | `bearer_auth_is_declared_and_required`, `bearer_auth_keeps_other_components` |
+| OAP-5 | `axa-openapi` | Parameter names do not distinguish routes. | `parameter_names_do_not_change_a_shape`, `agreement_is_empty_whatever_the_parameters_are_called` |
+| OAP-6 | `axa-openapi` | `drift` reports a mounted route the document lacks, and a documented operation with no route. | `a_mounted_route_missing_from_the_document_is_reported`, `a_documented_operation_with_no_route_is_reported`, `a_document_with_no_paths_reports_every_route` |
+| OAP-7 | `axa-openapi` | A path kept out on purpose, and a path item's other members, are not reported. | `a_path_kept_out_on_purpose_is_not_reported`, `a_path_items_other_members_are_not_operations` |
+| OAP-8 | `axa-openapi` | `dangling_refs` reports a local `$ref` to nothing, and leaves references to other files alone. | `a_reference_that_resolves_is_not_reported`, `a_reference_to_nothing_is_reported_wherever_it_is`, `a_reference_to_another_file_is_left_alone` |
+| OAP-9 | `axa-openapi` | The Swagger UI page sets its own `content-security-policy`, so the production default does not blank it. | `the_page_sets_a_policy_that_lets_it_load` |
 | SOR-1 | `axa-seaorm` | Pool settings reach `SeaORM`. | `pool_settings_reach_the_options` |
 | SOR-2 | `axa-seaorm` | `query::condition()` builds the same conditions as Loco's, all of which must hold. | `eq_and_ne_compare_values`, `several_conditions_must_all_hold` |
 | SOR-3 | `axa-seaorm` | Validation failures keep Loco's compact JSON text, so snapshots do not change. | `the_database_error_is_compact_json` |

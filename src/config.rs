@@ -23,6 +23,13 @@ use crate::{
 /// The default port: a=1, x=24, a=1.
 pub const DEFAULT_PORT: u16 = 1241;
 
+/// How long browsers keep to HTTPS unless `HSTS_MAX_AGE_SECONDS` says otherwise: one year.
+pub const DEFAULT_HSTS_MAX_AGE: u64 = 31_536_000;
+
+/// Production's policy unless `HTTP_CSP` says otherwise. It suits a JSON API: a service that
+/// serves pages must name what they load.
+pub const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
+
 /// One megabyte, as a body limit.
 pub const MB: usize = 1_000_000;
 
@@ -127,6 +134,10 @@ pub struct Http {
     pub cors_origins: Vec<String>,
     /// Send `Strict-Transport-Security`.
     pub hsts: bool,
+    /// How long browsers keep to HTTPS, in seconds.
+    pub hsts_max_age: u64,
+    /// The `content-security-policy`, if any.
+    pub csp: Option<String>,
 }
 
 /// All service configuration.
@@ -371,6 +382,16 @@ fn cors_origins<F: Fn(&str) -> Option<String>>(
     Ok(origins)
 }
 
+/// The policy from `HTTP_CSP`, where blank means none, or production's default when unset.
+fn content_security_policy(setting: Option<String>, production: bool) -> Option<String> {
+    match setting {
+        Some(policy) if policy.trim().is_empty() => None,
+        Some(policy) => Some(policy),
+        None if production => Some(DEFAULT_CSP.to_string()),
+        None => None,
+    }
+}
+
 impl Config {
     /// Build configuration for `environment`, reading overrides from the
     /// process environment. See [`Config::from_lookup`].
@@ -486,6 +507,8 @@ impl Config {
                 timeout_overrides: Vec::new(),
                 cors_origins,
                 hsts: vars.flag("HTTP_HSTS", production),
+                hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
+                csp: content_security_policy((vars.lookup)("HTTP_CSP"), production),
             },
             workers: vars.named("WORKER_MODE", workers, worker_mode),
         };
@@ -671,6 +694,48 @@ mod tests {
         )
         .unwrap();
         assert!(!config.database.auto_migrate);
+    }
+
+    #[test]
+    fn production_sends_a_strict_policy_by_default() {
+        let config = with(
+            &[("DATABASE_URL", "postgres://x")],
+            &Environment::Production,
+        )
+        .unwrap();
+        assert_eq!(config.http.csp.as_deref(), Some(DEFAULT_CSP));
+        assert_eq!(config.http.hsts_max_age, DEFAULT_HSTS_MAX_AGE);
+    }
+
+    #[test]
+    fn development_sends_no_policy_by_default() {
+        let config = with(&[], &Environment::Development).unwrap();
+        assert_eq!(config.http.csp, None);
+    }
+
+    #[test]
+    fn a_service_can_name_its_own_policy_or_none() {
+        let pairs = [
+            ("DATABASE_URL", "postgres://x"),
+            ("HTTP_CSP", "default-src 'self'"),
+        ];
+        let config = with(&pairs, &Environment::Production).unwrap();
+        assert_eq!(config.http.csp.as_deref(), Some("default-src 'self'"));
+        let pairs = [("DATABASE_URL", "postgres://x"), ("HTTP_CSP", " ")];
+        assert_eq!(
+            with(&pairs, &Environment::Production).unwrap().http.csp,
+            None
+        );
+    }
+
+    #[test]
+    fn the_hsts_max_age_can_be_set() {
+        let pairs = [
+            ("DATABASE_URL", "postgres://x"),
+            ("HSTS_MAX_AGE_SECONDS", "63072000"),
+        ];
+        let config = with(&pairs, &Environment::Production).unwrap();
+        assert_eq!(config.http.hsts_max_age, 63_072_000);
     }
 
     #[test]

@@ -49,6 +49,8 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         timeout_overrides: Vec::new(),
         cors_origins: Vec::new(),
         hsts: false,
+        hsts_max_age: 0,
+        csp: None,
     };
     let request = Request::builder()
         .uri("/?email=alice@example.org")

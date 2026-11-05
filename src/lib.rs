@@ -50,7 +50,7 @@
 //! | `diesel` | Diesel pooling, migrations, and test resets in pure Rust, as `axa::diesel` |
 //! | `tera` | Tera templates with safe escaping, as `axa::tera` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
-//! | `openapi` | `OpenAPI` documents and a pinned Swagger UI, as `axa::openapi` |
+//! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | RFC 9457 problem details, as `axa::problem` |

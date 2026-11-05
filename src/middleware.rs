@@ -203,7 +203,11 @@ fn set_default_header(
     name: HeaderName,
     value: &'static str,
 ) -> SetResponseHeaderLayer<HeaderValue> {
-    SetResponseHeaderLayer::if_not_present(name, HeaderValue::from_static(value))
+    default_header(name, HeaderValue::from_static(value))
+}
+
+fn default_header(name: HeaderName, value: HeaderValue) -> SetResponseHeaderLayer<HeaderValue> {
+    SetResponseHeaderLayer::if_not_present(name, value)
 }
 
 /// Apply the standard stack to `router`.
@@ -223,9 +227,17 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         router = router.layer(layer);
     }
     if config.hsts {
-        router = router.layer(set_default_header(
+        let value = format!("max-age={}; includeSubDomains", config.hsts_max_age);
+        router = router.layer(default_header(
             header::STRICT_TRANSPORT_SECURITY,
-            "max-age=31536000; includeSubDomains",
+            HeaderValue::from_str(&value).map_err(|_| Error::string("invalid HSTS max age"))?,
+        ));
+    }
+    if let Some(policy) = &config.csp {
+        router = router.layer(default_header(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_str(policy)
+                .map_err(|_| Error::string("HTTP_CSP is not a valid header value"))?,
         ));
     }
     Ok(router
@@ -258,6 +270,8 @@ mod tests {
             timeout_overrides: Vec::new(),
             cors_origins: Vec::new(),
             hsts: true,
+            hsts_max_age: 31_536_000,
+            csp: Some("default-src 'none'".to_string()),
         }
     }
 
@@ -303,7 +317,78 @@ mod tests {
         assert!(headers.contains_key(&X_REQUEST_ID));
         assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
         assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
-        assert!(headers.contains_key(header::STRICT_TRANSPORT_SECURITY));
+        assert_eq!(
+            headers[header::STRICT_TRANSPORT_SECURITY],
+            "max-age=31536000; includeSubDomains"
+        );
+        assert_eq!(
+            headers[header::CONTENT_SECURITY_POLICY],
+            "default-src 'none'"
+        );
+    }
+
+    fn apply_to(config: &Http) -> Result<Router> {
+        apply(Router::new().route("/", get(|| async { "ok" })), config)
+    }
+
+    #[tokio::test]
+    async fn the_hsts_max_age_is_configurable() {
+        let mut http = config();
+        http.hsts_max_age = 63_072_000;
+        let response = apply_to(&http)
+            .unwrap()
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()[header::STRICT_TRANSPORT_SECURITY],
+            "max-age=63072000; includeSubDomains"
+        );
+    }
+
+    #[tokio::test]
+    async fn no_policy_means_no_csp_header() {
+        let mut http = config();
+        http.csp = None;
+        let response = apply_to(&http)
+            .unwrap()
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert!(
+            !response
+                .headers()
+                .contains_key(header::CONTENT_SECURITY_POLICY)
+        );
+    }
+
+    #[tokio::test]
+    async fn a_handler_may_set_its_own_policy() {
+        let router = Router::new().route(
+            "/",
+            get(|| async {
+                (
+                    [(header::CONTENT_SECURITY_POLICY, "default-src 'self'")],
+                    "ok",
+                )
+            }),
+        );
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()[header::CONTENT_SECURITY_POLICY],
+            "default-src 'self'"
+        );
+    }
+
+    #[test]
+    fn a_policy_that_is_not_a_header_value_refuses_to_boot() {
+        let mut http = config();
+        http.csp = Some("line\nbreak".to_string());
+        assert!(apply_to(&http).is_err());
     }
 
     #[tokio::test]

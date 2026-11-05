@@ -1,11 +1,17 @@
 //! Serving a router until the process is asked to stop.
 
-use std::net::SocketAddr;
+use std::{future::Future, net::SocketAddr};
 
 use axum::Router;
 use tokio::net::TcpListener;
 
+#[cfg(feature = "queue")]
+use crate::{Error, queue::Queue};
 use crate::{Result, config::Server};
+#[cfg(feature = "queue")]
+use std::sync::Arc;
+#[cfg(feature = "queue")]
+use tokio::sync::watch;
 
 /// Resolve when the process receives `SIGTERM` or Ctrl-C.
 ///
@@ -40,10 +46,7 @@ pub async fn shutdown_signal() {
 ///
 /// Fails when the address cannot be bound.
 pub async fn serve(router: Router, config: &Server) -> Result<()> {
-    let address = format!("{}:{}", config.binding, config.port);
-    let listener = TcpListener::bind(&address).await?;
-    tracing::info!(address, "listening");
-    serve_until(router, listener, shutdown_signal()).await
+    bind_and_serve(router, config, shutdown_signal()).await
 }
 
 /// Serve `router` on `listener` until `shutdown` resolves, letting in-flight
@@ -64,6 +67,59 @@ pub async fn serve_until(
     .with_graceful_shutdown(shutdown)
     .await?;
     Ok(())
+}
+
+async fn bind_and_serve(
+    router: Router,
+    config: &Server,
+    stop: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let address = format!("{}:{}", config.binding, config.port);
+    let listener = TcpListener::bind(&address).await?;
+    tracing::info!(address, "listening");
+    serve_until(router, listener, stop).await
+}
+
+/// Serve `router`, run `queue`, or both, until [`shutdown_signal`]: what `start`, `start --worker`,
+/// and `start --all` do. Requests in flight and jobs in progress finish first.
+///
+/// # Errors
+///
+/// Fails when there is nothing to run, when the address cannot be bound, or when the job loops
+/// panicked. The job loops are stopped either way.
+#[cfg(feature = "queue")]
+pub async fn run(router: Option<Router>, queue: Option<Arc<Queue>>, config: &Server) -> Result<()> {
+    run_until(router, queue, config, shutdown_signal()).await
+}
+
+#[cfg(feature = "queue")]
+async fn run_until(
+    router: Option<Router>,
+    queue: Option<Arc<Queue>>,
+    config: &Server,
+    stop: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let modes = match (&router, &queue) {
+        (Some(_), Some(_)) => "server, worker",
+        (Some(_), None) => "server",
+        (None, Some(_)) => "worker",
+        (None, None) => return Err(Error::string("neither a server nor a worker to run")),
+    };
+    tracing::info!("modes: {modes}");
+    let (stop_jobs, stopped) = watch::channel(false);
+    let jobs = queue.map(|queue| tokio::spawn(queue.run(stopped)));
+    let served = if let Some(router) = router {
+        bind_and_serve(router, config, stop).await
+    } else {
+        stop.await;
+        Ok(())
+    };
+    let _ = stop_jobs.send(true);
+    if let Some(jobs) = jobs {
+        jobs.await
+            .map_err(|error| Error::string(&format!("job loops failed: {error}")))?;
+    }
+    served
 }
 
 #[cfg(test)]
@@ -125,5 +181,59 @@ mod tests {
             host: String::new(),
         };
         assert!(serve(Router::new(), &config).await.is_err());
+    }
+
+    #[cfg(feature = "queue")]
+    fn local() -> Server {
+        Server {
+            port: 0,
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+        }
+    }
+
+    #[cfg(feature = "queue")]
+    #[tokio::test]
+    async fn nothing_to_run_is_an_error() {
+        assert!(run_until(None, None, &local(), async {}).await.is_err());
+    }
+
+    #[cfg(feature = "queue")]
+    #[tokio::test]
+    async fn a_server_alone_stops_when_told() {
+        run_until(Some(Router::new()), None, &local(), async {})
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "queue")]
+    async fn queue() -> Arc<Queue> {
+        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let options = crate::queue::QueueOptions::default();
+        Arc::new(Queue::connect(&uri, options).await.unwrap())
+    }
+
+    #[cfg(feature = "queue")]
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_worker_alone_stops_when_told() {
+        run_until(None, Some(queue().await), &local(), async {})
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "queue")]
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn the_job_loops_stop_when_the_server_cannot_start() {
+        let config = Server {
+            port: 1,
+            binding: "256.0.0.1".to_string(),
+            host: String::new(),
+        };
+        let router = Some(Router::new());
+        let run = run_until(router, Some(queue().await), &config, std::future::pending());
+        let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), run).await;
+        assert!(outcome.expect("the job loops kept running").is_err());
     }
 }

@@ -39,7 +39,7 @@ pub enum Command {
         #[arg(short, long, conflicts_with = "all")]
         worker: bool,
         /// Run the server and the job worker together.
-        #[arg(short, long)]
+        #[arg(short, long, alias = "server-and-worker")]
         all: bool,
         /// Override the listening address.
         #[arg(short, long)]
@@ -186,6 +186,12 @@ mod tests {
         assert!(all);
         assert_eq!(binding.as_deref(), Some("0.0.0.0"));
         assert_eq!(port, Some(9000));
+    }
+
+    #[test]
+    fn the_older_spelling_of_all_still_works() {
+        let cli = Cli::try_parse_from(["svc", "start", "--server-and-worker"]).unwrap();
+        assert!(matches!(cli.command, Command::Start { all: true, .. }));
     }
 
     #[test]

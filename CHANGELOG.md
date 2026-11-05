@@ -5,8 +5,20 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Production now sends `content-security-policy: default-src 'none'; frame-ancestors 'none'`.**
+  A service that serves pages must set `HTTP_CSP`, or an empty `HTTP_CSP` to send none.
+- `Http` gains the `hsts_max_age` and `csp` fields, so code building one by hand must set them.
+
 ### Added
 
+- `HSTS_MAX_AGE_SECONDS` and `HTTP_CSP`.
+- In `axa-openapi`: `drift` and `dangling_refs` check a document against what
+  `AppRoutes::mounted` lists, and the Swagger UI page sets its own
+  `content-security-policy`, so the production default does not blank it.
+- `server::run`, which runs a server, a job queue, or both, and stops them together.
+- `--server-and-worker` is accepted for `--all`.
 - `axa-paseto`, for PASETO bearer authentication and ABAC enforcement, behind the
   `paseto` feature. Signature checks stay in `authentication-verifier`.
 - `axa-redis`, a Redis cache with mandatory expiry, behind the `redis` feature.

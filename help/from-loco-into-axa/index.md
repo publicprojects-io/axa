@@ -42,6 +42,9 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 | `request::<App, _, _>` | The same, from `axa::testing::prelude` |
 | `cargo loco start` | `cargo run -- start` |
 | `cargo loco doctor` | `cargo run -- check`, which reads the settings and connects to nothing |
+| `start --server-and-worker` | `start --all`. The old spelling is still accepted |
+| `app_routes().collect()` | `app_routes().mounted()`, which lists each `(method, path)`. `axa::openapi::drift` replaces a hand-written coverage test |
+| `ctx.cache` | Nothing in `AppContext`. Use `axa-redis`, and keep its handle in `ctx.shared_store` |
 | `Mailer` | Use [`lettre`](https://docs.rs/lettre) directly |
 | `hash::hash_password` | Use [`argon2`](https://docs.rs/argon2) directly |
 | `model::query::condition()` | The same, as `axa::query::condition()` |
@@ -370,12 +373,27 @@ resolves, and connect the queue in `App::context`:
 let mut ctx = AppContext::new(environment, db, config);
 if ctx.config.workers == WorkerMode::BackgroundQueue {
     let mut queue = Queue::connect(&ctx.config.database.uri, QueueOptions::default()).await?;
-    Self::connect_workers(&ctx, &mut queue)?;
+    if run_jobs {
+        Self::connect_workers(&ctx, &mut queue)?;
+    }
     ctx.queue_provider = Some(std::sync::Arc::new(queue));
 }
 ```
 
-Then run it from `Command::Start`, with `tokio::spawn(queue.run(shutdown))`.
+Set `run_jobs` only for `start --worker` and `start --all`. A process that only
+enqueues needs the queue but not the workers. `App::context` also runs for `db`
+and `task` commands, so a check inside `connect_workers` that is registered
+unconditionally can stop a migration over a mail setting.
+
+Then run it from `Command::Start` with `server::run`, which stops the server and
+the job loops together:
+
+```rust,ignore
+let router = if worker { None } else { Some(Self::router(&ctx).await?) };
+let queue = (worker || all).then(|| ctx.queue_provider.clone()).flatten();
+server::run(router, queue, &ctx.config.server).await
+```
+
 `start` alone runs only the server, as in Loco. Use `start --worker` or
 `start --all` to run jobs.
 
@@ -420,6 +438,12 @@ container with no signing key would have used that public key. Anyone could then
 have forged admin tokens. No test noticed. The fix was to read the shared
 environment, and to fail closed on any unknown name.
 
+**A check on one environment name.** Search for `Environment::Production` too.
+`matches!(ctx.environment, Environment::Production)` is false for any name but
+`production` and `prod`, while axa treats every unknown name as production-like.
+With `APP_ENV=prod-eu`, a guard written that way turns itself off while the
+service otherwise runs as production. Use `ctx.environment.is_production_like()`.
+
 **A secret that was only ever warned about.** Check every default that production
 used to read from YAML. An empty `get_env(default="")` can become an empty signing
 secret. Refuse to boot instead.
@@ -437,7 +461,26 @@ asks again.
 **CORS.** axa sends no CORS headers in production until
 `CORS_ALLOWED_ORIGINS` is set, and removes the permissive default. Remove any
 `CorsLayer::permissive()` of your own as well. A browser client calling the API
-directly from another origin needs its origin listed.
+directly from another origin needs its origin listed. A service that read its
+origin from a variable of its own in YAML must carry that across, or the setting
+stops working with no error. Development and test default to `*`, so a service
+that kept CORS closed there must clear `config.http.cors_origins`.
+
+**Production security headers.** If `config/production.yaml` has a
+`secure_headers:` block, compare it with what axa sends. Loco sent them only when
+that block was present, and it could be a preset plus overrides:
+
+| Header | Loco's `github` preset | axa in production |
+|---|---|---|
+| `content-security-policy` | A policy for pages | `default-src 'none'; frame-ancestors 'none'`. Set `HTTP_CSP` |
+| `strict-transport-security` | 20 years, unless overridden | One year. Set `HSTS_MAX_AGE_SECONDS` |
+| `x-frame-options` | `sameorigin` | `DENY` |
+| `x-content-type-options` | `nosniff` | `nosniff` |
+| `referrer-policy` | Unset | `no-referrer` |
+| `x-download-options`, `x-permitted-cross-domain-policies`, `x-xss-protection` | Sent | Not sent |
+
+The last row matters only to old browsers and Flash. A test of these headers is
+worth adding before you convert, because nothing else will notice.
 
 **A stale advisory ignore.** A `deny.toml` that ignores an advisory in one of
 Loco's dependencies no longer applies once they go. Delete it. Left in, it does
@@ -459,7 +502,8 @@ have not finished. Commit with explicit paths.
 |---|---|
 | CORS | Off in production unless origins are listed |
 | Request timeout | 60 seconds in production. Raise `REQUEST_TIMEOUT_SECONDS`, or give a slow route its own limit with `Routes::add_with_timeout`, or a group with `Routes::timeout` |
-| Security headers | Added to every response |
+| Security headers | Added to every response, in place of any `secure_headers:` block. See above |
+| Content security policy | A strict policy in production. A service that serves pages must set `HTTP_CSP` |
 | HSTS | On in production |
 | `x-powered-by` | Gone |
 | Automatic `If-None-Match` comparison | Gone. A handler that sets its own `ETag` must also return its own `304` |
