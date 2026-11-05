@@ -82,3 +82,5 @@ pub mod worker;
 pub use context::AppContext;
 pub use environment::Environment;
 pub use error::{Error, Result};
+#[cfg(feature = "testing")]
+pub use testing::TestServer;
