@@ -12,6 +12,7 @@ keywords = ["axum", "sqlx", "web", "service"]
 categories = ["web-programming::http-server"]
 include = [
     "src/**/*",
+    "spec/**/*",
     "LICENSE.md",
     "README.md",
     "CHANGELOG.md",

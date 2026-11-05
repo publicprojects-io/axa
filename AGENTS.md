@@ -9,6 +9,10 @@ Instructions for any AI coding agent working in this repository. See
 It is a library, not a framework: a service's `main.rs` stays ordinary Axum
 and calls into this crate.
 
+[`spec/index.md`](spec/index.md) is the single source of truth. Code conforms
+to the spec, and a change in behaviour carries a spec edit, a code edit, and a
+test edit together.
+
 ## Build, test, lint
 
 ```sh

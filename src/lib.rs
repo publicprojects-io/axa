@@ -53,6 +53,11 @@
 //! [Loco](https://loco.rs). They were written afresh rather than copied, so
 //! this crate can keep its own licence terms.
 
+/// Compiles the Rust examples in `README.md`, so they cannot go stale.
+#[cfg(all(doctest, not(feature = "sea-orm")))]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;
+
 pub mod boot;
 pub mod cli;
 pub mod config;

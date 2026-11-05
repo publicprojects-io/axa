@@ -1,45 +1,371 @@
 # axa
 
-Small shared library for services built directly on [Axum](https://docs.rs/axum)
-and [sqlx](https://docs.rs/sqlx).
+**axa** is a small shared library for web services built directly on
+[Axum](https://docs.rs/axum) and [sqlx](https://docs.rs/sqlx).
 
-This is a library, not a framework: a service's `main.rs` stays ordinary Axum
-and calls into this crate. There are no lifecycle hooks or macros, and
-`AppContext` is a plain struct passed as ordinary Axum state.
+It holds the plumbing every service needs and none of them should write twice:
+route tables, a standard middleware stack, health checks, error responses,
+configuration, logging, graceful shutdown, a command line, background jobs, and
+a Postgres job queue.
+
+The specification is [`spec/index.md`](spec/index.md). It is the single source
+of truth, and every requirement in it names the test that proves it.
+
+## Why it exists
+
+A framework gives you a lot for free, and asks you to trust what it does on your
+behalf. For a service handling identity, clinical, or government records, that
+trade runs the wrong way: an auditor has to read the framework as well as your
+code, and each of its dependencies joins your supply chain.
+
+axa takes the opposite position:
+
+- **You can read the whole path.** `main.rs` is ordinary Rust that calls ordinary
+  functions. Nothing calls into your code from behind a trait.
+- **One copy.** A defect in shared plumbing is fixed once, and an auditor reads
+  it once.
+- **Fewer dependencies.** Replacing Loco and SeaORM with sqlx took one measured
+  service from 510 normal dependencies to about 348, before counting anything
+  added to replace them.
+- **Safe defaults that fail closed.** A production service with no database URL,
+  or with a wildcard CORS origin, refuses to start.
+
+## A library, not a framework
+
+There are no lifecycle hooks, macros, or generated code. `AppContext` is a plain
+struct, passed as ordinary Axum state, and `AppRoutes` builds an ordinary
+`axum::Router`. Any piece can be read, replaced, or left out on its own.
+
+Some things will deliberately never be added: route macros, a generic CRUD
+controller, a dependency-injection container, a plugin system, a configuration
+language, and a database abstraction. Each one puts indirection back between a
+reader and the behaviour.
+
+## Installing
+
+axa is not on crates.io yet, so pin a revision:
+
+```toml
+[dependencies]
+axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>" }
+```
+
+| Feature | Adds |
+|---|---|
+| `queue` | The Postgres job queue |
+| `testing` | Request-level test helpers, built on `axum-test` |
+| `sea-orm` | A SeaORM-backed `AppContext`, migration helpers, and model errors. Transitional: it goes once the last service has moved to sqlx |
+
+## Quick start
+
+This is a complete service with one route:
+
+```rust
+use axa::{
+    Environment, Result,
+    config::{Config, Defaults},
+    logger,
+    prelude::*,
+    server,
+};
+
+async fn hello() -> Result<Response> {
+    format::json(serde_json::json!({ "hello": "world" }))
+}
+
+async fn run() -> Result<()> {
+    let environment = Environment::from_env();
+    let defaults = Defaults {
+        // An empty name means this service has no database.
+        database: "",
+        ..Defaults::default()
+    };
+    let config = Config::from_env(&environment, &defaults)?;
+    logger::init("hello_service", &config.logger);
+
+    let server_config = config.server.clone();
+    let ctx = AppContext::new(environment, (), config);
+
+    let router = AppRoutes::with_default_routes()
+        .add_route(Routes::new().prefix("/api").add("/hello", get(hello)))
+        .into_app(ctx)?;
+
+    server::serve(router, &server_config).await
+}
+```
+
+It listens on port 1241 and serves `/api/hello`, `/_ping`, `/_health`, and
+`/_readiness` under the standard middleware. It stops cleanly on `SIGTERM` or
+Ctrl-C, letting requests in flight finish.
+
+The default port spells the name: a=1, x=24, a=1.
 
 ## What it provides
 
-| Module | Provides |
+### Routes
+
+`Routes` is a group sharing a prefix, and `AppRoutes` collects the groups:
+
+```rust
+use axa::prelude::*;
+
+async fn list() -> &'static str { "[]" }
+async fn create() -> &'static str { "{}" }
+async fn show(Path(id): Path<u32>) -> String { id.to_string() }
+
+fn folders() -> Routes {
+    Routes::new()
+        .prefix("/api/folders")
+        .add("/", get(list))
+        .add("/", post(create))
+        .add("/{id}", get(show))
+}
+```
+
+A `"/"` route is served at the prefix with no trailing slash, and two methods on
+one path merge. The fields are public, so a test can check what is mounted
+without booting anything:
+
+```rust
+# use axa::prelude::*;
+# async fn list() -> &'static str { "[]" }
+let group = Routes::new().prefix("/api").add("/items", get(list));
+assert!(group.handlers.iter().any(|handler| handler.uri == "/items"));
+```
+
+### Middleware
+
+`AppRoutes::into_app` applies this stack, or call `middleware::apply` on any
+router. From the outside in:
+
+| Layer | Behaviour |
 |---|---|
-| `routes` | `Routes` and `AppRoutes`, which build an ordinary Axum `Router` |
-| `middleware` | Request ids, tracing, panic catching, security headers, CORS, timeout, compression, body limit |
-| `health` | `/_ping`, `/_health`, `/_readiness` |
-| `error`, `format` | An error type with generic 500s, and response helpers |
-| `config`, `environment` | Configuration from the process environment, with no config files |
-| `logger`, `server` | Logging setup and graceful shutdown |
-| `cli`, `task` | The shared `start`, `db`, and `task` commands |
-| `worker`, `queue` | Background jobs and a Postgres `SKIP LOCKED` queue (`queue` feature) |
-| `testing` | Request-level test helpers (`testing` feature) |
-| `schema`, `model` | SeaORM migration helpers and errors (transitional `sea-orm` feature) |
+| Request id | Keeps a caller's `x-request-id` after removing unsafe characters, or mints a UUID. Always returned |
+| Tracing | Logs each request |
+| Panic catching | Turns a handler panic into a `500` |
+| Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
+| CORS | Off unless origins are configured |
+| Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS` |
+| Compression | Gzip, Brotli, and Zstd when enabled |
+| Body limit | Answers `413` over `BODY_LIMIT_BYTES` |
 
-## Configuration
+### Errors
 
-Settings come from the environment: `APP_ENV`, `PORT`, `BINDING`, `HOST`,
-`DATABASE_URL`, `DB_*`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER`,
-`BODY_LIMIT_BYTES`, `HTTP_COMPRESSION`, `HTTP_HSTS`,
-`REQUEST_TIMEOUT_SECONDS`, `CORS_ALLOWED_ORIGINS`, `WORKER_MODE`.
+Handlers return `Result<T>` using `axa::Error`, which maps to a status and a JSON
+body:
 
-The default port is 1241 (a=1, x=24, a=1). A service can set its own in
-`Defaults`, and `PORT` overrides both.
+| Error | Status | Body |
+|---|---|---|
+| `Error::NotFound` | `404` | Fixed text |
+| `Error::Unauthorized(_)` | `401` | Fixed text; yours is only logged |
+| `Error::BadRequest(_)` | `400` | Your text |
+| `Error::CustomError(status, detail)` | Yours | Yours |
+| Anything else | `500` | Fixed text; the real error is only logged |
 
-Production requires `DATABASE_URL` when the service has a database, and
-refuses `*` as a CORS origin.
+So a failed database call cannot put a hostname or a query in a client's
+response. The `not_found`, `unauthorized`, and `bad_request` functions build
+these for you.
+
+The body is `{"error": ..., "description": ...}` today, and is moving to RFC 9457
+`application/problem+json`.
+
+### Configuration
+
+There are no config files. A service states its defaults in code, and the
+environment overrides them, so what a deployment runs with is visible in one
+place.
+
+| Variable | Effect |
+|---|---|
+| `APP_ENV` | `development`, `test`, or `production`. `LOCO_ENV` is also read. Any other name gets production's stricter behaviour |
+| `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
+| `DATABASE_URL` | Connection string. Required in production for a service with a database |
+| `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
+| `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds |
+| `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot |
+| `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
+| `BODY_LIMIT_BYTES` | Largest accepted request body |
+| `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
+| `REQUEST_TIMEOUT_SECONDS` | Per-request timeout. `0` turns it off |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated origins |
+| `WORKER_MODE` | `BackgroundQueue`, `BackgroundAsync`, or `ForegroundBlocking` |
+
+Defaults change with the environment:
+
+| Setting | Development | Test | Production |
+|---|---|---|---|
+| Database | Local, derived from the service name | Local, derived from the service name | **Required** |
+| Migrate at boot | Yes | Yes | No |
+| Compression | Off | Off | On |
+| Request timeout | Off | Off | 60 seconds |
+| HSTS | Off | Off | On |
+| CORS | Any origin | Any origin | None until listed; `*` is refused |
+| Log format | Compact | Compact, off by default | JSON |
+| Jobs | Queue | In the foreground | Queue |
+
+`Config::from_lookup` takes the lookup as a function, so configuration can be
+tested without touching the process environment:
+
+```rust
+use axa::{Environment, config::{Config, Defaults}};
+
+let config = Config::from_lookup(
+    &Environment::Development,
+    &Defaults::default(),
+    |name| (name == "PORT").then(|| "8000".to_string()),
+)
+.unwrap();
+assert_eq!(config.server.port, 8000);
+```
+
+### Health checks
+
+| Route | Meaning |
+|---|---|
+| `/_ping`, `/_health` | The process is up |
+| `/_readiness` | The database and queue also answer. `503` if not |
+
+### Command line
+
+`axa::cli::Cli` is a `clap` parser that a service matches on itself:
+
+```text
+service start [--worker | --all] [--binding ADDR] [--port PORT]
+service db migrate | down [STEPS] | reset | status | truncate
+service task [NAME] [KEY:VALUE ...]
+```
+
+### Tasks
+
+A task is a named job an operator runs by hand:
+
+```rust
+use axa::{prelude::*, task::{Tasks, Vars}};
+
+struct Greet;
+
+#[async_trait]
+impl Task for Greet {
+    fn task(&self) -> TaskInfo {
+        TaskInfo {
+            name: "greet".to_string(),
+            detail: "Say hello".to_string(),
+        }
+    }
+
+    async fn run(&self, _ctx: &AppContext, vars: &Vars) -> Result<()> {
+        println!("hello {}", vars.cli_arg("name")?);
+        Ok(())
+    }
+}
+
+let mut tasks = Tasks::default();
+tasks.register(Greet);
+```
+
+### Background jobs
+
+A worker is a type with serializable arguments:
+
+```rust
+use axa::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
+struct Args {
+    report_id: u64,
+}
+
+struct ReportWorker;
+
+#[async_trait]
+impl BackgroundWorker<Args> for ReportWorker {
+    fn build(_ctx: &AppContext) -> Self {
+        Self
+    }
+
+    async fn perform(&self, args: Args) -> Result<()> {
+        println!("building report {}", args.report_id);
+        Ok(())
+    }
+}
+```
+
+`ReportWorker::perform_later(&ctx, args)` then runs according to `WORKER_MODE`:
+
+| Mode | Behaviour |
+|---|---|
+| `BackgroundQueue` | Saved to Postgres for a worker process |
+| `BackgroundAsync` | Spawned on the current runtime |
+| `ForegroundBlocking` | Run before returning. Tests use this |
+
+### The job queue
+
+With the `queue` feature, jobs live in one `axa_queue` table, created on connect.
+It needs no broker: Postgres `FOR UPDATE SKIP LOCKED` lets each worker loop claim
+the oldest ready job in one statement, so no two loops ever claim the same row.
+
+A job moves from `queued` to `running` to `completed` or `failed`, keeping its
+error text on the row. A job still `running` after `stale_minutes` is assumed
+lost with its worker and is queued again.
+
+**Delivery is at least once, so a job's work must be safe to repeat.** Queue
+arguments are stored in plain text, so never put a secret in them.
+
+### Testing
+
+With the `testing` feature, a service implements `TestApp` to say how it boots
+for tests. That is the one trait axa asks a service to implement, and it exists
+only for tests.
+
+```rust,ignore
+use axa::testing::prelude::*;
+
+#[tokio::test]
+async fn health_answers() {
+    request::<App, _, _>(|server, _ctx| async move {
+        assert_eq!(server.get("/_health").await.status_code(), 200);
+    })
+    .await;
+}
+```
+
+## Requirements
+
+- Rust 1.97 or newer, on edition 2024
+- PostgreSQL for the `queue` and `sea-orm` features
+
+## Development
+
+```sh
+cargo test --all-features
+cargo test --features queue,testing
+cargo test
+cargo clippy --all-targets --all-features -- -D warnings
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
+```
+
+The last command runs the queue tests against a real Postgres. Those tests have
+caught a real race that nothing else did, so run them when you touch the queue.
+
+Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
+carries a spec edit, a code edit, and a test edit together.
 
 ## Relationship to Loco
 
-The behaviours here are the ones the Main X Index services relied on in
-[Loco](https://loco.rs) (Apache-2.0). They were written afresh, not copied, so
-that this crate can keep its own licence terms.
+axa was extracted from what the Main X Index services relied on in
+[Loco](https://loco.rs) (Apache-2.0), and some differences are deliberate:
+
+| Loco | axa |
+|---|---|
+| A `Hooks` trait drives your app | Your `main.rs` calls plain functions |
+| YAML config rendered through a template engine | The environment, with defaults in code |
+| Permissive CORS when enabled | Listed origins only in production |
+| `x-powered-by` header | None |
+| No request timeout or security headers by default | Both on in production; headers everywhere |
+
+The code was written afresh rather than copied, so this crate can keep its own
+licence terms.
 
 ## License
 
