@@ -82,6 +82,27 @@ async fn schema_helpers_against_postgres() {
         column(&db, "axa_items", "updated_at").await,
         Some(timestamp)
     );
+
+    // A row that names neither timestamp gets the time of the insert.
+    db.execute_unprepared(
+        "INSERT INTO axa_items (pid, name, data) VALUES (gen_random_uuid(), 'stamped', '{}')",
+    )
+    .await
+    .unwrap();
+    let stamped = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT now() - created_at < interval '1 minute'
+                AND now() - updated_at < interval '1 minute' AS fresh
+             FROM axa_items WHERE name = 'stamped'",
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(stamped.try_get::<bool>("", "fresh").unwrap());
+    db.execute_unprepared("DELETE FROM axa_items")
+        .await
+        .unwrap();
     assert_eq!(
         column(&db, "axa_items", "id").await,
         Some(("bigint".to_string(), "NO".to_string()))

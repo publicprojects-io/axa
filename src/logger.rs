@@ -117,22 +117,38 @@ pub fn init_env_filter(
     override_filter: Option<&String>,
     level: &LogLevel,
 ) -> EnvFilter {
-    EnvFilter::try_from_default_env()
-        .or_else(|_| {
-            override_filter.map_or_else(
-                || {
-                    let directives = DEFAULT_MODULES
-                        .iter()
-                        .copied()
-                        .chain(std::iter::once(app_name))
-                        .map(|module| format!("{module}={level}"))
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    EnvFilter::try_new(directives)
-                },
-                EnvFilter::try_new,
-            )
-        })
+    let rust_log = std::env::var(EnvFilter::DEFAULT_ENV).ok();
+    choose_filter(rust_log.as_deref(), app_name, override_filter, *level)
+}
+
+/// The choice behind [`init_env_filter`], given the value of `RUST_LOG`. A blank
+/// or invalid `RUST_LOG` is passed over.
+fn choose_filter(
+    rust_log: Option<&str>,
+    app_name: &str,
+    override_filter: Option<&String>,
+    level: LogLevel,
+) -> EnvFilter {
+    let from_rust_log = rust_log
+        .filter(|filter| !filter.trim().is_empty())
+        .and_then(|filter| EnvFilter::try_new(filter).ok());
+    if let Some(filter) = from_rust_log {
+        return filter;
+    }
+    override_filter
+        .map_or_else(
+            || {
+                let directives = DEFAULT_MODULES
+                    .iter()
+                    .copied()
+                    .chain(std::iter::once(app_name))
+                    .map(|module| format!("{module}={level}"))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                EnvFilter::try_new(directives)
+            },
+            EnvFilter::try_new,
+        )
         .expect("logger filter is invalid")
 }
 
@@ -195,6 +211,27 @@ mod tests {
         assert_eq!(Format::from_name("nonsense"), None);
         for name in ["compact", "pretty", "json"] {
             assert_eq!(Format::parse(name).to_string(), name);
+        }
+    }
+
+    #[test]
+    fn rust_log_wins_over_the_override_and_the_level() {
+        let filter = choose_filter(
+            Some("from_rust_log=trace"),
+            "my_service",
+            Some(&"from_override=warn".to_string()),
+            LogLevel::Debug,
+        )
+        .to_string();
+        assert_eq!(filter, "from_rust_log=trace");
+    }
+
+    #[test]
+    fn a_blank_or_invalid_rust_log_is_passed_over() {
+        for value in ["", "  ", "a=b=c=d"] {
+            let filter =
+                choose_filter(Some(value), "my_service", None, LogLevel::Debug).to_string();
+            assert!(filter.contains("my_service=debug"), "{value:?}: {filter}");
         }
     }
 

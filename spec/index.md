@@ -225,7 +225,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | Id | Requirement | Test |
 |---|---|---|
 | STR-1 | The store holds one value per type. | `stores_one_value_per_type` |
-| LOG-1 | `RUST_LOG` wins, then the override filter, then the default modules plus the service. | `default_filter_names_the_service_and_shared_modules`, `an_override_replaces_the_default_filter` (the `RUST_LOG` case is **unverified**) |
+| LOG-1 | `RUST_LOG` wins, then the override filter, then the default modules plus the service. | `default_filter_names_the_service_and_shared_modules`, `an_override_replaces_the_default_filter`, `rust_log_wins_over_the_override_and_the_level`, `a_blank_or_invalid_rust_log_is_passed_over` |
 | LOG-2 | Level and format names parse, with safe defaults. | `levels_parse_and_print`, `formats_parse` |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
 | SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
@@ -241,7 +241,7 @@ move.
 | Id | Requirement | Test |
 |---|---|---|
 | SEA-1 | Table names are pluralised snake case. | `table_names_are_pluralised_snake_case` |
-| SEA-2 | `create_table` adds `created_at` and `updated_at`. | `schema_helpers_against_postgres` (the `now()` default is **unverified**) |
+| SEA-2 | `create_table` adds `created_at` and `updated_at`. | `schema_helpers_against_postgres` |
 | SEA-3 | Foreign keys are named `fk-<table>-<column>-to-<parent>`, and a `?` suffix makes one optional. | `schema_helpers_against_postgres` |
 
 ### 4.13 Subcrates
@@ -282,7 +282,8 @@ stated here and proved by their own tests.
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
 | RDS-4 | `axa-redis` | `get_or_load` loads once, and a failed load stores nothing. | `get_or_load_loads_once`, `a_failed_load_stores_nothing` |
-| RDS-5 | `axa-redis` | A Redis outage does not fail `get_or_load`. | **unverified** |
+| RDS-5 | `axa-redis` | Neither an outage nor a frozen Redis fails `get_or_load`. Every call has a time limit, and an outage costs a request one limit, not the client's own retries. | `an_outage_does_not_fail_get_or_load`, `a_frozen_redis_does_not_hold_a_request_up`, `every_call_is_bounded_while_the_client_reconnects` |
+| RDS-6 | `axa-redis` | `Cache::memory` behaves like Redis in one process, and holds at most 32 MB. | `the_memory_cache_stores_like_redis`, `clones_of_a_memory_cache_share_it`, `the_memory_cache_refuses_a_zero_ttl`, `the_memory_cache_loads_on_a_miss_only`, `an_expired_entry_is_gone_and_its_bytes_are_returned`, `replacing_an_entry_counts_only_the_new_one`, `the_memory_cache_never_holds_more_than_its_limit`, `stale_entries_go_before_live_ones` |
 | OAP-1 | `axa-openapi` | The document and the page are served at their paths. | `the_document_is_served_as_json`, `the_page_is_served_as_html` |
 | OAP-2 | `axa-openapi` | Swagger UI is one exact version, and every remote file carries an integrity hash. | `the_page_pins_an_exact_version_with_integrity_hashes` |
 | OAP-3 | `axa-openapi` | A title or URL cannot inject markup. | `the_title_cannot_inject_markup`, `the_spec_url_cannot_break_out_of_the_script` |

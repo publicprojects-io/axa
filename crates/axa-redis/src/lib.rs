@@ -1,7 +1,8 @@
 //! A Redis cache with mandatory expiry.
 //!
 //! Values are stored as JSON under a key prefix, so several services can share
-//! one Redis without colliding.
+//! one Redis without colliding. [`Cache::memory`] gives the same behaviour inside
+//! one process, for tests and for development with no Redis.
 //!
 //! ```no_run
 //! use axa_redis::{Cache, CacheConfig};
@@ -26,7 +27,9 @@
 //! - **Every entry expires.** There is no way to store a value without a TTL,
 //!   because an entry that never expires is data nobody remembers holding.
 //! - **A cache failure is not a service failure.** `get_or_load` logs a Redis
-//!   error and calls the loader.
+//!   error and calls the loader. Every call has a time limit,
+//!   [`CacheConfig::timeout`], so a Redis that is down or frozen costs a request
+//!   that long at most, never the client's own retries.
 //! - **An unreadable entry is a miss.** After a change to a cached type, old
 //!   entries are skipped rather than failing every read until they expire.
 //!
@@ -37,7 +40,12 @@
 //! subject to masking or erasure needs its own decision: an entry written
 //! before an erasure survives it until its TTL ends unless it is deleted too.
 
-use std::{future::Future, time::Duration};
+use std::{
+    collections::HashMap,
+    future::Future,
+    sync::{Arc, Mutex, PoisonError},
+    time::{Duration, Instant},
+};
 
 use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::{Serialize, de::DeserializeOwned};
@@ -51,6 +59,9 @@ pub enum Error {
     /// A value could not be encoded as JSON.
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
+    /// Redis did not answer within [`CacheConfig::timeout`].
+    #[error("the cache did not answer in time")]
+    Timeout,
     /// A TTL below one millisecond, which would store nothing useful.
     #[error("a cache entry needs a TTL of at least one millisecond")]
     InvalidTtl,
@@ -65,16 +76,23 @@ pub struct CacheConfig {
     pub prefix: String,
     /// How long entries live unless a call says otherwise.
     pub default_ttl: Duration,
+    /// How long one call may wait for Redis.
+    pub timeout: Duration,
 }
 
+/// How long one call waits for Redis unless [`CacheConfig::timeout`] says
+/// otherwise. A cache is an optimisation, so it gets little of a request's time.
+pub const DEFAULT_TIMEOUT: Duration = Duration::from_millis(500);
+
 impl CacheConfig {
-    /// Build settings.
+    /// Build settings, with [`DEFAULT_TIMEOUT`].
     #[must_use]
     pub fn new(url: impl Into<String>, prefix: impl Into<String>, default_ttl: Duration) -> Self {
         Self {
             url: url.into(),
             prefix: prefix.into(),
             default_ttl,
+            timeout: DEFAULT_TIMEOUT,
         }
     }
 }
@@ -110,12 +128,85 @@ fn decode<T: DeserializeOwned>(key: &str, stored: Option<&str>) -> Option<T> {
     }
 }
 
+/// The longest an in-process entry lives, for a TTL too large for the clock.
+const MEMORY_MAX_TTL: Duration = Duration::from_hours(24 * 365);
+
+/// The most the in-process cache holds, in bytes of keys and values.
+const MEMORY_LIMIT: usize = 32 * 1024 * 1024;
+
+/// Entries in this process, each with the moment it expires.
+#[derive(Debug, Default)]
+struct Memory {
+    entries: HashMap<String, (Instant, String)>,
+    bytes: usize,
+}
+
+impl Memory {
+    fn get(&mut self, key: &str, now: Instant) -> Option<String> {
+        let (expires, value) = self.entries.get(key)?;
+        if *expires > now {
+            return Some(value.clone());
+        }
+        self.remove(key);
+        None
+    }
+
+    fn remove(&mut self, key: &str) -> bool {
+        match self.entries.remove(key) {
+            Some((_, value)) => {
+                self.bytes -= key.len() + value.len();
+                true
+            }
+            None => false,
+        }
+    }
+
+    fn insert(&mut self, key: &str, value: String, expires: Instant, now: Instant) {
+        self.remove(key);
+        let size = key.len() + value.len();
+        if size > MEMORY_LIMIT {
+            return;
+        }
+        if self.bytes + size > MEMORY_LIMIT {
+            let stale: Vec<String> = self
+                .entries
+                .iter()
+                .filter(|(_, (when, _))| *when <= now)
+                .map(|(name, _)| name.clone())
+                .collect();
+            for name in stale {
+                self.remove(&name);
+            }
+        }
+        // A cache may lose anything, so when live entries fill it, it starts again.
+        if self.bytes + size > MEMORY_LIMIT {
+            self.entries.clear();
+            self.bytes = 0;
+        }
+        self.bytes += size;
+        self.entries.insert(key.to_string(), (expires, value));
+    }
+}
+
+#[derive(Clone)]
+enum Backend {
+    Redis(ConnectionManager),
+    Memory(Arc<Mutex<Memory>>),
+}
+
+impl Backend {
+    fn with_memory<T>(memory: &Mutex<Memory>, use_it: impl FnOnce(&mut Memory) -> T) -> T {
+        use_it(&mut memory.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
 /// A connection to the cache. Cheap to clone, and it reconnects by itself.
 #[derive(Clone)]
 pub struct Cache {
-    connection: ConnectionManager,
+    backend: Backend,
     prefix: String,
     default_ttl: Duration,
+    timeout: Duration,
 }
 
 impl std::fmt::Debug for Cache {
@@ -139,10 +230,40 @@ impl Cache {
         ttl_millis(config.default_ttl)?;
         let client = redis::Client::open(config.url.as_str())?;
         Ok(Self {
-            connection: ConnectionManager::new(client).await?,
+            backend: Backend::Redis(ConnectionManager::new(client).await?),
             prefix: config.prefix.clone(),
             default_ttl: config.default_ttl,
+            timeout: config.timeout,
         })
+    }
+
+    /// A cache held in this process, for tests and for development with no
+    /// Redis. Replicas do not share it, so it does not belong in production. It
+    /// holds at most 32 MB, and starts again when full.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the default TTL is below one millisecond.
+    pub fn memory(prefix: impl Into<String>, default_ttl: Duration) -> Result<Self, Error> {
+        ttl_millis(default_ttl)?;
+        Ok(Self {
+            backend: Backend::Memory(Arc::default()),
+            prefix: prefix.into(),
+            default_ttl,
+            timeout: DEFAULT_TIMEOUT,
+        })
+    }
+
+    /// Run a Redis call under the time limit. The client retries a lost
+    /// connection for seconds by itself, which a request must not wait for.
+    async fn bounded<T>(
+        &self,
+        call: impl Future<Output = Result<T, redis::RedisError>>,
+    ) -> Result<T, Error> {
+        match tokio::time::timeout(self.timeout, call).await {
+            Ok(result) => Ok(result?),
+            Err(_) => Err(Error::Timeout),
+        }
     }
 
     /// The full key for `key`, including the prefix.
@@ -156,8 +277,11 @@ impl Cache {
     ///
     /// Fails when it does not.
     pub async fn ping(&self) -> Result<(), Error> {
-        let mut connection = self.connection.clone();
-        let _: String = redis::cmd("PING").query_async(&mut connection).await?;
+        if let Backend::Redis(connection) = &self.backend {
+            let mut connection = connection.clone();
+            let ping = redis::cmd("PING");
+            let _: String = self.bounded(ping.query_async(&mut connection)).await?;
+        }
         Ok(())
     }
 
@@ -168,8 +292,15 @@ impl Cache {
     /// Fails when Redis does.
     pub async fn get<T: DeserializeOwned>(&self, key: &str) -> Result<Option<T>, Error> {
         let full = self.key(key);
-        let mut connection = self.connection.clone();
-        let stored: Option<String> = connection.get(&full).await?;
+        let stored: Option<String> = match &self.backend {
+            Backend::Redis(connection) => {
+                let mut connection = connection.clone();
+                self.bounded(connection.get(&full)).await?
+            }
+            Backend::Memory(memory) => {
+                Backend::with_memory(memory, |memory| memory.get(&full, Instant::now()))
+            }
+        };
         Ok(decode(&full, stored.as_deref()))
     }
 
@@ -196,8 +327,22 @@ impl Cache {
     ) -> Result<(), Error> {
         let millis = ttl_millis(ttl)?;
         let encoded = serde_json::to_string(value)?;
-        let mut connection = self.connection.clone();
-        let (): () = connection.pset_ex(self.key(key), encoded, millis).await?;
+        let full = self.key(key);
+        match &self.backend {
+            Backend::Redis(connection) => {
+                let mut connection = connection.clone();
+                let (): () = self
+                    .bounded(connection.pset_ex(full, encoded, millis))
+                    .await?;
+            }
+            Backend::Memory(memory) => {
+                let now = Instant::now();
+                let expires = now.checked_add(ttl).unwrap_or(now + MEMORY_MAX_TTL);
+                Backend::with_memory(memory, |memory| {
+                    memory.insert(&full, encoded, expires, now);
+                });
+            }
+        }
         Ok(())
     }
 
@@ -207,9 +352,17 @@ impl Cache {
     ///
     /// Fails when Redis does.
     pub async fn delete(&self, key: &str) -> Result<bool, Error> {
-        let mut connection = self.connection.clone();
-        let removed: usize = connection.del(self.key(key)).await?;
-        Ok(removed > 0)
+        let full = self.key(key);
+        match &self.backend {
+            Backend::Redis(connection) => {
+                let mut connection = connection.clone();
+                let removed: usize = self.bounded(connection.del(full)).await?;
+                Ok(removed > 0)
+            }
+            Backend::Memory(memory) => {
+                Ok(Backend::with_memory(memory, |memory| memory.remove(&full)))
+            }
+        }
     }
 
     /// Whether an entry exists.
@@ -218,15 +371,25 @@ impl Cache {
     ///
     /// Fails when Redis does.
     pub async fn exists(&self, key: &str) -> Result<bool, Error> {
-        let mut connection = self.connection.clone();
-        Ok(connection.exists(self.key(key)).await?)
+        let full = self.key(key);
+        match &self.backend {
+            Backend::Redis(connection) => {
+                let mut connection = connection.clone();
+                self.bounded(connection.exists(full)).await
+            }
+            Backend::Memory(memory) => Ok(Backend::with_memory(memory, |memory| {
+                memory.get(&full, Instant::now()).is_some()
+            })),
+        }
     }
 
     /// Read a value, or load and store it on a miss.
     ///
     /// A Redis failure is logged and the value is loaded anyway, so a cache
-    /// outage slows a service down rather than breaking it. Only the loader's
-    /// own error is returned, and a failed load stores nothing.
+    /// outage slows a service down rather than breaking it. After a failed read
+    /// it does not try to store the value, so an outage costs one time limit,
+    /// not two. Only the loader's own error is returned, and a failed load stores
+    /// nothing.
     ///
     /// # Errors
     ///
@@ -240,7 +403,10 @@ impl Cache {
         match self.get(key).await {
             Ok(Some(value)) => return Ok(value),
             Ok(None) => {}
-            Err(error) => tracing::warn!(key, %error, "cache read failed, loading instead"),
+            Err(error) => {
+                tracing::warn!(key, %error, "cache read failed, loading instead");
+                return load().await;
+            }
         }
         let value = load().await?;
         if let Err(error) = self.set(key, &value).await {
@@ -253,6 +419,98 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const LIVE: Duration = Duration::from_mins(1);
+
+    fn memory() -> Cache {
+        Cache::memory("svc", LIVE).unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_memory_cache_stores_like_redis() {
+        let cache = memory();
+        assert_eq!(cache.get::<u32>("a").await.unwrap(), None);
+        cache.set("a", &7_u32).await.unwrap();
+        assert_eq!(cache.get::<u32>("a").await.unwrap(), Some(7));
+        assert!(cache.exists("a").await.unwrap());
+        assert!(cache.delete("a").await.unwrap());
+        assert!(!cache.delete("a").await.unwrap());
+        assert!(!cache.exists("a").await.unwrap());
+        cache.ping().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn clones_of_a_memory_cache_share_it() {
+        let cache = memory();
+        cache.clone().set("a", &1_u32).await.unwrap();
+        assert_eq!(cache.get::<u32>("a").await.unwrap(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn the_memory_cache_refuses_a_zero_ttl() {
+        assert!(matches!(
+            Cache::memory("svc", Duration::ZERO),
+            Err(Error::InvalidTtl)
+        ));
+        assert!(matches!(
+            memory().set_with_ttl("a", &1_u32, Duration::ZERO).await,
+            Err(Error::InvalidTtl)
+        ));
+    }
+
+    #[tokio::test]
+    async fn the_memory_cache_loads_on_a_miss_only() {
+        let cache = memory();
+        let first: Result<u32, ()> = cache.get_or_load("a", || async { Ok(1) }).await;
+        let second: Result<u32, ()> = cache.get_or_load("a", || async { Ok(2) }).await;
+        assert_eq!((first, second), (Ok(1), Ok(1)));
+    }
+
+    #[test]
+    fn an_expired_entry_is_gone_and_its_bytes_are_returned() {
+        let mut memory = Memory::default();
+        let now = Instant::now();
+        memory.insert("k", "value".to_string(), now + LIVE, now);
+        assert_eq!(memory.get("k", now).as_deref(), Some("value"));
+        assert_eq!(memory.get("k", now + LIVE), None);
+        assert_eq!(memory.bytes, 0);
+    }
+
+    #[test]
+    fn replacing_an_entry_counts_only_the_new_one() {
+        let mut memory = Memory::default();
+        let now = Instant::now();
+        memory.insert("k", "long value".to_string(), now + LIVE, now);
+        memory.insert("k", "v".to_string(), now + LIVE, now);
+        assert_eq!(memory.bytes, 2);
+    }
+
+    #[test]
+    fn the_memory_cache_never_holds_more_than_its_limit() {
+        let mut memory = Memory::default();
+        let now = Instant::now();
+        let half = "x".repeat(MEMORY_LIMIT / 2);
+        for key in ["a", "b", "c", "d"] {
+            memory.insert(key, half.clone(), now + LIVE, now);
+            assert!(memory.bytes <= MEMORY_LIMIT);
+        }
+        assert_eq!(memory.get("d", now).as_deref(), Some(half.as_str()));
+        memory.insert("big", "x".repeat(MEMORY_LIMIT + 1), now + LIVE, now);
+        assert_eq!(memory.get("big", now), None);
+    }
+
+    #[test]
+    fn stale_entries_go_before_live_ones() {
+        let mut memory = Memory::default();
+        let now = Instant::now();
+        let later = now + Duration::from_secs(5);
+        let half = "x".repeat(MEMORY_LIMIT / 2);
+        memory.insert("stale", half.clone(), later, now);
+        memory.insert("live", half, now + LIVE, now);
+        memory.insert("new", "y".repeat(16), later + LIVE, later);
+        assert!(memory.entries.contains_key("live"));
+        assert!(!memory.entries.contains_key("stale"));
+    }
 
     #[test]
     fn keys_carry_the_prefix() {

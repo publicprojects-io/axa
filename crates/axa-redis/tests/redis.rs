@@ -137,3 +137,146 @@ async fn a_bad_url_is_an_error() {
         Err(Error::Redis(_))
     ));
 }
+
+/// A TCP proxy to the real Redis that a test can cut or stall.
+struct Proxy {
+    port: u16,
+    stalled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    accepting: tokio::task::JoinHandle<()>,
+    links: std::sync::Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl Proxy {
+    async fn start() -> Self {
+        use std::sync::{Arc, Mutex, atomic::AtomicBool};
+        let url = std::env::var("AXA_TEST_REDIS_URL").expect("AXA_TEST_REDIS_URL");
+        let target = url
+            .trim_start_matches("redis://")
+            .trim_end_matches('/')
+            .to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let stalled = Arc::new(AtomicBool::new(false));
+        let links = Arc::new(Mutex::new(Vec::new()));
+        let (flag, held) = (stalled.clone(), links.clone());
+        let accepting = tokio::spawn(async move {
+            loop {
+                let Ok((mut client, _)) = listener.accept().await else {
+                    return;
+                };
+                let target = target.clone();
+                let flag = flag.clone();
+                let link = tokio::spawn(async move {
+                    let mut server = tokio::net::TcpStream::connect(&target).await.unwrap();
+                    let (mut from_client, mut to_client) = client.split();
+                    let (mut from_server, mut to_server) = server.split();
+                    let up = forward(&mut from_client, &mut to_server, &flag);
+                    let down = forward(&mut from_server, &mut to_client, &flag);
+                    let _ = tokio::join!(up, down);
+                });
+                held.lock().unwrap().push(link);
+            }
+        });
+        Self {
+            port,
+            stalled,
+            accepting,
+            links,
+        }
+    }
+
+    fn url(&self) -> String {
+        format!("redis://127.0.0.1:{}", self.port)
+    }
+
+    /// Stop answering, with the connections left open.
+    fn stall(&self) {
+        self.stalled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Close everything and refuse new connections.
+    fn cut(&self) {
+        self.accepting.abort();
+        for link in self.links.lock().unwrap().iter() {
+            link.abort();
+        }
+    }
+}
+
+async fn forward<R, W>(
+    from: &mut R,
+    to: &mut W,
+    stalled: &std::sync::atomic::AtomicBool,
+) -> std::io::Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let read = from.read(&mut buffer).await?;
+        if read == 0 {
+            return Ok(());
+        }
+        while stalled.load(std::sync::atomic::Ordering::SeqCst) {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        to.write_all(&buffer[..read]).await?;
+    }
+}
+
+/// How long an outage may cost one request: one time limit, and some slack.
+const OUTAGE_LIMIT: Duration = Duration::from_secs(2);
+
+async fn loads_in_time(cache: &Cache) -> u32 {
+    let load = cache.get_or_load("outage", || async { Ok::<_, std::io::Error>(7) });
+    tokio::time::timeout(OUTAGE_LIMIT, load)
+        .await
+        .expect("the cache held the request up")
+        .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_REDIS_URL"]
+async fn an_outage_does_not_fail_get_or_load() {
+    let proxy = Proxy::start().await;
+    let config = CacheConfig::new(proxy.url(), prefix("outage"), MINUTE);
+    let cache = Cache::connect(&config).await.unwrap();
+    cache.ping().await.unwrap();
+    proxy.cut();
+    assert_eq!(loads_in_time(&cache).await, 7);
+    let read = cache.get::<u32>("outage").await;
+    assert!(read.is_err(), "{read:?}");
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_REDIS_URL"]
+async fn every_call_is_bounded_while_the_client_reconnects() {
+    let proxy = Proxy::start().await;
+    let config = CacheConfig::new(proxy.url(), prefix("reconnect"), MINUTE);
+    let cache = Cache::connect(&config).await.unwrap();
+    cache.ping().await.unwrap();
+    proxy.cut();
+    // The first call finds the connection gone. Later ones meet the client's
+    // retries, which run for seconds without a limit of ours.
+    for _ in 0..4 {
+        let write = tokio::time::timeout(OUTAGE_LIMIT, cache.set("a", &1_u32)).await;
+        assert!(write.expect("a call waited out the retries").is_err());
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_REDIS_URL"]
+async fn a_frozen_redis_does_not_hold_a_request_up() {
+    let proxy = Proxy::start().await;
+    let config = CacheConfig::new(proxy.url(), prefix("frozen"), MINUTE);
+    let cache = Cache::connect(&config).await.unwrap();
+    cache.ping().await.unwrap();
+    proxy.stall();
+    assert_eq!(loads_in_time(&cache).await, 7);
+    // The client's own response timeout may answer first, so either error will do.
+    let read = cache.get::<u32>("outage").await;
+    assert!(read.is_err(), "{read:?}");
+}

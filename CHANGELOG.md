@@ -7,6 +7,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- A Redis outage no longer holds requests up. `get_or_load` used to wait out the
+  client's reconnection retries, for seconds on each request. Every `axa-redis`
+  call now has a time limit, `CacheConfig::timeout`, 500 ms by default.
 - A job that panics now fails, and its worker loop carries on. It used to end the
   loop for good, leaving the job `running`.
 - A long job is no longer taken for lost while it runs: it reports in every
@@ -27,6 +30,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `axa_redis::Cache::memory`, the same cache held in one process, for tests and for
+  development with no Redis.
 - CI audits dependencies with `cargo audit` and `cargo deny`, workflows with
   `zizmor`, and the whole history with `gitleaks`. Actions are pinned to a commit
   and service images to a digest.
