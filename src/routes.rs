@@ -17,11 +17,25 @@ use axum::{Router, routing::MethodRouter};
 
 use crate::{AppContext, Result, config::Config, health, middleware};
 
+/// One route in a [`Routes`] group.
+#[derive(Clone, Debug)]
+pub struct Handler {
+    /// The path, relative to the group's prefix.
+    pub uri: String,
+    /// The Axum method router serving it.
+    pub method: MethodRouter<AppContext>,
+}
+
 /// A group of routes under one prefix.
+///
+/// The fields are public so a service's tests can check what is mounted
+/// without booting it.
 #[derive(Clone, Default, Debug)]
 pub struct Routes {
-    prefix: String,
-    handlers: Vec<(String, MethodRouter<AppContext>)>,
+    /// The prefix shared by the group, if any.
+    pub prefix: Option<String>,
+    /// The group's routes, in declaration order.
+    pub handlers: Vec<Handler>,
 }
 
 impl Routes {
@@ -34,14 +48,17 @@ impl Routes {
     /// Set the prefix shared by the group.
     #[must_use]
     pub fn prefix(mut self, prefix: &str) -> Self {
-        self.prefix = prefix.to_string();
+        self.prefix = Some(prefix.to_string());
         self
     }
 
     /// Add a handler. `"/"` means the prefix itself.
     #[must_use]
     pub fn add(mut self, path: &str, handler: MethodRouter<AppContext>) -> Self {
-        self.handlers.push((path.to_string(), handler));
+        self.handlers.push(Handler {
+            uri: path.to_string(),
+            method: handler,
+        });
         self
     }
 }
@@ -88,11 +105,11 @@ impl AppRoutes {
         self.groups
             .into_iter()
             .flat_map(|group| {
-                let prefix = group.prefix;
+                let prefix = group.prefix.unwrap_or_default();
                 group
                     .handlers
                     .into_iter()
-                    .map(move |(path, handler)| (join(&[&prefix, &path]), handler))
+                    .map(move |handler| (join(&[&prefix, &handler.uri]), handler.method))
             })
             .collect()
     }
@@ -161,6 +178,16 @@ mod tests {
                 .add("/", post(|| async { "create" }))
                 .add("/{id}", get(|| async { "show" })),
         )
+    }
+
+    #[test]
+    fn groups_expose_what_they_mount() {
+        let group = Routes::new()
+            .prefix("/fhir")
+            .add("/metadata", get(|| async { "" }));
+        assert_eq!(group.prefix.as_deref(), Some("/fhir"));
+        assert!(group.handlers.iter().any(|h| h.uri == "/metadata"));
+        assert_eq!(Routes::new().prefix, None);
     }
 
     #[tokio::test]
