@@ -1,6 +1,6 @@
 //! # axa
 //!
-//! Small shared library for services built directly on Axum and sqlx.
+//! Small shared library for services built directly on Axum.
 //!
 //! This is a library, not a framework. A service's `main.rs` stays ordinary
 //! Axum and calls into this crate: there are no lifecycle hooks or macros, and

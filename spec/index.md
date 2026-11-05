@@ -9,8 +9,9 @@ requirement with no test is marked **unverified**, and that is a gap to close.
 
 ## 1. Purpose
 
-`axa` is a small shared library for services built directly on Axum and sqlx.
-It exists so that a service can be audited by reading it: the SQL, the
+`axa` is a small shared library for services built directly on Axum. sqlx is the
+preferred way to reach a database, and `axa-seaorm` supports projects that keep
+SeaORM. It exists so that a service can be audited by reading it: the SQL, the
 middleware, and the startup path are all visible, with no framework between
 the reader and the behaviour.
 
@@ -35,8 +36,9 @@ fixed once and an auditor reads it once.
 ### Out of scope
 
 - Domain logic, handlers, models, and SQL. These stay in each service.
-- Authentication and authorization. These stay in `authentication-verifier`
-  and in each service.
+- Verifying tokens and evaluating policy. These stay in `authentication-verifier`,
+  and a service's own rules stay in the service. `axa-paseto` is only the Axum layer
+  that calls them.
 
 ### Must not be added
 
@@ -53,7 +55,7 @@ fixed once and an auditor reads it once.
 | Id | Principle |
 |---|---|
 | P-1 | **Library, not framework.** A service's `main.rs` stays ordinary Axum and calls in. The control flow is readable from the service's own code. |
-| P-2 | **Two consumers first.** Code is added only once two services need it. |
+| P-2 | **Two consumers first.** Code is added only once two services need it. A subcrate built ahead of that is marked in the README as having no service yet, and that mark comes off with its first service. |
 | P-3 | **Fail closed.** A missing or unsafe production setting stops boot. It never falls back to a development value. |
 | P-4 | **Generic errors.** Internal failure text is logged and never sent to a client. |
 | P-5 | **Written afresh.** Loco is Apache-2.0 only and this crate offers five licences, so its source is not copied. |
@@ -303,6 +305,12 @@ stated here and proved by their own tests.
 | VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406`. | `an_unsupported_version_is_a_406` |
 | VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
 
+### 4.14 Databases
+
+`AppContext::db` is a SeaORM connection with the `sea-orm` feature, and `()`
+without it. Until §6's `AppContext` on a sqlx pool is built, a service on sqlx
+keeps its own `PgPool`, in its own state or in `shared_store`.
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:
@@ -341,6 +349,11 @@ All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile
 only without `sea-orm`, and the worker tests only without `sea-orm` and `queue`.
 The rest of the suite runs under every set.
+
+### Releasing
+
+A version breaks when a public struct gains a field, because services build these
+by hand. Publish only from a commit where everything above has passed.
 
 ## 6. Decided, not yet built
 

@@ -5,6 +5,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Version 0.2.0 of `axa` and `axa-paseto`. It breaks 0.1.0: `Http` and `QueueOptions`
+have new fields, and `axa-paseto` now enforces by default.
+
 ### Fixed
 
 - A Redis outage no longer holds requests up. `get_or_load` used to wait out the

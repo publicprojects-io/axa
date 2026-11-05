@@ -1,7 +1,8 @@
 # axa
 
 **axa** is a small shared library for web services built directly on
-[Axum](https://docs.rs/axum) and [sqlx](https://docs.rs/sqlx).
+[Axum](https://docs.rs/axum), with [sqlx](https://docs.rs/sqlx) the preferred way to
+reach a database.
 
 It holds the plumbing every service needs and none of them should write twice:
 route tables, a standard middleware stack, health checks, error responses,
@@ -47,7 +48,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.1"
+axa = "0.2"
 ```
 
 | Feature | Adds |
@@ -61,7 +62,7 @@ axa = "0.1"
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
-| `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet |
+| `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |
 | `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation |

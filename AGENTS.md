@@ -5,7 +5,7 @@ Instructions for any AI coding agent working in this repository. See
 
 ## What this crate is
 
-`axa` is a small shared library for services built directly on Axum and sqlx.
+`axa` is a small shared library for services built directly on Axum.
 It is a library, not a framework: a service's `main.rs` stays ordinary Axum
 and calls into this crate.
 
@@ -30,5 +30,6 @@ missing docs, and forbids unsafe code.
   or a database abstraction.
 - Write behaviour afresh rather than copying Loco source: Loco is Apache-2.0
   only, and this crate offers five licences.
-- Add code only once two services need it.
+- Add code only once two services need it, or mark it in the README as having
+  no service yet.
 - Raise any new dependency with the user first.
