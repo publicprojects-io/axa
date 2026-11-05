@@ -35,7 +35,7 @@ const SETUP: &str = "CREATE TABLE IF NOT EXISTS axa_queue (
 )";
 const SETUP_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS axa_queue_ready ON axa_queue (run_at) WHERE status = 'queued'";
-/// Advisory lock key for table setup: "axa_q" as bytes.
+/// Advisory lock key for table setup: `axa_q` as bytes.
 const SETUP_LOCK: i64 = 0x0061_7861_5F71;
 const ENQUEUE: &str = "INSERT INTO axa_queue (id, name, args) VALUES ($1, $2, $3)";
 const CLAIM: &str = "UPDATE axa_queue
