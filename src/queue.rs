@@ -35,6 +35,8 @@ const SETUP: &str = "CREATE TABLE IF NOT EXISTS axa_queue (
 )";
 const SETUP_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS axa_queue_ready ON axa_queue (run_at) WHERE status = 'queued'";
+/// Advisory lock key for table setup: "axa_q" as bytes.
+const SETUP_LOCK: i64 = 0x0061_7861_5f71;
 const ENQUEUE: &str = "INSERT INTO axa_queue (id, name, args) VALUES ($1, $2, $3)";
 const CLAIM: &str = "UPDATE axa_queue
     SET status = 'running', started_at = now(), updated_at = now()
@@ -105,8 +107,18 @@ impl Queue {
             )
             .connect(uri)
             .await?;
-        sqlx::query(SETUP).execute(&pool).await?;
-        sqlx::query(SETUP_INDEX).execute(&pool).await?;
+        // `CREATE ... IF NOT EXISTS` is not safe against itself: two services
+        // booting together can both pass the check and one then fails on a
+        // catalog constraint. The lock makes setup run one at a time, and
+        // ends with the transaction.
+        let mut setup = pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(SETUP_LOCK)
+            .execute(&mut *setup)
+            .await?;
+        sqlx::query(SETUP).execute(&mut *setup).await?;
+        sqlx::query(SETUP_INDEX).execute(&mut *setup).await?;
+        setup.commit().await?;
         Ok(Self {
             pool,
             handlers: HashMap::new(),
@@ -254,7 +266,7 @@ mod tests {
     static COUNT: AtomicUsize = AtomicUsize::new(0);
 
     /// Held for a whole test: these tests share one table, and each one
-    /// starts by emptying it.
+    /// starts by emptying or dropping it.
     static TABLE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[derive(Serialize, Deserialize)]
@@ -381,6 +393,30 @@ mod tests {
                 .unwrap()
                 .get("n");
         assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn services_booting_together_all_connect() {
+        let _table = TABLE.lock().await;
+        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let admin = PgPoolOptions::new().connect(&uri).await.unwrap();
+        // Setup only races when the table is really missing.
+        for _ in 0..5 {
+            sqlx::query("DROP TABLE IF EXISTS axa_queue")
+                .execute(&admin)
+                .await
+                .unwrap();
+            let boots: Vec<_> = (0..8)
+                .map(|_| {
+                    let uri = uri.clone();
+                    tokio::spawn(async move { Queue::connect(&uri, QueueOptions::default()).await })
+                })
+                .collect();
+            for boot in boots {
+                boot.await.unwrap().unwrap();
+            }
+        }
     }
 
     #[tokio::test]
