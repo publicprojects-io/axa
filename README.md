@@ -353,6 +353,9 @@ carries a spec edit, a code edit, and a test edit together.
 
 ## Relationship to Loco
 
+To move a project across, follow
+[Converting a project from Loco to axa](help/from-loco-into-axa/index.md).
+
 axa was extracted from what the Main X Index services relied on in
 [Loco](https://loco.rs) (Apache-2.0), and some differences are deliberate:
 

@@ -13,6 +13,7 @@ categories = ["web-programming::http-server"]
 include = [
     "src/**/*",
     "spec/**/*",
+    "help/**/*",
     "LICENSE.md",
     "README.md",
     "CHANGELOG.md",
