@@ -1,0 +1,28 @@
+# AGENTS.md
+
+Instructions for any AI coding agent working in this repository. See
+[`CLAUDE.md`](CLAUDE.md) for Claude Code-specific supplements.
+
+## What this crate is
+
+`axa` is a small shared library for services built directly on Axum and sqlx.
+It is a library, not a framework: a service's `main.rs` stays ordinary Axum
+and calls into this crate.
+
+## Build, test, lint
+
+```sh
+cargo test
+cargo clippy --all-targets --all-features
+cargo doc --no-deps
+```
+
+All three must be clean. `[lints]` in `Cargo.toml` denies pedantic clippy and
+missing docs, and forbids unsafe code.
+
+## Conventions
+
+- Do not add lifecycle hooks, application context types, route macros, a
+  dependency-injection container, or a database abstraction.
+- Add code only once two services need it.
+- Raise any new dependency with the user first.
