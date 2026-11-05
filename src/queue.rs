@@ -253,6 +253,10 @@ mod tests {
 
     static COUNT: AtomicUsize = AtomicUsize::new(0);
 
+    /// Held for a whole test: these tests share one table, and each one
+    /// starts by emptying it.
+    static TABLE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[derive(Serialize, Deserialize)]
     struct Args {
         fail: bool,
@@ -298,6 +302,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DATABASE_URL"]
     async fn queue_behaviour_against_postgres() {
+        let _table = TABLE.lock().await;
         let queue = Arc::new(queue().await);
         queue.ping().await.unwrap();
 
@@ -381,6 +386,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DATABASE_URL"]
     async fn perform_later_enqueues_in_queue_mode() {
+        let _table = TABLE.lock().await;
         let defaults = Defaults {
             database: "",
             ..Defaults::default()
