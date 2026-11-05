@@ -15,7 +15,7 @@ anything that needs a real database, and write down the counts. If a test fails
 after conversion you must be able to say whether you caused it.
 
 **Keep your database tests running.** Unit tests are not enough. In our
-conversions, four services had every unit test passing and 14 failures between
+conversions, four services had every unit test passing and 13 failures between
 them on real Postgres.
 
 **Convert one service first**, ideally the one with the least database code.
@@ -300,7 +300,7 @@ impl TestApp for App {
 Getting this wrong leaves rows behind between tests, which shows up as confusing
 count mismatches.
 
-Change a `#[cfg(test)]`-free `loco_rs::{TestServer, app::AppContext}` import to
+Change a `loco_rs::{TestServer, app::AppContext}` import to
 `axa::{AppContext, TestServer}`. Tests that read `routes.prefix` or
 `routes.handlers` keep working, because those fields stay public, with `prefix`
 still an `Option<String>`.
