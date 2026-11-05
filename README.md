@@ -29,6 +29,9 @@ Settings come from the environment: `APP_ENV`, `PORT`, `BINDING`, `HOST`,
 `BODY_LIMIT_BYTES`, `HTTP_COMPRESSION`, `HTTP_HSTS`,
 `REQUEST_TIMEOUT_SECONDS`, `CORS_ALLOWED_ORIGINS`, `WORKER_MODE`.
 
+The default port is 1241 (a=1, x=24, a=1). A service can set its own in
+`Defaults`, and `PORT` overrides both.
+
 Production requires `DATABASE_URL` when the service has a database, and
 refuses `*` as a CORS origin.
 

@@ -18,5 +18,5 @@ pub struct BootResult {
 /// A service that can boot for tests.
 pub trait TestApp {
     /// Boot under the `test` environment.
-    fn boot_test() -> impl Future<Output = Result<BootResult>> + Send;
+    fn boot_test() -> impl Future<Output = Result<BootResult>>;
 }

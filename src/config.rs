@@ -6,6 +6,9 @@
 
 use crate::{Environment, Error, Result, logger, worker::WorkerMode};
 
+/// The default port: a=1, x=24, a=1.
+pub const DEFAULT_PORT: u16 = 1241;
+
 /// One megabyte, as a body limit.
 pub const MB: usize = 1_000_000;
 
@@ -16,6 +19,8 @@ pub struct Defaults {
     pub database: &'static str,
     /// Port when `PORT` is unset.
     pub port: u16,
+    /// Port when `PORT` is unset in production, if different.
+    pub production_port: Option<u16>,
     /// Largest accepted request body, in bytes.
     pub body_limit: usize,
     /// Pool size outside production.
@@ -26,7 +31,8 @@ impl Default for Defaults {
     fn default() -> Self {
         Self {
             database: "app",
-            port: 5150,
+            port: DEFAULT_PORT,
+            production_port: None,
             body_limit: 2 * MB,
             max_connections: 10,
         }
@@ -184,7 +190,13 @@ impl Config {
 
         Ok(Self {
             server: Server {
-                port: env_parse("PORT", defaults.port),
+                port: env_parse(
+                    "PORT",
+                    defaults
+                        .production_port
+                        .filter(|_| production)
+                        .unwrap_or(defaults.port),
+                ),
                 binding: env_or("BINDING", if production { "0.0.0.0" } else { "localhost" }),
                 host: env_or("HOST", "http://localhost"),
             },
