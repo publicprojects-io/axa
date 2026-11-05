@@ -22,7 +22,9 @@ missing docs, and forbids unsafe code.
 
 ## Conventions
 
-- Do not add lifecycle hooks, application context types, route macros, a
-  dependency-injection container, or a database abstraction.
+- Do not add lifecycle hooks, route macros, a dependency-injection container,
+  or a database abstraction.
+- Write behaviour afresh rather than copying Loco source: Loco is Apache-2.0
+  only, and this crate offers five licences.
 - Add code only once two services need it.
 - Raise any new dependency with the user first.

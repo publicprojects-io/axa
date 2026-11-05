@@ -8,3 +8,6 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Initial crate scaffold.
+- Routes, middleware, health checks, errors, configuration, logging, graceful
+  shutdown, the shared command line, tasks, background jobs, and a Postgres job
+  queue, plus test helpers and transitional SeaORM support.
