@@ -128,7 +128,7 @@ CORS, timeout, compression, body limit.
 | MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
 | MID-9 | A request over `timeout_seconds` is a `408`, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_zero_timeout_means_none` |
-| MID-10 | Every log line written while serving a request carries its request id, method, and path, and never its query string. | `log_lines_carry_the_request_id_and_not_the_query` |
+| MID-10 | Every log line written while serving a request carries its request id, method, and route template, and never the path itself or its query string. An unmatched request logs as `unmatched`. | `log_lines_carry_the_request_id_and_not_the_query` |
 | MID-11 | One route can have its own timeout. | `a_route_can_have_a_longer_timeout`, `an_override_can_turn_the_timeout_off`, `a_trailing_slash_still_matches_an_override` |
 | MID-12 | One route can accept a larger body than the service-wide limit. | `one_route_can_accept_a_larger_body` |
 | MID-13 | A route or group can state its own timeout where it is declared, with `Routes::add_with_timeout` or `Routes::timeout`. It replaces the limit in force, longer or shorter, and beats `timeout_overrides`. A route's limit beats its group's. Other routes are still cut off. | `a_route_with_a_longer_limit_outlives_the_stack_and_others_do_not`, `a_route_is_still_cut_off_at_its_own_limit`, `a_group_limit_applies_and_a_routes_own_limit_beats_it`, `a_routes_own_limit_beats_a_timeout_override`, `a_route_limit_covers_one_method_on_a_shared_path` |
@@ -263,6 +263,7 @@ stated here and proved by their own tests.
 | PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
 | PAG-4 | `axa-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
 | PST-1 | `axa-paseto` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
+| PST-8 | `axa-paseto` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off` (the warning is **unverified**) |
 | PST-2 | `axa-paseto` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
 | PST-3 | `axa-paseto` | A missing, forged, or expired token is a `401`. | `a_missing_token_is_a_401`, `a_token_signed_by_another_key_is_a_401`, `an_expired_token_is_a_401` |
 | PST-4 | `axa-paseto` | Under the default policy any valid token reads, and every mutation needs an explicit allow. | `any_valid_token_may_read`, `no_attributes_means_no_mutation`, `write_access_writes_but_cannot_delete_or_merge`, `admin_access_may_delete_and_merge` |

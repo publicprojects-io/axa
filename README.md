@@ -190,7 +190,7 @@ router. From the outside in:
 | Layer | Behaviour |
 |---|---|
 | Request id | Keeps a caller's `x-request-id` after removing unsafe characters, or mints a UUID. Always returned |
-| Tracing | Logs each finished request, and puts the request id, method, and path on every log line written while serving it. The query string is left out, because it can hold personal data |
+| Tracing | Logs each finished request, and puts the request id, method, and route template on every log line written while serving it. The real path and query string are left out, because either can hold a token or personal data |
 | Panic catching | Turns a handler panic into a `500` |
 | Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
 | CORS | Off unless origins are configured |

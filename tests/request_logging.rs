@@ -35,13 +35,21 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         .with_writer(move || writer.clone())
         .init();
 
-    let router = Router::new().route(
-        "/",
-        get(|| async {
-            tracing::info!("inside the handler");
-            "ok"
-        }),
-    );
+    let router = Router::new()
+        .route(
+            "/",
+            get(|| async {
+                tracing::info!("inside the handler");
+                "ok"
+            }),
+        )
+        .route(
+            "/unsubscribe/{token}",
+            get(|| async {
+                tracing::info!("inside the token route");
+                "ok"
+            }),
+        );
     let config = Http {
         body_limit: 1_000,
         compression: false,
@@ -57,11 +65,18 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         .header("x-request-id", "trace-me")
         .body(Body::empty())
         .unwrap();
-    middleware::apply(router, &config)
-        .unwrap()
-        .oneshot(request)
-        .await
+    let app = middleware::apply(router, &config).unwrap();
+    app.clone().oneshot(request).await.unwrap();
+    let token = Request::builder()
+        .uri("/unsubscribe/secret-token")
+        .body(Body::empty())
         .unwrap();
+    app.clone().oneshot(token).await.unwrap();
+    let unknown = Request::builder()
+        .uri("/person/alice@example.net")
+        .body(Body::empty())
+        .unwrap();
+    app.oneshot(unknown).await.unwrap();
 
     let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
     let line = logs
@@ -71,6 +86,13 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
     assert!(line.contains("request_id=trace-me"), "{line}");
     assert!(line.contains("path=/"), "{line}");
     assert!(!logs.contains("alice"), "{logs}");
+    let line = logs
+        .lines()
+        .find(|line| line.contains("inside the token route"))
+        .expect("the token route's line");
+    assert!(line.contains("path=/unsubscribe/{token}"), "{line}");
+    assert!(!logs.contains("secret-token"), "{logs}");
+    assert!(logs.contains("path=unmatched"), "{logs}");
     // Each finished request is logged at info, so it appears in production.
     assert!(logs.contains("finished processing request"), "{logs}");
 }

@@ -13,7 +13,7 @@ use std::{
 
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, Request, State},
+    extract::{DefaultBodyLimit, MatchedPath, Request, State},
     http::{HeaderName, HeaderValue, Method, StatusCode, header},
     middleware::{Next, from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
@@ -100,18 +100,27 @@ pub fn cors(origins: &[String]) -> Result<Option<CorsLayer>> {
     ))
 }
 
+/// What logs call a request that matched no route. The path itself is kept out,
+/// because anyone can put anything in it.
+const UNMATCHED: &str = "unmatched";
+
 /// The tracing span for a request, so every log line written while serving it
-/// carries its request id. It records the path and not the query string,
-/// because a query string can hold personal data.
+/// carries its request id. It records the route's template and not the path or
+/// query string: `/unsubscribe/{token}`, not the token, because a path can hold a
+/// secret or a person's identifier just as a query string can.
 fn request_span(request: &Request) -> tracing::Span {
     let request_id = request
         .extensions()
         .get::<RequestId>()
         .map_or("", |id| id.0.as_str());
+    let path = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map_or(UNMATCHED, MatchedPath::as_str);
     tracing::info_span!(
         "http-request",
         method = %request.method(),
-        path = %request.uri().path(),
+        path = %path,
         request_id = %request_id,
     )
 }

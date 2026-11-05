@@ -15,6 +15,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`axa-paseto` enforces by default.** `GuardConfig::new` used to leave enforcement
+  off, so a service that forgot it served every request. `require_auth(false)`
+  turns it off and logs a warning.
+- Logs carry a request's route template in `path`, such as `/unsubscribe/{token}`,
+  and `unmatched` for a request that matched no route. They used to carry the real
+  path, which can hold a token or a person's identifier.
 - **Production now sends `content-security-policy: default-src 'none'; frame-ancestors 'none'`.**
   A service that serves pages must set `HTTP_CSP`, or an empty `HTTP_CSP` to send none.
 - `Http` gains the `hsts_max_age` and `csp` fields, so code building one by hand must set them.

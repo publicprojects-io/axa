@@ -17,10 +17,11 @@
 //! Every path is protected unless it is listed as public, so a new route can
 //! never be exposed by forgetting to add it to a list.
 //!
-//! Enforcement is **off by default**, so a service can ship and integrate
-//! before its policy is written. Any deployment reachable by untrusted callers
-//! must turn it on. With it off there is no token check and no policy at all,
-//! although [`AuthUser`] still verifies on the handlers that use it.
+//! Enforcement is **on by default**, so a service that forgets it refuses
+//! requests rather than serving them. [`GuardConfig::require_auth`] turns it off,
+//! for a service still integrating or behind another gate, and [`Guard::new`]
+//! logs a warning when it does. With it off there is no token check and no policy
+//! at all, although [`AuthUser`] still verifies on the handlers that use it.
 //!
 //! ```
 //! use axa_paseto::{GuardConfig, derive_action};
@@ -59,7 +60,7 @@ pub type Rejection = (StatusCode, String);
 pub struct GuardConfig {
     /// The entity name policies see.
     pub entity: String,
-    /// Whether requests must carry a token. Off by default.
+    /// Whether requests must carry a token. On by default.
     pub require_auth: bool,
     /// Paths open to anyone, matched exactly.
     pub public_paths: Vec<String>,
@@ -70,13 +71,13 @@ pub struct GuardConfig {
 }
 
 impl GuardConfig {
-    /// A config for `entity`, with enforcement off and only the health routes
+    /// A config for `entity`, with enforcement on and only the health routes
     /// public. Everything else stays protected until listed.
     #[must_use]
     pub fn new(entity: impl Into<String>) -> Self {
         Self {
             entity: entity.into(),
-            require_auth: false,
+            require_auth: true,
             public_paths: ["/_ping", "/_health", "/_readiness"]
                 .map(str::to_string)
                 .to_vec(),
@@ -210,6 +211,9 @@ impl Guard {
         verifier: Arc<ReloadableVerifier>,
         policy: Arc<ReloadablePolicy>,
     ) -> Self {
+        if !config.require_auth {
+            tracing::warn!(entity = %config.entity, "authentication enforcement is off");
+        }
         Self {
             config,
             verifier,
@@ -424,7 +428,12 @@ mod tests {
         let config = GuardConfig::new("x");
         assert!(config.is_public("/_health"));
         assert!(!config.is_public("/metrics.prom"));
-        assert!(!config.require_auth);
+    }
+
+    #[test]
+    fn enforcement_is_on_unless_turned_off() {
+        assert!(GuardConfig::new("x").require_auth);
+        assert!(!GuardConfig::new("x").require_auth(false).require_auth);
     }
 
     #[test]
