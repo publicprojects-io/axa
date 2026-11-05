@@ -92,6 +92,9 @@ pub enum Error {
     /// An Axum failure.
     #[error(transparent)]
     Axum(#[from] axum::Error),
+    /// A malformed HTTP response or header.
+    #[error(transparent)]
+    Http(#[from] axum::http::Error),
     /// An I/O failure.
     #[error(transparent)]
     IO(#[from] std::io::Error),
@@ -191,6 +194,7 @@ impl IntoResponse for Error {
             Self::Message(_)
             | Self::InternalServerError
             | Self::Axum(_)
+            | Self::Http(_)
             | Self::IO(_)
             | Self::JSON(_)
             | Self::Worker(_)
