@@ -48,6 +48,7 @@
 //! | `sea-orm` | SeaORM-backed [`AppContext`], `model`, and `schema`. Transitional: it goes once the last service has moved to sqlx |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
+//! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | RFC 9457 problem details, as `axa::problem` |
 //! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
 //! | `versioning` | `Accepts-version` negotiation, as `axa::versioning` |
@@ -91,6 +92,8 @@ pub mod worker;
 
 #[cfg(feature = "pagination")]
 pub use axa_pagination as pagination;
+#[cfg(feature = "paseto")]
+pub use axa_paseto as paseto;
 #[cfg(feature = "problem")]
 pub use axa_problem as problem;
 #[cfg(feature = "prometheus")]

@@ -43,6 +43,7 @@ queue = ["dep:sqlx"]
 testing = ["dep:axum-test"]
 # Each of these re-exports a subcrate under the same name.
 pagination = ["dep:axa-pagination"]
+paseto = ["dep:axa-paseto"]
 problem = ["dep:axa-problem"]
 prometheus = ["dep:axa-prometheus"]
 sqlx = ["dep:axa-sqlx"]
@@ -50,6 +51,7 @@ versioning = ["dep:axa-versioning"]
 
 [dependencies]
 axa-pagination = { version = "0.1.0", path = "crates/axa-pagination", optional = true }
+axa-paseto = { version = "0.1.0", path = "crates/axa-paseto", optional = true }
 axa-problem = { version = "0.1.0", path = "crates/axa-problem", optional = true }
 axa-prometheus = { version = "0.1.0", path = "crates/axa-prometheus", optional = true }
 axa-sqlx = { version = "0.1.0", path = "crates/axa-sqlx", optional = true }

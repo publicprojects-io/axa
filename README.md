@@ -57,6 +57,7 @@ axa = "0.1"
 | `sea-orm` | A SeaORM-backed `AppContext`, migration helpers, and model errors. Transitional: it goes once the last service has moved to sqlx |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
+| `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |
 | `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation |

@@ -221,6 +221,13 @@ stated here and proved by their own tests.
 | PAG-2 | `axa-pagination` | Zero and unparsable values use the defaults. | `zero_and_unparsable_values_use_the_defaults` |
 | PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
 | PAG-4 | `axa-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
+| PST-1 | `axa-paseto` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
+| PST-2 | `axa-paseto` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
+| PST-3 | `axa-paseto` | A missing, forged, or expired token is a `401`. | `a_missing_token_is_a_401`, `a_token_signed_by_another_key_is_a_401`, `an_expired_token_is_a_401` |
+| PST-4 | `axa-paseto` | Under the default policy any valid token reads, and every mutation needs an explicit allow. | `any_valid_token_may_read`, `no_attributes_means_no_mutation`, `write_access_writes_but_cannot_delete_or_merge`, `admin_access_may_delete_and_merge` |
+| PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
+| PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
+| PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
 | PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
 | PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
@@ -262,5 +269,5 @@ The rest of the suite runs under every set.
 
 ## 7. Open questions
 
-- Whether the shared PASETO and ABAC guard belongs here or in
-  `authentication-verifier` behind an `axum` feature.
+- `axa-paseto` covers PASETO only. Whether it should also cover the Keycloak path
+  some services use.
