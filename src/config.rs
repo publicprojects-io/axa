@@ -84,6 +84,15 @@ pub struct Database {
     pub dangerously_truncate: bool,
 }
 
+/// A timeout for the routes ending in one path suffix.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimeoutOverride {
+    /// The path suffix, such as `/import`.
+    pub path_suffix: String,
+    /// The timeout, in seconds. `0` turns it off for these routes.
+    pub seconds: u64,
+}
+
 /// HTTP middleware settings.
 #[derive(Debug, Clone)]
 pub struct Http {
@@ -93,6 +102,9 @@ pub struct Http {
     pub compression: bool,
     /// Per-request timeout, in seconds. `0` turns it off.
     pub timeout_seconds: u64,
+    /// Routes with their own timeout, checked in order. Set these in code,
+    /// for a route such as a large upload that legitimately takes longer.
+    pub timeout_overrides: Vec<TimeoutOverride>,
     /// Origins allowed by CORS. `["*"]` allows any and is refused in
     /// production-like environments. Empty sends no CORS headers.
     pub cors_origins: Vec<String>,
@@ -277,6 +289,7 @@ impl Config {
                 compression: vars.flag("HTTP_COMPRESSION", production),
                 timeout_seconds: vars
                     .parsed("REQUEST_TIMEOUT_SECONDS", if production { 60 } else { 0 }),
+                timeout_overrides: Vec::new(),
                 cors_origins,
                 hsts: vars.flag("HTTP_HSTS", production),
             },

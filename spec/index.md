@@ -109,12 +109,15 @@ CORS, timeout, compression, body limit.
 | MID-1 | Every response carries `x-request-id`. | `responses_carry_request_id_and_security_headers` |
 | MID-2 | A caller's request id keeps only alphanumerics, `-`, `_`, and `@`, up to 255 characters. | `request_id_keeps_safe_text_and_strips_the_rest` |
 | MID-3 | A UUID is minted when nothing usable remains. | `request_id_is_minted_when_nothing_usable_remains` |
-| MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers` (values for the first two; `referrer-policy` and the no-replace rule are **unverified**) |
+| MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `security_headers_do_not_replace_a_handlers_own` |
 | MID-5 | `strict-transport-security` is sent when `hsts` is set. | `responses_carry_request_id_and_security_headers` |
 | MID-6 | A panic in a handler becomes a `500`. | `a_panic_becomes_a_500` |
 | MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
-| MID-9 | A request over `timeout_seconds` is a `408`, and `0` turns the timeout off. | **unverified** |
+| MID-9 | A request over `timeout_seconds` is a `408`, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_zero_timeout_means_none` |
+| MID-10 | Every log line written while serving a request carries its request id, method, and path, and never its query string. | `log_lines_carry_the_request_id_and_not_the_query` |
+| MID-11 | One route can have its own timeout. | `a_route_can_have_a_longer_timeout`, `an_override_can_turn_the_timeout_off`, `a_trailing_slash_still_matches_an_override` |
+| MID-12 | One route can accept a larger body than the service-wide limit. | `one_route_can_accept_a_larger_body` |
 
 ### 4.5 Errors
 
@@ -144,7 +147,7 @@ RFC 9457.
 | Id | Requirement | Test |
 |---|---|---|
 | HLT-1 | `/_ping`, `/_health`, and `/_readiness` answer `200` and `{"ok":true}` when healthy. | `every_health_route_answers_ok` |
-| HLT-2 | `/_readiness` answers `503` when the database or queue does not. | **unverified** |
+| HLT-2 | `/_readiness` answers `503` when the database does not answer, while `/_ping` still passes. | `readiness_fails_when_the_database_does_not_answer` |
 
 ### 4.8 Command line and tasks
 
@@ -169,8 +172,9 @@ RFC 9457.
 
 ### 4.10 Queue
 
-Delivery is at least once: a stale job runs again, so a job's work must be
-safe to repeat. These tests need `AXA_TEST_DATABASE_URL`.
+A job gets one attempt by default, because a retry repeats its work. Raising
+`max_attempts` makes delivery at least once, so that job's work must be safe to
+repeat. These tests need `AXA_TEST_DATABASE_URL`.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -178,9 +182,13 @@ safe to repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | QUE-2 | A failed job keeps its error text on the row and does not stop the loop. | `queue_behaviour_against_postgres` |
 | QUE-3 | Arguments that do not parse fail the job and do not panic. | `queue_behaviour_against_postgres` |
 | QUE-4 | A job with no handler stays queued for a worker that has one. | `queue_behaviour_against_postgres` |
-| QUE-5 | A job running longer than `stale_minutes` is queued again. | `queue_behaviour_against_postgres` |
+| QUE-5 | A job running longer than `stale_minutes` is queued again if it has attempts left, and otherwise fails, so a crash cannot loop forever. | `a_stale_job_with_attempts_left_runs_again`, `a_job_that_keeps_killing_workers_ends_as_failed` |
 | QUE-6 | Services booting together all connect. Table setup runs under an advisory lock, because `CREATE ... IF NOT EXISTS` is not safe against itself. | `services_booting_together_all_connect` |
 | QUE-7 | Jobs in progress finish before shutdown. | **unverified** directly; `queue_behaviour_against_postgres` shows the loops stop with nothing left running |
+| QUE-8 | A failed job gets `max_attempts` tries, waiting longer each time. The default is one. | `a_failing_job_retries_up_to_its_limit`, `a_retry_waits_for_its_backoff`, `by_default_a_failed_job_is_not_repeated`, `each_retry_waits_twice_as_long_up_to_a_limit` |
+| QUE-9 | Finished rows are deleted after `retention_days`, and nothing else is. | `old_finished_rows_are_deleted_and_nothing_else` |
+| QUE-10 | A service with a queue and no worker is warned at boot. | `a_service_with_a_queue_and_no_worker_is_warned`, `a_service_without_a_queue_gets_no_worker_warning` |
+| QUE-11 | A table created by 0.1.0 gains the `attempts` column. | `the_attempts_column_is_added_to_an_older_table` |
 
 ### 4.11 Store, logging, and server
 
@@ -190,7 +198,7 @@ safe to repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | LOG-1 | `RUST_LOG` wins, then the override filter, then the default modules plus the service. | `default_filter_names_the_service_and_shared_modules`, `an_override_replaces_the_default_filter` (the `RUST_LOG` case is **unverified**) |
 | LOG-2 | Level and format names parse, with safe defaults. | `levels_parse_and_print`, `formats_parse` |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
-| SRV-2 | `SIGTERM` and Ctrl-C stop the server and let in-flight requests finish. | **unverified** in this crate; seen on `case-folder`'s real binary |
+| SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
 
 ### 4.12 SeaORM support
 

@@ -87,3 +87,44 @@ mod tests {
         }
     }
 }
+
+#[cfg(all(test, feature = "sea-orm"))]
+mod database_tests {
+    use super::*;
+    use crate::{
+        Environment,
+        config::{Config, Defaults},
+        routes::AppRoutes,
+    };
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn readiness_fails_when_the_database_does_not_answer() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        // A connection that was never opened cannot answer a ping.
+        let ctx = AppContext::new(
+            Environment::Test,
+            sea_orm::DatabaseConnection::default(),
+            config,
+        );
+        let router = AppRoutes::with_default_routes().into_router(ctx);
+        let request = Request::builder()
+            .uri("/_readiness")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        // Liveness still passes: the process is up.
+        let request = Request::builder()
+            .uri("/_ping")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+}

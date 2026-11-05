@@ -17,6 +17,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `query::condition()` and `Validatable`, so moving from Loco needs less rewriting.
 - A guide to moving SeaORM code from Loco.
 
+### Changed
+
+- Log lines carry the request id, method, and path, and each finished request is
+  logged at `info`.
+- The job queue records attempts. A job gets one by default, with
+  `max_attempts` and `retry_backoff` to retry it. A job lost with its worker now
+  fails once out of attempts, rather than being queued again forever.
+- `axa_queue` keeps finished rows for `retention_days`, then deletes them.
+- Added `middleware::body_limit` and `Http::timeout_overrides`, for limits on one
+  route, and `queue::warn_if_unserved`.
+
 ## [0.1.0] - 2026-11-05
 
 ### Added

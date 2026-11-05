@@ -5,10 +5,30 @@
 //! loops can never claim the same row and no external broker is needed.
 //!
 //! A job moves from `queued` to `running` to `completed` or `failed`, with
-//! the failure text kept on the row. A job still `running` after
-//! [`QueueOptions::stale_minutes`] is assumed lost with its worker, and
-//! [`Queue::requeue_stale`] puts it back. Jobs can therefore run more than
-//! once, so a job's work must be safe to repeat.
+//! the failure text kept on the row.
+//!
+//! # Attempts
+//!
+//! A job gets [`QueueOptions::max_attempts`] tries. The default is one, because
+//! a retry repeats the job's work, and only its author knows that is safe. Raise
+//! it for jobs written to be repeated. Each retry waits twice as long as the
+//! last, starting from [`QueueOptions::retry_backoff`].
+//!
+//! A job still `running` after [`QueueOptions::stale_minutes`] is assumed lost
+//! with its worker. If it has attempts left it is queued again, and otherwise
+//! it is marked failed. A crash can never loop forever.
+//!
+//! # Retention
+//!
+//! Finished rows are deleted after [`QueueOptions::retention_days`], because
+//! the `args` column is plain text and a job table should not become a second
+//! copy of the data. Never put a secret in job arguments.
+//!
+//! # Running it
+//!
+//! Nothing runs jobs by itself. A service needs a process calling [`Queue::run`],
+//! usually through `start --all` or `start --worker`, and
+//! [`warn_if_unserved`] says so at boot when it has none.
 
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Duration};
 
@@ -17,7 +37,7 @@ use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use tokio::sync::watch;
 use uuid::Uuid;
 
-use crate::{Error, Result, worker::BackgroundWorker};
+use crate::{AppContext, Error, Result, worker::BackgroundWorker};
 
 type JobFuture = Pin<Box<dyn Future<Output = Result<()>> + Send>>;
 type Handler = Arc<dyn Fn(serde_json::Value) -> JobFuture + Send + Sync>;
@@ -35,11 +55,14 @@ const SETUP: &str = "CREATE TABLE IF NOT EXISTS axa_queue (
 )";
 const SETUP_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS axa_queue_ready ON axa_queue (run_at) WHERE status = 'queued'";
+/// Tables created by axa 0.1.0 have no `attempts` column.
+const SETUP_ATTEMPTS: &str =
+    "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0";
 /// Advisory lock key for table setup: `axa_q` as bytes.
 const SETUP_LOCK: i64 = 0x0061_7861_5F71;
 const ENQUEUE: &str = "INSERT INTO axa_queue (id, name, args) VALUES ($1, $2, $3)";
 const CLAIM: &str = "UPDATE axa_queue
-    SET status = 'running', started_at = now(), updated_at = now()
+    SET status = 'running', started_at = now(), updated_at = now(), attempts = attempts + 1
     WHERE id = (
         SELECT id FROM axa_queue
         WHERE status = 'queued' AND run_at <= now() AND name = ANY($1)
@@ -47,12 +70,51 @@ const CLAIM: &str = "UPDATE axa_queue
         FOR UPDATE SKIP LOCKED
         LIMIT 1
     )
-    RETURNING id, name, args";
+    RETURNING id, name, args, attempts";
 const FINISH: &str =
     "UPDATE axa_queue SET status = $2, error = $3, updated_at = now() WHERE id = $1";
+const RETRY: &str = "UPDATE axa_queue
+    SET status = 'queued', error = $2, started_at = NULL, updated_at = now(),
+        run_at = now() + make_interval(secs => $3)
+    WHERE id = $1";
 const REQUEUE_STALE: &str = "UPDATE axa_queue
     SET status = 'queued', started_at = NULL, updated_at = now()
-    WHERE status = 'running' AND started_at < now() - make_interval(mins => $1)";
+    WHERE status = 'running' AND started_at < now() - make_interval(mins => $1)
+      AND attempts < $2";
+const FAIL_STALE: &str = "UPDATE axa_queue
+    SET status = 'failed', error = 'abandoned by its worker', updated_at = now()
+    WHERE status = 'running' AND started_at < now() - make_interval(mins => $1)
+      AND attempts >= $2";
+const PURGE: &str = "DELETE FROM axa_queue
+    WHERE status IN ('completed', 'failed')
+      AND updated_at < now() - make_interval(days => $1)";
+
+/// The longest wait between attempts.
+const MAX_BACKOFF: Duration = Duration::from_hours(1);
+
+/// How long to wait before the attempt after `attempts`, doubling each time.
+fn backoff(base: Duration, attempts: i32) -> Duration {
+    let doublings = u32::try_from(attempts.saturating_sub(1))
+        .unwrap_or(0)
+        .min(16);
+    base.saturating_mul(1 << doublings).min(MAX_BACKOFF)
+}
+
+/// Warn when a service queues jobs and nothing here will run them, returning
+/// whether it warned.
+///
+/// Queued jobs then wait forever, and nothing else says so: the request that
+/// queued the job has already succeeded.
+pub fn warn_if_unserved(ctx: &AppContext, worker_running: bool) -> bool {
+    let unserved = ctx.queue_provider.is_some() && !worker_running;
+    if unserved {
+        tracing::warn!(
+            "jobs are queued but this process runs no worker: use `start --all`, \\
+             or run `start --worker` separately"
+        );
+    }
+    unserved
+}
 
 /// Queue tuning.
 #[derive(Debug, Clone)]
@@ -62,8 +124,16 @@ pub struct QueueOptions {
     /// Sleep between polls of an empty queue.
     pub poll_interval: Duration,
     /// Jobs running longer than this many minutes are assumed lost with
-    /// their worker and queued again.
+    /// their worker.
     pub stale_minutes: i32,
+    /// Tries a job gets, including the first. One means no retries.
+    pub max_attempts: i32,
+    /// The wait before the first retry.
+    pub retry_backoff: Duration,
+    /// Days to keep finished rows.
+    pub retention_days: i32,
+    /// How often to recover stale jobs and delete old rows.
+    pub maintenance_interval: Duration,
 }
 
 impl Default for QueueOptions {
@@ -72,6 +142,10 @@ impl Default for QueueOptions {
             workers: 2,
             poll_interval: Duration::from_secs(1),
             stale_minutes: 60,
+            max_attempts: 1,
+            retry_backoff: Duration::from_secs(30),
+            retention_days: 7,
+            maintenance_interval: Duration::from_mins(5),
         }
     }
 }
@@ -117,6 +191,7 @@ impl Queue {
             .execute(&mut *setup)
             .await?;
         sqlx::query(SETUP).execute(&mut *setup).await?;
+        sqlx::query(SETUP_ATTEMPTS).execute(&mut *setup).await?;
         sqlx::query(SETUP_INDEX).execute(&mut *setup).await?;
         setup.commit().await?;
         Ok(Self {
@@ -166,18 +241,49 @@ impl Queue {
         Ok(())
     }
 
-    /// Queue again any job abandoned by a worker that died, returning how
-    /// many were requeued.
+    /// Recover jobs abandoned by a worker that died: queue again those with
+    /// attempts left and fail the rest, returning how many were queued again.
     ///
     /// # Errors
     ///
     /// Fails on a database error.
     pub async fn requeue_stale(&self) -> Result<u64> {
+        sqlx::query(FAIL_STALE)
+            .bind(self.options.stale_minutes)
+            .bind(self.options.max_attempts)
+            .execute(&self.pool)
+            .await?;
         let result = sqlx::query(REQUEUE_STALE)
             .bind(self.options.stale_minutes)
+            .bind(self.options.max_attempts)
             .execute(&self.pool)
             .await?;
         Ok(result.rows_affected())
+    }
+
+    /// Delete finished rows older than the retention period, returning how
+    /// many went.
+    ///
+    /// # Errors
+    ///
+    /// Fails on a database error.
+    pub async fn purge_finished(&self) -> Result<u64> {
+        let result = sqlx::query(PURGE)
+            .bind(self.options.retention_days)
+            .execute(&self.pool)
+            .await?;
+        Ok(result.rows_affected())
+    }
+
+    /// One round of housekeeping. Failures are logged, because the next round
+    /// can try again.
+    async fn maintain(&self) {
+        if let Err(error) = self.requeue_stale().await {
+            tracing::error!(%error, "could not recover stale jobs");
+        }
+        if let Err(error) = self.purge_finished().await {
+            tracing::error!(%error, "could not delete old jobs");
+        }
     }
 
     /// Claim and run one job, returning whether there was one. A job's own
@@ -198,34 +304,61 @@ impl Queue {
         let id: Uuid = row.try_get("id")?;
         let name: String = row.try_get("name")?;
         let args: serde_json::Value = row.try_get("args")?;
+        let attempts: i32 = row.try_get("attempts")?;
         let outcome = match self.handlers.get(&name) {
             Some(handler) => handler(args).await,
             None => Err(Error::Worker(format!("no handler for job {name}"))),
         };
-        let (status, error) = match outcome {
-            Ok(()) => ("completed", None),
-            Err(error) => {
-                tracing::error!(job = %name, %id, %error, "job failed");
-                ("failed", Some(error.to_string()))
+        match outcome {
+            Ok(()) => {
+                sqlx::query(FINISH)
+                    .bind(id)
+                    .bind("completed")
+                    .bind(None::<String>)
+                    .execute(&self.pool)
+                    .await?;
             }
-        };
-        sqlx::query(FINISH)
-            .bind(id)
-            .bind(status)
-            .bind(error)
-            .execute(&self.pool)
-            .await?;
+            Err(error) if attempts < self.options.max_attempts => {
+                tracing::warn!(job = %name, %id, attempts, %error, "job failed, will retry");
+                let wait = backoff(self.options.retry_backoff, attempts);
+                sqlx::query(RETRY)
+                    .bind(id)
+                    .bind(error.to_string())
+                    .bind(wait.as_secs_f64())
+                    .execute(&self.pool)
+                    .await?;
+            }
+            Err(error) => {
+                tracing::error!(job = %name, %id, attempts, %error, "job failed");
+                sqlx::query(FINISH)
+                    .bind(id)
+                    .bind("failed")
+                    .bind(error.to_string())
+                    .execute(&self.pool)
+                    .await?;
+            }
+        }
         Ok(true)
     }
 
     /// Run job loops until `shutdown` changes to `true`. Jobs in progress
-    /// finish first. Stale jobs are requeued each time this starts.
+    /// finish first. Housekeeping runs straight away, to recover anything a
+    /// previous process left behind, and then on a timer.
     pub async fn run(self: Arc<Self>, shutdown: watch::Receiver<bool>) {
-        // Recover anything a previous process left behind before taking work.
-        if let Err(error) = self.requeue_stale().await {
-            tracing::error!(%error, "could not requeue stale jobs");
-        }
         let mut loops = Vec::new();
+        {
+            let queue = self.clone();
+            let mut shutdown = shutdown.clone();
+            loops.push(tokio::spawn(async move {
+                while !*shutdown.borrow() {
+                    queue.maintain().await;
+                    tokio::select! {
+                        () = tokio::time::sleep(queue.options.maintenance_interval) => {},
+                        _ = shutdown.changed() => {},
+                    }
+                }
+            }));
+        }
         for _ in 0..self.options.workers.max(1) {
             let queue = self.clone();
             let mut shutdown = shutdown.clone();
@@ -417,6 +550,207 @@ mod tests {
                 boot.await.unwrap().unwrap();
             }
         }
+    }
+
+    #[test]
+    fn each_retry_waits_twice_as_long_up_to_a_limit() {
+        let base = Duration::from_secs(30);
+        assert_eq!(backoff(base, 1), base);
+        assert_eq!(backoff(base, 2), base * 2);
+        assert_eq!(backoff(base, 3), base * 4);
+        assert_eq!(backoff(base, 1_000), MAX_BACKOFF);
+    }
+
+    #[test]
+    fn a_service_without_a_queue_gets_no_worker_warning() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let ctx = AppContext::new(Environment::Test, (), config);
+        assert!(!warn_if_unserved(&ctx, false));
+    }
+
+    async fn queue_with(options: QueueOptions) -> Queue {
+        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let mut queue = Queue::connect(&uri, options).await.unwrap();
+        sqlx::query("DELETE FROM axa_queue")
+            .execute(&queue.pool)
+            .await
+            .unwrap();
+        queue.register(CountWorker);
+        queue
+    }
+
+    async fn make_stale(queue: &Queue, id: &str, attempts: i32) {
+        sqlx::query(
+            "UPDATE axa_queue
+             SET status = 'running', attempts = $2, started_at = now() - interval '2 hours'
+             WHERE id = $1",
+        )
+        .bind(Uuid::parse_str(id).unwrap())
+        .bind(attempts)
+        .execute(&queue.pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_failing_job_retries_up_to_its_limit() {
+        let _table = TABLE.lock().await;
+        let queue = queue_with(QueueOptions {
+            max_attempts: 2,
+            retry_backoff: Duration::ZERO,
+            ..QueueOptions::default()
+        })
+        .await;
+        let id = queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": true }))
+            .await
+            .unwrap();
+
+        assert!(queue.run_one().await.unwrap());
+        let (status, error) = status_of(&queue, &id).await;
+        assert_eq!(status, "queued");
+        assert!(error.unwrap().contains("told to fail"));
+
+        assert!(queue.run_one().await.unwrap());
+        assert_eq!(status_of(&queue, &id).await.0, "failed");
+        assert!(!queue.run_one().await.unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_retry_waits_for_its_backoff() {
+        let _table = TABLE.lock().await;
+        let queue = queue_with(QueueOptions {
+            max_attempts: 2,
+            retry_backoff: Duration::from_mins(10),
+            ..QueueOptions::default()
+        })
+        .await;
+        queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": true }))
+            .await
+            .unwrap();
+        assert!(queue.run_one().await.unwrap());
+        assert!(!queue.run_one().await.unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn by_default_a_failed_job_is_not_repeated() {
+        let _table = TABLE.lock().await;
+        let queue = queue().await;
+        let id = queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": true }))
+            .await
+            .unwrap();
+        assert!(queue.run_one().await.unwrap());
+        assert_eq!(status_of(&queue, &id).await.0, "failed");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_job_that_keeps_killing_workers_ends_as_failed() {
+        let _table = TABLE.lock().await;
+        let queue = queue().await;
+        let id = queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": false }))
+            .await
+            .unwrap();
+        make_stale(&queue, &id, 1).await;
+        assert_eq!(queue.requeue_stale().await.unwrap(), 0);
+        let (status, error) = status_of(&queue, &id).await;
+        assert_eq!(status, "failed");
+        assert!(error.unwrap().contains("abandoned"));
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_stale_job_with_attempts_left_runs_again() {
+        let _table = TABLE.lock().await;
+        let queue = queue_with(QueueOptions {
+            max_attempts: 3,
+            ..QueueOptions::default()
+        })
+        .await;
+        let id = queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": false }))
+            .await
+            .unwrap();
+        make_stale(&queue, &id, 1).await;
+        assert_eq!(queue.requeue_stale().await.unwrap(), 1);
+        assert_eq!(status_of(&queue, &id).await.0, "queued");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn old_finished_rows_are_deleted_and_nothing_else() {
+        let _table = TABLE.lock().await;
+        let queue = queue().await;
+        let args = serde_json::json!({ "fail": false });
+        let old_done = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        let old_failed = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        let new_done = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        let old_queued = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        let set = |id: String, status: &'static str, days: i32| {
+            let pool = queue.pool.clone();
+            async move {
+                sqlx::query(
+                    "UPDATE axa_queue SET status = $2,
+                     updated_at = now() - make_interval(days => $3) WHERE id = $1",
+                )
+                .bind(Uuid::parse_str(&id).unwrap())
+                .bind(status)
+                .bind(days)
+                .execute(&pool)
+                .await
+                .unwrap();
+            }
+        };
+        set(old_done, "completed", 30).await;
+        set(old_failed, "failed", 30).await;
+        set(new_done.clone(), "completed", 1).await;
+        set(old_queued.clone(), "queued", 30).await;
+
+        assert_eq!(queue.purge_finished().await.unwrap(), 2);
+        assert_eq!(status_of(&queue, &new_done).await.0, "completed");
+        assert_eq!(status_of(&queue, &old_queued).await.0, "queued");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn the_attempts_column_is_added_to_an_older_table() {
+        let _table = TABLE.lock().await;
+        let queue = queue().await;
+        sqlx::query("ALTER TABLE axa_queue DROP COLUMN attempts")
+            .execute(&queue.pool)
+            .await
+            .unwrap();
+        let queue = self::queue().await;
+        queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": false }))
+            .await
+            .unwrap();
+        assert!(queue.run_one().await.unwrap());
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_service_with_a_queue_and_no_worker_is_warned() {
+        let _table = TABLE.lock().await;
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let mut ctx = AppContext::new(Environment::Test, (), config);
+        ctx.queue_provider = Some(Arc::new(queue().await));
+        assert!(warn_if_unserved(&ctx, false));
+        assert!(!warn_if_unserved(&ctx, true));
     }
 
     #[tokio::test]

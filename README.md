@@ -149,13 +149,13 @@ router. From the outside in:
 | Layer | Behaviour |
 |---|---|
 | Request id | Keeps a caller's `x-request-id` after removing unsafe characters, or mints a UUID. Always returned |
-| Tracing | Logs each request |
+| Tracing | Logs each finished request, and puts the request id, method, and path on every log line written while serving it. The query string is left out, because it can hold personal data |
 | Panic catching | Turns a handler panic into a `500` |
 | Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
 | CORS | Off unless origins are configured |
-| Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS` |
+| Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Http::timeout_overrides` sets a longer one for a route such as an upload |
 | Compression | Gzip, Brotli, and Zstd when enabled |
-| Body limit | Answers `413` over `BODY_LIMIT_BYTES` |
+| Body limit | Answers `413` over `BODY_LIMIT_BYTES`. `middleware::body_limit` raises it on one route |
 
 ### Errors
 
@@ -315,10 +315,17 @@ the oldest ready job in one statement, so no two loops ever claim the same row.
 
 A job moves from `queued` to `running` to `completed` or `failed`, keeping its
 error text on the row. A job still `running` after `stale_minutes` is assumed
-lost with its worker and is queued again.
+lost with its worker.
 
-**Delivery is at least once, so a job's work must be safe to repeat.** Queue
-arguments are stored in plain text, so never put a secret in them.
+A job gets one attempt by default, because a retry repeats its work. Raise
+`max_attempts` for jobs written to be repeated, and each retry then waits twice
+as long as the last. A job lost with its worker is queued again if it has attempts
+left and otherwise fails, so a crash cannot loop forever. Finished rows are deleted
+after `retention_days`.
+
+**Nothing runs jobs by itself.** A service needs `start --all` or a separate
+`start --worker`, and `queue::warn_if_unserved` says so at boot. Queue arguments
+are stored in plain text, so never put a secret in them.
 
 ### Testing
 

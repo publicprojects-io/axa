@@ -67,7 +67,7 @@ serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
-tower-http = { version = "0.6", features = ["catch-panic", "compression-full", "cors", "set-header", "timeout", "trace"] }
+tower-http = { version = "0.6", features = ["catch-panic", "compression-full", "cors", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }
@@ -77,6 +77,7 @@ sea-orm = { version = "2.0", default-features = false, features = ["sqlx-postgre
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid", "chrono"], optional = true }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["io-util", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
 
 [lints]

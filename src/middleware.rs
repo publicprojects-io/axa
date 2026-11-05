@@ -3,23 +3,23 @@
 //! From the outside in: request id, tracing, panic catching, security
 //! headers, CORS, timeout, compression, body limit.
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use axum::{
     Router,
-    extract::{DefaultBodyLimit, Request},
+    extract::{DefaultBodyLimit, Request, State},
     http::{HeaderName, HeaderValue, Method, StatusCode, header},
-    middleware::{Next, from_fn},
-    response::Response,
+    middleware::{Next, from_fn, from_fn_with_state},
+    response::{IntoResponse, Response},
 };
 use tower_http::{
     catch_panic::CatchPanicLayer,
     compression::CompressionLayer,
     cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
     set_header::SetResponseHeaderLayer,
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
+    trace::{DefaultOnResponse, TraceLayer},
 };
+use tracing::Level;
 use uuid::Uuid;
 
 use crate::{Error, Result, config::Http};
@@ -93,6 +93,61 @@ pub fn cors(origins: &[String]) -> Result<Option<CorsLayer>> {
     ))
 }
 
+/// The tracing span for a request, so every log line written while serving it
+/// carries its request id. It records the path and not the query string,
+/// because a query string can hold personal data.
+fn request_span(request: &Request) -> tracing::Span {
+    let request_id = request
+        .extensions()
+        .get::<RequestId>()
+        .map_or("", |id| id.0.as_str());
+    tracing::info_span!(
+        "http-request",
+        method = %request.method(),
+        path = %request.uri().path(),
+        request_id = %request_id,
+    )
+}
+
+/// A body limit for one route, replacing the service-wide limit there.
+///
+/// Keep the service-wide limit small and raise it only on the routes that need
+/// it, rather than accepting large bodies everywhere:
+///
+/// ```
+/// use axa::middleware::body_limit;
+/// use axum::routing::{MethodRouter, post};
+///
+/// async fn upload() {}
+///
+/// let route: MethodRouter = post(upload).layer(body_limit(70_000_000));
+/// ```
+pub fn body_limit(bytes: usize) -> DefaultBodyLimit {
+    DefaultBodyLimit::max(bytes)
+}
+
+/// The timeout for `path`, or `None` for no timeout.
+fn timeout_for(config: &Http, path: &str) -> Option<Duration> {
+    let path = path.trim_end_matches('/');
+    let seconds = config
+        .timeout_overrides
+        .iter()
+        .find(|timeout| path.ends_with(&timeout.path_suffix))
+        .map_or(config.timeout_seconds, |timeout| timeout.seconds);
+    (seconds > 0).then(|| Duration::from_secs(seconds))
+}
+
+/// Answer `408` when a request runs past its timeout.
+async fn timeout(State(config): State<Arc<Http>>, request: Request, next: Next) -> Response {
+    let Some(limit) = timeout_for(&config, request.uri().path()) else {
+        return next.run(request).await;
+    };
+    match tokio::time::timeout(limit, next.run(request)).await {
+        Ok(response) => response,
+        Err(_) => StatusCode::REQUEST_TIMEOUT.into_response(),
+    }
+}
+
 fn set_default_header(
     name: HeaderName,
     value: &'static str,
@@ -110,11 +165,8 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     if config.compression {
         router = router.layer(CompressionLayer::new());
     }
-    if config.timeout_seconds > 0 {
-        router = router.layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(config.timeout_seconds),
-        ));
+    if config.timeout_seconds > 0 || !config.timeout_overrides.is_empty() {
+        router = router.layer(from_fn_with_state(Arc::new(config.clone()), timeout));
     }
     if let Some(layer) = cors(&config.cors_origins)? {
         router = router.layer(layer);
@@ -133,7 +185,11 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         .layer(set_default_header(header::X_FRAME_OPTIONS, "DENY"))
         .layer(set_default_header(header::REFERRER_POLICY, "no-referrer"))
         .layer(CatchPanicLayer::new())
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(|request: &Request| request_span(request))
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
         .layer(from_fn(request_id)))
 }
 
@@ -148,6 +204,7 @@ mod tests {
             body_limit: 16,
             compression: false,
             timeout_seconds: 0,
+            timeout_overrides: Vec::new(),
             cors_origins: Vec::new(),
             hsts: true,
         }
@@ -196,6 +253,140 @@ mod tests {
         assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
         assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
         assert!(headers.contains_key(header::STRICT_TRANSPORT_SECURITY));
+    }
+
+    #[tokio::test]
+    async fn security_headers_do_not_replace_a_handlers_own() {
+        let router = Router::new().route(
+            "/",
+            get(|| async { ([(header::REFERRER_POLICY, "same-origin")], "ok") }),
+        );
+        let app = apply(router, &config()).unwrap();
+        let response = app.oneshot(get_request("/")).await.unwrap();
+        assert_eq!(response.headers()[header::REFERRER_POLICY], "same-origin");
+        let response = app_with_defaults().await;
+        assert_eq!(response.headers()[header::REFERRER_POLICY], "no-referrer");
+    }
+
+    async fn app_with_defaults() -> Response {
+        app().oneshot(get_request("/")).await.unwrap()
+    }
+
+    fn slow_app(config: &Http) -> Router {
+        let router = Router::new()
+            .route(
+                "/slow",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    "ok"
+                }),
+            )
+            .route(
+                "/import",
+                get(|| async {
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                    "ok"
+                }),
+            );
+        apply(router, config).unwrap()
+    }
+
+    fn with_timeout(seconds: u64) -> Http {
+        Http {
+            timeout_seconds: seconds,
+            ..config()
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_request_past_its_timeout_is_a_408() {
+        let response = slow_app(&with_timeout(1))
+            .oneshot(get_request("/slow"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+    }
+
+    #[test]
+    fn a_trailing_slash_still_matches_an_override() {
+        let config = Http {
+            timeout_overrides: vec![crate::config::TimeoutOverride {
+                path_suffix: "/import".to_string(),
+                seconds: 30,
+            }],
+            ..with_timeout(1)
+        };
+        assert_eq!(
+            timeout_for(&config, "/api/x/import/"),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(timeout_for(&config, "/api/x"), Some(Duration::from_secs(1)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_zero_timeout_means_none() {
+        let response = slow_app(&with_timeout(0))
+            .oneshot(get_request("/slow"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_route_can_have_a_longer_timeout() {
+        let config = Http {
+            timeout_overrides: vec![crate::config::TimeoutOverride {
+                path_suffix: "/import".to_string(),
+                seconds: 30,
+            }],
+            ..with_timeout(1)
+        };
+        let app = slow_app(&config);
+        let response = app.clone().oneshot(get_request("/import")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = app.oneshot(get_request("/slow")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_override_can_turn_the_timeout_off() {
+        let config = Http {
+            timeout_overrides: vec![crate::config::TimeoutOverride {
+                path_suffix: "/import".to_string(),
+                seconds: 0,
+            }],
+            ..with_timeout(1)
+        };
+        let response = slow_app(&config)
+            .oneshot(get_request("/import"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn one_route_can_accept_a_larger_body() {
+        let router = Router::new()
+            .route(
+                "/small",
+                axum::routing::post(|body: String| async move { body }),
+            )
+            .route(
+                "/large",
+                axum::routing::post(|body: String| async move { body }).layer(body_limit(64)),
+            );
+        let app = apply(router, &config()).unwrap();
+        let post = |path: &str| {
+            http::Request::builder()
+                .method("POST")
+                .uri(path)
+                .body(Body::from(vec![b'a'; 32]))
+                .unwrap()
+        };
+        let response = app.clone().oneshot(post("/large")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let response = app.oneshot(post("/small")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 
     #[tokio::test]
