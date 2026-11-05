@@ -27,6 +27,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- CI audits dependencies with `cargo audit` and `cargo deny`, workflows with
+  `zizmor`, and the whole history with `gitleaks`. Actions are pinned to a commit
+  and service images to a digest.
 - `queue::enqueue_on`, which queues a job on the caller's transaction.
 - `BackgroundWorker::max_attempts`, a worker's own limit on tries.
 - `HSTS_MAX_AGE_SECONDS` and `HTTP_CSP`.

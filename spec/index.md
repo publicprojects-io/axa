@@ -322,6 +322,17 @@ AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --tes
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
 ```
 
+Separate jobs check what the code is built from. Actions are pinned to a commit
+and images to a digest, and these must pass too:
+
+```sh
+cargo audit
+cargo deny --all-features check advisories bans licenses sources
+zizmor --offline .github
+gitleaks detect --source . --redact --no-banner
+```
+
+
 Subcrates publish before `axa`, because it depends on them by version.
 `axa-environment` has no dependencies, so it can go first.
 
