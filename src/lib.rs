@@ -45,8 +45,10 @@
 //! |---|---|
 //! | `queue` | The Postgres job queue in [`queue`] |
 //! | `testing` | Request-level test helpers in [`testing`] |
-//! | `sea-orm` | SeaORM-backed [`AppContext`], `model`, and `schema`. Transitional: it goes once the last service has moved to sqlx |
+//! | `sea-orm` | A SeaORM-backed [`AppContext`], with `axa-seaorm` as `axa::seaorm` |
+//! | `redis` | A Redis cache with mandatory expiry, as `axa::redis` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
+//! | `openapi` | `OpenAPI` documents and a pinned Swagger UI, as `axa::openapi` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | RFC 9457 problem details, as `axa::problem` |
@@ -75,14 +77,10 @@ pub mod format;
 pub mod health;
 pub mod logger;
 pub mod middleware;
-#[cfg(feature = "sea-orm")]
-pub mod model;
 pub mod prelude;
 #[cfg(feature = "queue")]
 pub mod queue;
 pub mod routes;
-#[cfg(feature = "sea-orm")]
-pub mod schema;
 pub mod server;
 pub mod store;
 pub mod task;
@@ -90,6 +88,8 @@ pub mod task;
 pub mod testing;
 pub mod worker;
 
+#[cfg(feature = "openapi")]
+pub use axa_openapi as openapi;
 #[cfg(feature = "pagination")]
 pub use axa_pagination as pagination;
 #[cfg(feature = "paseto")]
@@ -98,6 +98,12 @@ pub use axa_paseto as paseto;
 pub use axa_problem as problem;
 #[cfg(feature = "prometheus")]
 pub use axa_prometheus as prometheus;
+#[cfg(feature = "redis")]
+pub use axa_redis as redis;
+#[cfg(feature = "sea-orm")]
+pub use axa_seaorm as seaorm;
+#[cfg(feature = "sea-orm")]
+pub use axa_seaorm::{model, query, schema, validation};
 #[cfg(feature = "sqlx")]
 pub use axa_sqlx as sqlx;
 #[cfg(feature = "versioning")]

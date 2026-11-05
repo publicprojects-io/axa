@@ -10,6 +10,9 @@ pub enum ModelError {
     /// The row does not exist. Becomes `404`.
     #[error("Entity not found")]
     EntityNotFound,
+    /// The model failed validation. Becomes `400`.
+    #[error(transparent)]
+    Validation(#[from] crate::validation::ModelValidationErrors),
     /// A database failure.
     #[error(transparent)]
     DbErr(#[from] sea_orm::DbErr),

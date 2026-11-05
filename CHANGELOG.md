@@ -9,6 +9,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `axa-paseto`, for PASETO bearer authentication and ABAC enforcement, behind the
   `paseto` feature. Signature checks stay in `authentication-verifier`.
+- `axa-redis`, a Redis cache with mandatory expiry, behind the `redis` feature.
+- `axa-openapi`, for OpenAPI documents and a Swagger UI pinned to one exact
+  version with integrity hashes, behind the `openapi` feature.
+- `axa-seaorm`, behind the `sea-orm` feature, which also holds the code formerly
+  in `axa::model` and `axa::schema`. Those paths still work. It adds Loco's
+  `query::condition()` and `Validatable`, so moving from Loco needs less rewriting.
+- A guide to moving SeaORM code from Loco.
 
 ## [0.1.0] - 2026-11-05
 

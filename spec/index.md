@@ -30,7 +30,7 @@ fixed once and an auditor reads it once.
 - The shared command line, tasks, and background jobs
 - A Postgres job queue
 - Request-level test helpers
-- Transitional SeaORM support
+- SeaORM support, for projects leaving Loco
 
 ### Out of scope
 
@@ -192,16 +192,17 @@ safe to repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
 | SRV-2 | `SIGTERM` and Ctrl-C stop the server and let in-flight requests finish. | **unverified** in this crate; seen on `case-folder`'s real binary |
 
-### 4.12 Transitional SeaORM support
+### 4.12 SeaORM support
 
-The `sea-orm` feature exists only until the last service has moved to sqlx,
-and goes with it.
+`axa-seaorm` lets a project keep SeaORM while it leaves Loco. It stays available
+after the Main X Index services move to sqlx, for other projects making the same
+move.
 
 | Id | Requirement | Test |
 |---|---|---|
 | SEA-1 | Table names are pluralised snake case. | `table_names_are_pluralised_snake_case` |
-| SEA-2 | `create_table` adds `created_at` and `updated_at` with a `now()` default. | **unverified** in this crate; exercised by consuming services' migrations |
-| SEA-3 | Foreign keys are named `fk-<table>-<column>-to-<parent>`, and a `?` suffix makes one optional. | **unverified** in this crate |
+| SEA-2 | `create_table` adds `created_at` and `updated_at`. | `schema_helpers_against_postgres` (the `now()` default is **unverified**) |
+| SEA-3 | Foreign keys are named `fk-<table>-<column>-to-<parent>`, and a `?` suffix makes one optional. | `schema_helpers_against_postgres` |
 
 ### 4.13 Subcrates
 
@@ -228,6 +229,18 @@ stated here and proved by their own tests.
 | PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
 | PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
 | PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
+| RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
+| RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
+| RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
+| RDS-4 | `axa-redis` | `get_or_load` loads once, and a failed load stores nothing. | `get_or_load_loads_once`, `a_failed_load_stores_nothing` |
+| RDS-5 | `axa-redis` | A Redis outage does not fail `get_or_load`. | **unverified** |
+| OAP-1 | `axa-openapi` | The document and the page are served at their paths. | `the_document_is_served_as_json`, `the_page_is_served_as_html` |
+| OAP-2 | `axa-openapi` | Swagger UI is one exact version, and every remote file carries an integrity hash. | `the_page_pins_an_exact_version_with_integrity_hashes` |
+| OAP-3 | `axa-openapi` | A title or URL cannot inject markup. | `the_title_cannot_inject_markup`, `the_spec_url_cannot_break_out_of_the_script` |
+| OAP-4 | `axa-openapi` | Bearer authentication is declared and required, keeping other components. | `bearer_auth_is_declared_and_required`, `bearer_auth_keeps_other_components` |
+| SOR-1 | `axa-seaorm` | Pool settings reach `SeaORM`. | `pool_settings_reach_the_options` |
+| SOR-2 | `axa-seaorm` | `query::condition()` builds the same conditions as Loco's, all of which must hold. | `eq_and_ne_compare_values`, `several_conditions_must_all_hold` |
+| SOR-3 | `axa-seaorm` | Validation failures keep Loco's compact JSON text, so snapshots do not change. | `the_database_error_is_compact_json` |
 | PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
 | PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
@@ -250,6 +263,8 @@ cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
+AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
 ```
 
 All must pass before a commit is pushed or a version is published. The feature
@@ -265,7 +280,6 @@ The rest of the suite runs under every set.
   is built, and no service uses it yet.
 - **`axa-opentelemetry`**, replacing the services' copies of OTLP export.
 - **`AppContext` on a sqlx pool**, so a service can leave SeaORM.
-- **Removing the `sea-orm` feature**, once services have moved to sqlx.
 
 ## 7. Open questions
 

@@ -28,6 +28,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - run: rustup toolchain install 1.97 --profile minimal --component rustfmt,clippy
@@ -68,3 +77,9 @@ jobs:
         run: |
           cargo test --features queue,testing -- --ignored
           cargo test -p axa-sqlx -- --ignored --test-threads=1
+          cargo test -p axa-seaorm -- --ignored --test-threads=1
+
+      - name: Redis tests
+        env:
+          AXA_TEST_REDIS_URL: redis://localhost:6379
+        run: cargo test -p axa-redis -- --ignored

@@ -54,7 +54,9 @@ axa = "0.1"
 |---|---|
 | `queue` | The Postgres job queue |
 | `testing` | Request-level test helpers, built on `axum-test` |
-| `sea-orm` | A SeaORM-backed `AppContext`, migration helpers, and model errors. Transitional: it goes once the last service has moved to sqlx |
+| `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
+| `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
+| `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents and a pinned Swagger UI |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet |
@@ -360,7 +362,8 @@ carries a spec edit, a code edit, and a test edit together.
 ## Relationship to Loco
 
 To move a project across, follow
-[Converting a project from Loco to axa](help/from-loco-into-axa/index.md).
+[Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and
+for the database, [Moving SeaORM code from Loco to axa](help/from-loco-seaorm-into-axa-seaorm/index.md).
 
 axa was extracted from what the Main X Index services relied on in
 [Loco](https://loco.rs) (Apache-2.0), and some differences are deliberate:

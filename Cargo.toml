@@ -34,34 +34,36 @@ include = [
 
 [features]
 default = []
-# Transitional: SeaORM-backed `AppContext`, `ModelError`, and the migration
-# schema helpers. Removed once the last service has moved to sqlx.
-sea-orm = ["dep:sea-orm", "dep:sea-orm-migration", "dep:cruet", "dep:heck"]
+# A SeaORM-backed `AppContext`, plus `axa-seaorm`.
+sea-orm = ["dep:sea-orm", "dep:axa-seaorm"]
 # The Postgres job queue (`FOR UPDATE SKIP LOCKED`).
 queue = ["dep:sqlx"]
 # Test helpers built on `axum-test`, for request-level tests.
 testing = ["dep:axum-test"]
 # Each of these re-exports a subcrate under the same name.
+openapi = ["dep:axa-openapi"]
 pagination = ["dep:axa-pagination"]
 paseto = ["dep:axa-paseto"]
 problem = ["dep:axa-problem"]
 prometheus = ["dep:axa-prometheus"]
+redis = ["dep:axa-redis"]
 sqlx = ["dep:axa-sqlx"]
 versioning = ["dep:axa-versioning"]
 
 [dependencies]
+axa-openapi = { version = "0.1.0", path = "crates/axa-openapi", optional = true }
 axa-pagination = { version = "0.1.0", path = "crates/axa-pagination", optional = true }
 axa-paseto = { version = "0.1.0", path = "crates/axa-paseto", optional = true }
 axa-problem = { version = "0.1.0", path = "crates/axa-problem", optional = true }
 axa-prometheus = { version = "0.1.0", path = "crates/axa-prometheus", optional = true }
+axa-redis = { version = "0.1.0", path = "crates/axa-redis", optional = true }
+axa-seaorm = { version = "0.1.0", path = "crates/axa-seaorm", optional = true }
 axa-sqlx = { version = "0.1.0", path = "crates/axa-sqlx", optional = true }
 axa-versioning = { version = "0.1.0", path = "crates/axa-versioning", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }
-cruet = { version = "0.15", optional = true }
-heck = { version = "0.5", optional = true }
-serde = { version = "1", features = ["derive"] }
+serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time"] }
@@ -72,7 +74,6 @@ uuid = { version = "1", features = ["v4"] }
 
 axum-test = { version = "21", optional = true }
 sea-orm = { version = "2.0", default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls"], optional = true }
-sea-orm-migration = { version = "2.0", default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls"], optional = true }
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid", "chrono"], optional = true }
 
 [dev-dependencies]

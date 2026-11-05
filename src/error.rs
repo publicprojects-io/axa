@@ -190,6 +190,15 @@ impl IntoResponse for Error {
                 StatusCode::CONFLICT,
                 ErrorDetail::new("conflict", "Resource already exists"),
             ),
+            #[cfg(feature = "sea-orm")]
+            Self::Model(crate::model::ModelError::Validation(errors)) => (
+                StatusCode::BAD_REQUEST,
+                ErrorDetail {
+                    error: None,
+                    description: None,
+                    errors: Some(serde_json::to_value(&errors.errors).unwrap_or_default()),
+                },
+            ),
             // Spelled out rather than `_` so a new variant has to choose.
             Self::Message(_)
             | Self::InternalServerError

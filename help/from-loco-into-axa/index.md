@@ -18,6 +18,9 @@ after conversion you must be able to say whether you caused it.
 conversions, four services had every unit test passing and 13 failures between
 them on real Postgres.
 
+**Moving SeaORM code?** [Moving SeaORM code from Loco to axa](../from-loco-seaorm-into-axa-seaorm/index.md)
+covers the database half in detail.
+
 **Convert one service first**, ideally the one with the least database code.
 Keep SeaORM for now by using axa's `sea-orm` feature, so this change is only about
 Loco. Moving from SeaORM to sqlx is a separate change.
@@ -40,8 +43,8 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 | `cargo loco start` | `cargo run -- start` |
 | `Mailer` | Use [`lettre`](https://docs.rs/lettre) directly |
 | `hash::hash_password` | Use [`argon2`](https://docs.rs/argon2) directly |
-| `model::query::condition()` | SeaORM's own `Column::X.eq(value)` |
-| `Validatable` | Call [`validator`](https://docs.rs/validator) yourself |
+| `model::query::condition()` | The same, as `axa::query::condition()` |
+| `Validatable` | The same, as `axa::validation::Validatable` |
 | `Authenticable` | Plain methods on your model |
 | `cli::playground` | Delete it |
 

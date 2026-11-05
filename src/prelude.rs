@@ -16,8 +16,6 @@ pub use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 
-#[cfg(feature = "sea-orm")]
-pub use crate::model::{ModelError, ModelResult};
 #[cfg(feature = "testing")]
 pub use crate::testing::prelude::*;
 pub use crate::{
@@ -28,4 +26,10 @@ pub use crate::{
     store::SharedStore,
     task::{self, Task, TaskInfo},
     worker::BackgroundWorker,
+};
+#[cfg(feature = "sea-orm")]
+pub use crate::{
+    model::{ModelError, ModelResult},
+    query,
+    validation::Validatable,
 };
