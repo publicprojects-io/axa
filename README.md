@@ -392,14 +392,18 @@ It needs no broker: Postgres `FOR UPDATE SKIP LOCKED` lets each worker loop clai
 the oldest ready job in one statement, so no two loops ever claim the same row.
 
 A job moves from `queued` to `running` to `completed` or `failed`, keeping its
-error text on the row. A job still `running` after `stale_minutes` is assumed
-lost with its worker.
+error text on the row. A running job reports in every `heartbeat_interval`, so it
+can take as long as it needs, and one not heard from for `stale_minutes` is assumed
+lost with its worker. A job that panics fails, and its loop carries on.
 
 A job gets one attempt by default, because a retry repeats its work. Raise
-`max_attempts` for jobs written to be repeated, and each retry then waits twice
-as long as the last. A job lost with its worker is queued again if it has attempts
-left and otherwise fails, so a crash cannot loop forever. Finished rows are deleted
-after `retention_days`.
+`max_attempts` for the queue, or override `BackgroundWorker::max_attempts` for jobs
+written to be repeated, and each retry then waits twice as long as the last. A job
+lost with its worker is queued again if it has attempts left and otherwise fails,
+so a crash cannot loop forever. Finished rows are deleted after `retention_days`.
+
+`queue::enqueue_on` queues a job on the caller's sqlx transaction, so the job and
+the record it is about commit together. `Queue::enqueue` uses its own connection.
 
 **Nothing runs jobs by itself.** A service needs `start --all` or a separate
 `start --worker`, and `queue::warn_if_unserved` says so at boot. Queue arguments

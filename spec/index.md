@@ -208,13 +208,17 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | QUE-2 | A failed job keeps its error text on the row and does not stop the loop. | `queue_behaviour_against_postgres` |
 | QUE-3 | Arguments that do not parse fail the job and do not panic. | `queue_behaviour_against_postgres` |
 | QUE-4 | A job with no handler stays queued for a worker that has one. | `queue_behaviour_against_postgres` |
-| QUE-5 | A job running longer than `stale_minutes` is queued again if it has attempts left, and otherwise fails, so a crash cannot loop forever. | `a_stale_job_with_attempts_left_runs_again`, `a_job_that_keeps_killing_workers_ends_as_failed` |
+| QUE-5 | A job not heard from for `stale_minutes` is queued again if it has attempts left, and otherwise fails, so a crash cannot loop forever. | `a_stale_job_with_attempts_left_runs_again`, `a_job_that_keeps_killing_workers_ends_as_failed` |
 | QUE-6 | Services booting together all connect. Table setup runs under an advisory lock, because `CREATE ... IF NOT EXISTS` is not safe against itself. | `services_booting_together_all_connect` |
-| QUE-7 | Jobs in progress finish before shutdown. | **unverified** directly; `queue_behaviour_against_postgres` shows the loops stop with nothing left running |
-| QUE-8 | A failed job gets `max_attempts` tries, waiting longer each time. The default is one. | `a_failing_job_retries_up_to_its_limit`, `a_retry_waits_for_its_backoff`, `by_default_a_failed_job_is_not_repeated`, `each_retry_waits_twice_as_long_up_to_a_limit` |
+| QUE-7 | Jobs in progress finish before shutdown. | `a_job_in_progress_finishes_before_shutdown` |
+| QUE-8 | A failed job gets `max_attempts` tries, waiting longer each time. The default is one. A worker may set its own limit, which also applies to a lost job. | `a_failing_job_retries_up_to_its_limit`, `a_retry_waits_for_its_backoff`, `by_default_a_failed_job_is_not_repeated`, `each_retry_waits_twice_as_long_up_to_a_limit` |, `a_worker_can_allow_more_tries_than_the_queue`, `a_lost_job_uses_its_workers_limit_too` |
 | QUE-9 | Finished rows are deleted after `retention_days`, and nothing else is. | `old_finished_rows_are_deleted_and_nothing_else` |
 | QUE-10 | A service with a queue and no worker is warned at boot. | `a_service_with_a_queue_and_no_worker_is_warned`, `a_service_without_a_queue_gets_no_worker_warning` |
-| QUE-11 | A table created by 0.1.0 gains the `attempts` column. | `the_attempts_column_is_added_to_an_older_table` |
+| QUE-11 | A table created by 0.1.0 gains the `attempts` and `max_attempts` columns. | `the_attempts_column_is_added_to_an_older_table`, `the_max_attempts_column_is_added_to_an_older_table` |
+| QUE-12 | A job that panics counts as failed, and its loop carries on. | `a_job_that_panics_fails_and_its_loop_carries_on` |
+| QUE-13 | A running job reports in, so it can run past `stale_minutes` without being taken for lost. | `a_long_job_that_reports_in_is_not_taken_for_lost` |
+| QUE-14 | A run that was given up on cannot overwrite the job's later state. | `a_job_given_up_on_cannot_overwrite_its_replacement` |
+| QUE-15 | A job queued on a transaction commits or rolls back with it. | `a_job_queued_in_a_transaction_rolls_back_with_it` |
 
 ### 4.11 Store, logging, and server
 

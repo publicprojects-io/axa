@@ -5,6 +5,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A job that panics now fails, and its worker loop carries on. It used to end the
+  loop for good, leaving the job `running`.
+- A long job is no longer taken for lost while it runs: it reports in every
+  `heartbeat_interval`, and `stale_minutes` now measures silence, not running
+  time. A run that was given up on can no longer overwrite the job's later state.
+
 ### Changed
 
 - **Production now sends `content-security-policy: default-src 'none'; frame-ancestors 'none'`.**
@@ -13,6 +21,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `queue::enqueue_on`, which queues a job on the caller's transaction.
+- `BackgroundWorker::max_attempts`, a worker's own limit on tries.
 - `HSTS_MAX_AGE_SECONDS` and `HTTP_CSP`.
 - In `axa-openapi`: `drift` and `dangling_refs` check a document against what
   `AppRoutes::mounted` lists, and the Swagger UI page sets its own

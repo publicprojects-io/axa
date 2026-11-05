@@ -47,7 +47,9 @@ where
         Self: Sized + 'static,
     {
         match ctx.config.workers {
-            WorkerMode::BackgroundQueue => enqueue::<A>(ctx, &Self::class_name(), &args).await,
+            WorkerMode::BackgroundQueue => {
+                enqueue::<A>(ctx, &Self::class_name(), Self::max_attempts(), &args).await
+            }
             WorkerMode::ForegroundBlocking => {
                 Self::build(ctx).perform(args).await?;
                 Ok(Uuid::new_v4().to_string())
@@ -64,24 +66,47 @@ where
         }
     }
 
+    /// Tries a job of this worker gets with the queue, including the first.
+    /// `None` uses `QueueOptions::max_attempts`. Set it only for work that is
+    /// safe to repeat.
+    #[must_use]
+    fn max_attempts() -> Option<i32>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
     /// The job's work.
     async fn perform(&self, args: A) -> Result<()>;
 }
 
 /// Add a job to the context's queue.
 #[cfg(feature = "queue")]
-async fn enqueue<A: Serialize + Sync>(ctx: &AppContext, name: &str, args: &A) -> Result<String> {
+async fn enqueue<A: Serialize + Sync>(
+    ctx: &AppContext,
+    name: &str,
+    max_attempts: Option<i32>,
+    args: &A,
+) -> Result<String> {
     let queue = ctx
         .queue_provider
         .as_ref()
         .ok_or_else(|| Error::Worker("no job queue configured".to_string()))?;
-    queue.enqueue(name, serde_json::to_value(args)?).await
+    queue
+        .enqueue_limited(name, serde_json::to_value(args)?, max_attempts)
+        .await
 }
 
 /// Without the `queue` feature there is nowhere to put a job.
 #[cfg(not(feature = "queue"))]
 #[allow(clippy::unused_async)]
-async fn enqueue<A: Serialize + Sync>(_ctx: &AppContext, _name: &str, _args: &A) -> Result<String> {
+async fn enqueue<A: Serialize + Sync>(
+    _ctx: &AppContext,
+    _name: &str,
+    _max_attempts: Option<i32>,
+    _args: &A,
+) -> Result<String> {
     Err(Error::Worker("no job queue configured".to_string()))
 }
 
