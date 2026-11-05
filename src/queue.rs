@@ -231,6 +231,20 @@ impl Queue {
         Ok(id.to_string())
     }
 
+    /// A queue on a pool nothing listens to, for testing what depends on it.
+    #[cfg(all(test, not(feature = "sea-orm")))]
+    pub(crate) fn unreachable() -> Self {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
+            .unwrap();
+        Self {
+            pool,
+            handlers: HashMap::new(),
+            options: QueueOptions::default(),
+        }
+    }
+
     /// Check the database connection.
     ///
     /// # Errors

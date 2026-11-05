@@ -41,6 +41,7 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 | `loco_rs::schema` | `axa::schema` |
 | `request::<App, _, _>` | The same, from `axa::testing::prelude` |
 | `cargo loco start` | `cargo run -- start` |
+| `cargo loco doctor` | `cargo run -- check`, which reads the settings and connects to nothing |
 | `Mailer` | Use [`lettre`](https://docs.rs/lettre) directly |
 | `hash::hash_password` | Use [`argon2`](https://docs.rs/argon2) directly |
 | `model::query::condition()` | The same, as `axa::query::condition()` |
@@ -132,6 +133,14 @@ use axa::{
 };
 use migration::{Migrator, MigratorTrait};
 
+/// `reset` and `truncate` destroy data, so they stay away from anything real.
+fn refuse_outside_development(environment: &Environment) -> Result<()> {
+    if matches!(environment, Environment::Development | Environment::Test) {
+        return Ok(());
+    }
+    Err(Error::string("refused outside development and test"))
+}
+
 fn defaults() -> Defaults {
     Defaults {
         database: "my_service",
@@ -157,9 +166,15 @@ impl App {
         match command {
             DbCommand::Migrate => Migrator::up(&ctx.db, None).await?,
             DbCommand::Down { steps } => Migrator::down(&ctx.db, Some(steps)).await?,
-            DbCommand::Reset => Migrator::fresh(&ctx.db).await?,
+            DbCommand::Reset => {
+                refuse_outside_development(&ctx.environment)?;
+                Migrator::fresh(&ctx.db).await?;
+            }
             DbCommand::Status => Migrator::status(&ctx.db).await?,
-            DbCommand::Truncate => Self::truncate(ctx).await?,
+            DbCommand::Truncate => {
+                refuse_outside_development(&ctx.environment)?;
+                Self::truncate(ctx).await?;
+            }
         }
         Ok(())
     }
@@ -169,15 +184,12 @@ impl App {
             .environment
             .as_deref()
             .map_or_else(Environment::from_env, Environment::parse);
-        let mut config = ServiceConfig::from_env(&environment, &defaults())?;
-        if let Command::Start { binding, port, .. } = &cli.command {
-            if let Some(binding) = binding {
-                config.server.binding.clone_from(binding);
-            }
-            if let Some(port) = port {
-                config.server.port = *port;
-            }
+        // Before anything connects, so it works with the database down.
+        if matches!(cli.command, Command::Check) {
+            return axa::cli::check(&environment, &defaults());
         }
+        let mut config = ServiceConfig::from_env(&environment, &defaults())?;
+        config.apply_cli(&cli);
         let ctx = Self::context(environment, config).await?;
         axa::logger::init(env!("CARGO_CRATE_NAME"), &ctx.config.logger);
         if ctx.config.database.auto_migrate && !matches!(cli.command, Command::Db { .. }) {
@@ -200,10 +212,20 @@ impl App {
                 };
                 tasks.run(&name, &ctx, &parse_vars(&params)?).await
             }
+            Command::Check => Ok(()), // Answered above.
         }
     }
 }
 ```
+
+**`DbCommand::Reset` drops every table.** `Migrator::fresh` does not pass through
+any migration's `down`, so a guard you wrote in a `down` does not run, and neither
+does anything that refuses to drop protected data. Loco had no guard here either.
+The sample above refuses `reset` and `truncate` outside development and test. A
+service with protected data should go further and ask for it by name as well, so a
+stray `db reset` on a laptop pointed at a shared database cannot run. One of our
+services requires a named environment variable as well as the environment. If
+`reset` has no place in your service, make it an error.
 
 If you keep the Loco ports, set them in `Defaults`. Otherwise you get axa's
 default, 1241, and any proxy or healthcheck pointing at the old port breaks.
@@ -267,7 +289,15 @@ now live somewhere:
 | `dangerously_recreate: true` | **See below** |
 
 Update your `Dockerfile` too: remove `COPY ... config`, and set `APP_ENV` in place
-of `LOCO_ENV`.
+of `LOCO_ENV`. A release build with neither set is production.
+
+**Check your settings for typos.** axa refuses a production boot on a setting that
+is set and invalid, such as `HTTP_HSTS=tru`. Run `cargo run -- check` with your real variables. It prints what
+each setting came to, with secrets hidden, and fails on what a boot would refuse.
+
+**Tests that read `config/`.** A census or documentation test that walks `config/`
+breaks once it is gone. Ours failed, which is the good case: a test that loops over
+whatever a glob finds passes with nothing to check. Search your tests for `config/`.
 
 Check your production limits. Any `body_limit` other than the 2 MB default has to
 move to `Defaults`, or large uploads start failing.
@@ -303,10 +333,19 @@ impl TestApp for App {
 Getting this wrong leaves rows behind between tests, which shows up as confusing
 count mismatches.
 
+`Migrator::fresh` here runs against whatever `DATABASE_URL` the tests see, and it
+drops every table, so do not leave that variable pointing at a real database.
+
 Change a `loco_rs::{TestServer, app::AppContext}` import to
-`axa::{AppContext, TestServer}`. Tests that read `routes.prefix` or
-`routes.handlers` keep working, because those fields stay public, with `prefix`
-still an `Option<String>`.
+`axa::{AppContext, TestServer}`.
+
+Tests that read `routes.prefix` or `routes.handlers` keep working, because those
+fields stay public, with `prefix` still an `Option<String>`. But `.actions` on a
+handler and `.collect()` on `AppRoutes` are gone, and those tests break. Use
+`AppRoutes::mounted()`, or `Routes::mounted()` for one group, which give every route
+as `(method, full path)`, with the prefix joined on. `Handler::methods()` gives one
+handler's methods. A `HEAD` that comes with `GET` is left out, and a handler for
+every method shows as `ANY`.
 
 Loco's `seed::<App>` loaded YAML fixtures. Write a small helper instead, and use
 `Entity::insert(model).exec(db)`. Calling `.insert(db)` on the `ActiveModel` runs
@@ -342,7 +381,26 @@ Then run it from `Command::Start`, with `tokio::spawn(queue.run(shutdown))`.
 
 Jobs queued in `pg_loco_queue` are not moved. Drain that table before you deploy.
 
-### 9. Migrations
+### 9. Readiness
+
+`/_readiness` asks the database with the `sea-orm` feature, and the queue when
+there is one. Anything else your service needs goes in as a named check, set in
+`App::context` before building the routes:
+
+```rust,ignore
+ctx.health_checks = axa::health::Checks::new().add("search", move || {
+    let client = client.clone();
+    async move { client.ping().await }
+});
+```
+
+**Moving on to sqlx?** `AppContext::db` is then `()`, and readiness checks no
+database until you add your pool as a check, using `axa::sqlx::ping`.
+
+The answer is reused for 5 seconds and a failure names the check, not its error, so
+an orchestrator polling faster than that sees the same answer.
+
+### 10. Migrations
 
 Files using `loco_rs::schema` need only the import changed. axa's helpers cover
 the column types our services used, so you may see a missing `ColType` variant.
@@ -381,6 +439,16 @@ asks again.
 `CorsLayer::permissive()` of your own as well. A browser client calling the API
 directly from another origin needs its origin listed.
 
+**A stale advisory ignore.** A `deny.toml` that ignores an advisory in one of
+Loco's dependencies no longer applies once they go. Delete it. Left in, it does
+nothing today, and it hides that advisory if the crate ever comes back through
+something else.
+
+**The default local database.** Any script or test that relied on the local
+`postgres://loco:loco@localhost:5432/...` must set `DATABASE_URL`, because the
+default user is now `postgres`. It fails to connect, so you will see this one, but
+only where that default was in use.
+
 **A partial commit.** If you delete `config/` with `git rm` while converting several
 services, a plain `git commit` includes those staged deletions for services you
 have not finished. Commit with explicit paths.
@@ -390,12 +458,15 @@ have not finished. Commit with explicit paths.
 | Change | Effect |
 |---|---|
 | CORS | Off in production unless origins are listed |
-| Request timeout | 60 seconds in production. Raise `REQUEST_TIMEOUT_SECONDS` for slow endpoints |
+| Request timeout | 60 seconds in production. Raise `REQUEST_TIMEOUT_SECONDS`, or give a slow route its own limit with `Routes::add_with_timeout`, or a group with `Routes::timeout` |
 | Security headers | Added to every response |
 | HSTS | On in production |
 | `x-powered-by` | Gone |
 | Automatic `If-None-Match` comparison | Gone. A handler that sets its own `ETag` must also return its own `304` |
 | Missing `DATABASE_URL` in production | Refuses to boot |
+| Release build with no `APP_ENV` or `LOCO_ENV` | Production, not development, so it refuses to boot with no `DATABASE_URL`, and binds `0.0.0.0`. A debug build is still development. Set `APP_ENV` where you run a release build locally |
+| A setting set but invalid | Refuses to boot in production and any unknown environment, naming the variable. Warned about elsewhere |
+| Default local database | `postgres://postgres:postgres@localhost:5432/...`, not `loco:loco` |
 
 ## Checking your work
 
@@ -419,6 +490,7 @@ Run `cargo update` until `loco-rs` is gone from `Cargo.lock`.
 Finally, **start the real binary**, because tests do not cover this:
 
 ```sh
+APP_ENV=production cargo run -- check   # non-zero with no DATABASE_URL
 APP_ENV=production cargo run -- start   # refuses to boot with no DATABASE_URL
 curl -i localhost:<port>/_health
 ```

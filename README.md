@@ -55,6 +55,8 @@ axa = "0.1"
 | `queue` | The Postgres job queue |
 | `testing` | Request-level test helpers, built on `axum-test` |
 | `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
+| `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq` |
+| `tera` | [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors |
 | `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents and a pinned Swagger UI |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets |
@@ -63,6 +65,10 @@ axa = "0.1"
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |
 | `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation |
+
+`Environment` lives in [`axa-environment`](crates/axa-environment), which has no
+dependencies and is always included, so a migration crate can read the environment
+the same way without depending on `axa`.
 
 ## Quick start
 
@@ -141,6 +147,41 @@ let group = Routes::new().prefix("/api").add("/items", get(list));
 assert!(group.handlers.iter().any(|handler| handler.uri == "/items"));
 ```
 
+`AppRoutes::mounted` lists every route as `(method, full path)`, so a route census
+test can compare what is served with what is written down. A `HEAD` that comes with
+`GET` is left out, and a handler for every method shows as `ANY`. Axum keeps a
+router's methods private, so this reads its debug text, and a test fails if that
+text changes.
+
+```rust
+# use axa::prelude::*;
+# async fn list() -> &'static str { "[]" }
+let routes = AppRoutes::empty()
+    .add_route(Routes::new().prefix("/api").add("/items", get(list)));
+assert_eq!(
+    routes.mounted(),
+    [("GET".to_string(), "/api/items".to_string())]
+);
+```
+
+A route or group can state its own time limit where it is declared. It replaces
+`REQUEST_TIMEOUT_SECONDS` there, longer or shorter, and other routes are still cut
+off on time:
+
+```rust
+# use axa::prelude::*;
+use std::time::Duration;
+
+# async fn export() -> &'static str { "" }
+# async fn report() -> &'static str { "" }
+let reports = Routes::new()
+    .prefix("/api/reports")
+    .timeout(Duration::from_mins(2))
+    .add("/daily", get(report))
+    .add_with_timeout("/export", get(export), Duration::from_mins(10));
+# let _ = reports;
+```
+
 ### Middleware
 
 `AppRoutes::into_app` applies this stack, or call `middleware::apply` on any
@@ -153,7 +194,7 @@ router. From the outside in:
 | Panic catching | Turns a handler panic into a `500` |
 | Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
 | CORS | Off unless origins are configured |
-| Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Http::timeout_overrides` sets a longer one for a route such as an upload |
+| Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
 | Compression | Gzip, Brotli, and Zstd when enabled |
 | Body limit | Answers `413` over `BODY_LIMIT_BYTES`. `middleware::body_limit` raises it on one route |
 
@@ -185,7 +226,7 @@ place.
 
 | Variable | Effect |
 |---|---|
-| `APP_ENV` | `development`, `test`, or `production`. `LOCO_ENV` is also read. Any other name gets production's stricter behaviour |
+| `APP_ENV` | `development`, `test`, or `production`. `LOCO_ENV` is also read. Any other name gets production's stricter behaviour. With neither set, a debug build is development and a release build is production |
 | `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
 | `DATABASE_URL` | Connection string. Required in production for a service with a database |
 | `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
@@ -211,6 +252,16 @@ Defaults change with the environment:
 | Log format | Compact | Compact, off by default | JSON |
 | Jobs | Queue | In the foreground | Queue |
 
+A setting that is set but invalid, such as `HTTP_HSTS=tru`, is a mistake, and a
+silent default would hide it. In production and any unknown environment it stops
+the boot, and the error names the variable and its value. Elsewhere the default
+applies and `logger::init` prints a warning. A blank value counts as unset, which
+is what a compose file sends for an unset variable. Flags take `1`, `true`, `yes`,
+`on`, `0`, `false`, `no`, or `off`.
+
+In development and test, the local database is
+`postgres://postgres:postgres@localhost:5432/<name>_<environment>`.
+
 `Config::from_lookup` takes the lookup as a function, so configuration can be
 tested without touching the process environment:
 
@@ -231,7 +282,26 @@ assert_eq!(config.server.port, 8000);
 | Route | Meaning |
 |---|---|
 | `/_ping`, `/_health` | The process is up |
-| `/_readiness` | The database and queue also answer. `503` if not |
+| `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, with `{"ok":false,"failed":[...]}` |
+
+The route knows the database and queue only when axa holds them. Anything else,
+including a sqlx pool, is a named check, which is an ordinary async closure:
+
+```rust,ignore
+ctx.health_checks = Checks::new()
+    .add("database", move || {
+        let pool = pool.clone();
+        async move { axa::sqlx::ping(&pool).await }
+    })
+    .add("search", || async { search::ping().await });
+```
+
+The route is public, so a caller must not be able to drive load at a dependency.
+One answer, passing or failing, is reused for 5 seconds, and callers during a round
+of checks wait for it. A check gets 2 seconds, and past that it has failed. Change
+these with `Checks::reuse_for` and `Checks::time_limit`. The response carries the
+check's name and never its error text, which is only logged. Do not put an address
+in a name.
 
 ### Command line
 
@@ -241,7 +311,13 @@ assert_eq!(config.server.port, 8000);
 service start [--worker | --all] [--binding ADDR] [--port PORT]
 service db migrate | down [STEPS] | reset | status | truncate
 service task [NAME] [KEY:VALUE ...]
+service check
 ```
+
+`check` validates the configuration, prints the effective settings with passwords
+and other secrets redacted, and exits, non-zero if refused. It connects to nothing,
+and it knows only the settings axa reads. `Config::apply_cli` applies the `start`
+overrides.
 
 ### Tasks
 

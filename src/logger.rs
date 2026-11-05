@@ -33,13 +33,20 @@ impl LogLevel {
     /// Parse a level name, defaulting to `Info`.
     #[must_use]
     pub fn parse(name: &str) -> Self {
+        Self::from_name(name).unwrap_or(Self::Info)
+    }
+
+    /// The level with this name, if there is one.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
-            "off" => Self::Off,
-            "trace" => Self::Trace,
-            "debug" => Self::Debug,
-            "warn" => Self::Warn,
-            "error" => Self::Error,
-            _ => Self::Info,
+            "off" => Some(Self::Off),
+            "trace" => Some(Self::Trace),
+            "debug" => Some(Self::Debug),
+            "info" => Some(Self::Info),
+            "warn" => Some(Self::Warn),
+            "error" => Some(Self::Error),
+            _ => None,
         }
     }
 }
@@ -73,11 +80,28 @@ impl Format {
     /// Parse a format name, defaulting to `Compact`.
     #[must_use]
     pub fn parse(name: &str) -> Self {
+        Self::from_name(name).unwrap_or(Self::Compact)
+    }
+
+    /// The format with this name, if there is one.
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
         match name.trim().to_ascii_lowercase().as_str() {
-            "json" => Self::Json,
-            "pretty" => Self::Pretty,
-            _ => Self::Compact,
+            "compact" => Some(Self::Compact),
+            "json" => Some(Self::Json),
+            "pretty" => Some(Self::Pretty),
+            _ => None,
         }
+    }
+}
+
+impl fmt::Display for Format {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Compact => "compact",
+            Self::Pretty => "pretty",
+            Self::Json => "json",
+        })
     }
 }
 
@@ -132,7 +156,14 @@ where
 }
 
 /// Install plain stdout logging. A second call does nothing.
+///
+/// Settings are read before logging can start, so this also writes out
+/// [`Logger::warnings`]. They go to stderr, so that neither a log level nor
+/// `LOG_ENABLE=false` can hide them.
 pub fn init(app_name: &str, config: &Logger) {
+    for warning in &config.warnings {
+        eprintln!("warning: {warning}");
+    }
     if !config.enable {
         return;
     }
@@ -153,6 +184,7 @@ mod tests {
             assert_eq!(LogLevel::parse(name).to_string(), name);
         }
         assert_eq!(LogLevel::parse("nonsense"), LogLevel::Info);
+        assert_eq!(LogLevel::from_name("nonsense"), None);
     }
 
     #[test]
@@ -160,6 +192,10 @@ mod tests {
         assert_eq!(Format::parse("JSON"), Format::Json);
         assert_eq!(Format::parse("pretty"), Format::Pretty);
         assert_eq!(Format::parse("nonsense"), Format::Compact);
+        assert_eq!(Format::from_name("nonsense"), None);
+        for name in ["compact", "pretty", "json"] {
+            assert_eq!(Format::parse(name).to_string(), name);
+        }
     }
 
     #[test]

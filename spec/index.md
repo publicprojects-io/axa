@@ -65,9 +65,12 @@ fixed once and an auditor reads it once.
 
 | Id | Requirement | Test |
 |---|---|---|
-| ENV-1 | `APP_ENV` names the environment, then `LOCO_ENV`. When both are unset it is development. | **unverified** (reads the process environment) |
+| ENV-1 | `APP_ENV` names the environment, then `LOCO_ENV`. A blank value counts as unset. | `app_env_is_read_before_loco_env`, `a_blank_name_counts_as_unset` |
 | ENV-2 | `dev` and `prod` are accepted as short forms, in any case. | `parses_names_and_short_forms` |
 | ENV-3 | Any name other than development and test is production-like. | `unknown_environment_is_production_like` |
+| ENV-4 | With no name, a debug build is development and a release build is production, so a release binary started with no variables fails closed. The build is read from `cfg!(debug_assertions)`. | `a_debug_build_with_no_name_is_development`, `a_release_build_with_no_name_is_production`, `parsing_a_blank_name_follows_the_build`. The whole binary is **unverified** in CI: this was seen once by hand |
+| ENV-5 | A name means the same in every build. | `a_name_means_the_same_in_every_build` |
+| ENV-6 | The lookup lives in `axa-environment`, which has no dependencies, and `axa` re-exports it, so a migration's guard cannot read the environment in a different order from its service. It is the one subcrate that is not optional. | `this_crate_has_no_dependencies`, `axa_reads_the_environment_through_the_lighter_crate` |
 
 ### 4.2 Configuration
 
@@ -77,16 +80,22 @@ fixed once and an auditor reads it once.
 | CFG-2 | A service may set its own port, and a separate production port. | `production_port_applies_only_in_production` |
 | CFG-3 | Production with a database and no `DATABASE_URL` refuses to boot. | `production_refuses_to_boot_without_a_database_url` |
 | CFG-4 | A service with an empty `database` default needs no `DATABASE_URL`. | `a_service_with_no_database_boots_in_production_without_one` |
-| CFG-5 | Development and test get a local database named `<database>_<environment>`. | `development_and_test_get_a_local_database_named_for_the_environment` |
+| CFG-5 | Development and test get a local database named `<database>_<environment>`, as the user `postgres`. | `development_and_test_get_a_local_database_named_for_the_environment`, `the_local_database_user_names_no_framework` |
 | CFG-6 | Only the `test` environment sets `dangerously_truncate`. | `only_tests_ever_truncate` |
 | CFG-7 | Production does not migrate at boot by default. | `production_does_not_migrate_at_boot_by_default` |
 | CFG-8 | Production refuses `*` as a CORS origin. | `production_refuses_a_wildcard_cors_origin` |
 | CFG-9 | Production sends no CORS headers until origins are listed. | `production_sends_no_cors_headers_until_origins_are_listed` |
-| CFG-10 | An unparsable number falls back to its default. | `an_unparsable_number_falls_back_to_the_default` |
-| CFG-11 | `1`, `true`, `yes`, and `on` mean true, and any other set value means false. | `flags_accept_the_usual_spellings` |
+| CFG-10 | Outside production-like environments, an unparsable number keeps its default and raises a warning. | `an_unparsable_number_falls_back_to_the_default_with_a_warning` |
+| CFG-11 | `1`, `true`, `yes`, and `on` mean true, and `0`, `false`, `no`, and `off` mean false. Outside production-like environments, anything else keeps the default and raises a warning. | `flags_accept_the_usual_spellings`, `a_flag_it_does_not_know_keeps_its_default_with_a_warning` |
 | CFG-12 | The `test` environment runs jobs in the foreground unless `WORKER_MODE` says otherwise. | `tests_run_jobs_in_the_foreground` |
+| CFG-13 | A production-like environment refuses a number, flag, level, format, worker mode, or log filter that is set but invalid. | `production_refuses_an_unparsable_number`, `a_number_out_of_range_is_refused`, `production_refuses_a_flag_it_does_not_know`, `production_refuses_a_name_it_does_not_know`, `a_bad_log_filter_is_refused_and_never_reaches_the_logger` |
+| CFG-14 | The refusal names every invalid variable and its value, and never the value under a secret-shaped name. | `every_problem_is_named_at_once`, `an_invalid_value_under_a_secret_name_is_not_printed` |
+| CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DATABASE_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
+| CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production` (writing them to stderr was seen once by hand, and is **unverified** by a test) |
+| CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
+| CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
 
-The variables are listed in the `config` module's rustdoc.
+The variables are listed in `README.md`.
 
 ### 4.3 Routes
 
@@ -98,6 +107,8 @@ The variables are listed in the `config` module's rustdoc.
 | RTE-4 | An unknown path is a `404`. | `an_unknown_path_is_404` |
 | RTE-5 | `Routes` fields are public, so a service's tests can check what is mounted without booting it. | `groups_expose_what_they_mount` |
 | RTE-6 | `AppRoutes::into_app` applies the standard middleware. | `into_app_applies_the_standard_middleware` |
+| RTE-7 | `AppRoutes::mounted`, `Routes::mounted`, and `Handler::methods` list every route as `(method, full path)`. `HEAD` is left out beside `GET`, and a handler for every method shows as `ANY`, so a census cannot miss it. | `mounted_lists_every_method_and_full_path`, `mounted_includes_the_health_routes_and_a_handler_for_any_method`, `head_is_left_out_beside_get`, `methods_survive_a_layer` |
+| RTE-8 | Methods come from `MethodRouter`'s debug text, the one place Axum says. A change in that text fails a test by name. | `the_debug_text_still_says_what_is_mounted` |
 
 ### 4.4 Middleware
 
@@ -118,6 +129,8 @@ CORS, timeout, compression, body limit.
 | MID-10 | Every log line written while serving a request carries its request id, method, and path, and never its query string. | `log_lines_carry_the_request_id_and_not_the_query` |
 | MID-11 | One route can have its own timeout. | `a_route_can_have_a_longer_timeout`, `an_override_can_turn_the_timeout_off`, `a_trailing_slash_still_matches_an_override` |
 | MID-12 | One route can accept a larger body than the service-wide limit. | `one_route_can_accept_a_larger_body` |
+| MID-13 | A route or group can state its own timeout where it is declared, with `Routes::add_with_timeout` or `Routes::timeout`. It replaces the limit in force, longer or shorter, and beats `timeout_overrides`. A route's limit beats its group's. Other routes are still cut off. | `a_route_with_a_longer_limit_outlives_the_stack_and_others_do_not`, `a_route_is_still_cut_off_at_its_own_limit`, `a_group_limit_applies_and_a_routes_own_limit_beats_it`, `a_routes_own_limit_beats_a_timeout_override`, `a_route_limit_covers_one_method_on_a_shared_path` |
+| MID-14 | A route's limit applies even where `REQUEST_TIMEOUT_SECONDS` is `0`, and a route limit of zero means no limit. | `a_shorter_route_limit_applies_with_the_stack_timeout_off`, `a_zero_route_limit_means_no_limit` |
 
 ### 4.5 Errors
 
@@ -147,7 +160,12 @@ RFC 9457.
 | Id | Requirement | Test |
 |---|---|---|
 | HLT-1 | `/_ping`, `/_health`, and `/_readiness` answer `200` and `{"ok":true}` when healthy. | `every_health_route_answers_ok` |
-| HLT-2 | `/_readiness` answers `503` when the database does not answer, while `/_ping` still passes. | `readiness_fails_when_the_database_does_not_answer` |
+| HLT-2 | `/_readiness` answers `503` when the database or queue does not answer, naming it, while `/_ping` still passes. | `readiness_fails_when_the_database_does_not_answer`, `readiness_names_the_database`, `readiness_names_a_queue_that_does_not_answer` |
+| HLT-3 | A service can register named async checks in `AppContext::health_checks`. All passing gives `{"ok":true}`. Any failing gives `503` and `{"ok":false,"failed":[...]}`, in the order added. | `readiness_with_every_check_passing_is_just_ok`, `readiness_names_what_failed_in_the_order_added` |
+| HLT-4 | A check's error text is logged and never sent. | `readiness_never_sends_a_checks_error_text` |
+| HLT-5 | A check past its time limit, or one that panics, has failed. | `a_check_past_its_time_limit_fails`, `a_check_that_panics_fails` |
+| HLT-6 | One answer, passing or failing, is reused for a few seconds, and only one round runs at a time, so a public route cannot drive load at a dependency. A caller that hangs up does not cancel the round. | `one_answer_is_reused_until_it_goes_stale`, `a_failed_answer_is_reused_too`, `callers_during_a_round_share_it`, `a_caller_that_hangs_up_does_not_waste_the_round` |
+| HLT-7 | A service on sqlx checks its pool as a named check, since `AppContext::db` is `()` for it. | `a_sqlx_pool_is_checked_by_name` |
 
 ### 4.8 Command line and tasks
 
@@ -159,6 +177,9 @@ RFC 9457.
 | CLI-4 | `task` takes a name and `key:value` parameters, and values may contain colons. | `task_takes_a_name_and_parameters`, `task_arguments_keep_colons_in_values` |
 | CLI-5 | A parameter with no colon is refused. | `task_argument_without_a_colon_is_refused` |
 | CLI-6 | `--environment` works after the subcommand. | `the_environment_flag_works_after_the_subcommand` |
+| CLI-7 | `check` takes no arguments, and prints the effective settings, then any warnings. It connects to nothing. A service's own settings are its to check. | `check_takes_no_arguments`, `check_prints_the_effective_settings`, `check_shows_warnings_outside_production` |
+| CLI-8 | `check` never prints a password or other secret. | `check_never_prints_a_password`, `every_setting_passes_through_redaction` |
+| CLI-9 | `check` refuses what a start would refuse, so the process exits non-zero. | `check_refuses_what_a_start_would_refuse`. The exit status was seen once by hand, and is **unverified** by a test |
 | TSK-1 | A registered task runs with its arguments. | `a_registered_task_runs_with_its_arguments` |
 | TSK-2 | An unknown task, or a missing argument, is an error. | `an_unknown_task_is_an_error`, `a_missing_argument_is_an_error` |
 
@@ -237,6 +258,14 @@ stated here and proved by their own tests.
 | PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
 | PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
 | PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
+| DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`; **unverified** in CI |
+| DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
+| DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| DSL-4 | `axa-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
+| TRA-1 | `axa-tera` | HTML templates escape values unless a template says `safe`. | `html_templates_escape_values`, `safe_turns_escaping_off` |
+| TRA-2 | `axa-tera` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
+| TRA-3 | `axa-tera` | A failed render shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
+| TRA-4 | `axa-tera` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
@@ -272,8 +301,12 @@ cargo doc --workspace --no-deps --all-features
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
 ```
+
+Subcrates publish before `axa`, because it depends on them by version.
+`axa-environment` has no dependencies, so it can go first.
 
 All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile
@@ -287,7 +320,9 @@ The rest of the suite runs under every set.
   envelope and their front-ends, so it lands as its own change. `axa-problem`
   is built, and no service uses it yet.
 - **`axa-opentelemetry`**, replacing the services' copies of OTLP export.
-- **`AppContext` on a sqlx pool**, so a service can leave SeaORM.
+- **`AppContext` on a sqlx pool**, so a service can leave SeaORM. Until then
+  `AppContext::db` is `()` without `sea-orm`, and a service on sqlx holds its own
+  pool and adds it to `/_readiness` as a named check (HLT-7).
 
 ## 7. Open questions
 

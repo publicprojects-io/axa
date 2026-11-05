@@ -3,7 +3,13 @@
 //! From the outside in: request id, tracing, panic catching, security
 //! headers, CORS, timeout, compression, body limit.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use axum::{
     Router,
@@ -11,6 +17,7 @@ use axum::{
     http::{HeaderName, HeaderValue, Method, StatusCode, header},
     middleware::{Next, from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
+    routing::MethodRouter,
 };
 use tower_http::{
     catch_panic::CatchPanicLayer,
@@ -22,7 +29,7 @@ use tower_http::{
 use tracing::Level;
 use uuid::Uuid;
 
-use crate::{Error, Result, config::Http};
+use crate::{AppContext, Error, Result, config::Http};
 
 /// The request id header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
@@ -137,15 +144,59 @@ fn timeout_for(config: &Http, path: &str) -> Option<Duration> {
     (seconds > 0).then(|| Duration::from_secs(seconds))
 }
 
+/// Set by a route with its own limit, to tell [`timeout`] that the request is
+/// now that route's to time.
+#[derive(Clone, Default)]
+struct RouteLimit(Arc<AtomicBool>);
+
 /// Answer `408` when a request runs past its timeout.
-async fn timeout(State(config): State<Arc<Http>>, request: Request, next: Next) -> Response {
+///
+/// An inner layer cannot outlive an outer one, so a route with a longer limit
+/// of its own needs this layer to stand aside, and this layer runs before
+/// routing. So it leaves a flag on the request. When its time is up it looks at
+/// the flag, and if a route has taken over it waits for that route, which
+/// enforces its own limit.
+async fn timeout(State(config): State<Arc<Http>>, mut request: Request, next: Next) -> Response {
     let Some(limit) = timeout_for(&config, request.uri().path()) else {
         return next.run(request).await;
     };
-    match tokio::time::timeout(limit, next.run(request)).await {
-        Ok(response) => response,
-        Err(_) => StatusCode::REQUEST_TIMEOUT.into_response(),
+    let taken_over = RouteLimit::default();
+    request.extensions_mut().insert(taken_over.clone());
+    let run = next.run(request);
+    tokio::pin!(run);
+    tokio::select! {
+        response = &mut run => return response,
+        () = tokio::time::sleep(limit) => {}
     }
+    if taken_over.0.load(Ordering::SeqCst) {
+        run.await
+    } else {
+        StatusCode::REQUEST_TIMEOUT.into_response()
+    }
+}
+
+/// A route's own limit, in place of [`timeout`]'s.
+async fn route_timeout(limit: Duration, request: Request, next: Next) -> Response {
+    if let Some(taken_over) = request.extensions().get::<RouteLimit>() {
+        taken_over.0.store(true, Ordering::SeqCst);
+    }
+    if limit.is_zero() {
+        return next.run(request).await;
+    }
+    tokio::time::timeout(limit, next.run(request))
+        .await
+        .unwrap_or_else(|_| StatusCode::REQUEST_TIMEOUT.into_response())
+}
+
+/// `method` with its own time limit, in place of the stack's. Zero means no
+/// limit, as `REQUEST_TIMEOUT_SECONDS=0` does.
+pub(crate) fn limit_route(
+    method: MethodRouter<AppContext>,
+    limit: Duration,
+) -> MethodRouter<AppContext> {
+    method.layer(from_fn(move |request, next| {
+        route_timeout(limit, request, next)
+    }))
 }
 
 fn set_default_header(

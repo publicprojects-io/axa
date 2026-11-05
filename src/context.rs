@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::{Environment, config::Config, store::Store};
+use crate::{Environment, config::Config, health::Checks, store::Store};
 
 /// Database handle held by [`AppContext`].
 #[cfg(feature = "sea-orm")]
@@ -23,13 +23,16 @@ pub struct AppContext {
     pub config: Arc<Config>,
     /// Values shared across handlers.
     pub shared_store: Arc<Store>,
+    /// What `/_readiness` asks, besides the database and queue that axa
+    /// knows about. Set this once, before building the routes.
+    pub health_checks: Checks,
     /// The job queue, when one is configured.
     #[cfg(feature = "queue")]
     pub queue_provider: Option<Arc<crate::queue::Queue>>,
 }
 
 impl AppContext {
-    /// Build a context with an empty store and no queue.
+    /// Build a context with an empty store, no named checks, and no queue.
     #[must_use]
     pub fn new(environment: Environment, db: Db, config: Config) -> Self {
         Self {
@@ -37,6 +40,7 @@ impl AppContext {
             db,
             config: Arc::new(config),
             shared_store: Arc::new(Store::default()),
+            health_checks: Checks::new(),
             #[cfg(feature = "queue")]
             queue_provider: None,
         }

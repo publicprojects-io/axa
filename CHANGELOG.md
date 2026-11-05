@@ -15,9 +15,50 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa-seaorm`, behind the `sea-orm` feature, which also holds the code formerly
   in `axa::model` and `axa::schema`. Those paths still work. It adds Loco's
   `query::condition()` and `Validatable`, so moving from Loco needs less rewriting.
+- `axa-diesel`, for Diesel pooling, migrations, and test resets over
+  `diesel-async`, with no `libpq`, behind the `diesel` feature.
+- `axa-tera`, for Tera templates with escaping on and generic errors, behind the
+  `tera` feature.
 - A guide to moving SeaORM code from Loco.
+- `axa-environment`, with no dependencies, holding `Environment` and the
+  `APP_ENV` then `LOCO_ENV` lookup, so a migration crate can use it without
+  depending on `axa`. `axa::Environment` and `axa::environment` still work.
+- `AppRoutes::mounted`, `Routes::mounted`, and `Handler::methods`, listing every
+  route as `(method, full path)` for a route census.
+- `health::Checks` and `AppContext::health_checks`, for named checks behind
+  `/_readiness`, which now names what failed and reuses one answer for 5 seconds.
+  A service on sqlx adds its pool this way. The route answers `{"ok":true}` as
+  before when all is well.
+- A `check` command, with `cli::check`, `Config::settings`, and `config::redact`.
+  It reads the settings axa knows about and connects to nothing, so it says
+  nothing about a service's own settings or whether the database answers.
+- `Config::apply_cli`, for the `start --binding` and `--port` overrides.
+- `Routes::timeout` and `Routes::add_with_timeout`, for a time limit stated where
+  a route is declared. It can be longer than the stack's. This sits beside
+  `Http::timeout_overrides` and beats it.
 
 ### Changed
+
+- **A release build with no `APP_ENV` or `LOCO_ENV` is now production, not
+  development.** So it refuses to boot without `DATABASE_URL`, and binds `0.0.0.0`.
+  A debug build is still development. A blank value now counts as unset, so
+  `APP_ENV=` in a release build is production too, and a blank `APP_ENV` no longer
+  hides `LOCO_ENV`.
+- **A setting that is set but invalid now stops a production-like boot**, naming
+  the variable and its value. This covers numbers, flags, `LOG_LEVEL`,
+  `LOG_FORMAT`, `WORKER_MODE`, and `LOG_FILTER`. Elsewhere the default applies and
+  `logger::init` writes a warning to stderr. A deployment that boots today with
+  such a value will stop booting.
+- Flags have an explicit false list: `0`, `false`, `no`, `off`. An unknown value
+  now keeps the default, where it used to mean false.
+- A blank setting counts as unset, and a blank `DATABASE_URL` in production is now
+  refused rather than being passed on as an empty address.
+- **The default local database user is now `postgres:postgres`, not `loco:loco`.**
+  A service relying on that default URL must now set `DATABASE_URL`.
+- `Command` has a new `Check` variant, so a service's `match` needs a new arm.
+  `AppContext`, `Handler`, `Routes`, and `config::Logger` have new public fields, so
+  building one with a struct literal needs them too.
+- `Environment::parse("")` now follows the build, as an unset name does.
 
 - Log lines carry the request id, method, and path, and each finished request is
   logged at `info`.

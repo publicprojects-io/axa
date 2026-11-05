@@ -47,6 +47,8 @@
 //! | `testing` | Request-level test helpers in [`testing`] |
 //! | `sea-orm` | A SeaORM-backed [`AppContext`], with `axa-seaorm` as `axa::seaorm` |
 //! | `redis` | A Redis cache with mandatory expiry, as `axa::redis` |
+//! | `diesel` | Diesel pooling, migrations, and test resets in pure Rust, as `axa::diesel` |
+//! | `tera` | Tera templates with safe escaping, as `axa::tera` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
 //! | `openapi` | `OpenAPI` documents and a pinned Swagger UI, as `axa::openapi` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
@@ -71,7 +73,6 @@ pub mod cli;
 pub mod config;
 pub mod context;
 pub mod db;
-pub mod environment;
 pub mod error;
 pub mod format;
 pub mod health;
@@ -88,6 +89,9 @@ pub mod task;
 pub mod testing;
 pub mod worker;
 
+#[cfg(feature = "diesel")]
+pub use axa_diesel as diesel;
+pub use axa_environment as environment;
 #[cfg(feature = "openapi")]
 pub use axa_openapi as openapi;
 #[cfg(feature = "pagination")]
@@ -106,6 +110,8 @@ pub use axa_seaorm as seaorm;
 pub use axa_seaorm::{model, query, schema, validation};
 #[cfg(feature = "sqlx")]
 pub use axa_sqlx as sqlx;
+#[cfg(feature = "tera")]
+pub use axa_tera as tera;
 #[cfg(feature = "versioning")]
 pub use axa_versioning as versioning;
 pub use context::AppContext;

@@ -12,6 +12,25 @@
 //!     .add("/{id}", get(show));
 //! # let _ = AppRoutes::empty().add_route(folders);
 //! ```
+//!
+//! [`AppRoutes::mounted`] lists what is served, for a route census test.
+//!
+//! [`Routes::timeout`] and [`Routes::add_with_timeout`] give a route its own
+//! time limit in place of `REQUEST_TIMEOUT_SECONDS`:
+//!
+//! ```
+//! use std::time::Duration;
+//! use axa::prelude::*;
+//!
+//! async fn export() -> &'static str { "..." }
+//!
+//! let reports = Routes::new()
+//!     .prefix("/api/reports")
+//!     .add_with_timeout("/export", get(export), Duration::from_mins(10));
+//! # let _ = AppRoutes::empty().add_route(reports);
+//! ```
+
+use std::time::Duration;
 
 use axum::{Router, routing::MethodRouter};
 
@@ -24,6 +43,43 @@ pub struct Handler {
     pub uri: String,
     /// The Axum method router serving it.
     pub method: MethodRouter<AppContext>,
+    /// Its own time limit, in place of the group's and the standard stack's.
+    pub timeout: Option<Duration>,
+}
+
+impl Handler {
+    /// The methods this route answers, in upper case. `HEAD` is left out
+    /// beside `GET`, and a handler for every method shows as `ANY`.
+    #[must_use]
+    pub fn methods(&self) -> Vec<String> {
+        methods_of(&self.method)
+    }
+}
+
+/// The methods a method router answers, in upper case. `get` also answers
+/// `HEAD`, which no route documents, so `HEAD` is left out beside `GET`. A
+/// handler for every method, such as `any` or a `fallback`, shows as `ANY`.
+///
+/// Axum keeps this private, and its debug text is the one place that says, so
+/// this reads that. `the_debug_text_still_says_what_is_mounted` fails if it
+/// changes.
+fn methods_of(router: &MethodRouter<AppContext>) -> Vec<String> {
+    const FIELDS: [&str; 9] = [
+        "get", "head", "delete", "options", "patch", "post", "put", "trace", "connect",
+    ];
+    let text = format!("{router:?}");
+    let value = |field: &str| text.split(&format!("{field}: ")).nth(1);
+    let answers = |field: &str| value(field).is_some_and(|rest| !rest.starts_with("None"));
+    let get = answers("get");
+    let mut methods: Vec<String> = FIELDS
+        .iter()
+        .filter(|field| answers(field) && !(get && **field == "head"))
+        .map(|field| field.to_ascii_uppercase())
+        .collect();
+    if value("fallback").is_some_and(|rest| !rest.starts_with("Default")) {
+        methods.push("ANY".to_string());
+    }
+    methods
 }
 
 /// A group of routes under one prefix.
@@ -36,6 +92,8 @@ pub struct Routes {
     pub prefix: Option<String>,
     /// The group's routes, in declaration order.
     pub handlers: Vec<Handler>,
+    /// A time limit for the whole group, in place of the standard stack's.
+    pub timeout: Option<Duration>,
 }
 
 impl Routes {
@@ -52,14 +110,58 @@ impl Routes {
         self
     }
 
+    /// Give the whole group its own time limit, in place of
+    /// `REQUEST_TIMEOUT_SECONDS`. It may be longer or shorter, and it applies
+    /// even where that setting is `0`. Zero here means no limit.
+    #[must_use]
+    pub fn timeout(mut self, limit: Duration) -> Self {
+        self.timeout = Some(limit);
+        self
+    }
+
     /// Add a handler. `"/"` means the prefix itself.
     #[must_use]
     pub fn add(mut self, path: &str, handler: MethodRouter<AppContext>) -> Self {
         self.handlers.push(Handler {
             uri: path.to_string(),
             method: handler,
+            timeout: None,
         });
         self
+    }
+
+    /// Add a handler with its own time limit, which beats the group's. See
+    /// [`Routes::timeout`].
+    #[must_use]
+    pub fn add_with_timeout(
+        mut self,
+        path: &str,
+        handler: MethodRouter<AppContext>,
+        limit: Duration,
+    ) -> Self {
+        self.handlers.push(Handler {
+            uri: path.to_string(),
+            method: handler,
+            timeout: Some(limit),
+        });
+        self
+    }
+
+    /// Every route in the group as `(method, full path)`, in declaration
+    /// order. See [`AppRoutes::mounted`].
+    #[must_use]
+    pub fn mounted(&self) -> Vec<(String, String)> {
+        let prefix = self.prefix.as_deref().unwrap_or_default();
+        self.handlers
+            .iter()
+            .flat_map(|handler| {
+                let path = join(&[prefix, &handler.uri]);
+                handler
+                    .methods()
+                    .into_iter()
+                    .map(move |method| (method, path.clone()))
+            })
+            .collect()
     }
 }
 
@@ -100,16 +202,46 @@ impl AppRoutes {
         self
     }
 
-    /// Every full path, with each group's handler, in declaration order.
+    /// Every mounted route as `(method, full path)`, in declaration order, so
+    /// a census test can compare what is served with what is written down.
+    /// `HEAD` is left out beside `GET`, and a handler for every method shows
+    /// as `ANY`.
+    ///
+    /// ```
+    /// use axa::prelude::*;
+    ///
+    /// async fn list() -> &'static str { "[]" }
+    ///
+    /// let routes = AppRoutes::empty()
+    ///     .add_route(Routes::new().prefix("/api/things").add("/", get(list).post(list)));
+    /// assert_eq!(
+    ///     routes.mounted(),
+    ///     [
+    ///         ("GET".to_string(), "/api/things".to_string()),
+    ///         ("POST".to_string(), "/api/things".to_string()),
+    ///     ]
+    /// );
+    /// ```
+    #[must_use]
+    pub fn mounted(&self) -> Vec<(String, String)> {
+        self.groups.iter().flat_map(Routes::mounted).collect()
+    }
+
+    /// Every full path, with each group's handler, in declaration order. A
+    /// handler's own limit beats its group's.
     fn collect(self) -> Vec<(String, MethodRouter<AppContext>)> {
         self.groups
             .into_iter()
             .flat_map(|group| {
                 let prefix = group.prefix.unwrap_or_default();
-                group
-                    .handlers
-                    .into_iter()
-                    .map(move |handler| (join(&[&prefix, &handler.uri]), handler.method))
+                let group_limit = group.timeout;
+                group.handlers.into_iter().map(move |handler| {
+                    let path = join(&[&prefix, &handler.uri]);
+                    match handler.timeout.or(group_limit) {
+                        Some(limit) => (path, middleware::limit_route(handler.method, limit)),
+                        None => (path, handler.method),
+                    }
+                })
             })
             .collect()
     }
@@ -141,16 +273,23 @@ mod tests {
     use axum::{
         body::Body,
         http::{Request, StatusCode},
-        routing::{get, post},
+        routing::{any, connect, delete, get, head, options, patch, post, put, trace},
     };
+    use std::time::Duration;
     use tower::ServiceExt;
 
     fn context() -> AppContext {
+        context_with(0)
+    }
+
+    /// A context whose standard stack times out after `seconds`.
+    fn context_with(seconds: u64) -> AppContext {
         let defaults = Defaults {
             database: "",
             ..Defaults::default()
         };
-        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let mut config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        config.http.timeout_seconds = seconds;
         #[cfg(not(feature = "sea-orm"))]
         return AppContext::new(Environment::Test, (), config);
         #[cfg(feature = "sea-orm")]
@@ -227,6 +366,201 @@ mod tests {
             .unwrap();
         let response = router.oneshot(request).await.unwrap();
         assert!(response.headers().contains_key(middleware::X_REQUEST_ID));
+    }
+
+    fn method_names(router: &MethodRouter<AppContext>) -> Vec<String> {
+        methods_of(router)
+    }
+
+    #[test]
+    fn the_debug_text_still_says_what_is_mounted() {
+        async fn answer() {}
+        let cases: [(MethodRouter<AppContext>, &str); 8] = [
+            (get(answer), "GET"),
+            (delete(answer), "DELETE"),
+            (options(answer), "OPTIONS"),
+            (patch(answer), "PATCH"),
+            (post(answer), "POST"),
+            (put(answer), "PUT"),
+            (trace(answer), "TRACE"),
+            (connect(answer), "CONNECT"),
+        ];
+        for (router, method) in cases {
+            assert_eq!(method_names(&router), [method]);
+        }
+        assert_eq!(method_names(&head(answer)), ["HEAD"]);
+        assert_eq!(method_names(&any(answer)), ["ANY"]);
+        // The shape everything above depends on, so that a change in Axum
+        // fails here by name.
+        let text = format!("{:?}", get::<_, _, AppContext>(answer));
+        for field in [
+            "get: BoxedHandler",
+            "head: None",
+            "delete: None",
+            "options: None",
+            "patch: None",
+            "post: None",
+            "put: None",
+            "trace: None",
+            "connect: None",
+            "fallback: Default(",
+        ] {
+            assert!(text.contains(field), "{field} is not in {text}");
+        }
+    }
+
+    #[test]
+    fn methods_survive_a_layer() {
+        async fn answer() {}
+        let router: MethodRouter<AppContext> = get(answer).post(answer);
+        let layered = middleware::limit_route(router, Duration::from_secs(1));
+        assert_eq!(method_names(&layered), ["GET", "POST"]);
+    }
+
+    #[test]
+    fn head_is_left_out_beside_get() {
+        async fn answer() {}
+        let router: MethodRouter<AppContext> = get(answer).head(answer).post(answer);
+        assert_eq!(method_names(&router), ["GET", "POST"]);
+    }
+
+    #[test]
+    fn mounted_lists_every_method_and_full_path() {
+        let group = Routes::new()
+            .prefix("/fhir")
+            .add("/metadata", get(|| async { "" }).delete(|| async { "" }));
+        let routes = table().add_route(group);
+        let want = [
+            ("GET", "/api/things"),
+            ("POST", "/api/things"),
+            ("GET", "/api/things/{id}"),
+            ("GET", "/fhir/metadata"),
+            ("DELETE", "/fhir/metadata"),
+        ]
+        .map(|(method, path)| (method.to_string(), path.to_string()));
+        assert_eq!(routes.mounted(), want);
+    }
+
+    #[test]
+    fn mounted_includes_the_health_routes_and_a_handler_for_any_method() {
+        let routes = AppRoutes::with_default_routes()
+            .add_route(Routes::new().add("/hook", any(|| async { "" })));
+        let all = routes.mounted();
+        assert!(all.contains(&("GET".to_string(), "/_readiness".to_string())));
+        assert!(all.contains(&("ANY".to_string(), "/hook".to_string())));
+    }
+
+    /// One slow route under a limit of its own, one not, behind a 60-second
+    /// stack. Every handler takes 90 seconds. Time is paused, so this runs at
+    /// once.
+    fn slow_table(limit: Duration) -> AppRoutes {
+        async fn slow() -> &'static str {
+            tokio::time::sleep(Duration::from_secs(90)).await;
+            "done"
+        }
+        AppRoutes::empty()
+            .add_route(Routes::new().add("/plain", get(slow)).add_with_timeout(
+                "/export",
+                get(slow),
+                limit,
+            ))
+            .add_route(
+                Routes::new()
+                    .prefix("/reports")
+                    .timeout(limit)
+                    .add("/one", get(slow))
+                    .add_with_timeout("/two", get(slow), Duration::from_secs(1)),
+            )
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_route_with_a_longer_limit_outlives_the_stack_and_others_do_not() {
+        let app = slow_table(Duration::from_mins(2))
+            .into_app(context_with(60))
+            .unwrap();
+        assert_eq!(status(app.clone(), "GET", "/export").await, StatusCode::OK);
+        assert_eq!(
+            status(app, "GET", "/plain").await,
+            StatusCode::REQUEST_TIMEOUT
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_route_is_still_cut_off_at_its_own_limit() {
+        let app = slow_table(Duration::from_secs(75))
+            .into_app(context_with(60))
+            .unwrap();
+        assert_eq!(
+            status(app, "GET", "/export").await,
+            StatusCode::REQUEST_TIMEOUT
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_group_limit_applies_and_a_routes_own_limit_beats_it() {
+        let app = slow_table(Duration::from_mins(2))
+            .into_app(context_with(60))
+            .unwrap();
+        assert_eq!(
+            status(app.clone(), "GET", "/reports/one").await,
+            StatusCode::OK
+        );
+        assert_eq!(
+            status(app, "GET", "/reports/two").await,
+            StatusCode::REQUEST_TIMEOUT
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shorter_route_limit_applies_with_the_stack_timeout_off() {
+        let app = slow_table(Duration::from_secs(1))
+            .into_app(context_with(0))
+            .unwrap();
+        assert_eq!(
+            status(app, "GET", "/export").await,
+            StatusCode::REQUEST_TIMEOUT
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_zero_route_limit_means_no_limit() {
+        let app = slow_table(Duration::ZERO)
+            .into_app(context_with(60))
+            .unwrap();
+        assert_eq!(status(app, "GET", "/export").await, StatusCode::OK);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_routes_own_limit_beats_a_timeout_override() {
+        let mut ctx = context_with(60);
+        let mut config = (*ctx.config).clone();
+        config.http.timeout_overrides = vec![crate::config::TimeoutOverride {
+            path_suffix: "/export".to_string(),
+            seconds: 1,
+        }];
+        ctx.config = std::sync::Arc::new(config);
+        let app = slow_table(Duration::from_mins(2)).into_app(ctx).unwrap();
+        assert_eq!(status(app, "GET", "/export").await, StatusCode::OK);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_route_limit_covers_one_method_on_a_shared_path() {
+        async fn slow() -> &'static str {
+            tokio::time::sleep(Duration::from_secs(90)).await;
+            "done"
+        }
+        let group = Routes::new()
+            .add_with_timeout("/thing", get(slow), Duration::from_mins(2))
+            .add("/thing", post(slow));
+        let app = AppRoutes::empty()
+            .add_route(group)
+            .into_app(context_with(60))
+            .unwrap();
+        assert_eq!(status(app.clone(), "GET", "/thing").await, StatusCode::OK);
+        assert_eq!(
+            status(app, "POST", "/thing").await,
+            StatusCode::REQUEST_TIMEOUT
+        );
     }
 
     #[test]

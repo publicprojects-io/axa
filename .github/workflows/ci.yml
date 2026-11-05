@@ -78,6 +78,7 @@ jobs:
           cargo test --features queue,testing -- --ignored
           cargo test -p axa-sqlx -- --ignored --test-threads=1
           cargo test -p axa-seaorm -- --ignored --test-threads=1
+          cargo test -p axa-diesel -- --ignored --test-threads=1
 
       - name: Redis tests
         env:
