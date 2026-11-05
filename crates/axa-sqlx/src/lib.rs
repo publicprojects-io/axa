@@ -1,0 +1,310 @@
+//! PostgreSQL pooling, migrations, and test resets over sqlx.
+//!
+//! This crate holds the operations every service repeats. It does not wrap
+//! queries: a service writes its own SQL with `sqlx::query!`, so a reviewer
+//! reads exactly what runs.
+//!
+//! ```no_run
+//! use axa_sqlx::{PoolConfig, connect, migrate, sqlx};
+//!
+//! static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate::Migrator::DEFAULT;
+//!
+//! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
+//! let pool = connect(&PoolConfig::new("postgres://localhost/app")).await?;
+//! migrate(&pool, &MIGRATOR).await?;
+//! # Ok(())
+//! # }
+//! ```
+
+use std::time::Duration;
+
+pub use sqlx;
+use sqlx::{
+    AssertSqlSafe, PgPool, Row,
+    migrate::{MigrateError, Migrator},
+    postgres::PgPoolOptions,
+};
+
+/// Pool settings.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolConfig {
+    /// Connection string.
+    pub uri: String,
+    /// Connections kept open.
+    pub min_connections: u32,
+    /// Largest number of connections.
+    pub max_connections: u32,
+    /// How long to wait for a connection, in milliseconds.
+    pub connect_timeout_ms: u64,
+    /// How long an idle connection stays open, in milliseconds.
+    pub idle_timeout_ms: u64,
+}
+
+impl PoolConfig {
+    /// Settings for `uri` with a small pool.
+    #[must_use]
+    pub fn new(uri: impl Into<String>) -> Self {
+        Self {
+            uri: uri.into(),
+            min_connections: 1,
+            max_connections: 10,
+            connect_timeout_ms: 5_000,
+            idle_timeout_ms: 600_000,
+        }
+    }
+
+    /// The sqlx options these settings describe.
+    #[must_use]
+    pub fn options(&self) -> PgPoolOptions {
+        PgPoolOptions::new()
+            .min_connections(self.min_connections)
+            .max_connections(self.max_connections)
+            .acquire_timeout(Duration::from_millis(self.connect_timeout_ms))
+            .idle_timeout(Duration::from_millis(self.idle_timeout_ms))
+    }
+}
+
+/// Open a pool and prove it works with one connection.
+///
+/// # Errors
+///
+/// Fails when the database cannot be reached.
+pub async fn connect(config: &PoolConfig) -> Result<PgPool, sqlx::Error> {
+    config.options().connect(&config.uri).await
+}
+
+/// Check that the database answers.
+///
+/// # Errors
+///
+/// Fails when it does not.
+pub async fn ping(pool: &PgPool) -> Result<(), sqlx::Error> {
+    sqlx::query("SELECT 1").execute(pool).await?;
+    Ok(())
+}
+
+/// Whether an error is a violated unique constraint, which a service usually
+/// reports as `409` rather than `500`.
+#[must_use]
+pub fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .is_some_and(sqlx::error::DatabaseError::is_unique_violation)
+}
+
+/// Quote a table or type name for use in SQL.
+///
+/// Identifiers cannot be bound as parameters, so this is the one place names
+/// reach SQL as text. Only lowercase ASCII letters, digits, and underscores
+/// are accepted, starting with a letter or underscore. That is stricter than
+/// Postgres, and it leaves nothing for an attacker to work with.
+///
+/// ```
+/// assert_eq!(axa_sqlx::quote_identifier("users").as_deref(), Some("\"users\""));
+/// assert_eq!(axa_sqlx::quote_identifier("users; DROP TABLE x"), None);
+/// ```
+#[must_use]
+pub fn quote_identifier(name: &str) -> Option<String> {
+    let mut chars = name.chars();
+    let first = chars.next()?;
+    let valid = (first.is_ascii_lowercase() || first == '_')
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    valid.then(|| format!("\"{name}\""))
+}
+
+/// Quote every name, failing on the first one [`quote_identifier`] refuses.
+fn quote_all<S: AsRef<str>>(names: &[S]) -> Result<Vec<String>, sqlx::Error> {
+    names
+        .iter()
+        .map(|name| {
+            quote_identifier(name.as_ref()).ok_or_else(|| {
+                sqlx::Error::Protocol(format!("invalid identifier: {}", name.as_ref()))
+            })
+        })
+        .collect()
+}
+
+/// Apply pending migrations. Sqlx holds a lock while it does, so services
+/// booting together take turns.
+///
+/// # Errors
+///
+/// Fails when a migration fails, or an applied one no longer matches.
+pub async fn migrate(pool: &PgPool, migrator: &Migrator) -> Result<(), MigrateError> {
+    migrator.run(pool).await
+}
+
+/// The newest applied versions, newest first. Empty on a database that has
+/// never been migrated.
+async fn applied_versions(pool: &PgPool) -> Result<Vec<i64>, sqlx::Error> {
+    let exists: bool = sqlx::query("SELECT to_regclass('_sqlx_migrations') IS NOT NULL AS found")
+        .fetch_one(pool)
+        .await?
+        .try_get("found")?;
+    if !exists {
+        return Ok(Vec::new());
+    }
+    let rows =
+        sqlx::query("SELECT version FROM _sqlx_migrations WHERE success ORDER BY version DESC")
+            .fetch_all(pool)
+            .await?;
+    rows.iter().map(|row| row.try_get("version")).collect()
+}
+
+/// Revert the newest `steps` migrations. Each needs a `.down.sql` file.
+///
+/// # Errors
+///
+/// Fails on a database error or a failed down migration.
+pub async fn revert(pool: &PgPool, migrator: &Migrator, steps: u32) -> Result<(), MigrateError> {
+    let applied = applied_versions(pool).await?;
+    let steps = usize::try_from(steps).unwrap_or(usize::MAX);
+    // `undo` reverts everything newer than its target, so the target is the
+    // version just past the last one to revert, or 0 to revert them all.
+    let target = applied.get(steps).copied().unwrap_or(0);
+    migrator.undo(pool, target).await
+}
+
+/// One migration and whether it has run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MigrationStatus {
+    /// Its version.
+    pub version: i64,
+    /// Its description.
+    pub description: String,
+    /// Whether it has been applied.
+    pub applied: bool,
+}
+
+/// Every migration in `migrator`, oldest first, with whether it has run.
+///
+/// # Errors
+///
+/// Fails on a database error.
+pub async fn status(
+    pool: &PgPool,
+    migrator: &Migrator,
+) -> Result<Vec<MigrationStatus>, sqlx::Error> {
+    let applied = applied_versions(pool).await?;
+    Ok(migrator
+        .iter()
+        .filter(|migration| !migration.migration_type.is_down_migration())
+        .map(|migration| MigrationStatus {
+            version: migration.version,
+            description: migration.description.to_string(),
+            applied: applied.contains(&migration.version),
+        })
+        .collect())
+}
+
+/// Empty `tables`, restarting their sequences. Each name goes through
+/// [`quote_identifier`].
+///
+/// # Errors
+///
+/// Fails on an invalid name or a database error.
+pub async fn truncate<S: AsRef<str>>(pool: &PgPool, tables: &[S]) -> Result<(), sqlx::Error> {
+    if tables.is_empty() {
+        return Ok(());
+    }
+    let tables = quote_all(tables)?.join(", ");
+    let sql = format!("TRUNCATE {tables} RESTART IDENTITY CASCADE");
+    sqlx::query(AssertSqlSafe(sql)).execute(pool).await?;
+    Ok(())
+}
+
+/// Drop every table and enum type in `public`, then migrate from nothing.
+/// This gives each test an empty schema, whatever tables it touched.
+///
+/// **This destroys all data.** It exists for tests, and a service must never
+/// reach it outside the `test` environment.
+///
+/// It drops tables and types by name rather than dropping the schema, because
+/// `DROP SCHEMA public CASCADE` would also remove the extensions a database
+/// was prepared with, such as `citext`. Functions are left in place, so a
+/// migration that creates one should use `CREATE OR REPLACE`.
+///
+/// # Errors
+///
+/// Fails on a database error, or a name [`quote_identifier`] refuses.
+pub async fn dangerously_recreate(pool: &PgPool, migrator: &Migrator) -> Result<(), MigrateError> {
+    let tables: Vec<String> =
+        sqlx::query("SELECT tablename::text AS name FROM pg_tables WHERE schemaname = 'public'")
+            .fetch_all(pool)
+            .await?
+            .iter()
+            .map(|row| row.try_get("name"))
+            .collect::<Result<_, _>>()?;
+    // Types owned by an extension (`deptype = 'e'`) belong to that extension.
+    let types: Vec<String> = sqlx::query(
+        "SELECT t.typname::text AS name FROM pg_type t
+         JOIN pg_namespace n ON n.oid = t.typnamespace
+         WHERE t.typtype = 'e' AND n.nspname = 'public'
+           AND NOT EXISTS (
+               SELECT 1 FROM pg_depend d WHERE d.objid = t.oid AND d.deptype = 'e'
+           )",
+    )
+    .fetch_all(pool)
+    .await?
+    .iter()
+    .map(|row| row.try_get("name"))
+    .collect::<Result<_, _>>()?;
+
+    if !tables.is_empty() {
+        let names = quote_all(&tables)?.join(", ");
+        let sql = format!("DROP TABLE {names} CASCADE");
+        sqlx::query(AssertSqlSafe(sql)).execute(pool).await?;
+    }
+    for name in quote_all(&types)? {
+        let sql = format!("DROP TYPE {name} CASCADE");
+        sqlx::query(AssertSqlSafe(sql)).execute(pool).await?;
+    }
+    migrate(pool, migrator).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn identifiers_are_quoted() {
+        assert_eq!(quote_identifier("users").as_deref(), Some("\"users\""));
+        assert_eq!(quote_identifier("_a1").as_deref(), Some("\"_a1\""));
+    }
+
+    #[test]
+    fn unsafe_identifiers_are_refused() {
+        for name in [
+            "", "1users", "Users", "a b", "a\"b", "a;b", "a.b", "users--", "é",
+        ] {
+            assert_eq!(quote_identifier(name), None, "{name:?}");
+        }
+    }
+
+    #[test]
+    fn quote_all_fails_on_any_bad_name() {
+        assert!(quote_all(&["good", "also_good"]).is_ok());
+        assert!(quote_all(&["good", "bad name"]).is_err());
+    }
+
+    #[test]
+    fn pool_settings_reach_the_options() {
+        let config = PoolConfig {
+            min_connections: 2,
+            max_connections: 7,
+            connect_timeout_ms: 1_500,
+            idle_timeout_ms: 9_000,
+            ..PoolConfig::new("postgres://x")
+        };
+        let options = config.options();
+        assert_eq!(options.get_min_connections(), 2);
+        assert_eq!(options.get_max_connections(), 7);
+        assert_eq!(options.get_acquire_timeout(), Duration::from_millis(1_500));
+        assert_eq!(options.get_idle_timeout(), Some(Duration::from_secs(9)));
+    }
+
+    #[test]
+    fn errors_that_are_not_from_the_database_are_not_unique_violations() {
+        assert!(!is_unique_violation(&sqlx::Error::RowNotFound));
+    }
+}

@@ -203,21 +203,50 @@ and goes with it.
 | SEA-2 | `create_table` adds `created_at` and `updated_at` with a `now()` default. | **unverified** in this crate; exercised by consuming services' migrations |
 | SEA-3 | Foreign keys are named `fk-<table>-<column>-to-<parent>`, and a `?` suffix makes one optional. | **unverified** in this crate |
 
+### 4.13 Subcrates
+
+Each subcrate is optional, is enabled by a feature of `axa`, and is re-exported
+under that feature's name. Each can also be used alone. Their requirements are
+stated here and proved by their own tests.
+
+| Id | Crate | Requirement | Test |
+|---|---|---|---|
+| SQX-1 | `axa-sqlx` | Pool settings reach sqlx. | `pool_settings_reach_the_options` |
+| SQX-2 | `axa-sqlx` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
+| SQX-3 | `axa-sqlx` | Services booting together all migrate. | `services_booting_together_all_migrate` |
+| SQX-4 | `axa-sqlx` | A table or type name reaches SQL only through `quote_identifier`, which refuses anything but lowercase ASCII letters, digits, and underscores. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| SQX-5 | `axa-sqlx` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
+| SQX-6 | `axa-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
+| PAG-1 | `axa-pagination` | A large limit is clamped, not rejected. | `a_large_limit_is_clamped_not_rejected` |
+| PAG-2 | `axa-pagination` | Zero and unparsable values use the defaults. | `zero_and_unparsable_values_use_the_defaults` |
+| PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
+| PAG-4 | `axa-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
+| PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
+| PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
+| PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
+| VER-1 | `axa-versioning` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
+| VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406`. | `an_unsupported_version_is_a_406` |
+| VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
+
 ## 5. Verification
 
+CI runs all of this on every push, in `.github/workflows/ci.yml`:
+
 ```sh
-cargo test --all-features
-cargo test --features queue,testing
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --all-targets --features queue,testing -- -D warnings
-cargo clippy --all-targets -- -D warnings
-cargo doc --no-deps --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo test --features queue,testing
+cargo test --workspace --all-features
+cargo doc --workspace --no-deps --all-features
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 ```
 
-All must pass before a commit is pushed, because services pin a revision. The
-feature sets are not interchangeable. The health, task, and queue tests compile
+All must pass before a commit is pushed or a version is published. The feature
+sets are not interchangeable. The health, task, and queue tests compile
 only without `sea-orm`, and the worker tests only without `sea-orm` and `queue`.
 The rest of the suite runs under every set.
 
@@ -225,12 +254,13 @@ The rest of the suite runs under every set.
 
 - **RFC 9457 errors.** Errors will become `application/problem+json`, with
   bare JSON for successes. This changes the older services' `ApiResponse`
-  envelope and their front-ends, so it lands as its own change.
+  envelope and their front-ends, so it lands as its own change. `axa-problem`
+  is built, and no service uses it yet.
+- **`axa-opentelemetry`**, replacing the services' copies of OTLP export.
+- **`AppContext` on a sqlx pool**, so a service can leave SeaORM.
 - **Removing the `sea-orm` feature**, once services have moved to sqlx.
 
 ## 7. Open questions
 
 - Whether the shared PASETO and ABAC guard belongs here or in
   `authentication-verifier` behind an `axum` feature.
-- Whether a crates.io release should replace pinned git dependencies once the
-  API settles.

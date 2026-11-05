@@ -43,11 +43,11 @@ reader and the behaviour.
 
 ## Installing
 
-axa is not on crates.io yet, so pin a revision:
+Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>" }
+axa = "0.1"
 ```
 
 | Feature | Adds |
@@ -55,6 +55,11 @@ axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>" }
 | `queue` | The Postgres job queue |
 | `testing` | Request-level test helpers, built on `axum-test` |
 | `sea-orm` | A SeaORM-backed `AppContext`, migration helpers, and model errors. Transitional: it goes once the last service has moved to sqlx |
+| `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets |
+| `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
+| `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
+| `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |
+| `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation |
 
 ## Quick start
 

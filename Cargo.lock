@@ -381,6 +381,11 @@ name = "axa"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "axa-pagination",
+ "axa-problem",
+ "axa-prometheus",
+ "axa-sqlx",
+ "axa-versioning",
  "axum",
  "axum-test",
  "clap",
@@ -398,6 +403,53 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "axa-pagination"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "axa-problem"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "axa-prometheus"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "prometheus",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "axa-sqlx"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
+name = "axa-versioning"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -2176,6 +2228,20 @@ dependencies = [
  "syn 2.0.119",
  "version_check",
  "yansi",
+]
+
+[[package]]
+name = "prometheus"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ca5326d8d0b950a9acd87e6a3f94745394f62e4dae1b1ee22b2bc0c394af43a"
+dependencies = [
+ "cfg-if",
+ "fnv",
+ "lazy_static",
+ "memchr",
+ "parking_lot",
+ "thiserror",
 ]
 
 [[package]]

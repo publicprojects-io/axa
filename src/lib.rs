@@ -46,6 +46,11 @@
 //! | `queue` | The Postgres job queue in [`queue`] |
 //! | `testing` | Request-level test helpers in [`testing`] |
 //! | `sea-orm` | SeaORM-backed [`AppContext`], `model`, and `schema`. Transitional: it goes once the last service has moved to sqlx |
+//! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
+//! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
+//! | `problem` | RFC 9457 problem details, as `axa::problem` |
+//! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
+//! | `versioning` | `Accepts-version` negotiation, as `axa::versioning` |
 //!
 //! # Origin
 //!
@@ -84,6 +89,16 @@ pub mod task;
 pub mod testing;
 pub mod worker;
 
+#[cfg(feature = "pagination")]
+pub use axa_pagination as pagination;
+#[cfg(feature = "problem")]
+pub use axa_problem as problem;
+#[cfg(feature = "prometheus")]
+pub use axa_prometheus as prometheus;
+#[cfg(feature = "sqlx")]
+pub use axa_sqlx as sqlx;
+#[cfg(feature = "versioning")]
+pub use axa_versioning as versioning;
 pub use context::AppContext;
 pub use environment::Environment;
 pub use error::{Error, Result};

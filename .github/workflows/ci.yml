@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: axa
+          POSTGRES_PASSWORD: axa
+          POSTGRES_DB: axa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install 1.97 --profile minimal --component rustfmt,clippy
+      - run: rustup default 1.97
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      # The feature sets are not interchangeable: some tests compile only
+      # without `sea-orm`, and the worker tests only without `queue` as well.
+      - name: Clippy, default features
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy, queue and testing
+        run: cargo clippy --all-targets --features queue,testing -- -D warnings
+      - name: Clippy, all features
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test, default features
+        run: cargo test --workspace
+      - name: Test, queue and testing
+        run: cargo test --features queue,testing
+      - name: Test, all features
+        run: cargo test --workspace --all-features
+
+      - name: Docs
+        run: cargo doc --workspace --no-deps --all-features
+
+      - name: Postgres tests
+        env:
+          AXA_TEST_DATABASE_URL: postgres://axa:axa@localhost:5432/axa_test
+        run: |
+          cargo test --features queue,testing -- --ignored
+          cargo test -p axa-sqlx -- --ignored --test-threads=1
