@@ -18,6 +18,8 @@ pub use sea_orm::{
 
 #[cfg(feature = "sea-orm")]
 pub use crate::model::{ModelError, ModelResult};
+#[cfg(feature = "testing")]
+pub use crate::testing::prelude::*;
 pub use crate::{
     AppContext, Error, Result,
     error::{ErrorDetail, bad_request, not_found, unauthorized},
