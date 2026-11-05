@@ -1,4 +1,14 @@
 //! A Postgres job queue using `FOR UPDATE SKIP LOCKED`.
+//!
+//! Jobs live in one `axa_queue` table, created on [`Queue::connect`]. Each
+//! worker loop claims the oldest ready job in a single statement, so two
+//! loops can never claim the same row and no external broker is needed.
+//!
+//! A job moves from `queued` to `running` to `completed` or `failed`, with
+//! the failure text kept on the row. A job still `running` after
+//! [`QueueOptions::stale_minutes`] is assumed lost with its worker, and
+//! [`Queue::requeue_stale`] puts it back. Jobs can therefore run more than
+//! once, so a job's work must be safe to repeat.
 
 use std::{collections::HashMap, future::Future, pin::Pin, sync::Arc, time::Duration};
 
@@ -197,8 +207,12 @@ impl Queue {
     }
 
     /// Run job loops until `shutdown` changes to `true`. Jobs in progress
-    /// finish first.
+    /// finish first. Stale jobs are requeued each time this starts.
     pub async fn run(self: Arc<Self>, shutdown: watch::Receiver<bool>) {
+        // Recover anything a previous process left behind before taking work.
+        if let Err(error) = self.requeue_stale().await {
+            tracing::error!(%error, "could not requeue stale jobs");
+        }
         let mut loops = Vec::new();
         for _ in 0..self.options.workers.max(1) {
             let queue = self.clone();
@@ -221,5 +235,166 @@ impl Queue {
         for job_loop in loops {
             let _ = job_loop.await;
         }
+    }
+}
+
+/// These need a real Postgres, so they are ignored by default. Run them with
+/// `AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features -- --ignored`.
+#[cfg(all(test, not(feature = "sea-orm")))]
+mod tests {
+    use super::*;
+    use crate::{
+        AppContext, Environment,
+        config::{Config, Defaults},
+    };
+    use async_trait::async_trait;
+    use serde::Deserialize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Serialize, Deserialize)]
+    struct Args {
+        fail: bool,
+    }
+
+    struct CountWorker;
+
+    #[async_trait]
+    impl BackgroundWorker<Args> for CountWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, args: Args) -> Result<()> {
+            if args.fail {
+                return Err(Error::Worker("told to fail".to_string()));
+            }
+            COUNT.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    async fn queue() -> Queue {
+        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let mut queue = Queue::connect(&uri, QueueOptions::default()).await.unwrap();
+        sqlx::query("DELETE FROM axa_queue")
+            .execute(&queue.pool)
+            .await
+            .unwrap();
+        queue.register(CountWorker);
+        queue
+    }
+
+    async fn status_of(queue: &Queue, id: &str) -> (String, Option<String>) {
+        let row = sqlx::query("SELECT status, error FROM axa_queue WHERE id = $1")
+            .bind(Uuid::parse_str(id).unwrap())
+            .fetch_one(&queue.pool)
+            .await
+            .unwrap();
+        (row.get("status"), row.get("error"))
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn queue_behaviour_against_postgres() {
+        let queue = Arc::new(queue().await);
+        queue.ping().await.unwrap();
+
+        // An empty queue has nothing to run.
+        assert!(!queue.run_one().await.unwrap());
+
+        // A job runs and is marked completed.
+        let before = COUNT.load(Ordering::SeqCst);
+        let args = serde_json::json!({ "fail": false });
+        let id = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        assert!(queue.run_one().await.unwrap());
+        assert_eq!(COUNT.load(Ordering::SeqCst), before + 1);
+        assert_eq!(status_of(&queue, &id).await.0, "completed");
+
+        // A failure is kept on the row and does not fail the loop.
+        let id = queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": true }))
+            .await
+            .unwrap();
+        assert!(queue.run_one().await.unwrap());
+        let (status, error) = status_of(&queue, &id).await;
+        assert_eq!(status, "failed");
+        assert!(error.unwrap().contains("told to fail"));
+
+        // Bad arguments fail the job rather than panicking the worker.
+        let id = queue
+            .enqueue("CountWorker", serde_json::json!({ "wrong": 1 }))
+            .await
+            .unwrap();
+        assert!(queue.run_one().await.unwrap());
+        assert_eq!(status_of(&queue, &id).await.0, "failed");
+
+        // A job with no handler stays queued for a worker that has one.
+        let id = queue.enqueue("OtherWorker", args.clone()).await.unwrap();
+        assert!(!queue.run_one().await.unwrap());
+        assert_eq!(status_of(&queue, &id).await.0, "queued");
+
+        // A stale running job is queued again, and a recent one is not.
+        let stale = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        sqlx::query(
+            "UPDATE axa_queue SET status = 'running', started_at = now() - interval '2 hours'
+             WHERE id = $1",
+        )
+        .bind(Uuid::parse_str(&stale).unwrap())
+        .execute(&queue.pool)
+        .await
+        .unwrap();
+        assert_eq!(queue.requeue_stale().await.unwrap(), 1);
+        assert_eq!(status_of(&queue, &stale).await.0, "queued");
+        assert!(queue.run_one().await.unwrap());
+
+        // Concurrent loops run each job exactly once.
+        sqlx::query("DELETE FROM axa_queue")
+            .execute(&queue.pool)
+            .await
+            .unwrap();
+        let before = COUNT.load(Ordering::SeqCst);
+        for _ in 0..20 {
+            queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        }
+        let (stop, stopped) = watch::channel(false);
+        let running = tokio::spawn(queue.clone().run(stopped));
+        for _ in 0..100 {
+            if COUNT.load(Ordering::SeqCst) >= before + 20 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        stop.send(true).unwrap();
+        running.await.unwrap();
+        assert_eq!(COUNT.load(Ordering::SeqCst), before + 20);
+        let left: i64 =
+            sqlx::query("SELECT count(*) AS n FROM axa_queue WHERE status <> 'completed'")
+                .fetch_one(&queue.pool)
+                .await
+                .unwrap()
+                .get("n");
+        assert_eq!(left, 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn perform_later_enqueues_in_queue_mode() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
+            (name == "WORKER_MODE").then(|| "BackgroundQueue".to_string())
+        })
+        .unwrap();
+        let mut ctx = AppContext::new(Environment::Test, (), config);
+        let queue = Arc::new(queue().await);
+        ctx.queue_provider = Some(queue.clone());
+        let id = CountWorker::perform_later(&ctx, Args { fail: false })
+            .await
+            .unwrap();
+        assert_eq!(status_of(&queue, &id).await.0, "queued");
     }
 }

@@ -29,7 +29,7 @@ pub struct AppContext {
 }
 
 impl AppContext {
-    /// Build a context.
+    /// Build a context with an empty store and no queue.
     #[must_use]
     pub fn new(environment: Environment, db: Db, config: Config) -> Self {
         Self {

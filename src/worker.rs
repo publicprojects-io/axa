@@ -68,6 +68,7 @@ where
     async fn perform(&self, args: A) -> Result<()>;
 }
 
+/// Add a job to the context's queue.
 #[cfg(feature = "queue")]
 async fn enqueue<A: Serialize + Sync>(ctx: &AppContext, name: &str, args: &A) -> Result<String> {
     let queue = ctx
@@ -77,7 +78,104 @@ async fn enqueue<A: Serialize + Sync>(ctx: &AppContext, name: &str, args: &A) ->
     queue.enqueue(name, serde_json::to_value(args)?).await
 }
 
+/// Without the `queue` feature there is nowhere to put a job.
 #[cfg(not(feature = "queue"))]
+#[allow(clippy::unused_async)]
 async fn enqueue<A: Serialize + Sync>(_ctx: &AppContext, _name: &str, _args: &A) -> Result<String> {
     Err(Error::Worker("no job queue configured".to_string()))
+}
+
+#[cfg(all(test, not(feature = "sea-orm"), not(feature = "queue")))]
+mod tests {
+    use super::*;
+    use crate::{
+        Environment,
+        config::{Config, Defaults},
+    };
+    use serde::Deserialize;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static DONE: AtomicUsize = AtomicUsize::new(0);
+
+    #[derive(Serialize, Deserialize)]
+    struct Args {
+        amount: usize,
+        fail: bool,
+    }
+
+    struct AddWorker;
+
+    #[async_trait]
+    impl BackgroundWorker<Args> for AddWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, args: Args) -> Result<()> {
+            if args.fail {
+                return Err(Error::Worker("told to fail".to_string()));
+            }
+            DONE.fetch_add(args.amount, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    fn context(mode: &str) -> AppContext {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
+            (name == "WORKER_MODE").then(|| mode.to_string())
+        })
+        .unwrap();
+        AppContext::new(Environment::Test, (), config)
+    }
+
+    #[test]
+    fn class_name_is_the_bare_type_name() {
+        assert_eq!(AddWorker::class_name(), "AddWorker");
+    }
+
+    #[tokio::test]
+    async fn foreground_jobs_run_before_returning_and_report_failure() {
+        let ctx = context("ForegroundBlocking");
+        let before = DONE.load(Ordering::SeqCst);
+        AddWorker::perform_later(
+            &ctx,
+            Args {
+                amount: 3,
+                fail: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(DONE.load(Ordering::SeqCst) >= before + 3);
+        assert!(
+            AddWorker::perform_later(
+                &ctx,
+                Args {
+                    amount: 0,
+                    fail: true
+                }
+            )
+            .await
+            .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn queued_jobs_fail_without_a_queue() {
+        let ctx = context("BackgroundQueue");
+        let error = AddWorker::perform_later(
+            &ctx,
+            Args {
+                amount: 1,
+                fail: false,
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("no job queue"));
+    }
 }

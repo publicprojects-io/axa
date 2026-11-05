@@ -1,4 +1,13 @@
 //! The command line every service shares.
+//!
+//! A service parses [`Cli`] in `main` and matches on [`Command`] itself, so
+//! the flow stays visible in its own code:
+//!
+//! ```text
+//! service start [--worker | --all] [--binding ADDR] [--port PORT]
+//! service db migrate | down [STEPS] | reset | status | truncate
+//! service task [NAME] [KEY:VALUE ...]
+//! ```
 
 use clap::{Parser, Subcommand};
 
@@ -99,6 +108,75 @@ mod tests {
     #[test]
     fn task_argument_without_a_colon_is_refused() {
         assert!(parse_vars(&["oops".to_string()]).is_err());
+    }
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from(args).unwrap()
+    }
+
+    #[test]
+    fn start_takes_its_options() {
+        let cli = parse(&[
+            "svc",
+            "start",
+            "--all",
+            "--port",
+            "9000",
+            "--binding",
+            "0.0.0.0",
+        ]);
+        let Command::Start {
+            worker,
+            all,
+            binding,
+            port,
+        } = cli.command
+        else {
+            panic!("expected start");
+        };
+        assert!(!worker);
+        assert!(all);
+        assert_eq!(binding.as_deref(), Some("0.0.0.0"));
+        assert_eq!(port, Some(9000));
+    }
+
+    #[test]
+    fn worker_and_all_conflict() {
+        assert!(Cli::try_parse_from(["svc", "start", "--worker", "--all"]).is_err());
+    }
+
+    #[test]
+    fn database_commands_parse() {
+        let cli = parse(&["svc", "db", "down", "3"]);
+        assert!(matches!(
+            cli.command,
+            Command::Db {
+                command: DbCommand::Down { steps: 3 }
+            }
+        ));
+        let cli = parse(&["svc", "db", "down"]);
+        assert!(matches!(
+            cli.command,
+            Command::Db {
+                command: DbCommand::Down { steps: 1 }
+            }
+        ));
+    }
+
+    #[test]
+    fn task_takes_a_name_and_parameters() {
+        let cli = parse(&["svc", "task", "seed", "a:1", "b:2"]);
+        let Command::Task { name, params } = cli.command else {
+            panic!("expected task");
+        };
+        assert_eq!(name.as_deref(), Some("seed"));
+        assert_eq!(params, ["a:1", "b:2"]);
+    }
+
+    #[test]
+    fn the_environment_flag_works_after_the_subcommand() {
+        let cli = parse(&["svc", "start", "--environment", "production"]);
+        assert_eq!(cli.environment.as_deref(), Some("production"));
     }
 
     #[test]

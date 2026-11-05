@@ -1,4 +1,17 @@
 //! Route tables that become an ordinary Axum [`Router`].
+//!
+//! ```
+//! use axa::prelude::*;
+//!
+//! async fn list() -> &'static str { "[]" }
+//! async fn show(Path(id): Path<u32>) -> String { id.to_string() }
+//!
+//! let folders = Routes::new()
+//!     .prefix("/api/folders")
+//!     .add("/", get(list))
+//!     .add("/{id}", get(show));
+//! # let _ = AppRoutes::empty().add_route(folders);
+//! ```
 
 use axum::{Router, routing::MethodRouter};
 
@@ -107,6 +120,87 @@ impl AppRoutes {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{Environment, config::Defaults};
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+        routing::{get, post},
+    };
+    use tower::ServiceExt;
+
+    fn context() -> AppContext {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        #[cfg(not(feature = "sea-orm"))]
+        return AppContext::new(Environment::Test, (), config);
+        #[cfg(feature = "sea-orm")]
+        return AppContext::new(
+            Environment::Test,
+            sea_orm::DatabaseConnection::default(),
+            config,
+        );
+    }
+
+    async fn status(router: Router, method: &str, path: &str) -> StatusCode {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        router.oneshot(request).await.unwrap().status()
+    }
+
+    fn table() -> AppRoutes {
+        AppRoutes::empty().add_route(
+            Routes::new()
+                .prefix("/api/things")
+                .add("/", get(|| async { "list" }))
+                .add("/", post(|| async { "create" }))
+                .add("/{id}", get(|| async { "show" })),
+        )
+    }
+
+    #[tokio::test]
+    async fn a_trailing_slash_route_is_served_at_the_prefix() {
+        let router = table().into_router(context());
+        assert_eq!(status(router, "GET", "/api/things").await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn two_methods_on_one_path_merge() {
+        let router = table().into_router(context());
+        assert_eq!(
+            status(router.clone(), "GET", "/api/things").await,
+            StatusCode::OK
+        );
+        assert_eq!(status(router, "POST", "/api/things").await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn path_parameters_route() {
+        let router = table().into_router(context());
+        assert_eq!(status(router, "GET", "/api/things/7").await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn an_unknown_path_is_404() {
+        let router = table().into_router(context());
+        assert_eq!(status(router, "GET", "/nope").await, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn into_app_applies_the_standard_middleware() {
+        let router = table().into_app(context()).unwrap();
+        let request = Request::builder()
+            .uri("/api/things")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        assert!(response.headers().contains_key(middleware::X_REQUEST_ID));
+    }
 
     #[test]
     fn join_normalises_slashes() {

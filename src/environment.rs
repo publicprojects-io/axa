@@ -66,6 +66,18 @@ mod tests {
     }
 
     #[test]
+    fn names_round_trip() {
+        for name in ["development", "test", "production", "staging"] {
+            assert_eq!(Environment::parse(name).to_string(), name);
+        }
+    }
+
+    #[test]
+    fn empty_name_means_development() {
+        assert_eq!(Environment::parse("  "), Environment::Development);
+    }
+
+    #[test]
     fn unknown_environment_is_production_like() {
         assert!(Environment::parse("staging").is_production_like());
         assert!(!Environment::Test.is_production_like());

@@ -51,3 +51,18 @@ pub async fn serve(router: Router, config: &Server) -> Result<()> {
     .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn serve_reports_an_address_it_cannot_bind() {
+        let config = Server {
+            port: 1,
+            binding: "256.0.0.1".to_string(),
+            host: String::new(),
+        };
+        assert!(serve(Router::new(), &config).await.is_err());
+    }
+}

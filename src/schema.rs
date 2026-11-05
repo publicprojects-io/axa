@@ -220,3 +220,20 @@ pub async fn remove_column(m: &SchemaManager<'_>, table: &str, name: &str) -> Re
     )
     .await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_names_are_pluralised_snake_case() {
+        assert_eq!(normalize_table("user"), "users");
+        assert_eq!(normalize_table("users"), "users");
+        assert_eq!(normalize_table("CarePathway"), "care_pathways");
+    }
+
+    #[test]
+    fn reference_columns_are_singular() {
+        assert_eq!(reference_id("users"), "user_id");
+    }
+}

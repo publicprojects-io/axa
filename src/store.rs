@@ -1,4 +1,12 @@
 //! A small type-keyed store for values shared across handlers.
+//!
+//! ```
+//! use axa::store::Store;
+//!
+//! let store = Store::default();
+//! store.insert(42_u32);
+//! assert_eq!(store.get::<u32>(), Some(42));
+//! ```
 
 use std::{
     any::{Any, TypeId},

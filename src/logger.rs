@@ -142,3 +142,37 @@ pub fn init(app_name: &str, config: &Logger) {
         .with(filter)
         .try_init();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn levels_parse_and_print() {
+        for name in ["off", "trace", "debug", "info", "warn", "error"] {
+            assert_eq!(LogLevel::parse(name).to_string(), name);
+        }
+        assert_eq!(LogLevel::parse("nonsense"), LogLevel::Info);
+    }
+
+    #[test]
+    fn formats_parse() {
+        assert_eq!(Format::parse("JSON"), Format::Json);
+        assert_eq!(Format::parse("pretty"), Format::Pretty);
+        assert_eq!(Format::parse("nonsense"), Format::Compact);
+    }
+
+    #[test]
+    fn default_filter_names_the_service_and_shared_modules() {
+        let filter = init_env_filter("my_service", None, &LogLevel::Debug).to_string();
+        assert!(filter.contains("my_service=debug"), "{filter}");
+        assert!(filter.contains("tower_http=debug"), "{filter}");
+    }
+
+    #[test]
+    fn an_override_replaces_the_default_filter() {
+        let custom = "my_service=trace".to_string();
+        let filter = init_env_filter("my_service", Some(&custom), &LogLevel::Info).to_string();
+        assert_eq!(filter, custom);
+    }
+}

@@ -2,6 +2,18 @@
 //!
 //! Internal failures always become a generic `500`: a database or transport
 //! error is logged, never sent to the client.
+//!
+//! ```
+//! use axa::{Error, Result};
+//! use axum::{http::StatusCode, response::IntoResponse};
+//!
+//! fn find(id: u32) -> Result<&'static str> {
+//!     if id == 1 { Ok("found") } else { Err(Error::NotFound) }
+//! }
+//!
+//! let response = find(2).unwrap_err().into_response();
+//! assert_eq!(response.status(), StatusCode::NOT_FOUND);
+//! ```
 
 use axum::{
     Json,
@@ -132,6 +144,7 @@ impl From<&str> for Error {
     }
 }
 
+/// The body every internal failure shares.
 fn internal() -> (StatusCode, ErrorDetail) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -139,6 +152,7 @@ fn internal() -> (StatusCode, ErrorDetail) {
     )
 }
 
+/// The body every missing resource shares.
 fn resource_not_found() -> (StatusCode, ErrorDetail) {
     (
         StatusCode::NOT_FOUND,
@@ -221,10 +235,63 @@ pub fn bad_request<T>(message: &str) -> Result<T> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn internal_errors_do_not_leak_their_text() {
+    async fn body_text(response: Response) -> String {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn internal_errors_do_not_leak_their_text() {
         let response = Error::Message("connection to 10.0.0.1 refused".into()).into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = body_text(response).await;
+        assert!(!body.contains("10.0.0.1"), "{body}");
+        assert!(body.contains("internal_server_error"));
+    }
+
+    #[tokio::test]
+    async fn unauthorized_text_is_logged_but_not_returned() {
+        let response = Error::Unauthorized("token signature invalid".into()).into_response();
+        assert!(!body_text(response).await.contains("signature"));
+    }
+
+    #[tokio::test]
+    async fn bad_request_text_is_returned() {
+        let body = body_text(Error::BadRequest("name is required".into()).into_response()).await;
+        assert!(body.contains("name is required"));
+    }
+
+    #[tokio::test]
+    async fn custom_errors_keep_their_status_and_body() {
+        let error = Error::CustomError(StatusCode::CONFLICT, ErrorDetail::with_reason("duplicate"));
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert!(body_text(response).await.contains("duplicate"));
+    }
+
+    #[test]
+    fn helpers_build_the_matching_variants() {
+        assert!(matches!(not_found::<()>(), Err(Error::NotFound)));
+        assert!(matches!(
+            unauthorized::<()>("x"),
+            Err(Error::Unauthorized(_))
+        ));
+        assert!(matches!(bad_request::<()>("x"), Err(Error::BadRequest(_))));
+    }
+
+    #[test]
+    fn text_converts_to_a_message() {
+        assert!(matches!(Error::from("x"), Error::Message(_)));
+        assert!(matches!(Error::from("x".to_string()), Error::Message(_)));
+        assert!(matches!(Error::string("x"), Error::Message(_)));
+    }
+
+    #[test]
+    fn wrap_keeps_the_source_text() {
+        let error = Error::wrap(std::io::Error::other("disk full"));
+        assert_eq!(error.to_string(), "disk full");
     }
 
     #[test]
