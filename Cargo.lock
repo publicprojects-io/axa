@@ -546,7 +546,7 @@ version = "0.1.1"
 
 [[package]]
 name = "axa-keycloak"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "axum",
  "axum-keycloak-auth",
@@ -603,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "axa-paseto"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "authentication-verifier",
  "axum",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "axa-seaorm"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "cruet",
  "heck 0.5.0",
@@ -683,7 +683,7 @@ dependencies = [
 
 [[package]]
 name = "axa-sqlx"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "sqlx",
  "tokio",

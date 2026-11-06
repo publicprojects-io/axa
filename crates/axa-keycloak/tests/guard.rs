@@ -276,7 +276,7 @@ async fn an_unreachable_realm_refuses_every_token() {
     settings.url = "http://127.0.0.1:1".to_string();
     let app = app(guard(settings, true));
     let refused = tokio::time::timeout(
-        Duration::from_secs(30),
+        Duration::from_secs(8),
         status(&app, "GET", "/api/places", Some(&token)),
     )
     .await

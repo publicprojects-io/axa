@@ -58,14 +58,14 @@ axa = "0.4"
 | `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
 | `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq` |
 | `tera` | [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors |
-| `tracing` | [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code |
+| `tracing` | [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code. No service uses this yet |
 | `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
-| `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set |
+| `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set. No service uses this yet |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
-| `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone |
+| `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |

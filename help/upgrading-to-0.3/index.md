@@ -98,6 +98,9 @@ Everything above applies, and `axa-paseto` is now 0.3. On top of it:
 
 ## Upgrading to 0.5
 
+- **A policy rule with `obligations` now needs the service to declare them.** Both guards
+  used to allow such a request and drop the condition. Now it is a `403` until the service
+  calls `Guard::honouring`, and a handler reads the decision through `Allowed`.
 - `config::Http` has `trusted_proxies`, and `config::Server` has `max_connections`. Code
   building either without `..` must set them.
 - `axa_diesel::PoolConfig` has `wait_timeout`, 5 seconds from `PoolConfig::new`.

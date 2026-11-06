@@ -159,7 +159,8 @@ pub fn monitor_runtime(monitor: RuntimeMonitor) -> JoinHandle<()> {
 /// thread, and carries the span that panicked. The panic's own text is left out, as
 /// it can quote anything, and so is a backtrace.
 ///
-/// Call it once, from `main`. It replaces any earlier hook.
+/// Call it once, from `main`. It replaces any earlier hook. Under `axa`, a panic in a
+/// handler then leaves two lines: this one, which says where, and `handler_panicked`.
 pub fn log_panics() {
     std::panic::set_hook(Box::new(|info| {
         let location = info

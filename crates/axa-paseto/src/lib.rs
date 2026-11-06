@@ -44,7 +44,7 @@
 //! assert_eq!(action, Action::Destructive);
 //! ```
 
-use std::{net::IpAddr, sync::Arc};
+use std::{future::Future, net::IpAddr, sync::Arc};
 
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
 use axum::{
@@ -202,6 +202,20 @@ pub struct Guard {
     config: GuardConfig,
     verifier: Arc<ReloadableVerifier>,
     policy: Arc<ReloadablePolicy>,
+    honoured: Vec<String>,
+}
+
+/// A request the policy allowed: who is calling, and the decision. Read it as a handler
+/// argument, where the decision's obligations are the handler's to carry out.
+///
+/// There is none on a public path or with enforcement off, because nothing was decided,
+/// and a handler taking this is then refused.
+#[derive(Debug, Clone)]
+pub struct Allowed {
+    /// The verified caller.
+    pub claims: Claims,
+    /// The policy's decision.
+    pub decision: Decision,
 }
 
 impl std::fmt::Debug for Guard {
@@ -228,7 +242,21 @@ impl Guard {
             config,
             verifier,
             policy,
+            honoured: Vec::new(),
         }
+    }
+
+    /// Declare the obligations this service carries out, reading them from [`Allowed`].
+    ///
+    /// A policy can allow a request only if something is done alongside it, such as
+    /// `"audit"`. Nothing here can do that, so a decision carrying an obligation not
+    /// declared here is refused with a `403`, rather than allowed with the condition
+    /// quietly dropped.
+    #[must_use]
+    pub fn honouring<S: Into<String>>(mut self, obligations: impl IntoIterator<Item = S>) -> Self {
+        self.honoured
+            .extend(obligations.into_iter().map(Into::into));
+        self
     }
 
     /// The guard's config.
@@ -270,13 +298,36 @@ impl Guard {
         path: &str,
         headers: &HeaderMap,
     ) -> Result<(), Rejection> {
+        self.authorize(method, path, headers).map(|_| ())
+    }
+
+    /// Decide one request, giving back what was allowed. `None` means nothing needed
+    /// deciding: the path is public, or enforcement is off. A refusal is logged, as
+    /// `auth_refused`.
+    ///
+    /// # Errors
+    ///
+    /// Fails with `401` for a missing or bad credential, and `403` when the policy
+    /// denies a valid credential, or allows it on a condition this service has not
+    /// declared with [`Guard::honouring`].
+    pub fn authorize(
+        &self,
+        method: &Method,
+        path: &str,
+        headers: &HeaderMap,
+    ) -> Result<Option<Allowed>, Rejection> {
         self.check(method, path, headers)
             .map_err(|refused| refused.logged(None))
     }
 
-    fn check(&self, method: &Method, path: &str, headers: &HeaderMap) -> Result<(), Refused> {
+    fn check(
+        &self,
+        method: &Method,
+        path: &str,
+        headers: &HeaderMap,
+    ) -> Result<Option<Allowed>, Refused> {
         if !self.config.require_auth || self.config.is_public(path) {
-            return Ok(());
+            return Ok(None);
         }
         let action = derive_action(method, path, &self.config);
         let claims = self.claims(headers).map_err(|rejection| Refused {
@@ -286,16 +337,24 @@ impl Guard {
             action,
         })?;
         let decision = self.decide(&claims, action);
-        if decision.allowed {
-            Ok(())
+        let refusal = if decision.allowed {
+            decision
+                .obligations
+                .iter()
+                .find(|obligation| !self.honoured.contains(obligation))
+                .map(|obligation| format!("obligation not carried out: {obligation}"))
         } else {
-            Err(Refused {
+            Some(decision.reason.clone())
+        };
+        if let Some(reason) = refusal {
+            return Err(Refused {
                 rejection: (StatusCode::FORBIDDEN, FORBIDDEN.to_string()),
                 subject: Some(claims.sub),
-                reason: Some(decision.reason),
+                reason: Some(reason),
                 action,
-            })
+            });
         }
+        Ok(Some(Allowed { claims, decision }))
     }
 }
 
@@ -326,7 +385,7 @@ impl Refused {
 }
 
 /// Middleware applying a [`Guard`] to every request. It also makes the guard
-/// available to [`AuthUser`].
+/// available to [`AuthUser`], and what was decided available to [`Allowed`].
 pub async fn middleware(
     State(guard): State<Arc<Guard>>,
     mut request: Request,
@@ -336,7 +395,10 @@ pub async fn middleware(
         .check(request.method(), request.uri().path(), request.headers())
         .map_err(|refused| refused.logged(request.extensions().get::<IpAddr>().copied()));
     match decision {
-        Ok(()) => {
+        Ok(allowed) => {
+            if let Some(allowed) = allowed {
+                request.extensions_mut().insert(allowed);
+            }
             request.extensions_mut().insert(guard);
             next.run(request).await
         }
@@ -354,6 +416,10 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
 
     #[allow(unknown_lints, clippy::unused_async_trait_impl)]
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // Already verified for this request, so there is no need to do it twice.
+        if let Some(allowed) = parts.extensions.get::<Allowed>() {
+            return Ok(Self(allowed.claims.clone()));
+        }
         // Fail closed: without the middleware there is nothing to verify
         // against, so this must never let the request through.
         let guard = parts
@@ -361,6 +427,23 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
             .get::<Arc<Guard>>()
             .ok_or_else(invalid_token)?;
         guard.claims(&parts.headers).map(Self)
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Allowed {
+    type Rejection = Rejection;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(
+            parts
+                .extensions
+                .get::<Self>()
+                .cloned()
+                .ok_or_else(invalid_token),
+        )
     }
 }
 
@@ -473,6 +556,71 @@ mod tests {
         }
         let request = request.body(Body::empty()).unwrap();
         app.oneshot(request).await.unwrap().status()
+    }
+
+    // Obligations.
+
+    fn with_obligation() -> Guard {
+        let policy = Policy::from_json(
+            r#"{ "rules": [{ "effect": "allow", "actions": ["read"], "obligations": ["audit"] }] }"#,
+        )
+        .unwrap();
+        Guard::new(
+            config(true),
+            verifier(),
+            Arc::new(ReloadablePolicy::new(policy)),
+        )
+    }
+
+    fn obligation_app(guard: Guard) -> Router {
+        Router::new()
+            .route(
+                "/api/places",
+                get(|Allowed { decision, .. }: Allowed| async move {
+                    decision.requires("audit").to_string()
+                }),
+            )
+            .layer(from_fn_with_state(Arc::new(guard), middleware))
+    }
+
+    #[tokio::test]
+    async fn an_obligation_nobody_carries_out_is_refused() {
+        let token = token(&json!({}));
+        let app = obligation_app(with_obligation());
+        assert_eq!(
+            status(app, "GET", "/api/places", Some(&token)).await,
+            StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn a_handler_reads_the_obligations_the_service_declared() {
+        let token = token(&json!({}));
+        let app = obligation_app(with_obligation().honouring(["audit"]));
+        let request = HttpRequest::builder()
+            .uri("/api/places")
+            .header(AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 64)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"true");
+    }
+
+    #[tokio::test]
+    async fn allowed_is_refused_where_nothing_was_decided() {
+        let guard = Guard::new(
+            config(false),
+            verifier(),
+            Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+        );
+        assert_eq!(
+            status(obligation_app(guard), "GET", "/api/places", None).await,
+            StatusCode::UNAUTHORIZED
+        );
     }
 
     // Public paths.

@@ -304,6 +304,7 @@ stated here and proved by their own tests.
 | PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
 | PST-9 | `axa-paseto` | A refused caller learns nothing about why. A `401` always says `invalid token` and a `403` always says `forbidden`, and the reason goes to the log. | `a_refusal_tells_the_caller_nothing_about_why` |
 | PST-10 | `axa-paseto` | `parse_bool` does not read an unknown word as off. | `on_off_settings_parse` |
+| PST-11 | `axa-paseto` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
 | DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
@@ -318,7 +319,7 @@ stated here and proved by their own tests.
 | KCK-2 | `axa-keycloak` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
 | KCK-3 | `axa-keycloak` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
 | KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. A `403` does not name the rule, which goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_forbidden_caller_is_not_told_which_rule_refused_them` |
-| KCK-5 | `axa-keycloak` | An unreachable realm refuses every token and never hangs a request. | `an_unreachable_realm_refuses_every_token` |
+| KCK-5 | `axa-keycloak` | An unreachable realm refuses every token, and a request waits about five seconds at most for the realm's keys. | `an_unreachable_realm_refuses_every_token` |
 | KCK-6 | `axa-keycloak` | A PASETO is accepted only through a verifier the service supplies, and then under the same policy. | `a_paseto_is_refused_unless_the_guard_accepts_them`, `with_paseto_both_kinds_of_token_work_under_one_policy` |
 | KCK-7 | `axa-keycloak` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
 | KCK-8 | `axa-keycloak` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |

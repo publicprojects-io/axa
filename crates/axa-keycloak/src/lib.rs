@@ -97,6 +97,9 @@
 //! These are copies, and a fix to the original does not reach them. Review them
 //! together whenever the original changes.
 //!
+//! The copies cite `authorization-attributes.md`, the policy model behind ABAC. It sits
+//! beside `authentication-verifier`, and is not part of this crate.
+//!
 //! | Here | Copied from |
 //! |---|---|
 //! | [`keycloak`] | `authentication-verifier` 0.9.1, `src/keycloak.rs` |
