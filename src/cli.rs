@@ -10,7 +10,7 @@
 //! service check
 //! ```
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
 use crate::{
     Environment, Error, Result,
@@ -19,8 +19,11 @@ use crate::{
 };
 
 /// Parsed command line.
+///
+/// Read it with [`parse`], which gives `--help` and `--version` the service's
+/// own name. `Cli::parse()` works too, and says nothing about the service.
 #[derive(Debug, Parser)]
-#[command(version, about)]
+#[command(about = None, long_about = None)]
 pub struct Cli {
     /// What to do.
     #[command(subcommand)]
@@ -83,6 +86,30 @@ pub enum DbCommand {
     Status,
     /// Delete all rows.
     Truncate,
+}
+
+/// The command line under a service's own name, version, and description.
+fn command(name: &'static str, version: &'static str, about: &'static str) -> clap::Command {
+    Cli::command().name(name).version(version).about(about)
+}
+
+/// Read the process's arguments, answering `--help` and `--version` for the
+/// service rather than for this crate. Cargo fills these in for the crate that
+/// writes them, so they must be written in the service:
+///
+/// ```no_run
+/// let cli = axa::cli::parse(
+///     env!("CARGO_PKG_NAME"),
+///     env!("CARGO_PKG_VERSION"),
+///     env!("CARGO_PKG_DESCRIPTION"),
+/// );
+/// ```
+///
+/// Exits as `clap` does on a bad argument, on `--help`, and on `--version`.
+#[must_use]
+pub fn parse(name: &'static str, version: &'static str, about: &'static str) -> Cli {
+    let matches = command(name, version, about).get_matches();
+    Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
 }
 
 /// Parse `key:value` task arguments.
@@ -309,7 +336,22 @@ mod tests {
 
     #[test]
     fn command_line_is_well_formed() {
-        use clap::CommandFactory;
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn help_and_version_speak_for_the_service() {
+        let mut command = command("case-folder", "7.8.9", "Holds case folders.");
+        assert_eq!(command.render_version(), "case-folder 7.8.9\n");
+        let help = command.render_long_help().to_string();
+        assert!(help.contains("Holds case folders."), "{help}");
+        assert!(!help.contains("Axum"), "{help}");
+    }
+
+    #[test]
+    fn nothing_says_this_crate_is_the_service() {
+        let help = Cli::command().render_long_help().to_string();
+        assert!(!help.contains("Axum"), "{help}");
+        assert!(Cli::try_parse_from(["svc", "--version"]).is_err());
     }
 }

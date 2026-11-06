@@ -49,7 +49,7 @@ problem = ["dep:axa-problem"]
 prometheus = ["dep:axa-prometheus"]
 redis = ["dep:axa-redis"]
 session = ["dep:axa-session"]
-sqlx = ["dep:axa-sqlx"]
+sqlx = ["dep:axa-sqlx", "dep:sqlx"]
 tera = ["dep:axa-tera"]
 versioning = ["dep:axa-versioning"]
 

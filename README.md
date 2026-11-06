@@ -61,7 +61,7 @@ axa = "0.3"
 | `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
-| `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets |
+| `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
@@ -232,8 +232,8 @@ place.
 | `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
 | `DATABASE_URL` | Connection string. Required in production for a service with a database |
 | `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
-| `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds |
-| `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot |
+| `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds. 5 seconds and 10 minutes by default, or a service's `Defaults` |
+| `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot. A service sharing a database it does not own sets `Defaults::auto_migrate` to `false` |
 | `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
 | `BODY_LIMIT_BYTES` | Largest accepted request body |
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
@@ -289,16 +289,12 @@ assert_eq!(config.server.port, 8000);
 | `/_ping`, `/_health` | The process is up |
 | `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, with `{"ok":false,"failed":[...]}` |
 
-The route knows the database and queue only when axa holds them. Anything else,
-including a sqlx pool, is a named check, which is an ordinary async closure:
+The route knows the database and queue only when axa holds them, which includes
+the pool in `AppContext::db` with the `sqlx` feature. Anything else is a named
+check, which is an ordinary async closure:
 
 ```rust,ignore
-ctx.health_checks = Checks::new()
-    .add("database", move || {
-        let pool = pool.clone();
-        async move { axa::sqlx::ping(&pool).await }
-    })
-    .add("search", || async { search::ping().await });
+ctx.health_checks = Checks::new().add("search", || async { search::ping().await });
 ```
 
 The route is public, so a caller must not be able to drive load at a dependency.
@@ -317,6 +313,17 @@ service start [--worker | --all] [--binding ADDR] [--port PORT]
 service db migrate | down [STEPS] | reset | status | truncate
 service task [NAME] [KEY:VALUE ...]
 service check
+```
+
+`axa::cli::parse` reads it, and takes the service's name, version, and description
+for `--help` and `--version`:
+
+```rust,no_run
+let cli = axa::cli::parse(
+    env!("CARGO_PKG_NAME"),
+    env!("CARGO_PKG_VERSION"),
+    env!("CARGO_PKG_DESCRIPTION"),
+);
 ```
 
 `check` validates the configuration, prints the effective settings with passwords

@@ -16,12 +16,16 @@
 //! # }
 //! ```
 
-use std::time::Duration;
+use std::{
+    ops::{Deref, DerefMut},
+    time::Duration,
+};
 
 pub use sqlx;
 use sqlx::{
-    AssertSqlSafe, PgPool, Row,
+    AssertSqlSafe, PgConnection, PgPool, Postgres, Row,
     migrate::{MigrateError, Migrator},
+    pool::PoolConnection,
     postgres::PgPoolOptions,
 };
 
@@ -81,6 +85,83 @@ pub async fn connect(config: &PoolConfig) -> Result<PgPool, sqlx::Error> {
 pub async fn ping(pool: &PgPool) -> Result<(), sqlx::Error> {
     sqlx::query("SELECT 1").execute(pool).await?;
     Ok(())
+}
+
+/// Where a function gets its connection: the pool, or a connection the caller
+/// holds, usually an open transaction, so one function serves both.
+///
+/// `impl sqlx::Acquire` says the same, but its associated types stop the future
+/// being `Send`, which Axum handlers and `tokio::spawn` need.
+///
+/// ```no_run
+/// use axa_sqlx::{Db, sqlx};
+///
+/// async fn count(db: impl Into<Db<'_>>) -> Result<i64, sqlx::Error> {
+///     let mut conn = db.into().acquire().await?;
+///     sqlx::query_scalar("SELECT count(*) FROM items")
+///         .fetch_one(&mut *conn)
+///         .await
+/// }
+/// ```
+pub enum Db<'a> {
+    /// Take a connection from the pool for the length of the call.
+    Pool(&'a PgPool),
+    /// Use the caller's connection.
+    Conn(&'a mut PgConnection),
+}
+
+impl<'a> From<&'a PgPool> for Db<'a> {
+    fn from(pool: &'a PgPool) -> Self {
+        Self::Pool(pool)
+    }
+}
+
+impl<'a> From<&'a mut PgConnection> for Db<'a> {
+    fn from(conn: &'a mut PgConnection) -> Self {
+        Self::Conn(conn)
+    }
+}
+
+impl<'a> Db<'a> {
+    /// The connection to use.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the pool has none to give.
+    pub async fn acquire(self) -> Result<Conn<'a>, sqlx::Error> {
+        match self {
+            Self::Pool(pool) => Ok(Conn::Pooled(pool.acquire().await?)),
+            Self::Conn(conn) => Ok(Conn::Borrowed(conn)),
+        }
+    }
+}
+
+/// A connection for the length of one call. It derefs to [`PgConnection`].
+pub enum Conn<'a> {
+    /// Taken from the pool, and given back when dropped.
+    Pooled(PoolConnection<Postgres>),
+    /// The caller's.
+    Borrowed(&'a mut PgConnection),
+}
+
+impl Deref for Conn<'_> {
+    type Target = PgConnection;
+
+    fn deref(&self) -> &PgConnection {
+        match self {
+            Self::Pooled(conn) => conn,
+            Self::Borrowed(conn) => conn,
+        }
+    }
+}
+
+impl DerefMut for Conn<'_> {
+    fn deref_mut(&mut self) -> &mut PgConnection {
+        match self {
+            Self::Pooled(conn) => conn,
+            Self::Borrowed(conn) => conn,
+        }
+    }
 }
 
 /// Whether an error is a violated unique constraint, which a service usually

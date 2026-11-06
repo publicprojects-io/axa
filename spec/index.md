@@ -98,6 +98,9 @@ fixed once and an auditor reads it once.
 | CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
 | CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CSP` names one, and an empty `HTTP_CSP` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
 | CFG-20 | `HSTS_MAX_AGE_SECONDS` sets the HSTS lifetime, one year by default. | `the_hsts_max_age_can_be_set`, `production_sends_a_strict_policy_by_default` |
+| CFG-21 | The database connect timeout is 5 seconds and the idle timeout 10 minutes, unless a service's `Defaults` or a variable says otherwise. | `the_database_timeouts_suit_a_real_database`, `a_service_can_state_its_own_database_defaults` |
+| CFG-22 | Outside production a service migrates at boot unless `Defaults::auto_migrate` is off, and a variable beats that. | `development_migrates_at_boot_by_default`, `a_service_can_state_its_own_database_defaults` |
+| CFG-23 | An unset smallest pool size follows a smaller largest one. A largest size of 0, or a smallest above the largest, is invalid as in CFG-13. | `a_small_largest_pool_size_carries_the_smallest_with_it`, `a_pool_that_cannot_exist_is_refused` |
 
 The variables are listed in `README.md`.
 
@@ -126,7 +129,7 @@ CORS, timeout, compression, body limit.
 | MID-3 | A UUID is minted when nothing usable remains. | `request_id_is_minted_when_nothing_usable_remains` |
 | MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `security_headers_do_not_replace_a_handlers_own` |
 | MID-5 | `strict-transport-security` is sent when `hsts` is set, for `hsts_max_age` seconds. | `responses_carry_request_id_and_security_headers`, `the_hsts_max_age_is_configurable` |
-| MID-6 | A panic in a handler becomes a `500`. | `a_panic_becomes_a_500` |
+| MID-6 | A panic in a handler becomes the `500` of any internal failure, logged as an error with no panic text. | `a_panic_becomes_a_500`, `a_panic_answers_like_any_other_internal_failure`. The log line is **unverified** by a test |
 | MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
 | MID-9 | A request over `timeout_seconds` is a `408`, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_zero_timeout_means_none` |
@@ -148,6 +151,7 @@ CORS, timeout, compression, body limit.
 | ERR-4 | A custom error keeps its status and body. | `custom_errors_keep_their_status_and_body` |
 | ERR-5 | `not_found`, `unauthorized`, and `bad_request` build the matching variants. | `helpers_build_the_matching_variants`, `statuses_match_their_variants` |
 | ERR-6 | The `IntoResponse` match has no wildcard arm, so a new variant must choose its status. | Enforced by the compiler |
+| ERR-8 | With the `sqlx` or `queue` feature, a sqlx error converts to `Error::Sqlx`, a generic `500`. | `a_sqlx_error_is_a_generic_500` |
 | ERR-7 | Only a server fault logs as an error. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 
 The body is currently `{error, description, errors}`. See §6 for the move to
@@ -172,7 +176,7 @@ RFC 9457.
 | HLT-4 | A check's error text is logged and never sent. | `readiness_never_sends_a_checks_error_text` |
 | HLT-5 | A check past its time limit, or one that panics, has failed. | `a_check_past_its_time_limit_fails`, `a_check_that_panics_fails` |
 | HLT-6 | One answer, passing or failing, is reused for a few seconds, and only one round runs at a time, so a public route cannot drive load at a dependency. A caller that hangs up does not cancel the round. | `one_answer_is_reused_until_it_goes_stale`, `a_failed_answer_is_reused_too`, `callers_during_a_round_share_it`, `a_caller_that_hangs_up_does_not_waste_the_round` |
-| HLT-7 | A service on sqlx checks its pool as a named check, since `AppContext::db` is `()` for it. | `a_sqlx_pool_is_checked_by_name` |
+| HLT-7 | With the `sqlx` feature, `/_readiness` asks `AppContext::db` as `database`. A pool held anywhere else is a named check. | `the_context_pool_is_checked_without_being_named`, `a_sqlx_pool_is_checked_by_name` |
 
 ### 4.8 Command line and tasks
 
@@ -180,7 +184,7 @@ RFC 9457.
 |---|---|---|
 | CLI-1 | `start` takes `--worker`, `--all`, `--binding`, and `--port`. | `start_takes_its_options` |
 | CLI-2 | `--worker` and `--all` conflict. | `worker_and_all_conflict` |
-| CLI-7 | `--server-and-worker` is accepted for `--all`, so deployment scripts written for Loco keep working. | `the_older_spelling_of_all_still_works` |
+| CLI-10 | `--server-and-worker` is accepted for `--all`, so deployment scripts written for Loco keep working. | `the_older_spelling_of_all_still_works` |
 | CLI-3 | `db down` defaults to one step. | `database_commands_parse` |
 | CLI-4 | `task` takes a name and `key:value` parameters, and values may contain colons. | `task_takes_a_name_and_parameters`, `task_arguments_keep_colons_in_values` |
 | CLI-5 | A parameter with no colon is refused. | `task_argument_without_a_colon_is_refused` |
@@ -188,6 +192,7 @@ RFC 9457.
 | CLI-7 | `check` takes no arguments, and prints the effective settings, then any warnings. It connects to nothing. A service's own settings are its to check. | `check_takes_no_arguments`, `check_prints_the_effective_settings`, `check_shows_warnings_outside_production` |
 | CLI-8 | `check` never prints a password or other secret. | `check_never_prints_a_password`, `every_setting_passes_through_redaction` |
 | CLI-9 | `check` refuses what a start would refuse, so the process exits non-zero. | `check_refuses_what_a_start_would_refuse`. The exit status was seen once by hand, and is **unverified** by a test |
+| CLI-11 | `cli::parse` answers `--help` and `--version` for the service. Nothing presents this crate as the service. | `help_and_version_speak_for_the_service`, `nothing_says_this_crate_is_the_service` |
 | TSK-1 | A registered task runs with its arguments. | `a_registered_task_runs_with_its_arguments` |
 | TSK-2 | An unknown task, or a missing argument, is an error. | `an_unknown_task_is_an_error`, `a_missing_argument_is_an_error` |
 
@@ -214,7 +219,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | QUE-5 | A job not heard from for `stale_minutes` is queued again if it has attempts left, and otherwise fails, so a crash cannot loop forever. | `a_stale_job_with_attempts_left_runs_again`, `a_job_that_keeps_killing_workers_ends_as_failed` |
 | QUE-6 | Services booting together all connect. Table setup runs under an advisory lock, because `CREATE ... IF NOT EXISTS` is not safe against itself. | `services_booting_together_all_connect` |
 | QUE-7 | Jobs in progress finish before shutdown. | `a_job_in_progress_finishes_before_shutdown` |
-| QUE-8 | A failed job gets `max_attempts` tries, waiting longer each time. The default is one. A worker may set its own limit, which also applies to a lost job. | `a_failing_job_retries_up_to_its_limit`, `a_retry_waits_for_its_backoff`, `by_default_a_failed_job_is_not_repeated`, `each_retry_waits_twice_as_long_up_to_a_limit` |, `a_worker_can_allow_more_tries_than_the_queue`, `a_lost_job_uses_its_workers_limit_too` |
+| QUE-8 | A failed job gets `max_attempts` tries, waiting longer each time. The default is one. A worker may set its own limit, which also applies to a lost job. | `a_failing_job_retries_up_to_its_limit`, `a_retry_waits_for_its_backoff`, `by_default_a_failed_job_is_not_repeated`, `each_retry_waits_twice_as_long_up_to_a_limit`, `a_worker_can_allow_more_tries_than_the_queue`, `a_lost_job_uses_its_workers_limit_too` |
 | QUE-9 | Finished rows are deleted after `retention_days`, and nothing else is. | `old_finished_rows_are_deleted_and_nothing_else` |
 | QUE-10 | A service with a queue and no worker is warned at boot. | `a_service_with_a_queue_and_no_worker_is_warned`, `a_service_without_a_queue_gets_no_worker_warning` |
 | QUE-11 | A table created by 0.1.0 gains the `attempts` and `max_attempts` columns. | `the_attempts_column_is_added_to_an_older_table`, `the_max_attempts_column_is_added_to_an_older_table` |
@@ -230,11 +235,14 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | STR-1 | The store holds one value per type. | `stores_one_value_per_type` |
 | LOG-1 | `RUST_LOG` wins, then the override filter, then the default modules plus the service. | `default_filter_names_the_service_and_shared_modules`, `an_override_replaces_the_default_filter`, `rust_log_wins_over_the_override_and_the_level`, `a_blank_or_invalid_rust_log_is_passed_over` |
 | LOG-2 | Level and format names parse, with safe defaults. | `levels_parse_and_print`, `formats_parse` |
+| LOG-3 | The default filter names the service as its log target reads, with `_` for `-`. | `a_package_name_with_a_hyphen_still_shows_its_logs` |
+| LOG-4 | Colour goes to a terminal only. | **Unverified** by a test |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
 | SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
 | SRV-3 | `server::run` runs a server, a job queue, or both, and logs which. With neither it is an error. | `nothing_to_run_is_an_error`, `a_server_alone_stops_when_told`, `a_worker_alone_stops_when_told` |
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 | SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
+| SRV-6 | Requests and jobs hear of shutdown at once and share one limit, and no job starts after that. | `requests_and_jobs_share_one_limit_and_no_job_starts_during_it` |
 
 ### 4.12 SeaORM support
 
@@ -262,6 +270,8 @@ stated here and proved by their own tests.
 | SQX-4 | `axa-sqlx` | A table or type name reaches SQL only through `quote_identifier`, which refuses anything but lowercase ASCII letters, digits, and underscores. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
 | SQX-5 | `axa-sqlx` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
 | SQX-6 | `axa-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
+| SQX-7 | `axa-sqlx` | `Db` lets one function take the pool or an open transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
+| ENV-D | `axa-environment` | A command that destroys data may run only in development or test, and only when confirmed. | `data_is_destroyed_only_in_development_or_test_and_only_when_confirmed` |
 | PAG-1 | `axa-pagination` | A large limit is clamped, not rejected. | `a_large_limit_is_clamped_not_rejected` |
 | PAG-2 | `axa-pagination` | Zero and unparsable values use the defaults. | `zero_and_unparsable_values_use_the_defaults` |
 | PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
@@ -320,9 +330,9 @@ stated here and proved by their own tests.
 
 ### 4.14 Databases
 
-`AppContext::db` is a SeaORM connection with the `sea-orm` feature, and `()`
-without it. Until §6's `AppContext` on a sqlx pool is built, a service on sqlx
-keeps its own `PgPool`, in its own state or in `shared_store`.
+`AppContext::db` is a SeaORM connection with the `sea-orm` feature, a `PgPool`
+with the `sqlx` feature, and `()` with neither. With both, it is the SeaORM
+connection. `db::connect` opens either from `config::Database`.
 
 ## 5. Verification
 
@@ -376,9 +386,6 @@ by hand. Publish only from a commit where everything above has passed.
   envelope and their front-ends, so it lands as its own change. `axa-problem`
   is built, and no service uses it yet.
 - **`axa-opentelemetry`**, replacing the services' copies of OTLP export.
-- **`AppContext` on a sqlx pool**, so a service can leave SeaORM. Until then
-  `AppContext::db` is `()` without `sea-orm`, and a service on sqlx holds its own
-  pool and adds it to `/_readiness` as a named check (HLT-7).
 
 ## 7. Open questions
 

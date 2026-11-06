@@ -222,11 +222,10 @@ async fn ok() -> Json<Health> {
     Json(Health { ok: true })
 }
 
-/// The checks axa can write itself: the database and queue it holds. A service
-/// on sqlx holds its own pool, so it adds its own check for it.
+/// The checks axa can write itself: the database and queue it holds.
 fn built_in(ctx: &AppContext) -> Vec<Check> {
     #[cfg_attr(
-        not(any(feature = "sea-orm", feature = "queue")),
+        not(any(feature = "sea-orm", feature = "sqlx", feature = "queue")),
         allow(unused_mut, clippy::let_and_return)
     )]
     let mut checks = Vec::new();
@@ -236,6 +235,14 @@ fn built_in(ctx: &AppContext) -> Vec<Check> {
         checks.push(Check::new("database", move || {
             let db = db.clone();
             async move { db.ping().await }
+        }));
+    }
+    #[cfg(all(feature = "sqlx", not(feature = "sea-orm")))]
+    {
+        let pool = ctx.db.clone();
+        checks.push(Check::new("database", move || {
+            let pool = pool.clone();
+            async move { axa_sqlx::ping(&pool).await }
         }));
     }
     #[cfg(feature = "queue")]
@@ -269,7 +276,8 @@ pub fn routes() -> Routes {
         .add("/_readiness", get(readiness))
 }
 
-#[cfg(all(test, not(feature = "sea-orm")))]
+// With a database in the context, a context that was never opened fails readiness.
+#[cfg(all(test, not(any(feature = "sea-orm", feature = "sqlx"))))]
 mod tests {
     use super::*;
     use crate::{
@@ -287,7 +295,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        AppContext::new(Environment::Test, (), config)
+        AppContext::for_test(Environment::Test, config)
     }
 
     async fn answer(router: axum::Router) -> (StatusCode, String) {
@@ -544,8 +552,24 @@ mod sqlx_tests {
     use super::*;
     use axa_sqlx::sqlx::postgres::PgPoolOptions;
 
-    /// A service on sqlx holds its own pool, and `AppContext::db` knows nothing
-    /// about it. Nothing listens on this port, so the pool cannot answer.
+    /// `AppContext::db` is the pool, and readiness asks it without being told.
+    /// Nothing listens on this port, so the pool cannot answer.
+    #[cfg(not(feature = "sea-orm"))]
+    #[tokio::test]
+    async fn the_context_pool_is_checked_without_being_named() {
+        let defaults = crate::config::Defaults {
+            database: "",
+            ..crate::config::Defaults::default()
+        };
+        let config =
+            crate::config::Config::from_lookup(&crate::Environment::Test, &defaults, |_| None)
+                .unwrap();
+        let ctx = AppContext::for_test(crate::Environment::Test, config);
+        let answer = ctx.health_checks.answer(built_in(&ctx)).await;
+        assert_eq!(answer.failed, ["database"]);
+    }
+
+    /// A second pool, or one held beside `SeaORM`, is still a named check.
     #[tokio::test]
     async fn a_sqlx_pool_is_checked_by_name() {
         let pool = PgPoolOptions::new()

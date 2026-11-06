@@ -5,6 +5,60 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+This breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
+timeouts are longer.
+
+### Added
+
+- **With the `sqlx` feature, `AppContext::db` is a `PgPool`**, and `/_readiness` asks
+  it as `database`. This breaks a service on that feature, which passed `()` to
+  `AppContext::new`. `db::connect` opens the pool from `config::Database`, and
+  `PoolConfig` converts from it. With `sea-orm` too, `db` stays the SeaORM connection.
+- `axa_sqlx::Db`, so that one function takes the pool or an open transaction. It has
+  one service so far, the electronic patient record, where it was written, and
+  `impl Acquire` futures are not `Send`.
+- `Environment::may_destroy_data`, which a service calls before `db reset` or
+  `db down`. `Cli` only parses those commands, so a hand-written `run` could leave
+  the guard out, and one did.
+
+### Fixed
+
+- `--help` and `--version` no longer describe `axa`. They printed `axa 0.3.0` and this
+  crate's description from every service, because Cargo fills those in for the crate
+  that writes them. `cli::parse` takes the service's own, and `Cli::parse()` now
+  answers with neither.
+- A service running `start --all` no longer takes up to twice
+  `SHUTDOWN_TIMEOUT_SECONDS` to stop. Requests and jobs now share one limit, from one
+  moment. Job loops also hear at once, so they no longer claim new jobs while the
+  server waits for its requests.
+- `check` now prints `HTTP_CSP` and `HSTS_MAX_AGE_SECONDS`.
+- A panic now answers with the same JSON as any other internal failure, and logs an
+  error carrying the request id. It used to answer `Service panicked` as plain text.
+- A package name with a hyphen, such as `case-folder`, no longer hides the service's
+  logs. The default filter named `case-folder`, and the logs' target is `case_folder`.
+- Logs carry colour only on a terminal, so a log file or pipeline gets no escape codes.
+- `DB_MAX_CONNECTIONS=1` no longer leaves production with a smallest pool size of 2. An
+  unset smallest size now follows the largest. A pool that cannot exist, with a largest
+  size of 0 or a smallest above the largest, is now refused like any other invalid
+  setting.
+- The `sqlx` feature now gives `Error::Sqlx`, so a handler can use `?` on a query. Only
+  the `queue` feature did.
+
+### Changed
+
+- **`DB_CONNECT_TIMEOUT` is now 5 seconds and `DB_IDLE_TIMEOUT` 10 minutes**, up from
+  500 ms each, matching `axa-sqlx`. The old defaults failed requests after half a
+  second of waiting for a connection, and closed idle connections twice a second.
+  `axa_seaorm::PoolConfig::new` changes to match.
+
+### Added
+
+- `Defaults::connect_timeout`, `Defaults::idle_timeout`, and `Defaults::auto_migrate`,
+  so a service states these in code. `auto_migrate: false` suits a service sharing a
+  database it does not own. Code building a `Defaults` without
+  `..Defaults::default()` must set them.
+- `config::DEFAULT_CONNECT_TIMEOUT` and `config::DEFAULT_IDLE_TIMEOUT`.
+
 ## [0.3.0] - 2026-11-06
 
 This covers `axa` 0.3.0, `axa-tera` 0.2.0, and `axa-session` 0.1.0. It breaks 0.2.0:

@@ -4,6 +4,7 @@
 //! headers, CORS, timeout, compression, body limit.
 
 use std::{
+    any::Any,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -123,6 +124,14 @@ fn request_span(request: &Request) -> tracing::Span {
         path = %path,
         request_id = %request_id,
     )
+}
+
+/// The answer to a panic, in the shape of any other internal failure. The panic's
+/// text is left out of this line, as it can quote anything, and Rust's panic hook
+/// has already written it to stderr. The line itself carries the request id.
+fn panicked(_panic: Box<dyn Any + Send>) -> Response {
+    tracing::error!("handler_panicked");
+    crate::error::internal_response()
 }
 
 /// A body limit for one route, replacing the service-wide limit there.
@@ -256,7 +265,7 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         ))
         .layer(set_default_header(header::X_FRAME_OPTIONS, "DENY"))
         .layer(set_default_header(header::REFERRER_POLICY, "no-referrer"))
-        .layer(CatchPanicLayer::new())
+        .layer(CatchPanicLayer::custom(panicked))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request| request_span(request))
@@ -538,6 +547,18 @@ mod tests {
     async fn a_panic_becomes_a_500() {
         let response = app().oneshot(get_request("/panic")).await.unwrap();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn a_panic_answers_like_any_other_internal_failure() {
+        let response = app().oneshot(get_request("/panic")).await.unwrap();
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("internal_server_error"), "{body}");
+        assert!(!body.contains("boom"), "{body}");
     }
 
     #[tokio::test]

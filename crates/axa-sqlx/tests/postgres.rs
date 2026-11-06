@@ -8,7 +8,7 @@
 use std::path::Path;
 
 use axa_sqlx::{
-    PoolConfig, connect, dangerously_recreate, is_unique_violation, migrate, ping, revert,
+    Db, PoolConfig, connect, dangerously_recreate, is_unique_violation, migrate, ping, revert,
     sqlx::{self, PgPool, Row, migrate::Migrator},
     status, truncate,
 };
@@ -167,4 +167,37 @@ async fn status_on_a_fresh_database_shows_nothing_applied() {
     let rows = status(&pool, &migrator).await.unwrap();
     assert!(rows.iter().all(|row| !row.applied));
     dangerously_recreate(&pool, &migrator).await.unwrap();
+}
+
+/// One function, reached from the pool and from inside a transaction, in a
+/// future that can be spawned.
+async fn item_count(db: impl Into<Db<'_>>) -> Result<i64, sqlx::Error> {
+    let mut conn = db.into().acquire().await?;
+    sqlx::query_scalar("SELECT count(*) FROM items")
+        .fetch_one(&mut *conn)
+        .await
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+async fn one_function_serves_the_pool_and_a_transaction() {
+    let pool = pool().await;
+    let migrator = migrator().await;
+    dangerously_recreate(&pool, &migrator).await.unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO items (name) VALUES ('held')")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    assert_eq!(item_count(&mut *tx).await.unwrap(), 1);
+    // The pool cannot see what the transaction has not committed.
+    assert_eq!(item_count(&pool).await.unwrap(), 0);
+    tx.rollback().await.unwrap();
+
+    let spawned = tokio::spawn({
+        let pool = pool.clone();
+        async move { item_count(&pool).await }
+    });
+    assert_eq!(spawned.await.unwrap().unwrap(), 0);
 }

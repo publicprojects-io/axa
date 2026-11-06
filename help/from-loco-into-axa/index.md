@@ -30,7 +30,7 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 | Loco | axa |
 |---|---|
 | `impl Hooks for App` | Plain functions on `App` |
-| `cli::main::<App, Migrator>()` | `App::run(Cli::parse())`, written out in your own code |
+| `cli::main::<App, Migrator>()` | `App::run(cli::parse(...))`, written out in your own code |
 | `config/*.yaml` | Environment variables, with defaults in code |
 | `LOCO_ENV` | `APP_ENV` (`LOCO_ENV` is still read by axa) |
 | `Initializer` | A function that takes and returns a `Router` |
@@ -246,13 +246,16 @@ it after `serve` returns.
 Change only the imports and the body of `main`:
 
 ```rust,ignore
-use axa::cli::Cli;
-use clap::Parser;
 use my_service::app::App;
 
 #[tokio::main]
 async fn main() -> axa::Result<()> {
-    App::run(Cli::parse()).await
+    App::run(axa::cli::parse(
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_DESCRIPTION"),
+    ))
+    .await
 }
 ```
 

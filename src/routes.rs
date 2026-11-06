@@ -291,7 +291,7 @@ mod tests {
         let mut config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         config.http.timeout_seconds = seconds;
         #[cfg(not(feature = "sea-orm"))]
-        return AppContext::new(Environment::Test, (), config);
+        return AppContext::for_test(Environment::Test, config);
         #[cfg(feature = "sea-orm")]
         return AppContext::new(
             Environment::Test,

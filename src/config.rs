@@ -30,6 +30,14 @@ pub const DEFAULT_HSTS_MAX_AGE: u64 = 31_536_000;
 /// serves pages must name what they load.
 pub const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
 
+/// How long to wait for a database connection, unless a service or
+/// `DB_CONNECT_TIMEOUT` says otherwise: five seconds, in milliseconds.
+pub const DEFAULT_CONNECT_TIMEOUT: u64 = 5_000;
+
+/// How long an idle database connection stays open, unless a service or
+/// `DB_IDLE_TIMEOUT` says otherwise: ten minutes, in milliseconds.
+pub const DEFAULT_IDLE_TIMEOUT: u64 = 600_000;
+
 /// One megabyte, as a body limit.
 pub const MB: usize = 1_000_000;
 
@@ -46,6 +54,14 @@ pub struct Defaults {
     pub body_limit: usize,
     /// Pool size outside production.
     pub max_connections: u32,
+    /// Database connection timeout, in milliseconds.
+    pub connect_timeout: u64,
+    /// Database idle timeout, in milliseconds.
+    pub idle_timeout: u64,
+    /// Whether to migrate at boot outside production. Turn this off for a
+    /// service that shares a database it does not own. Production never does
+    /// unless `DB_AUTO_MIGRATE` says so.
+    pub auto_migrate: bool,
 }
 
 impl Default for Defaults {
@@ -56,6 +72,9 @@ impl Default for Defaults {
             production_port: None,
             body_limit: 2 * MB,
             max_connections: 10,
+            connect_timeout: DEFAULT_CONNECT_TIMEOUT,
+            idle_timeout: DEFAULT_IDLE_TIMEOUT,
+            auto_migrate: true,
         }
     }
 }
@@ -389,6 +408,34 @@ fn cors_origins<F: Fn(&str) -> Option<String>>(
     Ok(origins)
 }
 
+/// The smallest and largest pool sizes. An unset smallest size follows a small
+/// largest one, so `DB_MAX_CONNECTIONS=1` works alone. A pool that cannot exist is
+/// noted, and the default applies.
+fn pool_size<F: Fn(&str) -> Option<String>>(
+    vars: &Vars<F>,
+    defaults: &Defaults,
+    production: bool,
+) -> (u32, u32) {
+    let default_max = if production {
+        20
+    } else {
+        defaults.max_connections
+    };
+    let mut max = vars.parsed("DB_MAX_CONNECTIONS", default_max);
+    if max == 0 {
+        vars.invalid("DB_MAX_CONNECTIONS", "0", "at least 1");
+        max = default_max;
+    }
+    let default_min = u32::from(production).saturating_add(1).min(max);
+    let min = vars.parsed("DB_MIN_CONNECTIONS", default_min);
+    if min > max {
+        let shown = min.to_string();
+        vars.invalid("DB_MIN_CONNECTIONS", &shown, "at most DB_MAX_CONNECTIONS");
+        return (default_min, max);
+    }
+    (min, max)
+}
+
 /// The policy from `HTTP_CSP`, where blank means none, or production's default when unset.
 fn content_security_policy(setting: Option<String>, production: bool) -> Option<String> {
     match setting {
@@ -448,6 +495,7 @@ impl Config {
 
         let uri = database_uri(&vars, environment, defaults)?;
         let cors_origins = cors_origins(&vars, production)?;
+        let (min_connections, max_connections) = pool_size(&vars, defaults, production);
 
         let level = if test {
             logger::LogLevel::Warn
@@ -493,19 +541,12 @@ impl Config {
             },
             database: Database {
                 uri,
-                min_connections: vars.parsed("DB_MIN_CONNECTIONS", if production { 2 } else { 1 }),
-                max_connections: vars.parsed(
-                    "DB_MAX_CONNECTIONS",
-                    if production {
-                        20
-                    } else {
-                        defaults.max_connections
-                    },
-                ),
-                connect_timeout: vars.parsed("DB_CONNECT_TIMEOUT", 500),
-                idle_timeout: vars.parsed("DB_IDLE_TIMEOUT", 500),
+                min_connections,
+                max_connections,
+                connect_timeout: vars.parsed("DB_CONNECT_TIMEOUT", defaults.connect_timeout),
+                idle_timeout: vars.parsed("DB_IDLE_TIMEOUT", defaults.idle_timeout),
                 enable_logging: vars.flag("DB_LOGGING", false),
-                auto_migrate: vars.flag("DB_AUTO_MIGRATE", !production),
+                auto_migrate: vars.flag("DB_AUTO_MIGRATE", defaults.auto_migrate && !production),
                 dangerously_truncate: test,
             },
             http: Http {
@@ -600,6 +641,8 @@ impl Config {
             ),
             ("CORS_ALLOWED_ORIGINS", http.cors_origins.join(",")),
             ("HTTP_HSTS", http.hsts.to_string()),
+            ("HSTS_MAX_AGE_SECONDS", http.hsts_max_age.to_string()),
+            ("HTTP_CSP", http.csp.clone().unwrap_or_default()),
             ("WORKER_MODE", format!("{workers:?}")),
         ]
         .map(|(name, value)| (name, redact(name, &value)))
@@ -707,6 +750,78 @@ mod tests {
         )
         .unwrap();
         assert!(!config.database.auto_migrate);
+    }
+
+    #[test]
+    fn the_database_timeouts_suit_a_real_database() {
+        let config = with(
+            &[("DATABASE_URL", "postgres://x")],
+            &Environment::Production,
+        )
+        .unwrap();
+        assert_eq!(config.database.connect_timeout, 5_000);
+        assert_eq!(config.database.idle_timeout, 600_000);
+    }
+
+    #[test]
+    fn a_service_can_state_its_own_database_defaults() {
+        let defaults = Defaults {
+            database: "svc",
+            connect_timeout: 10_000,
+            idle_timeout: 30_000,
+            auto_migrate: false,
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Development, &defaults, |_| None).unwrap();
+        assert_eq!(config.database.connect_timeout, 10_000);
+        assert_eq!(config.database.idle_timeout, 30_000);
+        assert!(!config.database.auto_migrate);
+        let lookup = |name: &str| (name == "DB_AUTO_MIGRATE").then(|| "on".to_string());
+        let config = Config::from_lookup(&Environment::Development, &defaults, lookup).unwrap();
+        assert!(config.database.auto_migrate);
+    }
+
+    #[test]
+    fn development_migrates_at_boot_by_default() {
+        assert!(
+            with(&[], &Environment::Development)
+                .unwrap()
+                .database
+                .auto_migrate
+        );
+    }
+
+    #[test]
+    fn a_small_largest_pool_size_carries_the_smallest_with_it() {
+        let pairs = [
+            ("DATABASE_URL", "postgres://x"),
+            ("DB_MAX_CONNECTIONS", "1"),
+        ];
+        let config = with(&pairs, &Environment::Production).unwrap();
+        assert_eq!(config.database.min_connections, 1);
+        assert_eq!(config.database.max_connections, 1);
+    }
+
+    #[test]
+    fn a_pool_that_cannot_exist_is_refused() {
+        let url = ("DATABASE_URL", "postgres://x");
+        let pairs = [
+            url,
+            ("DB_MIN_CONNECTIONS", "9"),
+            ("DB_MAX_CONNECTIONS", "3"),
+        ];
+        let text = with(&pairs, &Environment::Production)
+            .unwrap_err()
+            .to_string();
+        assert!(text.contains("DB_MIN_CONNECTIONS"), "{text}");
+        let pairs = [url, ("DB_MAX_CONNECTIONS", "0")];
+        let text = with(&pairs, &Environment::Production)
+            .unwrap_err()
+            .to_string();
+        assert!(text.contains("DB_MAX_CONNECTIONS"), "{text}");
+        let config = with(&[("DB_MAX_CONNECTIONS", "0")], &Environment::Development).unwrap();
+        assert_eq!(config.database.max_connections, 10);
+        assert!(config.logger.warnings[0].contains("DB_MAX_CONNECTIONS"));
     }
 
     #[test]

@@ -787,6 +787,70 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn requests_and_jobs_share_one_limit_and_no_job_starts_during_it() {
+        let _table = TABLE.lock().await;
+        let mut queue = queue_with(QueueOptions {
+            workers: 2,
+            poll_interval: Duration::from_millis(20),
+            ..QueueOptions::default()
+        })
+        .await;
+        queue.register(HangWorker);
+        queue.register(CountWorker);
+        let queue = Arc::new(queue);
+        queue
+            .enqueue("HangWorker", serde_json::json!(null))
+            .await
+            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let config = crate::config::Server {
+            shutdown_timeout_seconds: 1,
+            port: address.port(),
+            ..local_server()
+        };
+        let router = axum::Router::new().route(
+            "/",
+            axum::routing::get(std::future::pending::<&'static str>),
+        );
+        let client = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            loop {
+                if let Ok(mut stream) = tokio::net::TcpStream::connect(address).await {
+                    stream
+                        .write_all(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
+                        .await
+                        .unwrap();
+                    let mut held = Vec::new();
+                    let _ = stream.read_to_end(&mut held).await;
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        // This job is queued after the stop, so a loop that heard leaves it alone.
+        let stop = tokio::time::sleep(Duration::from_millis(300));
+        let late = {
+            let queue = queue.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(600)).await;
+                let args = serde_json::json!({ "fail": false });
+                queue.enqueue("CountWorker", args).await.unwrap()
+            })
+        };
+        let run = crate::server::run_until(Some(router), Some(queue.clone()), &config, stop);
+        // Told at 0.3 seconds, with one second to go. Two separate limits would
+        // take until 2.3.
+        let ended = tokio::time::timeout(Duration::from_millis(1800), run).await;
+        client.abort();
+        ended.expect("shutdown took longer than its limit").unwrap();
+        let late = late.await.unwrap();
+        assert_eq!(status_of(&queue, &late).await.0, "queued");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
     async fn a_job_in_progress_finishes_before_shutdown() {
         let _table = TABLE.lock().await;
         let mut queue = queue().await;
@@ -1040,7 +1104,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let ctx = AppContext::new(Environment::Test, (), config);
+        let ctx = AppContext::for_test(Environment::Test, config);
         assert!(!warn_if_unserved(&ctx, false));
     }
 
@@ -1220,7 +1284,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let mut ctx = AppContext::new(Environment::Test, (), config);
+        let mut ctx = AppContext::for_test(Environment::Test, config);
         ctx.queue_provider = Some(Arc::new(queue().await));
         assert!(warn_if_unserved(&ctx, false));
         assert!(!warn_if_unserved(&ctx, true));
@@ -1238,7 +1302,7 @@ mod tests {
             (name == "WORKER_MODE").then(|| "BackgroundQueue".to_string())
         })
         .unwrap();
-        let mut ctx = AppContext::new(Environment::Test, (), config);
+        let mut ctx = AppContext::for_test(Environment::Test, config);
         let queue = Arc::new(queue().await);
         ctx.queue_provider = Some(queue.clone());
         let id = CountWorker::perform_later(&ctx, Args { fail: false })

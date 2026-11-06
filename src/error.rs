@@ -112,8 +112,10 @@ pub enum Error {
     #[cfg(feature = "sea-orm")]
     #[error(transparent)]
     DB(#[from] sea_orm::DbErr),
-    /// A queue database failure.
-    #[cfg(feature = "queue")]
+    /// A sqlx database failure. Becomes a generic `500`, and a service that
+    /// means something else by one maps it first, as with
+    /// `axa_sqlx::is_unique_violation`.
+    #[cfg(any(feature = "queue", feature = "sqlx"))]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     /// Any other error.
@@ -145,6 +147,12 @@ impl From<&str> for Error {
     fn from(message: &str) -> Self {
         Self::Message(message.to_string())
     }
+}
+
+/// The response to a handler that panicked: the same as any internal failure.
+pub(crate) fn internal_response() -> Response {
+    let (status, detail) = internal();
+    (status, Json(detail)).into_response()
 }
 
 /// The body every internal failure shares.
@@ -236,7 +244,7 @@ impl IntoResponse for Error {
             | Self::Any(_) => internal(),
             #[cfg(feature = "sea-orm")]
             Self::Model(_) | Self::DB(_) => internal(),
-            #[cfg(feature = "queue")]
+            #[cfg(any(feature = "queue", feature = "sqlx"))]
             Self::Sqlx(_) => internal(),
         };
         (status, Json(detail)).into_response()
@@ -331,6 +339,15 @@ mod tests {
     fn wrap_keeps_the_source_text() {
         let error = Error::wrap(std::io::Error::other("disk full"));
         assert_eq!(error.to_string(), "disk full");
+    }
+
+    #[cfg(any(feature = "queue", feature = "sqlx"))]
+    #[tokio::test]
+    async fn a_sqlx_error_is_a_generic_500() {
+        let error: Error = sqlx::Error::Protocol("secret detail".to_string()).into();
+        let response = error.into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(!body_text(response).await.contains("secret"));
     }
 
     #[test]

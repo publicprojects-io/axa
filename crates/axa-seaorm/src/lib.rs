@@ -56,8 +56,8 @@ impl PoolConfig {
             uri: uri.into(),
             min_connections: 1,
             max_connections: 10,
-            connect_timeout_ms: 500,
-            idle_timeout_ms: 500,
+            connect_timeout_ms: 5_000,
+            idle_timeout_ms: 600_000,
             enable_logging: false,
         }
     }
@@ -103,6 +103,13 @@ pub async fn truncate_table<T: EntityTrait>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_timeouts_suit_a_real_database() {
+        let config = PoolConfig::new("postgres://x");
+        assert_eq!(config.connect_timeout_ms, 5_000);
+        assert_eq!(config.idle_timeout_ms, 600_000);
+    }
 
     #[test]
     fn pool_settings_reach_the_options() {

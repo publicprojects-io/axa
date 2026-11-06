@@ -105,6 +105,18 @@ impl Environment {
     pub fn is_production_like(&self) -> bool {
         !matches!(self, Self::Development | Self::Test)
     }
+
+    /// Whether a command that destroys data, such as `db reset` or `db down`,
+    /// may run: only in development or test, and only when `confirmed` is
+    /// `"true"`. `confirmed` is the value of a variable the service names, so
+    /// that running one takes a choice as well as a typed command.
+    ///
+    /// `Cli` parses these commands and a service carries them out, so a
+    /// service must call this itself.
+    #[must_use]
+    pub fn may_destroy_data(&self, confirmed: Option<&str>) -> bool {
+        !self.is_production_like() && confirmed == Some("true")
+    }
 }
 
 impl fmt::Display for Environment {
@@ -206,6 +218,22 @@ mod tests {
     fn this_crate_has_no_dependencies() {
         let manifest = include_str!("../Cargo.toml");
         assert!(!manifest.contains("dependencies]"), "{manifest}");
+    }
+
+    #[test]
+    fn data_is_destroyed_only_in_development_or_test_and_only_when_confirmed() {
+        for environment in [Environment::Development, Environment::Test] {
+            assert!(environment.may_destroy_data(Some("true")));
+            assert!(!environment.may_destroy_data(None));
+            assert!(!environment.may_destroy_data(Some("yes")));
+        }
+        for environment in [
+            Environment::Production,
+            Environment::Other("staging".to_string()),
+            Environment::Other("Test ".to_string()),
+        ] {
+            assert!(!environment.may_destroy_data(Some("true")));
+        }
     }
 
     #[test]

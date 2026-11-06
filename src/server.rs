@@ -1,9 +1,11 @@
 //! Serving a router until the process is asked to stop.
 
+#[cfg(feature = "queue")]
+use std::sync::OnceLock;
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::Router;
-use tokio::{net::TcpListener, sync::Notify};
+use tokio::{net::TcpListener, sync::Notify, time::Instant};
 
 #[cfg(feature = "queue")]
 use crate::{Error, queue::Queue};
@@ -67,12 +69,13 @@ pub async fn serve_until(
     Ok(())
 }
 
-/// Wait out the shutdown time limit, or for ever when it is zero.
-async fn grace(config: &Server) {
+/// Wait until the shutdown time limit has passed since `told`, or for ever when
+/// it is zero.
+async fn grace(config: &Server, told: Instant) {
     if config.shutdown_timeout_seconds == 0 {
         std::future::pending::<()>().await;
     }
-    tokio::time::sleep(Duration::from_secs(config.shutdown_timeout_seconds)).await;
+    tokio::time::sleep_until(told + Duration::from_secs(config.shutdown_timeout_seconds)).await;
 }
 
 async fn bind_and_serve(
@@ -93,7 +96,7 @@ async fn bind_and_serve(
         served = serve_until(router, listener, signal) => served,
         () = async {
             stopping.notified().await;
-            grace(config).await;
+            grace(config, Instant::now()).await;
         } => {
             tracing::warn!("requests were still running at the shutdown time limit");
             Ok(())
@@ -129,12 +132,26 @@ pub(crate) async fn run_until(
     tracing::info!("modes: {modes}");
     let (stop_jobs, stopped) = watch::channel(false);
     let jobs = queue.map(|queue| tokio::spawn(queue.run(stopped)));
+    // Requests and jobs hear at once, and share one time limit, so that no job
+    // is claimed during the wait and the whole of shutdown stays under it.
+    let stop_jobs = Arc::new(stop_jobs);
+    let told = Arc::new(OnceLock::new());
+    let stop = {
+        let (stop_jobs, told) = (stop_jobs.clone(), told.clone());
+        async move {
+            stop.await;
+            told.get_or_init(Instant::now);
+            let _ = stop_jobs.send(true);
+        }
+    };
     let served = if let Some(router) = router {
         bind_and_serve(router, config, stop).await
     } else {
         stop.await;
         Ok(())
     };
+    // A server that could not start was never told to stop.
+    let told = *told.get_or_init(Instant::now);
     let _ = stop_jobs.send(true);
     if let Some(jobs) = jobs {
         tokio::select! {
@@ -142,7 +159,7 @@ pub(crate) async fn run_until(
                 finished.map_err(|error| Error::string(&format!("job loops failed: {error}")))?;
             }
             // A job left running is recovered as lost by the next worker.
-            () = grace(config) => {
+            () = grace(config, told) => {
                 tracing::warn!("jobs were still running at the shutdown time limit");
             }
         }

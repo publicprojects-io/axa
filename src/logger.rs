@@ -1,6 +1,6 @@
 //! Logging setup over `tracing-subscriber`.
 
-use std::fmt;
+use std::{fmt, io::IsTerminal};
 
 use tracing_subscriber::{
     EnvFilter, Layer, Registry, fmt as tracing_fmt, fmt::MakeWriter, layer::SubscriberExt,
@@ -138,10 +138,12 @@ fn choose_filter(
     override_filter
         .map_or_else(
             || {
+                // A log target is a module path, so `case-folder` logs as `case_folder`.
+                let app_name = app_name.replace('-', "_");
                 let directives = DEFAULT_MODULES
                     .iter()
                     .copied()
-                    .chain(std::iter::once(app_name))
+                    .chain(std::iter::once(app_name.as_str()))
                     .map(|module| format!("{module}={level}"))
                     .collect::<Vec<_>>()
                     .join(",");
@@ -171,7 +173,8 @@ where
     }
 }
 
-/// Install plain stdout logging. A second call does nothing.
+/// Install plain stdout logging. A second call does nothing. Colour is for a
+/// terminal only, so a log file or pipeline gets no escape codes.
 ///
 /// Settings are read before logging can start, so this also writes out
 /// [`Logger::warnings`]. They go to stderr, so that neither a log level nor
@@ -185,7 +188,11 @@ pub fn init(app_name: &str, config: &Logger) {
     }
     let filter = init_env_filter(app_name, config.override_filter.as_ref(), &config.level);
     let _ = tracing_subscriber::registry()
-        .with(init_layer(std::io::stdout, &config.format, true))
+        .with(init_layer(
+            std::io::stdout,
+            &config.format,
+            std::io::stdout().is_terminal(),
+        ))
         .with(filter)
         .try_init();
 }
@@ -240,6 +247,13 @@ mod tests {
         let filter = init_env_filter("my_service", None, &LogLevel::Debug).to_string();
         assert!(filter.contains("my_service=debug"), "{filter}");
         assert!(filter.contains("tower_http=debug"), "{filter}");
+    }
+
+    #[test]
+    fn a_package_name_with_a_hyphen_still_shows_its_logs() {
+        let filter = init_env_filter("case-folder", None, &LogLevel::Info).to_string();
+        assert!(filter.contains("case_folder=info"), "{filter}");
+        assert!(!filter.contains("case-folder"), "{filter}");
     }
 
     #[test]

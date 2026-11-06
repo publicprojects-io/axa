@@ -154,7 +154,7 @@ mod tests {
             (name == "WORKER_MODE").then(|| mode.to_string())
         })
         .unwrap();
-        AppContext::new(Environment::Test, (), config)
+        AppContext::for_test(Environment::Test, config)
     }
 
     #[test]
