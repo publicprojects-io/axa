@@ -283,7 +283,10 @@ mod tests {
     #[test]
     fn check_prints_the_effective_settings() {
         let text = report(
-            &[("DATABASE_URL", "postgres://h/db"), ("PORT", "8000")],
+            &[
+                ("DATABASE_URL", "postgres://localhost/db"),
+                ("PORT", "8000"),
+            ],
             &Environment::Production,
         )
         .unwrap();
@@ -304,7 +307,10 @@ mod tests {
     fn check_never_prints_a_password() {
         let text = report(
             &[
-                ("DATABASE_URL", "postgres://me:hunter2@h/db?sslpassword=abc"),
+                (
+                    "DATABASE_URL",
+                    "postgres://me:hunter2@localhost/db?sslpassword=abc",
+                ),
                 ("HOST", "https://me:hunter3@example.org"),
             ],
             &Environment::Production,
@@ -314,7 +320,7 @@ mod tests {
         assert!(!text.contains("hunter3"), "{text}");
         assert!(!text.contains("abc"), "{text}");
         assert!(
-            text.contains(&format!("postgres://me:{REDACTED}@h/db")),
+            text.contains(&format!("postgres://me:{REDACTED}@localhost/db")),
             "{text}"
         );
     }
@@ -323,7 +329,10 @@ mod tests {
     fn check_refuses_what_a_start_would_refuse() {
         let error = report(&[], &Environment::Production).unwrap_err();
         assert!(error.to_string().contains("DATABASE_URL"));
-        let pairs = [("DATABASE_URL", "postgres://h/db"), ("HTTP_HSTS", "tru")];
+        let pairs = [
+            ("DATABASE_URL", "postgres://localhost/db"),
+            ("HTTP_HSTS", "tru"),
+        ];
         let error = report(&pairs, &Environment::Production).unwrap_err();
         assert!(error.to_string().contains("HTTP_HSTS"));
     }

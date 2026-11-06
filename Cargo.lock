@@ -509,6 +509,8 @@ dependencies = [
  "axum",
  "axum-test",
  "clap",
+ "hyper",
+ "hyper-util",
  "sea-orm",
  "serde",
  "serde_json",
@@ -599,7 +601,7 @@ dependencies = [
 
 [[package]]
 name = "axa-paseto"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "authentication-verifier",
  "axum",

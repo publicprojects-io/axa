@@ -207,7 +207,7 @@
     },
     {
       "name": "axa-paseto",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto/README.md"

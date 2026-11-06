@@ -114,6 +114,11 @@ const PURGE: &str = "DELETE FROM axa_queue
     WHERE status IN ('completed', 'failed')
       AND updated_at < now() - make_interval(days => $1)";
 
+/// The statements that make the queue table, in order, each safe to repeat. A service
+/// whose role may not change the schema runs these in a migration, and calls
+/// [`Queue::connect_existing`].
+pub const SETUP_STATEMENTS: [&str; 4] = [SETUP, SETUP_ATTEMPTS, SETUP_MAX_ATTEMPTS, SETUP_INDEX];
+
 /// The shortest gap between heartbeats, so a zero setting cannot spin.
 const MIN_HEARTBEAT: Duration = Duration::from_millis(20);
 
@@ -247,12 +252,8 @@ impl std::fmt::Debug for Queue {
 }
 
 impl Queue {
-    /// Connect and create the queue table if needed.
-    ///
-    /// # Errors
-    ///
-    /// Fails when the database cannot be reached or the table not created.
-    pub async fn connect(uri: &str, options: QueueOptions) -> Result<Self> {
+    /// Open the pool, without touching the schema.
+    async fn open(uri: &str, options: QueueOptions) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(
                 u32::try_from(options.workers)
@@ -261,25 +262,50 @@ impl Queue {
             )
             .connect(uri)
             .await?;
-        // `CREATE ... IF NOT EXISTS` is not safe against itself: two services
-        // booting together can both pass the check and one then fails on a
-        // catalog constraint. The lock makes setup run one at a time, and
-        // ends with the transaction.
-        let mut setup = pool.begin().await?;
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
-            .bind(SETUP_LOCK)
-            .execute(&mut *setup)
-            .await?;
-        sqlx::query(SETUP).execute(&mut *setup).await?;
-        sqlx::query(SETUP_ATTEMPTS).execute(&mut *setup).await?;
-        sqlx::query(SETUP_MAX_ATTEMPTS).execute(&mut *setup).await?;
-        sqlx::query(SETUP_INDEX).execute(&mut *setup).await?;
-        setup.commit().await?;
         Ok(Self {
             pool,
             handlers: HashMap::new(),
             options,
         })
+    }
+
+    /// Connect to a queue table that a migration made, and change no schema, for a
+    /// database role that may not. A migration runs [`SETUP_STATEMENTS`].
+    ///
+    /// # Errors
+    ///
+    /// Fails when the database cannot be reached, or the table is missing or out of
+    /// date, so a service finds out at boot rather than at its first job.
+    pub async fn connect_existing(uri: &str, options: QueueOptions) -> Result<Self> {
+        let queue = Self::open(uri, options).await?;
+        sqlx::query("SELECT attempts, max_attempts FROM axa_queue LIMIT 0")
+            .execute(&queue.pool)
+            .await?;
+        Ok(queue)
+    }
+
+    /// Connect and create the queue table if needed, which runs DDL at boot. Use
+    /// [`Queue::connect_existing`] where a service's role may not.
+    ///
+    /// # Errors
+    ///
+    /// Fails when the database cannot be reached or the table not created.
+    pub async fn connect(uri: &str, options: QueueOptions) -> Result<Self> {
+        let queue = Self::open(uri, options).await?;
+        // `CREATE ... IF NOT EXISTS` is not safe against itself: two services
+        // booting together can both pass the check and one then fails on a
+        // catalog constraint. The lock makes setup run one at a time, and
+        // ends with the transaction.
+        let mut setup = queue.pool.begin().await?;
+        sqlx::query("SELECT pg_advisory_xact_lock($1)")
+            .bind(SETUP_LOCK)
+            .execute(&mut *setup)
+            .await?;
+        for statement in SETUP_STATEMENTS {
+            sqlx::query(statement).execute(&mut *setup).await?;
+        }
+        setup.commit().await?;
+        Ok(queue)
     }
 
     /// Register a worker to handle its jobs.
@@ -740,6 +766,7 @@ mod tests {
             binding: "127.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds: 0,
+            header_read_timeout_seconds: 0,
         }
     }
 
@@ -770,6 +797,7 @@ mod tests {
             .unwrap();
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
+            header_read_timeout_seconds: 0,
             ..local_server()
         };
         for _ in 0..50 {
@@ -807,6 +835,7 @@ mod tests {
         drop(listener);
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
+            header_read_timeout_seconds: 0,
             port: address.port(),
             ..local_server()
         };
@@ -1256,6 +1285,39 @@ mod tests {
         assert_eq!(queue.purge_finished().await.unwrap(), 2);
         assert_eq!(status_of(&queue, &new_done).await.0, "completed");
         assert_eq!(status_of(&queue, &old_queued).await.0, "queued");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn connecting_to_an_existing_table_changes_no_schema() {
+        let _table = TABLE.lock().await;
+        let queue = queue().await;
+        let uri = std::env::var("AXA_TEST_DATABASE_URL").unwrap();
+        assert!(
+            Queue::connect_existing(&uri, QueueOptions::default())
+                .await
+                .is_ok()
+        );
+
+        sqlx::query("ALTER TABLE axa_queue DROP COLUMN max_attempts")
+            .execute(&queue.pool)
+            .await
+            .unwrap();
+        let outdated = Queue::connect_existing(&uri, QueueOptions::default()).await;
+        assert!(outdated.is_err());
+        let columns: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM information_schema.columns \
+             WHERE table_name = 'axa_queue' AND column_name = 'max_attempts'",
+        )
+        .fetch_one(&queue.pool)
+        .await
+        .unwrap();
+        assert_eq!(columns, 0);
+
+        // Put the column back for the tests that follow.
+        for statement in SETUP_STATEMENTS {
+            sqlx::query(statement).execute(&queue.pool).await.unwrap();
+        }
     }
 
     #[tokio::test]

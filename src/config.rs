@@ -91,7 +91,13 @@ pub struct Server {
     /// How long, once told to stop, to wait for requests and jobs to finish. `0`
     /// waits for as long as they take.
     pub shutdown_timeout_seconds: u64,
+    /// How long a client has to send a request's headers. `0` allows for ever.
+    pub header_read_timeout_seconds: u64,
 }
+
+/// How long a client has to send a request's headers unless
+/// `HEADER_READ_TIMEOUT_SECONDS` says otherwise.
+pub const DEFAULT_HEADER_READ_TIMEOUT_SECONDS: u64 = 30;
 
 /// How long shutdown waits unless `SHUTDOWN_TIMEOUT_SECONDS` says otherwise. It
 /// sits under an orchestrator's usual 30 seconds before it kills a process.
@@ -364,6 +370,41 @@ fn worker_mode(name: &str) -> Option<WorkerMode> {
     }
 }
 
+/// Whether a connection string keeps its traffic private: it demands TLS, or it goes
+/// no further than this machine. An address that cannot be read counts as neither.
+fn stays_private(uri: &str) -> bool {
+    let Some((_, rest)) = uri.split_once("://") else {
+        return false;
+    };
+    let (location, query) = rest.split_once('?').unwrap_or((rest, ""));
+    // The last of a repeated parameter wins, as it does in the driver.
+    let parameter = |names: &[&str]| {
+        query
+            .split('&')
+            .filter_map(|pair| pair.split_once('='))
+            .filter(|(name, _)| names.contains(name))
+            .map(|(_, value)| value)
+            .next_back()
+    };
+    if parameter(&["sslmode", "ssl-mode"]).is_some_and(|mode| {
+        ["require", "verify-ca", "verify-full"]
+            .iter()
+            .any(|safe| mode.eq_ignore_ascii_case(safe))
+    }) {
+        return true;
+    }
+    let authority = location.split('/').next().unwrap_or_default();
+    let address = authority.rsplit('@').next().unwrap_or_default();
+    let host = match address.strip_prefix('[') {
+        Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
+        None => address.split(':').next().unwrap_or_default(),
+    };
+    let host = parameter(&["host"]).unwrap_or(host);
+    host.starts_with('/')
+        || host.starts_with("%2F")
+        || matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
 /// The connection string. Fail closed: a production service must never fall
 /// back to a guessed local database.
 fn database_uri<F: Fn(&str) -> Option<String>>(
@@ -372,6 +413,16 @@ fn database_uri<F: Fn(&str) -> Option<String>>(
     defaults: &Defaults,
 ) -> Result<String> {
     match vars.set("DATABASE_URL") {
+        Some(uri)
+            if environment.is_production_like()
+                && !stays_private(&uri)
+                && !vars.flag("DB_ALLOW_INSECURE", false) =>
+        {
+            Err(Error::string(
+                "DATABASE_URL must set sslmode to require, verify-ca, or verify-full in \
+                 production, unless DB_ALLOW_INSECURE is set",
+            ))
+        }
         Some(uri) => Ok(uri),
         None if defaults.database.is_empty() => Ok(String::new()),
         None if environment.is_production_like() => {
@@ -523,6 +574,10 @@ impl Config {
                 host: vars.text("HOST", "http://localhost"),
                 shutdown_timeout_seconds: vars
                     .parsed("SHUTDOWN_TIMEOUT_SECONDS", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS),
+                header_read_timeout_seconds: vars.parsed(
+                    "HEADER_READ_TIMEOUT_SECONDS",
+                    DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
+                ),
             },
             logger: Logger {
                 enable: vars.flag("LOG_ENABLE", !test),
@@ -606,6 +661,10 @@ impl Config {
             ("PORT", server.port.to_string()),
             ("BINDING", server.binding.clone()),
             ("HOST", server.host.clone()),
+            (
+                "HEADER_READ_TIMEOUT_SECONDS",
+                self.server.header_read_timeout_seconds.to_string(),
+            ),
             (
                 "SHUTDOWN_TIMEOUT_SECONDS",
                 server.shutdown_timeout_seconds.to_string(),
@@ -704,6 +763,44 @@ mod tests {
     }
 
     #[test]
+    fn production_refuses_a_database_url_that_could_go_in_the_clear() {
+        for uri in [
+            "postgres://me:pw@db.internal/app",
+            "postgres://me:pw@db.internal/app?sslmode=prefer",
+            "postgres://me:pw@db.internal/app?sslmode=disable",
+            "postgres://me:pw@db.internal/app?sslmode=require&sslmode=disable",
+            "postgres://localhost:pw@db.internal/app",
+            "postgres:///app",
+            "not a url",
+        ] {
+            let error = with(&[("DATABASE_URL", uri)], &Environment::Production).unwrap_err();
+            assert!(error.to_string().contains("sslmode"), "{uri}");
+            assert!(!error.to_string().contains("pw"), "{uri}");
+            let allowed = [("DATABASE_URL", uri), ("DB_ALLOW_INSECURE", "true")];
+            assert!(with(&allowed, &Environment::Production).is_ok(), "{uri}");
+            assert!(with(&[("DATABASE_URL", uri)], &Environment::Development).is_ok());
+        }
+    }
+
+    #[test]
+    fn production_accepts_a_database_url_that_stays_private() {
+        for uri in [
+            "postgres://me:pw@db.internal/app?sslmode=require",
+            "postgres://me:pw@db.internal/app?sslmode=VERIFY-FULL",
+            "postgresql://db.internal/app?application_name=x&ssl-mode=verify-ca",
+            "postgres://me:pw@localhost:5432/app",
+            "postgres://127.0.0.1/app",
+            "postgres://[::1]:5432/app",
+            "postgres:///app?host=/var/run/postgresql",
+        ] {
+            assert!(
+                with(&[("DATABASE_URL", uri)], &Environment::Production).is_ok(),
+                "{uri}"
+            );
+        }
+    }
+
+    #[test]
     fn production_refuses_a_blank_database_url() {
         let error = with(&[("DATABASE_URL", " ")], &Environment::Production).unwrap_err();
         assert!(error.to_string().contains("DATABASE_URL"));
@@ -721,7 +818,7 @@ mod tests {
 
     #[test]
     fn only_tests_ever_truncate() {
-        let url = [("DATABASE_URL", "postgres://x")];
+        let url = [("DATABASE_URL", "postgres://localhost/x")];
         assert!(
             with(&[], &Environment::Test)
                 .unwrap()
@@ -745,7 +842,7 @@ mod tests {
     #[test]
     fn production_does_not_migrate_at_boot_by_default() {
         let config = with(
-            &[("DATABASE_URL", "postgres://x")],
+            &[("DATABASE_URL", "postgres://localhost/x")],
             &Environment::Production,
         )
         .unwrap();
@@ -755,7 +852,7 @@ mod tests {
     #[test]
     fn the_database_timeouts_suit_a_real_database() {
         let config = with(
-            &[("DATABASE_URL", "postgres://x")],
+            &[("DATABASE_URL", "postgres://localhost/x")],
             &Environment::Production,
         )
         .unwrap();
@@ -794,7 +891,7 @@ mod tests {
     #[test]
     fn a_small_largest_pool_size_carries_the_smallest_with_it() {
         let pairs = [
-            ("DATABASE_URL", "postgres://x"),
+            ("DATABASE_URL", "postgres://localhost/x"),
             ("DB_MAX_CONNECTIONS", "1"),
         ];
         let config = with(&pairs, &Environment::Production).unwrap();
@@ -804,7 +901,7 @@ mod tests {
 
     #[test]
     fn a_pool_that_cannot_exist_is_refused() {
-        let url = ("DATABASE_URL", "postgres://x");
+        let url = ("DATABASE_URL", "postgres://localhost/x");
         let pairs = [
             url,
             ("DB_MIN_CONNECTIONS", "9"),
@@ -827,7 +924,7 @@ mod tests {
     #[test]
     fn production_sends_a_strict_policy_by_default() {
         let config = with(
-            &[("DATABASE_URL", "postgres://x")],
+            &[("DATABASE_URL", "postgres://localhost/x")],
             &Environment::Production,
         )
         .unwrap();
@@ -844,12 +941,15 @@ mod tests {
     #[test]
     fn a_service_can_name_its_own_policy_or_none() {
         let pairs = [
-            ("DATABASE_URL", "postgres://x"),
+            ("DATABASE_URL", "postgres://localhost/x"),
             ("HTTP_CSP", "default-src 'self'"),
         ];
         let config = with(&pairs, &Environment::Production).unwrap();
         assert_eq!(config.http.csp.as_deref(), Some("default-src 'self'"));
-        let pairs = [("DATABASE_URL", "postgres://x"), ("HTTP_CSP", " ")];
+        let pairs = [
+            ("DATABASE_URL", "postgres://localhost/x"),
+            ("HTTP_CSP", " "),
+        ];
         assert_eq!(
             with(&pairs, &Environment::Production).unwrap().http.csp,
             None
@@ -859,7 +959,7 @@ mod tests {
     #[test]
     fn the_hsts_max_age_can_be_set() {
         let pairs = [
-            ("DATABASE_URL", "postgres://x"),
+            ("DATABASE_URL", "postgres://localhost/x"),
             ("HSTS_MAX_AGE_SECONDS", "63072000"),
         ];
         let config = with(&pairs, &Environment::Production).unwrap();
@@ -869,7 +969,7 @@ mod tests {
     #[test]
     fn production_refuses_a_wildcard_cors_origin() {
         let pairs = [
-            ("DATABASE_URL", "postgres://x"),
+            ("DATABASE_URL", "postgres://localhost/x"),
             ("CORS_ALLOWED_ORIGINS", "*"),
         ];
         let error = with(&pairs, &Environment::Production).unwrap_err();
@@ -878,7 +978,7 @@ mod tests {
 
     #[test]
     fn production_sends_no_cors_headers_until_origins_are_listed() {
-        let url = ("DATABASE_URL", "postgres://x");
+        let url = ("DATABASE_URL", "postgres://localhost/x");
         let none = with(&[url], &Environment::Production).unwrap();
         assert_eq!(none.http.cors_origins, Vec::<String>::new());
         let listed = with(
@@ -906,7 +1006,8 @@ mod tests {
             database: "svc",
             ..Defaults::default()
         };
-        let lookup = |name: &str| (name == "DATABASE_URL").then(|| "postgres://x".to_string());
+        let lookup =
+            |name: &str| (name == "DATABASE_URL").then(|| "postgres://localhost/x".to_string());
         let dev = Config::from_lookup(&Environment::Development, &defaults, lookup).unwrap();
         assert_eq!(dev.server.port, 5150);
         let prod = Config::from_lookup(&Environment::Production, &defaults, lookup).unwrap();
@@ -929,7 +1030,7 @@ mod tests {
             "REQUEST_TIMEOUT_SECONDS",
             "DB_MAX_CONNECTIONS",
         ] {
-            let pairs = [("DATABASE_URL", "postgres://x"), (name, "12x")];
+            let pairs = [("DATABASE_URL", "postgres://localhost/x"), (name, "12x")];
             let error = with(&pairs, &Environment::Production).unwrap_err();
             let text = error.to_string();
             assert!(text.contains(name) && text.contains("12x"), "{text}");
@@ -938,14 +1039,17 @@ mod tests {
 
     #[test]
     fn a_number_out_of_range_is_refused() {
-        let pairs = [("DATABASE_URL", "postgres://x"), ("PORT", "70000")];
+        let pairs = [
+            ("DATABASE_URL", "postgres://localhost/x"),
+            ("PORT", "70000"),
+        ];
         assert!(with(&pairs, &Environment::Production).is_err());
     }
 
     #[test]
     fn every_problem_is_named_at_once() {
         let pairs = [
-            ("DATABASE_URL", "postgres://x"),
+            ("DATABASE_URL", "postgres://localhost/x"),
             ("PORT", "x"),
             ("HTTP_HSTS", "tru"),
         ];
@@ -976,7 +1080,7 @@ mod tests {
     #[test]
     fn a_blank_value_counts_as_unset() {
         let pairs = [
-            ("DATABASE_URL", "postgres://x"),
+            ("DATABASE_URL", "postgres://localhost/x"),
             ("PORT", ""),
             ("HTTP_HSTS", " "),
         ];
@@ -991,7 +1095,7 @@ mod tests {
             let config = with(&[("HTTP_COMPRESSION", value)], &Environment::Development).unwrap();
             assert!(config.http.compression, "{value}");
         }
-        let url = ("DATABASE_URL", "postgres://x");
+        let url = ("DATABASE_URL", "postgres://localhost/x");
         for value in ["0", "false", "NO", " off "] {
             let pairs = [url, ("HTTP_HSTS", value)];
             let config = with(&pairs, &Environment::Production).unwrap();
@@ -1002,7 +1106,10 @@ mod tests {
 
     #[test]
     fn production_refuses_a_flag_it_does_not_know() {
-        let pairs = [("DATABASE_URL", "postgres://x"), ("HTTP_HSTS", "tru")];
+        let pairs = [
+            ("DATABASE_URL", "postgres://localhost/x"),
+            ("HTTP_HSTS", "tru"),
+        ];
         let text = with(&pairs, &Environment::Production)
             .unwrap_err()
             .to_string();
@@ -1023,7 +1130,10 @@ mod tests {
     #[test]
     fn production_refuses_a_name_it_does_not_know() {
         for name in ["LOG_LEVEL", "LOG_FORMAT", "WORKER_MODE"] {
-            let pairs = [("DATABASE_URL", "postgres://x"), (name, "nonsense")];
+            let pairs = [
+                ("DATABASE_URL", "postgres://localhost/x"),
+                (name, "nonsense"),
+            ];
             let error = with(&pairs, &Environment::Production).unwrap_err();
             assert!(error.to_string().contains(name), "{name}");
         }
@@ -1031,7 +1141,10 @@ mod tests {
 
     #[test]
     fn a_bad_log_filter_is_refused_and_never_reaches_the_logger() {
-        let pairs = [("DATABASE_URL", "postgres://x"), ("LOG_FILTER", "a=b=c")];
+        let pairs = [
+            ("DATABASE_URL", "postgres://localhost/x"),
+            ("LOG_FILTER", "a=b=c"),
+        ];
         let error = with(&pairs, &Environment::Production).unwrap_err();
         assert!(error.to_string().contains("LOG_FILTER"));
         let config = with(&[("LOG_FILTER", "a=b=c")], &Environment::Development).unwrap();

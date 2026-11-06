@@ -2,14 +2,26 @@
 
 #[cfg(feature = "queue")]
 use std::sync::OnceLock;
-use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
+use std::{future::Future, net::SocketAddr, pin::pin, sync::Arc, time::Duration};
 
-use axum::Router;
+use axum::{Router, extract::ConnectInfo, http::Request};
+use hyper::{
+    body::Incoming,
+    service::{Service, service_fn},
+};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo, TokioTimer},
+    server::{conn::auto::Builder, graceful::GracefulShutdown},
+    service::TowerToHyperService,
+};
 use tokio::{net::TcpListener, sync::Notify, time::Instant};
 
 #[cfg(feature = "queue")]
 use crate::{Error, queue::Queue};
-use crate::{Result, config::Server};
+use crate::{
+    Result,
+    config::{DEFAULT_HEADER_READ_TIMEOUT_SECONDS, Server},
+};
 #[cfg(feature = "queue")]
 use tokio::sync::watch;
 
@@ -50,7 +62,8 @@ pub async fn serve(router: Router, config: &Server) -> Result<()> {
 }
 
 /// Serve `router` on `listener` until `shutdown` resolves, letting in-flight
-/// requests finish.
+/// requests finish. A client has
+/// [`DEFAULT_HEADER_READ_TIMEOUT_SECONDS`] to send a request's headers.
 ///
 /// # Errors
 ///
@@ -60,12 +73,67 @@ pub async fn serve_until(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    axum::serve(
+    accept_until(
+        router,
         listener,
-        router.into_make_service_with_connect_info::<SocketAddr>(),
+        DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
+        shutdown,
     )
-    .with_graceful_shutdown(shutdown)
-    .await?;
+    .await
+}
+
+/// The connection loop. This is `axum::serve` plus a limit on reading headers, which
+/// `axum::serve` cannot set: without one, a client that trickles out its headers holds
+/// a connection and a task for as long as it likes.
+async fn accept_until(
+    router: Router,
+    listener: TcpListener,
+    header_read_timeout_seconds: u64,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let mut builder = Builder::new(TokioExecutor::new());
+    builder
+        .http1()
+        .timer(TokioTimer::new())
+        .header_read_timeout(
+            (header_read_timeout_seconds > 0)
+                .then(|| Duration::from_secs(header_read_timeout_seconds)),
+        );
+    let connections = GracefulShutdown::new();
+    let mut shutdown = pin!(shutdown);
+    loop {
+        tokio::select! {
+            accepted = listener.accept() => {
+                let (stream, address) = match accepted {
+                    Ok(connection) => connection,
+                    // Running out of file descriptors, say. It passes, and a tight
+                    // loop would not help it to.
+                    Err(error) => {
+                        tracing::warn!(%error, "could not accept a connection");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                };
+                let router = TowerToHyperService::new(router.clone());
+                let service = service_fn(move |mut request: Request<Incoming>| {
+                    request.extensions_mut().insert(ConnectInfo::<SocketAddr>(address));
+                    router.call(request)
+                });
+                let connection = builder
+                    .serve_connection_with_upgrades(TokioIo::new(stream), service)
+                    .into_owned();
+                let connection = connections.watch(connection);
+                tokio::spawn(async move {
+                    if let Err(error) = connection.await {
+                        tracing::trace!(%error, "connection ended");
+                    }
+                });
+            }
+            () = &mut shutdown => break,
+        }
+    }
+    drop(listener);
+    connections.shutdown().await;
     Ok(())
 }
 
@@ -93,7 +161,7 @@ async fn bind_and_serve(
         told.notify_one();
     };
     tokio::select! {
-        served = serve_until(router, listener, signal) => served,
+        served = accept_until(router, listener, config.header_read_timeout_seconds, signal) => served,
         () = async {
             stopping.notified().await;
             grace(config, Instant::now()).await;
@@ -218,6 +286,53 @@ mod tests {
         server.await.unwrap().unwrap();
     }
 
+    /// Whether a server closes on a client that starts its headers and stalls.
+    async fn drops_a_stalled_client(header_read_timeout_seconds: u64) -> bool {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(accept_until(
+            Router::new(),
+            listener,
+            header_read_timeout_seconds,
+            std::future::pending(),
+        ));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(b"GET / HTTP/1.1\r\nHost:").await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response))
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test]
+    async fn a_client_that_stalls_in_its_headers_is_dropped() {
+        assert!(drops_a_stalled_client(1).await);
+    }
+
+    #[tokio::test]
+    async fn a_header_limit_of_zero_waits_for_ever() {
+        assert!(!drops_a_stalled_client(0).await);
+    }
+
+    #[tokio::test]
+    async fn a_handler_still_sees_the_clients_address() {
+        let app = Router::new().route(
+            "/",
+            get(|ConnectInfo(peer): ConnectInfo<SocketAddr>| async move { peer.ip().to_string() }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(serve_until(app, listener, std::future::pending()));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.unwrap();
+        assert!(response.ends_with("127.0.0.1"), "{response}");
+    }
+
     #[tokio::test]
     async fn serve_reports_an_address_it_cannot_bind() {
         let config = Server {
@@ -225,6 +340,7 @@ mod tests {
             binding: "256.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds: 0,
+            header_read_timeout_seconds: 0,
         };
         assert!(serve(Router::new(), &config).await.is_err());
     }
@@ -236,6 +352,7 @@ mod tests {
             binding: "127.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds: 0,
+            header_read_timeout_seconds: 0,
         }
     }
 
@@ -247,6 +364,7 @@ mod tests {
             binding: "127.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds,
+            header_read_timeout_seconds: 0,
         };
         let (reach, reached) = tokio::sync::oneshot::channel::<()>();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

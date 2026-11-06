@@ -7,8 +7,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [0.4.0] - 2026-11-06
 
-This covers `axa` 0.4.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1, `axa-environment`
-0.1.1, and the first releases of `axa-keycloak`, `axa-tracing`, and
+This covers `axa` 0.4.0, `axa-paseto` 0.3.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1,
+`axa-environment` 0.1.1, and the first releases of `axa-keycloak`, `axa-tracing`, and
 `axa-opentelemetry`, each 0.1.0. It breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
 timeouts are longer. See [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose
 last section covers 0.4.
@@ -41,6 +41,12 @@ last section covers 0.4.
 - `axa-opentelemetry`, behind the `opentelemetry` feature: OTLP export of traces and
   request metrics. Export is off until `OTLP_ENDPOINT` is set, and plain `http` to a
   remote collector is refused unless `OTLP_ALLOW_INSECURE` is set.
+- `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, drops a client that does not finish its
+  headers. `server` now runs its own connection loop, because `axum::serve` cannot set
+  this, and `hyper` and `hyper-util` become direct dependencies. They were already in
+  the tree. `config::Server` gains `header_read_timeout_seconds`.
+- `Queue::connect_existing` and `queue::SETUP_STATEMENTS`, for a database role that may
+  not change the schema.
 - `logger::init_with`, which installs more layers beside the stdout logs and can
   widen the default filter. Layers keep running when `LOG_ENABLE=false`.
 
@@ -70,6 +76,11 @@ last section covers 0.4.
   needs 0.8.4 of it. The legacy default passed a token with no audience, an ID or
   refresh token, and one dated in the future. Every token must now name a configured
   audience, so a Keycloak client may need an audience mapper.
+- Production refuses a `DATABASE_URL` that could go in the clear, unless it stays on this
+  machine or `DB_ALLOW_INSECURE` is set.
+- `axa_paseto::parse_bool` returns `Option<bool>`, because a typo read as off, and off can
+  be what turns enforcement off.
+- `axa-paseto` no longer tells a refused caller why, and logs the reason instead.
 - A server fault no longer logs the error's `Debug` text, which for a database error
   quotes the row's values.
 - The SeaORM guide's manifests named `axa` 0.1 rather than 0.4.

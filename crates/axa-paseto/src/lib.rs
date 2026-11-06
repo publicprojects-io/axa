@@ -11,8 +11,10 @@
 //! |---|---|
 //! | A public path | Allowed |
 //! | No token, or a bad one | `401` |
-//! | Valid token, policy denies | `403`, with the reason |
+//! | Valid token, policy denies | `403` |
 //! | Valid token, policy allows | Allowed |
+//!
+//! A refused caller is told nothing about why. The reason goes to the log.
 //!
 //! Every path is protected unless it is listed as public, so a new route can
 //! never be exposed by forgetting to add it to a list.
@@ -52,8 +54,18 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
-/// A refusal: the status and the reason sent to the caller.
+/// What a refused caller is told, whatever the cause.
+const INVALID_TOKEN: &str = "invalid token";
+
+/// What a caller the policy refuses is told. The reason goes to the log.
+const FORBIDDEN: &str = "forbidden";
+
+/// A refusal: the status and the text sent to the caller.
 pub type Rejection = (StatusCode, String);
+
+fn invalid_token() -> Rejection {
+    (StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
+}
 
 /// What a service declares about itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,14 +140,18 @@ impl GuardConfig {
     }
 }
 
-/// Parse an on/off setting: `1`, `true`, `yes`, and `on` mean on, in any case.
-/// Anything else is off.
+/// Parse an on/off setting: `1`, `true`, `yes`, and `on` mean on, and `0`, `false`,
+/// `no`, and `off` mean off, in any case.
+///
+/// Anything else is `None`, for the caller to refuse. A typo must not read as off,
+/// because off can be what turns enforcement off.
 #[must_use]
-pub fn parse_bool(value: &str) -> bool {
-    matches!(
-        value.trim().to_ascii_lowercase().as_str(),
-        "1" | "true" | "yes" | "on"
-    )
+pub fn parse_bool(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => Some(true),
+        "0" | "false" | "no" | "off" => Some(false),
+        _ => None,
+    }
 }
 
 /// The ABAC action a request performs.
@@ -170,18 +186,12 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<&str, Rejection> {
     let header = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "missing authorization header".to_string(),
-        ))?;
+        .ok_or_else(invalid_token)?;
     header
         .strip_prefix("Bearer ")
         .or_else(|| header.strip_prefix("bearer "))
         .map(str::trim)
-        .ok_or((
-            StatusCode::UNAUTHORIZED,
-            "expected bearer token".to_string(),
-        ))
+        .ok_or_else(invalid_token)
 }
 
 /// A service's guard: its config plus its live verifier and policy.
@@ -234,10 +244,10 @@ impl Guard {
     /// Fails with `401` when the token is missing or does not verify.
     pub fn claims(&self, headers: &HeaderMap) -> Result<Claims, Rejection> {
         let token = bearer_token(headers)?;
-        self.verifier
-            .current()
-            .verify(token)
-            .map_err(|error| (StatusCode::UNAUTHORIZED, error.to_string()))
+        self.verifier.current().verify(token).map_err(|error| {
+            tracing::debug!(%error, "bearer token refused");
+            invalid_token()
+        })
     }
 
     /// The policy's decision for `claims` performing `action`.
@@ -268,7 +278,8 @@ impl Guard {
         if decision.allowed {
             Ok(())
         } else {
-            Err((StatusCode::FORBIDDEN, decision.reason))
+            tracing::info!(reason = %decision.reason, "paseto_forbidden");
+            Err((StatusCode::FORBIDDEN, FORBIDDEN.to_string()))
         }
     }
 }
@@ -302,10 +313,10 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Fail closed: without the middleware there is nothing to verify
         // against, so this must never let the request through.
-        let guard = parts.extensions.get::<Arc<Guard>>().ok_or((
-            StatusCode::UNAUTHORIZED,
-            "authentication is not configured".to_string(),
-        ))?;
+        let guard = parts
+            .extensions
+            .get::<Arc<Guard>>()
+            .ok_or_else(invalid_token)?;
         guard.claims(&parts.headers).map(Self)
     }
 }
@@ -488,10 +499,13 @@ mod tests {
     #[test]
     fn on_off_settings_parse() {
         for value in ["1", "true", "TRUE", " yes ", "on"] {
-            assert!(parse_bool(value), "{value}");
+            assert_eq!(parse_bool(value), Some(true), "{value}");
         }
-        for value in ["", "0", "false", "off", "junk"] {
-            assert!(!parse_bool(value), "{value}");
+        for value in ["0", "false", "FALSE", " no ", "off"] {
+            assert_eq!(parse_bool(value), Some(false), "{value}");
+        }
+        for value in ["", "junk", "ture", "of"] {
+            assert_eq!(parse_bool(value), None, "{value}");
         }
     }
 
@@ -551,6 +565,41 @@ mod tests {
         assert_eq!(
             status(app(true), "GET", "/_health", None).await,
             StatusCode::OK
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refusal_tells_the_caller_nothing_about_why() {
+        async fn answer(method: &str, header: Option<String>) -> (StatusCode, String) {
+            let mut request = HttpRequest::builder().method(method).uri("/api/places");
+            if let Some(header) = header {
+                request = request.header(AUTHORIZATION, header);
+            }
+            let request = request.body(Body::empty()).unwrap();
+            let response = app(true).oneshot(request).await.unwrap();
+            let status = response.status();
+            let body = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            (status, String::from_utf8(body.to_vec()).unwrap())
+        }
+
+        let forged = sign(&[9; 32], FAR_FUTURE, &json!({}));
+        for header in [
+            None,
+            Some("Basic abc".to_string()),
+            Some("Bearer garbage".to_string()),
+            Some(format!("Bearer {forged}")),
+        ] {
+            let refused = (StatusCode::UNAUTHORIZED, "invalid token".to_string());
+            assert_eq!(answer("GET", header).await, refused);
+        }
+
+        let token = token(&json!({}));
+        let refused = (StatusCode::FORBIDDEN, "forbidden".to_string());
+        assert_eq!(
+            answer("POST", Some(format!("Bearer {token}"))).await,
+            refused
         );
     }
 

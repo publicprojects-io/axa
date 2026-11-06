@@ -102,6 +102,7 @@ fixed once and an auditor reads it once.
 | CFG-21 | The database connect timeout is 5 seconds and the idle timeout 10 minutes, unless a service's `Defaults` or a variable says otherwise. | `the_database_timeouts_suit_a_real_database`, `a_service_can_state_its_own_database_defaults` |
 | CFG-22 | Outside production a service migrates at boot unless `Defaults::auto_migrate` is off, and a variable beats that. | `development_migrates_at_boot_by_default`, `a_service_can_state_its_own_database_defaults` |
 | CFG-23 | An unset smallest pool size follows a smaller largest one. A largest size of 0, or a smallest above the largest, is invalid as in CFG-13. | `a_small_largest_pool_size_carries_the_smallest_with_it`, `a_pool_that_cannot_exist_is_refused` |
+| CFG-24 | Production refuses a `DATABASE_URL` that could go in the clear: it must demand TLS or stay on this machine, unless `DB_ALLOW_INSECURE` is set. An address it cannot read is refused, and the error does not quote it. | `production_refuses_a_database_url_that_could_go_in_the_clear`, `production_accepts_a_database_url_that_stays_private` |
 
 The variables are listed in `README.md`.
 
@@ -229,6 +230,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | QUE-13 | A running job reports in, so it can run past `stale_minutes` without being taken for lost. | `a_long_job_that_reports_in_is_not_taken_for_lost` |
 | QUE-14 | A run that was given up on cannot overwrite the job's later state. | `a_job_given_up_on_cannot_overwrite_its_replacement` |
 | QUE-15 | A job queued on a transaction commits or rolls back with it. | `a_job_queued_in_a_transaction_rolls_back_with_it` |
+| QUE-16 | `Queue::connect_existing` changes no schema, and fails at connect when the table is missing or out of date. | `connecting_to_an_existing_table_changes_no_schema` |
 
 ### 4.11 Store, logging, and server
 
@@ -247,6 +249,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 | SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
 | SRV-6 | Requests and jobs hear of shutdown at once and share one limit, and no job starts after that. | `requests_and_jobs_share_one_limit_and_no_job_starts_during_it` |
+| SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped. `0` allows for ever. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address` |
 
 ### 4.12 SeaORM support
 
@@ -288,6 +291,8 @@ stated here and proved by their own tests.
 | PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
 | PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
 | PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
+| PST-9 | `axa-paseto` | A refused caller learns nothing about why. A `401` always says `invalid token` and a `403` always says `forbidden`, and the reason goes to the log. | `a_refusal_tells_the_caller_nothing_about_why` |
+| PST-10 | `axa-paseto` | `parse_bool` does not read an unknown word as off. | `on_off_settings_parse` |
 | DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |

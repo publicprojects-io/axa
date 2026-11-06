@@ -233,13 +233,15 @@ place.
 |---|---|
 | `APP_ENV` | `development`, `test`, or `production`. `LOCO_ENV` is also read. Any other name gets production's stricter behaviour. With neither set, a debug build is development and a release build is production |
 | `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
-| `DATABASE_URL` | Connection string. Required in production for a service with a database |
+| `DATABASE_URL` | Connection string. Required in production for a service with a database, where it must set `sslmode` to `require`, `verify-ca`, or `verify-full` unless it stays on this machine |
+| `DB_ALLOW_INSECURE` | Let a production service reach its database without demanding TLS, as on a network that encrypts its own traffic |
 | `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
 | `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds. 5 seconds and 10 minutes by default, or a service's `Defaults` |
 | `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot. A service sharing a database it does not own sets `Defaults::auto_migrate` to `false` |
 | `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
 | `BODY_LIMIT_BYTES` | Largest accepted request body |
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
+| `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers. 30 by default, and `0` allows for ever |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
 | `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |
 | `HTTP_CSP` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |
@@ -400,7 +402,9 @@ impl BackgroundWorker<Args> for ReportWorker {
 
 ### The job queue
 
-With the `queue` feature, jobs live in one `axa_queue` table, created on connect.
+With the `queue` feature, jobs live in one `axa_queue` table. `Queue::connect` creates
+it, and `Queue::connect_existing` changes no schema, for a role that may not: a
+migration then runs `queue::SETUP_STATEMENTS`.
 It needs no broker: Postgres `FOR UPDATE SKIP LOCKED` lets each worker loop claim
 the oldest ready job in one statement, so no two loops ever claim the same row.
 

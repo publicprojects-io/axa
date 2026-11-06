@@ -64,7 +64,7 @@ for lost, and may run it again. Stop the old workers first, or drain the queue.
 
 ## Upgrading to 0.4
 
-Everything above applies. On top of it:
+Everything above applies, and `axa-paseto` is now 0.3. On top of it:
 
 - **`config::Defaults` has `connect_timeout`, `idle_timeout`, and `auto_migrate`.** Use
   `..Defaults::default()`, or set them.
@@ -75,6 +75,16 @@ Everything above applies. On top of it:
   each. Set them to keep the old values. `axa_seaorm::PoolConfig::new` changes to match.
 - **Use `axa::cli::parse` in place of `Cli::parse`.** `Cli::parse` still works, and
   `--help` and `--version` then say nothing about the service.
+- **In production, `DATABASE_URL` must set `sslmode` to `require`, `verify-ca`, or
+  `verify-full`**, or the service refuses to start. A loopback address or a socket is
+  exempt, and `DB_ALLOW_INSECURE=true` is the way out for a network that encrypts its
+  own traffic.
+- **`config::Server` has `header_read_timeout_seconds`.** Set it where a service builds
+  a `Server` by hand. `HEADER_READ_TIMEOUT_SECONDS` sets it, and is 30 by default.
+- **`axa_paseto::parse_bool` returns `Option<bool>`.** `None` is a word it does not know,
+  so refuse to start on it rather than reading it as off.
+- **A refusal from `axa-paseto` no longer says why.** A `401` says `invalid token` and a
+  `403` says `forbidden`, so a client matching on the old text must stop.
 - **Call `Environment::may_destroy_data` before `db reset` or `db down`.** `Cli` only
   parses those commands, so nothing guards them unless a service does.
 
