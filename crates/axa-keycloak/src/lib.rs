@@ -72,8 +72,8 @@
 //! # Keycloak and PASETO together
 //!
 //! [`Guard::with_paseto`] accepts both. A token beginning `v4.` goes to the service's
-//! [`PasetoVerifier`] and anything else goes to Keycloak, so the two share claims,
-//! policy, and audit. Without it, a PASETO token is refused. This crate holds no
+//! [`PasetoVerifier`] and anything else goes to Keycloak, so the two share claims
+//! and policy. Without it, a PASETO token is refused. This crate holds no
 //! PASETO code, so the service supplies that verifier.
 //!
 //! # What this crate leaves out

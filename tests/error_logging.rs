@@ -48,4 +48,19 @@ fn only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged() {
     let detail = ErrorDetail::new("broken", "a custom server fault");
     let _ = Error::CustomError(StatusCode::BAD_GATEWAY, detail).into_response();
     assert!(logs().contains("a custom server fault"), "{}", logs());
+
+    let fault = RowFault {
+        detail: "Key (email)=(carol@example.org) already exists.",
+    };
+    let _ = Error::wrap(fault).into_response();
+    assert!(logs().contains("the insert failed"), "{}", logs());
+    assert!(!logs().contains("carol@example.org"), "{}", logs());
+}
+
+/// Shaped like a database error: its `Debug` text quotes the row, and its message doesn't.
+#[derive(Debug, thiserror::Error)]
+#[error("the insert failed")]
+struct RowFault {
+    #[allow(dead_code)]
+    detail: &'static str,
 }

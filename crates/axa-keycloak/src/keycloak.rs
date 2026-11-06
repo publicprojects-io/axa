@@ -11,8 +11,9 @@
 //!
 //! - **HTTPS only** for the Keycloak URL (loopback excepted), like
 //!   `Verifier::from_paseto_keys_url`.
-//! - **Issuer check.** The engine checks signature and audience but not
-//!   `iss`; the token's issuer must equal `{url}/realms/{realm}`.
+//! - **Strict engine policy.** Only an access token passes: it must carry a
+//!   configured audience and `typ: Bearer`, and no `nbf` or `iat` in the future.
+//! - **Issuer check.** The token's issuer must equal `{url}/realms/{realm}`.
 //! - **At least one audience** is mandatory: an empty list would accept a
 //!   token minted for any client of the realm.
 //! - **Verified email.** When the token carries an `email`, it must have

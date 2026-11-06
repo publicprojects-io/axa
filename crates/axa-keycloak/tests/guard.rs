@@ -259,6 +259,16 @@ async fn a_refusal_tells_the_caller_nothing_about_why() {
 }
 
 #[tokio::test]
+async fn a_forbidden_caller_is_not_told_which_rule_refused_them() {
+    let idp = TestIdp::start().await;
+    let app = app(guard(settings(&idp), true));
+    let token = with_roles(&idp, &["editor"]);
+    let (code, body) = send(&app, "DELETE", "/api/places/1", Some(&token)).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+    assert_eq!(body, "forbidden");
+}
+
+#[tokio::test]
 async fn an_unreachable_realm_refuses_every_token() {
     let idp = TestIdp::start().await;
     let token = idp.token(|_| {});

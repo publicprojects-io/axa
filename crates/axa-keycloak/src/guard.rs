@@ -24,6 +24,9 @@ const PASETO_PREFIX: &str = "v4.";
 /// What a refused caller is told, whatever the cause.
 const INVALID_TOKEN: &str = "invalid token";
 
+/// What a caller the policy refuses is told. The reason goes to the log.
+const FORBIDDEN: &str = "forbidden";
+
 /// A refusal: the status and the reason sent to the caller.
 pub type Rejection = (StatusCode, String);
 
@@ -262,7 +265,8 @@ impl Guard {
         if decision.allowed {
             Ok(())
         } else {
-            Err((StatusCode::FORBIDDEN, decision.reason))
+            tracing::info!(reason = %decision.reason, "keycloak_forbidden");
+            Err((StatusCode::FORBIDDEN, FORBIDDEN.to_string()))
         }
     }
 }

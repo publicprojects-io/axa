@@ -192,7 +192,8 @@ impl Error {
         } else if let Self::Unauthorized(reason) = self {
             tracing::warn!(error.msg = %reason, "controller_unauthorized");
         } else {
-            tracing::error!(error.msg = %self, error.details = ?self, "controller_error");
+            // Never the error's `Debug` text: a database error's holds the row's values.
+            tracing::error!(error.msg = %self, "controller_error");
         }
     }
 }

@@ -70,6 +70,8 @@ last section covers 0.4.
   needs 0.8.4 of it. The legacy default passed a token with no audience, an ID or
   refresh token, and one dated in the future. Every token must now name a configured
   audience, so a Keycloak client may need an audience mapper.
+- A server fault no longer logs the error's `Debug` text, which for a database error
+  quotes the row's values.
 - The SeaORM guide's manifests named `axa` 0.1 rather than 0.4.
 - A layer inside `middleware::apply` now reads the request id from the request's
   header, cleaned, as the response carries it. A request with no id had one in the

@@ -495,8 +495,8 @@ impl Policy {
 ///
 /// `reason` names the deciding rule by index (`"allow (rule 0)"` /
 /// `"deny (rule 2)"`) or the default decision (`"default allow (read)"`
-/// / `"default deny"`), so a 403 response body and the audit trail can
-/// state exactly why.
+/// / `"default deny"`), so that a log can state exactly why. It names the
+/// policy's rules, so it is not for the caller.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Decision {
     /// Whether the request is allowed.

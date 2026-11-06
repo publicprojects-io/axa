@@ -57,7 +57,10 @@
 //!
 //! It does not continue a trace from an incoming `traceparent`, so each service's
 //! trace starts at its own edge. Use `axa_tracing::propagate` to follow a request
-//! across services by its id. Logs are not exported, only traces and metrics.
+//! across services by its id. There is no OTLP log signal, only traces and metrics.
+//!
+//! An event logged inside a span still travels with that span as a span event, so log
+//! text reaches the collector. Treat the collector as you treat the logs.
 
 use std::time::{Duration, Instant};
 

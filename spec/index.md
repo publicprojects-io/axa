@@ -154,7 +154,7 @@ CORS, timeout, compression, body limit.
 | ERR-5 | `not_found`, `unauthorized`, and `bad_request` build the matching variants. | `helpers_build_the_matching_variants`, `statuses_match_their_variants` |
 | ERR-6 | The `IntoResponse` match has no wildcard arm, so a new variant must choose its status. | Enforced by the compiler |
 | ERR-8 | With the `sqlx` or `queue` feature, a sqlx error converts to `Error::Sqlx`, a generic `500`. | `a_sqlx_error_is_a_generic_500` |
-| ERR-7 | Only a server fault logs as an error. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
+| ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 
 The body is currently `{error, description, errors}`. See §6 for the move to
 RFC 9457.
@@ -300,7 +300,7 @@ stated here and proved by their own tests.
 | KCK-1 | `axa-keycloak` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |
 | KCK-2 | `axa-keycloak` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
 | KCK-3 | `axa-keycloak` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
-| KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. | `a_refusal_tells_the_caller_nothing_about_why` |
+| KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. A `403` does not name the rule, which goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_forbidden_caller_is_not_told_which_rule_refused_them` |
 | KCK-5 | `axa-keycloak` | An unreachable realm refuses every token and never hangs a request. | `an_unreachable_realm_refuses_every_token` |
 | KCK-6 | `axa-keycloak` | A PASETO is accepted only through a verifier the service supplies, and then under the same policy. | `a_paseto_is_refused_unless_the_guard_accepts_them`, `with_paseto_both_kinds_of_token_work_under_one_policy` |
 | KCK-7 | `axa-keycloak` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
