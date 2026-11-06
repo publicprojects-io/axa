@@ -287,36 +287,4 @@ mod tests {
             .await
             .unwrap();
     }
-
-    #[cfg(feature = "queue")]
-    async fn queue() -> Arc<Queue> {
-        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
-        let options = crate::queue::QueueOptions::default();
-        Arc::new(Queue::connect(&uri, options).await.unwrap())
-    }
-
-    #[cfg(feature = "queue")]
-    #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
-    async fn a_worker_alone_stops_when_told() {
-        run_until(None, Some(queue().await), &local(), async {})
-            .await
-            .unwrap();
-    }
-
-    #[cfg(feature = "queue")]
-    #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
-    async fn the_job_loops_stop_when_the_server_cannot_start() {
-        let config = Server {
-            port: 1,
-            binding: "256.0.0.1".to_string(),
-            host: String::new(),
-            shutdown_timeout_seconds: 0,
-        };
-        let router = Some(Router::new());
-        let run = run_until(router, Some(queue().await), &config, std::future::pending());
-        let outcome = tokio::time::timeout(std::time::Duration::from_secs(10), run).await;
-        assert!(outcome.expect("the job loops kept running").is_err());
-    }
 }

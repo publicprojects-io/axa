@@ -708,6 +708,41 @@ mod tests {
         assert_eq!(status_of(&queue, &id).await.0, "running");
     }
 
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_worker_alone_stops_when_told() {
+        let _table = TABLE.lock().await;
+        let queue = Arc::new(queue().await);
+        crate::server::run_until(None, Some(queue), &local_server(), async {})
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn the_job_loops_stop_when_the_server_cannot_start() {
+        let _table = TABLE.lock().await;
+        let queue = Arc::new(queue().await);
+        let config = crate::config::Server {
+            port: 1,
+            binding: "256.0.0.1".to_string(),
+            ..local_server()
+        };
+        let router = Some(axum::Router::new());
+        let run = crate::server::run_until(router, Some(queue), &config, std::future::pending());
+        let outcome = tokio::time::timeout(Duration::from_secs(10), run).await;
+        assert!(outcome.expect("the job loops kept running").is_err());
+    }
+
+    fn local_server() -> crate::config::Server {
+        crate::config::Server {
+            port: 0,
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds: 0,
+        }
+    }
+
     /// Never finishes.
     struct HangWorker;
 
@@ -734,10 +769,8 @@ mod tests {
             .await
             .unwrap();
         let config = crate::config::Server {
-            port: 0,
-            binding: "127.0.0.1".to_string(),
-            host: String::new(),
             shutdown_timeout_seconds: 1,
+            ..local_server()
         };
         for _ in 0..50 {
             if status_of(&queue, &id).await.0 == "queued" {
