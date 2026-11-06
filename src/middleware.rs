@@ -60,8 +60,13 @@ fn sanitize_request_id(value: Option<&HeaderValue>) -> String {
 async fn request_id(mut request: Request, next: Next) -> Response {
     let id = sanitize_request_id(request.headers().get(&X_REQUEST_ID));
     request.extensions_mut().insert(RequestId(id.clone()));
+    let value = HeaderValue::from_str(&id).ok();
+    // Inner layers read the header too, so it must carry this id and no other.
+    if let Some(value) = &value {
+        request.headers_mut().insert(X_REQUEST_ID, value.clone());
+    }
     let mut response = next.run(request).await;
-    if let Ok(value) = HeaderValue::from_str(&id) {
+    if let Some(value) = value {
         response.headers_mut().insert(X_REQUEST_ID, value);
     }
     response
@@ -326,6 +331,32 @@ mod tests {
         let value = HeaderValue::from_static(";;;");
         assert_eq!(sanitize_request_id(Some(&value)).len(), 36);
         assert_eq!(sanitize_request_id(None).len(), 36);
+    }
+
+    #[tokio::test]
+    async fn the_request_header_carries_the_id_the_response_does() {
+        async fn echo(headers: http::HeaderMap) -> String {
+            headers[&X_REQUEST_ID].to_str().unwrap().to_string()
+        }
+        for caller in [None, Some("abc<>123")] {
+            let app = apply(Router::new().route("/", get(echo)), &config()).unwrap();
+            let mut request = http::Request::builder().uri("/");
+            if let Some(caller) = caller {
+                request = request.header(&X_REQUEST_ID, caller);
+            }
+            let response = app
+                .oneshot(request.body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            let id = response.headers()[&X_REQUEST_ID]
+                .to_str()
+                .unwrap()
+                .to_string();
+            let body = axum::body::to_bytes(response.into_body(), 1024)
+                .await
+                .unwrap();
+            assert_eq!(body, id.as_bytes());
+        }
     }
 
     #[tokio::test]

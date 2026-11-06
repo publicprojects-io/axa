@@ -141,6 +141,7 @@ CORS, timeout, compression, body limit.
 | MID-14 | A route's limit applies even where `REQUEST_TIMEOUT_SECONDS` is `0`, and a route limit of zero means no limit. | `a_shorter_route_limit_applies_with_the_stack_timeout_off`, `a_zero_route_limit_means_no_limit` |
 | MID-15 | `content-security-policy` is sent when a policy is set, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `no_policy_means_no_csp_header`, `a_handler_may_set_its_own_policy` |
 | MID-16 | A policy that is not a valid header value refuses to boot. | `a_policy_that_is_not_a_header_value_refuses_to_boot` |
+| MID-17 | The request's own `x-request-id` header carries the cleaned or minted id, so that an inner layer reads what the response will carry. | `the_request_header_carries_the_id_the_response_does`, `the_tracked_id_is_the_id_the_response_carries` |
 
 ### 4.5 Errors
 
@@ -339,6 +340,14 @@ stated here and proved by their own tests.
 | VER-1 | `axa-versioning` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
 | VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406`. | `an_unsupported_version_is_a_406` |
 | VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
+| OTL-1 | `axa-opentelemetry` | Export is off until an endpoint is set, and off leaves requests working with no header. | `export_is_off_until_an_endpoint_is_set`, `off_means_no_layers_no_header_and_the_request_still_works` |
+| OTL-2 | `axa-opentelemetry` | A span and the request metric reach a real collector, with the service's name and version. | `a_request_reaches_the_collector_as_a_span_and_a_metric` |
+| OTL-3 | `axa-opentelemetry` | Plain `http` is for loopback, unless a clear yes allows it. An invalid endpoint is refused, and an error never quotes the endpoint. | `plain_http_is_for_loopback`, `plain_http_to_another_host_is_refused`, `plain_http_to_another_host_can_be_allowed`, `anything_but_a_clear_yes_keeps_insecure_refused`, `a_bad_endpoint_is_refused`, `an_error_never_quotes_the_endpoint`, `start_refuses_cleartext_to_another_host` |
+| OTL-4 | `axa-opentelemetry` | An `https` endpoint trusts the system's roots. | `an_https_endpoint_builds_with_roots_to_trust`. The handshake itself is **unverified** by a test |
+| OTL-5 | `axa-opentelemetry` | A collector that is down never holds up a request. | `a_collector_that_is_down_stops_nothing` |
+| OTL-6 | `axa-opentelemetry` | A metric's attributes are the method, status, and route template. An unknown method is `_OTHER`, and a path's value never appears. | `an_unknown_method_cannot_create_a_series`, `a_request_reaches_the_collector_as_a_span_and_a_metric` |
+| OTL-7 | `axa-opentelemetry` | The middleware adds to the request span `axa` opens, and puts its `traceparent` on the response. A server error marks the span. | `the_middleware_joins_the_request_span_axa_opens`, `a_server_error_marks_the_span` |
+| OTL-8 | `axa-opentelemetry` | `DIAGNOSTIC_DIRECTIVES` are valid filter directives. | `the_diagnostic_directives_are_valid` |
 | TRC-1 | `axa-tracing` | `Redacted` hides its value in `Display` and `Debug`, and so in a log line. | `redacted_hides_its_value_in_a_log_line` |
 | TRC-2 | `axa-tracing` | `SlowSpans` reports a span at or past its threshold, inside that span so that it carries its fields, and tells busy time from idle time. A quick span is not reported. | `a_slow_span_is_reported_with_its_fields`, `a_quick_span_is_not_reported`, `busy_and_idle_time_are_told_apart` |
 | TRC-3 | `axa-tracing` | `track` makes the request id readable anywhere the request runs, cleaned by `axa`'s rule, or minted when nothing usable remains. Outside a request there is none. | `a_handler_can_read_the_request_id`, `a_callers_id_is_cleaned_as_axa_cleans_it`, `an_id_is_minted_when_nothing_usable_remains`, `there_is_no_request_id_outside_a_request` |
@@ -405,7 +414,6 @@ by hand. Publish only from a commit where everything above has passed.
   bare JSON for successes. This changes the older services' `ApiResponse`
   envelope and their front-ends, so it lands as its own change. `axa-problem`
   is built, and no service uses it yet.
-- **`axa-opentelemetry`**, replacing the services' copies of OTLP export.
 
 ## 7. Open questions
 

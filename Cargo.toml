@@ -44,6 +44,7 @@ testing = ["dep:axum-test"]
 diesel = ["dep:axa-diesel"]
 keycloak = ["dep:axa-keycloak"]
 openapi = ["dep:axa-openapi"]
+opentelemetry = ["dep:axa-opentelemetry"]
 pagination = ["dep:axa-pagination"]
 paseto = ["dep:axa-paseto"]
 problem = ["dep:axa-problem"]
@@ -70,6 +71,7 @@ axa-session = { version = "0.1.0", path = "crates/axa-session", optional = true 
 axa-sqlx = { version = "0.1.1", path = "crates/axa-sqlx", optional = true }
 axa-tera = { version = "0.2.0", path = "crates/axa-tera", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
+axa-opentelemetry = { version = "0.1.0", path = "crates/axa-opentelemetry", optional = true }
 axa-versioning = { version = "0.1.0", path = "crates/axa-versioning", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }

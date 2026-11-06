@@ -1,0 +1,45 @@
+[package]
+name = "axa-opentelemetry"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
+description = "OTLP export of traces and request metrics for Axum services."
+readme = "README.md"
+repository = "https://github.com/publicprojects-io/axa/"
+license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+
+[dependencies]
+axum = { version = "0.8", default-features = false, features = ["matched-path"] }
+opentelemetry = { version = "0.33", features = ["trace", "metrics"] }
+opentelemetry_sdk = { version = "0.33", features = ["trace", "metrics"] }
+# `grpc-tonic` for port 4317. `internal-logs` so that a failing export is seen. The
+# exporter trusts no roots of its own on https, so `tls-roots` is what makes one work.
+opentelemetry-otlp = { version = "0.33", default-features = false, features = [
+  "grpc-tonic",
+  "internal-logs",
+  "metrics",
+  "tls-ring",
+  "tls-roots",
+  "trace",
+] }
+thiserror = "2"
+tracing = "0.1"
+tracing-opentelemetry = "0.34"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["registry"] }
+
+[dev-dependencies]
+axum = "0.8"
+opentelemetry-proto = { version = "0.33", default-features = false, features = [
+  "gen-tonic",
+  "metrics",
+  "trace",
+] }
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = "0.14"
+tower = { version = "0.5", features = ["util"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "std"] }
+
+[lints]
+workspace = true

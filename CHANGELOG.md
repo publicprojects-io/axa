@@ -14,8 +14,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa-tracing`, behind the `tracing` feature: `Redacted` log fields, `SlowSpans`,
   a request id readable anywhere and kept across `spawn` and peer calls, and
   diagnostics for a future that blocks the runtime, a stalled runtime, and panics.
+- `axa-opentelemetry`, behind the `opentelemetry` feature: OTLP export of traces and
+  request metrics. Export is off until `OTLP_ENDPOINT` is set, and plain `http` to a
+  remote collector is refused unless `OTLP_ALLOW_INSECURE` is set.
 - `logger::init_with`, which installs more layers beside the stdout logs and can
   widen the default filter. Layers keep running when `LOG_ENABLE=false`.
+
+### Fixed
+
+- A layer inside `middleware::apply` now reads the request id from the request's
+  header, cleaned, as the response carries it. A request with no id had one in the
+  extensions and none in the header, so a second reader minted a different id.
 
 ## [0.4.0] - 2026-11-06
 

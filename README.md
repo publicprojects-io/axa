@@ -61,6 +61,7 @@ axa = "0.4"
 | `tracing` | [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code |
 | `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
+| `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
