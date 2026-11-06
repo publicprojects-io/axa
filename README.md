@@ -331,6 +331,11 @@ let cli = axa::cli::parse(
 );
 ```
 
+`parse` refuses `db down`, `db reset`, and `db truncate`, because they destroy data.
+They run only in development or test, with `AXA_DESTROY_DATA=true`, and the process
+exits non-zero before your code runs. `--environment` cannot lift this: a production
+process stays refused whatever the flag says. `Cli::parse()` does not refuse them.
+
 `check` validates the configuration, prints the effective settings with passwords
 and other secrets redacted, and exits, non-zero if refused. It connects to nothing,
 and it knows only the settings axa reads. `Config::apply_cli` applies the `start`

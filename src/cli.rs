@@ -18,10 +18,15 @@ use crate::{
     task::Vars,
 };
 
+/// The variable that confirms a command which destroys data. It must be `true`.
+pub const DESTROY_DATA_VAR: &str = "AXA_DESTROY_DATA";
+
 /// Parsed command line.
 ///
 /// Read it with [`parse`], which gives `--help` and `--version` the service's
-/// own name. `Cli::parse()` works too, and says nothing about the service.
+/// own name and refuses a command that must not destroy data here.
+/// `Cli::parse()` works too, says nothing about the service, and does **not**
+/// refuse those commands.
 #[derive(Debug, Parser)]
 #[command(about = None, long_about = None)]
 pub struct Cli {
@@ -88,6 +93,36 @@ pub enum DbCommand {
     Truncate,
 }
 
+impl DbCommand {
+    /// Whether this destroys data: `down`, `reset`, and `truncate`.
+    #[must_use]
+    pub const fn destroys_data(&self) -> bool {
+        matches!(self, Self::Down { .. } | Self::Reset | Self::Truncate)
+    }
+}
+
+/// Why `cli` must not run here, or `None` if it may.
+///
+/// `process` is the environment the process runs in, whatever `--environment`
+/// says, so that the flag cannot talk a production process out of this: both
+/// must allow it.
+fn refusal(cli: &Cli, process: &Environment, confirmed: Option<&str>) -> Option<String> {
+    let Command::Db { command } = &cli.command else {
+        return None;
+    };
+    let chosen = cli.environment.as_deref().map(Environment::parse);
+    let allowed = process.may_destroy_data(confirmed)
+        && chosen
+            .as_ref()
+            .is_none_or(|environment| environment.may_destroy_data(confirmed));
+    (command.destroys_data() && !allowed).then(|| {
+        format!(
+            "refused: `db down`, `db reset`, and `db truncate` destroy data, so they run \
+             only in development or test, with {DESTROY_DATA_VAR}=true"
+        )
+    })
+}
+
 /// The command line under a service's own name, version, and description.
 fn command(name: &'static str, version: &'static str, about: &'static str) -> clap::Command {
     Cli::command().name(name).version(version).about(about)
@@ -106,10 +141,20 @@ fn command(name: &'static str, version: &'static str, about: &'static str) -> cl
 /// ```
 ///
 /// Exits as `clap` does on a bad argument, on `--help`, and on `--version`.
+/// Exits non-zero, before the service runs anything, on a command that destroys
+/// data outside development and test, or without [`DESTROY_DATA_VAR`] set to
+/// `true`. So a service cannot leave the guard out, as long as it reads its
+/// arguments here.
 #[must_use]
 pub fn parse(name: &'static str, version: &'static str, about: &'static str) -> Cli {
     let matches = command(name, version, about).get_matches();
-    Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit())
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
+    let confirmed = std::env::var(DESTROY_DATA_VAR).ok();
+    if let Some(message) = refusal(&cli, &Environment::from_env(), confirmed.as_deref()) {
+        eprintln!("{message}");
+        std::process::exit(1);
+    }
+    cli
 }
 
 /// Parse `key:value` task arguments.
@@ -355,6 +400,61 @@ mod tests {
         let help = command.render_long_help().to_string();
         assert!(help.contains("Holds case folders."), "{help}");
         assert!(!help.contains("Axum"), "{help}");
+    }
+
+    #[test]
+    fn only_down_reset_and_truncate_destroy_data() {
+        assert!(DbCommand::Down { steps: 1 }.destroys_data());
+        assert!(DbCommand::Reset.destroys_data());
+        assert!(DbCommand::Truncate.destroys_data());
+        assert!(!DbCommand::Migrate.destroys_data());
+        assert!(!DbCommand::Status.destroys_data());
+    }
+
+    #[test]
+    fn a_destructive_command_is_refused_outside_development_and_test() {
+        for process in [
+            Environment::Production,
+            Environment::Other("staging".to_string()),
+        ] {
+            for command in ["reset", "truncate", "down"] {
+                let cli = parse(&["svc", "db", command]);
+                assert!(refusal(&cli, &process, Some("true")).is_some(), "{command}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_destructive_command_needs_confirming() {
+        let cli = parse(&["svc", "db", "truncate"]);
+        assert!(refusal(&cli, &Environment::Development, None).is_some());
+        assert!(refusal(&cli, &Environment::Test, Some("yes")).is_some());
+        assert!(refusal(&cli, &Environment::Development, Some("true")).is_none());
+        assert!(refusal(&cli, &Environment::Test, Some("true")).is_none());
+    }
+
+    #[test]
+    fn the_environment_flag_cannot_lift_the_refusal() {
+        let cli = parse(&["svc", "db", "reset", "--environment", "test"]);
+        let refused = refusal(&cli, &Environment::Production, Some("true"));
+        assert!(refused.is_some());
+        // It can only add to it.
+        let cli = parse(&["svc", "db", "reset", "--environment", "production"]);
+        let refused = refusal(&cli, &Environment::Development, Some("true"));
+        assert!(refused.is_some());
+    }
+
+    #[test]
+    fn other_commands_are_never_refused() {
+        for args in [
+            &["svc", "db", "migrate"][..],
+            &["svc", "db", "status"],
+            &["svc", "check"],
+            &["svc", "start"],
+        ] {
+            let cli = parse(args);
+            assert_eq!(refusal(&cli, &Environment::Production, None), None);
+        }
     }
 
     #[test]

@@ -106,13 +106,13 @@ impl Environment {
         !matches!(self, Self::Development | Self::Test)
     }
 
-    /// Whether a command that destroys data, such as `db reset` or `db down`,
-    /// may run: only in development or test, and only when `confirmed` is
-    /// `"true"`. `confirmed` is the value of a variable the service names, so
-    /// that running one takes a choice as well as a typed command.
+    /// Whether a command that destroys data, such as `db down`, `db reset`, or
+    /// `db truncate`, may run: only in development or test, and only when
+    /// `confirmed` is `"true"`, so that running one takes a choice as well as a
+    /// typed command.
     ///
-    /// `Cli` parses these commands and a service carries them out, so a
-    /// service must call this itself.
+    /// `axa::cli::parse` applies this before a service runs anything. Call it
+    /// yourself for a destructive path that does not come through there.
     #[must_use]
     pub fn may_destroy_data(&self, confirmed: Option<&str>) -> bool {
         !self.is_production_like() && confirmed == Some("true")

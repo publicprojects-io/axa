@@ -85,8 +85,11 @@ Everything above applies, and `axa-paseto` is now 0.3. On top of it:
   so refuse to start on it rather than reading it as off.
 - **A refusal from `axa-paseto` no longer says why.** A `401` says `invalid token` and a
   `403` says `forbidden`, so a client matching on the old text must stop.
-- **Call `Environment::may_destroy_data` before `db reset` or `db down`.** `Cli` only
-  parses those commands, so nothing guards them unless a service does.
+- **`cli::parse` refuses `db down`, `db reset`, and `db truncate`** outside development
+  and test, and everywhere without `AXA_DESTROY_DATA=true`, so a script that runs one
+  must set it. `--environment test` does not get round this on a production process.
+  `Cli::parse` does not refuse them, so a service that keeps it must call
+  `Environment::may_destroy_data` itself.
 
 ## Checking your work
 

@@ -224,11 +224,12 @@ impl App {
 **`DbCommand::Reset` drops every table.** `Migrator::fresh` does not pass through
 any migration's `down`, so a guard you wrote in a `down` does not run, and neither
 does anything that refuses to drop protected data. Loco had no guard here either.
-The sample above refuses `reset` and `truncate` outside development and test. A
-service with protected data should go further and ask for it by name as well, so a
-stray `db reset` on a laptop pointed at a shared database cannot run. One of our
-services requires a named environment variable as well as the environment. If
-`reset` has no place in your service, make it an error.
+`cli::parse` refuses `down`, `reset`, and `truncate` before your `run` starts, unless
+the process is in development or test and `AXA_DESTROY_DATA=true` is set, so a stray
+`db reset` on a laptop pointed at a shared database cannot run. The sample's
+`refuse_outside_development` is a second check at the call, and the only one if you
+read the arguments with `Cli::parse`. If `reset` has no place in your service, make
+it an error.
 
 If you keep the Loco ports, set them in `Defaults`. Otherwise you get axa's
 default, 1241, and any proxy or healthcheck pointing at the old port breaks.

@@ -22,9 +22,12 @@ last section covers 0.4.
 - `axa_sqlx::Db`, so that one function takes the pool or an open transaction. It has
   one service so far, the electronic patient record, where it was written, and
   `impl Acquire` futures are not `Send`.
-- `Environment::may_destroy_data`, which a service calls before `db reset` or
-  `db down`. `Cli` only parses those commands, so a hand-written `run` could leave
-  the guard out, and one did.
+- `cli::parse` now refuses `db down`, `db reset`, and `db truncate` unless the process
+  runs in development or test and `AXA_DESTROY_DATA` is `true`. It exits before the
+  service runs anything, and `--environment` cannot lift the refusal. A hand-written
+  `run` could leave the guard out, and one did. `Cli::parse` does not refuse them.
+- `DbCommand::destroys_data`, `cli::DESTROY_DATA_VAR`, and
+  `Environment::may_destroy_data`, the rule behind the refusal.
 
 - `Defaults::connect_timeout`, `Defaults::idle_timeout`, and `Defaults::auto_migrate`,
   so a service states these in code. `auto_migrate: false` suits a service sharing a
