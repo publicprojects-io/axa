@@ -5,31 +5,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
-
-- `axa-keycloak`, for Keycloak bearer authentication and ABAC enforcement, behind
-  the `keycloak` feature. It stands alone so that it can be run and audited by itself,
-  with copies of the code it needs from `authentication-verifier` and `axa-paseto`.
-  A guard can accept PASETO tokens as well, through a verifier the service supplies.
-- `axa-tracing`, behind the `tracing` feature: `Redacted` log fields, `SlowSpans`,
-  a request id readable anywhere and kept across `spawn` and peer calls, and
-  diagnostics for a future that blocks the runtime, a stalled runtime, and panics.
-- `axa-opentelemetry`, behind the `opentelemetry` feature: OTLP export of traces and
-  request metrics. Export is off until `OTLP_ENDPOINT` is set, and plain `http` to a
-  remote collector is refused unless `OTLP_ALLOW_INSECURE` is set.
-- `logger::init_with`, which installs more layers beside the stdout logs and can
-  widen the default filter. Layers keep running when `LOG_ENABLE=false`.
-
-### Fixed
-
-- A layer inside `middleware::apply` now reads the request id from the request's
-  header, cleaned, as the response carries it. A request with no id had one in the
-  extensions and none in the header, so a second reader minted a different id.
-
 ## [0.4.0] - 2026-11-06
 
-This covers `axa` 0.4.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1, and `axa-environment`
-0.1.1. It breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
+This covers `axa` 0.4.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1, `axa-environment`
+0.1.1, and the first releases of `axa-keycloak`, `axa-tracing`, and
+`axa-opentelemetry`, each 0.1.0. It breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
 timeouts are longer. See [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose
 last section covers 0.4.
 
@@ -51,6 +31,18 @@ last section covers 0.4.
   database it does not own. Code building a `Defaults` without
   `..Defaults::default()` must set them.
 - `config::DEFAULT_CONNECT_TIMEOUT` and `config::DEFAULT_IDLE_TIMEOUT`.
+- `axa-keycloak`, for Keycloak bearer authentication and ABAC enforcement, behind
+  the `keycloak` feature. It stands alone so that it can be run and audited by itself,
+  with copies of the code it needs from `authentication-verifier` and `axa-paseto`.
+  A guard can accept PASETO tokens as well, through a verifier the service supplies.
+- `axa-tracing`, behind the `tracing` feature: `Redacted` log fields, `SlowSpans`,
+  a request id readable anywhere and kept across `spawn` and peer calls, and
+  diagnostics for a future that blocks the runtime, a stalled runtime, and panics.
+- `axa-opentelemetry`, behind the `opentelemetry` feature: OTLP export of traces and
+  request metrics. Export is off until `OTLP_ENDPOINT` is set, and plain `http` to a
+  remote collector is refused unless `OTLP_ALLOW_INSECURE` is set.
+- `logger::init_with`, which installs more layers beside the stdout logs and can
+  widen the default filter. Layers keep running when `LOG_ENABLE=false`.
 
 ### Fixed
 
@@ -74,6 +66,14 @@ last section covers 0.4.
   setting.
 - The `sqlx` feature now gives `Error::Sqlx`, so a handler can use `?` on a query. Only
   the `queue` feature did.
+- `axa-keycloak` now uses the strict validation policy of `axum-keycloak-auth`, and
+  needs 0.8.4 of it. The legacy default passed a token with no audience, an ID or
+  refresh token, and one dated in the future. Every token must now name a configured
+  audience, so a Keycloak client may need an audience mapper.
+- The SeaORM guide's manifests named `axa` 0.1 rather than 0.4.
+- A layer inside `middleware::apply` now reads the request id from the request's
+  header, cleaned, as the response carries it. A request with no id had one in the
+  extensions and none in the header, so a second reader minted a different id.
 
 ### Changed
 
@@ -81,6 +81,10 @@ last section covers 0.4.
   500 ms each, matching `axa-sqlx`. The old defaults failed requests after half a
   second of waiting for a connection, and closed idle connections twice a second.
   `axa_seaorm::PoolConfig::new` changes to match.
+- `tower-http` is now 0.7, `cruet` 1, and `validator` 0.21.
+- CI now proves that `axa-diesel` links no C database library (DSL-1), and the spec
+  lists the clippy run on stable.
+
 ## [0.3.0] - 2026-11-06
 
 This covers `axa` 0.3.0, `axa-tera` 0.2.0, and `axa-session` 0.1.0. It breaks 0.2.0:

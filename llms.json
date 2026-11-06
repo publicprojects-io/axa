@@ -1,0 +1,279 @@
+{
+  "name": "axa",
+  "version": "0.4.0",
+  "description": "Small shared library for services built directly on Axum.",
+  "repository": "https://github.com/publicprojects-io/axa/",
+  "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
+  "language": "Rust",
+  "edition": "2024",
+  "rust_version": "1.97",
+  "documentation": {
+    "readme": "README.md",
+    "agents": "AGENTS.md",
+    "specification": "spec/index.md",
+    "changelog": "CHANGELOG.md",
+    "guides": [
+      "help/from-loco-into-axa/index.md",
+      "help/from-loco-seaorm-into-axa-seaorm/index.md",
+      "help/upgrading-to-0.3/index.md"
+    ]
+  },
+  "features": [
+    {
+      "name": "sea-orm",
+      "crate": "axa-seaorm"
+    },
+    {
+      "name": "queue",
+      "crate": null
+    },
+    {
+      "name": "testing",
+      "crate": null
+    },
+    {
+      "name": "diesel",
+      "crate": "axa-diesel"
+    },
+    {
+      "name": "keycloak",
+      "crate": "axa-keycloak"
+    },
+    {
+      "name": "openapi",
+      "crate": "axa-openapi"
+    },
+    {
+      "name": "opentelemetry",
+      "crate": "axa-opentelemetry"
+    },
+    {
+      "name": "pagination",
+      "crate": "axa-pagination"
+    },
+    {
+      "name": "paseto",
+      "crate": "axa-paseto"
+    },
+    {
+      "name": "problem",
+      "crate": "axa-problem"
+    },
+    {
+      "name": "prometheus",
+      "crate": "axa-prometheus"
+    },
+    {
+      "name": "redis",
+      "crate": "axa-redis"
+    },
+    {
+      "name": "session",
+      "crate": "axa-session"
+    },
+    {
+      "name": "sqlx",
+      "crate": "axa-sqlx"
+    },
+    {
+      "name": "tera",
+      "crate": "axa-tera"
+    },
+    {
+      "name": "tracing",
+      "crate": "axa-tracing"
+    },
+    {
+      "name": "versioning",
+      "crate": "axa-versioning"
+    }
+  ],
+  "modules": [
+    {
+      "name": "boot",
+      "purpose": "Test boot helpers, including `TestApp`"
+    },
+    {
+      "name": "cli",
+      "purpose": "The shared command line"
+    },
+    {
+      "name": "config",
+      "purpose": "Configuration from the process environment"
+    },
+    {
+      "name": "context",
+      "purpose": "`AppContext`, plain Axum state"
+    },
+    {
+      "name": "db",
+      "purpose": "Database helpers for the context"
+    },
+    {
+      "name": "error",
+      "purpose": "The error type and its HTTP mapping"
+    },
+    {
+      "name": "format",
+      "purpose": "Response helpers"
+    },
+    {
+      "name": "health",
+      "purpose": "Health routes"
+    },
+    {
+      "name": "logger",
+      "purpose": "Logging setup, `init` and `init_with`"
+    },
+    {
+      "name": "middleware",
+      "purpose": "The standard HTTP middleware stack"
+    },
+    {
+      "name": "prelude",
+      "purpose": "Common imports"
+    },
+    {
+      "name": "queue",
+      "purpose": "The Postgres job queue (feature `queue`)"
+    },
+    {
+      "name": "routes",
+      "purpose": "Route tables that become an ordinary `Router`"
+    },
+    {
+      "name": "server",
+      "purpose": "Serving and graceful shutdown"
+    },
+    {
+      "name": "store",
+      "purpose": "Shared in-process store"
+    },
+    {
+      "name": "task",
+      "purpose": "Command-line tasks"
+    },
+    {
+      "name": "testing",
+      "purpose": "Request-level test helpers (feature `testing`)"
+    },
+    {
+      "name": "worker",
+      "purpose": "Background jobs"
+    }
+  ],
+  "crates": [
+    {
+      "name": "axa-diesel",
+      "version": "0.1.0",
+      "description": "Diesel pooling, migrations, and test resets for Axum services, in pure Rust.",
+      "feature": "diesel",
+      "readme": "crates/axa-diesel/README.md"
+    },
+    {
+      "name": "axa-environment",
+      "version": "0.1.1",
+      "description": "Which environment a service runs in, read one way, with no dependencies.",
+      "feature": null,
+      "readme": "crates/axa-environment/README.md"
+    },
+    {
+      "name": "axa-keycloak",
+      "version": "0.1.0",
+      "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
+      "feature": "keycloak",
+      "readme": "crates/axa-keycloak/README.md"
+    },
+    {
+      "name": "axa-openapi",
+      "version": "0.1.0",
+      "description": "Serve OpenAPI documents and a pinned Swagger UI from Axum services.",
+      "feature": "openapi",
+      "readme": "crates/axa-openapi/README.md"
+    },
+    {
+      "name": "axa-opentelemetry",
+      "version": "0.1.0",
+      "description": "OTLP export of traces and request metrics for Axum services.",
+      "feature": "opentelemetry",
+      "readme": "crates/axa-opentelemetry/README.md"
+    },
+    {
+      "name": "axa-pagination",
+      "version": "0.1.0",
+      "description": "Offset pagination, count headers, and LIKE escaping for Axum services.",
+      "feature": "pagination",
+      "readme": "crates/axa-pagination/README.md"
+    },
+    {
+      "name": "axa-paseto",
+      "version": "0.2.0",
+      "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
+      "feature": "paseto",
+      "readme": "crates/axa-paseto/README.md"
+    },
+    {
+      "name": "axa-problem",
+      "version": "0.1.0",
+      "description": "RFC 9457 problem details responses for Axum services.",
+      "feature": "problem",
+      "readme": "crates/axa-problem/README.md"
+    },
+    {
+      "name": "axa-prometheus",
+      "version": "0.1.0",
+      "description": "Prometheus text exposition for Axum services.",
+      "feature": "prometheus",
+      "readme": "crates/axa-prometheus/README.md"
+    },
+    {
+      "name": "axa-redis",
+      "version": "0.1.0",
+      "description": "A Redis cache with mandatory expiry for Axum services.",
+      "feature": "redis",
+      "readme": "crates/axa-redis/README.md"
+    },
+    {
+      "name": "axa-seaorm",
+      "version": "0.2.0",
+      "description": "SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.",
+      "feature": "sea-orm",
+      "readme": "crates/axa-seaorm/README.md"
+    },
+    {
+      "name": "axa-session",
+      "version": "0.1.0",
+      "description": "Web sessions for Axum services over axum_session, with safe defaults.",
+      "feature": "session",
+      "readme": "crates/axa-session/README.md"
+    },
+    {
+      "name": "axa-sqlx",
+      "version": "0.1.1",
+      "description": "PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.",
+      "feature": "sqlx",
+      "readme": "crates/axa-sqlx/README.md"
+    },
+    {
+      "name": "axa-tera",
+      "version": "0.2.0",
+      "description": "Tera templates with safe escaping and generic errors for Axum services.",
+      "feature": "tera",
+      "readme": "crates/axa-tera/README.md"
+    },
+    {
+      "name": "axa-tracing",
+      "version": "0.1.0",
+      "description": "Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.",
+      "feature": "tracing",
+      "readme": "crates/axa-tracing/README.md"
+    },
+    {
+      "name": "axa-versioning",
+      "version": "0.1.0",
+      "description": "Header-based API version negotiation for Axum services.",
+      "feature": "versioning",
+      "readme": "crates/axa-versioning/README.md"
+    }
+  ]
+}

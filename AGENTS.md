@@ -16,13 +16,19 @@ test edit together.
 ## Build, test, lint
 
 ```sh
-cargo test
-cargo clippy --all-targets --all-features
-cargo doc --no-deps
+cargo fmt --all --check
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo doc --workspace --no-deps --all-features
 ```
 
-All three must be clean. `[lints]` in `Cargo.toml` denies pedantic clippy and
-missing docs, and forbids unsafe code.
+All four must be clean. They are the short form: the feature sets are not
+interchangeable, and [section 5 of the spec](spec/index.md#5-verification) has the
+full list that CI runs, including the Postgres and Redis tests. `[lints]` in
+`Cargo.toml` denies pedantic clippy and missing docs, and forbids unsafe code.
+
+`rust-version` is two releases behind stable, and is the same in every manifest.
+`.github/workflows/ci.yml` pins that version too, so change them together.
 
 ## Conventions
 
@@ -33,3 +39,4 @@ missing docs, and forbids unsafe code.
 - Add code only once two services need it, or mark it in the README as having
   no service yet.
 - Raise any new dependency with the user first.
+- Update `llms.txt` and `llms.json` when a feature, crate, or module changes.

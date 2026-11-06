@@ -1,0 +1,59 @@
+# axa
+
+> Small shared library for services built directly on Axum. A library, not a framework: `main.rs` stays ordinary Axum and
+> calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
+> the preferred way to reach a database. Version 0.4.0, Rust 1.97 or newer.
+
+## Docs
+
+- [README](README.md): why it exists, install, quick start, what it provides
+- [AGENTS](AGENTS.md): build, test, lint, and conventions
+- [Specification](spec/index.md): the single source of truth, each requirement naming its test
+- [Changelog](CHANGELOG.md): changes by version
+- [llms.json](llms.json): this index, machine-readable
+
+## Guides
+
+- [From Loco into axa](help/from-loco-into-axa/index.md)
+- [From Loco SeaORM into axa-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
+- [Upgrading to 0.3](help/upgrading-to-0.3/index.md)
+
+## Modules
+
+- [boot](src/boot.rs): Test boot helpers, including `TestApp`
+- [cli](src/cli.rs): The shared command line
+- [config](src/config.rs): Configuration from the process environment
+- [context](src/context.rs): `AppContext`, plain Axum state
+- [db](src/db.rs): Database helpers for the context
+- [error](src/error.rs): The error type and its HTTP mapping
+- [format](src/format.rs): Response helpers
+- [health](src/health.rs): Health routes
+- [logger](src/logger.rs): Logging setup, `init` and `init_with`
+- [middleware](src/middleware.rs): The standard HTTP middleware stack
+- [prelude](src/prelude.rs): Common imports
+- [queue](src/queue.rs): The Postgres job queue (feature `queue`)
+- [routes](src/routes.rs): Route tables that become an ordinary `Router`
+- [server](src/server.rs): Serving and graceful shutdown
+- [store](src/store.rs): Shared in-process store
+- [task](src/task.rs): Command-line tasks
+- [testing](src/testing.rs): Request-level test helpers (feature `testing`)
+- [worker](src/worker.rs): Background jobs
+
+## Crates
+
+- [axa-diesel](crates/axa-diesel/README.md) (feature `diesel`): Diesel pooling, migrations, and test resets for Axum services, in pure Rust.
+- [axa-environment](crates/axa-environment/README.md) (always included): Which environment a service runs in, read one way, with no dependencies.
+- [axa-keycloak](crates/axa-keycloak/README.md) (feature `keycloak`): Keycloak bearer authentication and ABAC enforcement for Axum services.
+- [axa-openapi](crates/axa-openapi/README.md) (feature `openapi`): Serve OpenAPI documents and a pinned Swagger UI from Axum services.
+- [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services.
+- [axa-pagination](crates/axa-pagination/README.md) (feature `pagination`): Offset pagination, count headers, and LIKE escaping for Axum services.
+- [axa-paseto](crates/axa-paseto/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
+- [axa-problem](crates/axa-problem/README.md) (feature `problem`): RFC 9457 problem details responses for Axum services.
+- [axa-prometheus](crates/axa-prometheus/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
+- [axa-redis](crates/axa-redis/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services.
+- [axa-seaorm](crates/axa-seaorm/README.md) (feature `sea-orm`): SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.
+- [axa-session](crates/axa-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults.
+- [axa-sqlx](crates/axa-sqlx/README.md) (feature `sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
+- [axa-tera](crates/axa-tera/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.
+- [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.
+- [axa-versioning](crates/axa-versioning/README.md) (feature `versioning`): Header-based API version negotiation for Axum services.

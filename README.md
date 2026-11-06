@@ -448,15 +448,16 @@ async fn health_answers() {
 ## Development
 
 ```sh
-cargo test --all-features
+cargo test --workspace --all-features
 cargo test --features queue,testing
-cargo test
-cargo clippy --all-targets --all-features -- -D warnings
+cargo test --workspace
+cargo clippy --workspace --all-targets --all-features -- -D warnings
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
 ```
 
 The last command runs the queue tests against a real Postgres. Those tests have
 caught a real race that nothing else did, so run them when you touch the queue.
+The full list that CI runs is in [section 5 of the spec](spec/index.md#5-verification).
 
 Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
 carries a spec edit, a code edit, and a test edit together.

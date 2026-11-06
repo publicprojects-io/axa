@@ -73,6 +73,11 @@ jobs:
       - name: Docs
         run: cargo doc --workspace --no-deps --all-features
 
+      - name: No C database library in axa-diesel
+        run: |
+          cargo tree -p axa-diesel --all-features -e normal > diesel-tree.txt
+          if grep -E 'pq-sys|libpq|openssl' diesel-tree.txt; then exit 1; fi
+
       - name: Postgres tests
         env:
           AXA_TEST_DATABASE_URL: postgres://axa:axa@localhost:5432/axa_test

@@ -288,7 +288,7 @@ stated here and proved by their own tests.
 | PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
 | PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
 | PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
-| DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`; **unverified** in CI |
+| DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
 | DSL-4 | `axa-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
@@ -306,6 +306,7 @@ stated here and proved by their own tests.
 | KCK-7 | `axa-keycloak` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
 | KCK-8 | `axa-keycloak` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |
 | KCK-9 | `axa-keycloak` | It depends on neither `authentication-verifier` nor any other `axa` crate, and states the source of each copy. | `no_dependency_on_what_this_crate_was_copied_from` |
+| KCK-10 | `axa-keycloak` | Only an access token passes: one with no audience, a `typ` other than `Bearer`, or an `nbf` or `iat` in the future is a `401`. | `only_a_current_access_token_for_this_audience_passes` |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
@@ -372,10 +373,12 @@ cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --all-targets --features queue,testing -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo test --features queue,testing
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
+cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
