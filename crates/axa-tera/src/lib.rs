@@ -20,16 +20,35 @@
 //!   a value your own code produced, because it turns the protection off.
 //! - **A failed render shows nothing.** The failure is logged and the visitor
 //!   gets a generic `500`, because Tera's errors quote template source.
+//! - **A page can load its own files.** `axa`'s production default,
+//!   `default-src 'none'`, suits a JSON API and would block a page's stylesheets
+//!   and images. [`Page`] sends [`PAGE_CSP`] in its place, and a handler or
+//!   `HTTP_CSP` can name another. It allows no inline script, and files only from
+//!   the page's own origin.
 //!
 //! A template name without one of those extensions is not escaped, so never
 //! render user input into a `.txt` template that ends up in a page.
 
 use axum::{
-    http::StatusCode,
+    http::{StatusCode, header},
     response::{Html, IntoResponse, Response},
 };
 use serde::Serialize;
 use tera::{Context, Tera};
+
+/// The policy a [`Page`] sends: its own origin's files, and no inline script.
+pub const PAGE_CSP: &str = "default-src 'self'; object-src 'none'; base-uri 'self'; \
+     form-action 'self'; frame-ancestors 'none'";
+
+/// A rendered HTML page, which answers with [`PAGE_CSP`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Page(pub String);
+
+impl IntoResponse for Page {
+    fn into_response(self) -> Response {
+        ([(header::CONTENT_SECURITY_POLICY, PAGE_CSP)], Html(self.0)).into_response()
+    }
+}
 
 /// A template failure.
 #[derive(Debug)]
@@ -109,13 +128,13 @@ impl Templates {
         Ok(self.tera.render(name, &context)?)
     }
 
-    /// Render a template as an HTML response.
+    /// Render a template as an HTML response with [`PAGE_CSP`].
     ///
     /// # Errors
     ///
     /// See [`Templates::render`].
-    pub fn html<T: Serialize + ?Sized>(&self, name: &str, data: &T) -> Result<Html<String>, Error> {
-        self.render(name, data).map(Html)
+    pub fn html<T: Serialize + ?Sized>(&self, name: &str, data: &T) -> Result<Page, Error> {
+        self.render(name, data).map(Page)
     }
 }
 

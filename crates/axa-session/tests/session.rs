@@ -7,12 +7,13 @@
 use std::net::SocketAddr;
 
 use axa_session::{
-    Error, MIN_KEY_BYTES, Session, SessionNullPool, SessionOptions, layer, memory_store,
+    Error, MIN_KEY_BYTES, Session, SessionNullPool, SessionOptions, csrf_token, csrf_verify, layer,
+    memory_store, sign_in, sign_out,
 };
 use axum::{
     Router,
     body::{Body, to_bytes},
-    extract::ConnectInfo,
+    extract::{ConnectInfo, RawQuery},
     http::{Request, Response, header},
     routing::get,
 };
@@ -22,8 +23,23 @@ const SIGNING: [u8; MIN_KEY_BYTES] = [7; MIN_KEY_BYTES];
 const DATABASE: [u8; MIN_KEY_BYTES] = [9; MIN_KEY_BYTES];
 
 async fn put(session: Session<SessionNullPool>) -> &'static str {
+    sign_in(&session);
     session.set("name", "ada");
     "stored"
+}
+
+/// Sets a value and does not sign in.
+async fn anonymous(session: Session<SessionNullPool>) -> &'static str {
+    session.set("name", "ada");
+    "kept for this request only"
+}
+
+async fn token(session: Session<SessionNullPool>) -> String {
+    csrf_token(&session)
+}
+
+async fn check(session: Session<SessionNullPool>, query: RawQuery) -> String {
+    csrf_verify(&session, &query.0.unwrap_or_default()).to_string()
 }
 
 async fn read(session: Session<SessionNullPool>) -> String {
@@ -40,14 +56,8 @@ async fn renew(session: Session<SessionNullPool>) -> String {
 }
 
 async fn destroy(session: Session<SessionNullPool>) -> &'static str {
-    session.destroy();
+    sign_out(&session);
     "gone"
-}
-
-async fn allow(session: Session<SessionNullPool>) -> &'static str {
-    session.set_store(true);
-    session.set("name", "ada");
-    "allowed"
 }
 
 async fn app(options: &SessionOptions) -> Router {
@@ -58,7 +68,9 @@ async fn app(options: &SessionOptions) -> Router {
         .route("/id", get(id))
         .route("/renew", get(renew))
         .route("/destroy", get(destroy))
-        .route("/allow", get(allow))
+        .route("/anonymous", get(anonymous))
+        .route("/token", get(token))
+        .route("/check", get(check))
         .layer(layer(store))
 }
 
@@ -84,17 +96,15 @@ impl Browser {
     async fn get(&mut self, app: &Router, path: &str) -> String {
         let response = self.send(app, path).await;
         for cookie in response.headers().get_all(header::SET_COOKIE) {
-            let pair = cookie
-                .to_str()
-                .unwrap()
-                .split(';')
-                .next()
-                .unwrap()
-                .to_string();
+            let cookie = cookie.to_str().unwrap();
+            let pair = cookie.split(';').next().unwrap().to_string();
             let name = pair.split('=').next().unwrap().to_string();
             self.cookies
                 .retain(|held| !held.starts_with(&format!("{name}=")));
-            self.cookies.push(pair);
+            // As a browser does: this is a deletion.
+            if !cookie.contains("Max-Age=0") {
+                self.cookies.push(pair);
+            }
         }
         let body = to_bytes(response.into_body(), 4096).await.unwrap();
         String::from_utf8(body.to_vec()).unwrap()
@@ -291,15 +301,76 @@ async fn a_session_survives_a_new_ip_address() {
 }
 
 #[tokio::test]
-async fn opt_in_stores_nothing_until_allowed() {
-    let app = app(&SessionOptions::development().opt_in()).await;
-    let mut declined = Browser::new();
-    declined.get(&app, "/put").await;
-    assert_eq!(declined.get(&app, "/read").await, "");
+async fn an_anonymous_visitor_keeps_no_cookie_and_nothing_is_stored() {
+    let app = app(&production()).await;
+    let mut visitor = Browser::new();
+    visitor.get(&app, "/anonymous").await;
+    assert_eq!(visitor.cookies, Vec::<String>::new());
+    assert_eq!(visitor.get(&app, "/read").await, "");
+}
 
-    let mut agreed = Browser::new();
-    agreed.get(&app, "/allow").await;
-    assert_eq!(agreed.get(&app, "/read").await, "ada");
+#[tokio::test]
+async fn every_visitor_can_be_stored_when_a_service_asks() {
+    let app = app(&SessionOptions::development().store_every_visitor()).await;
+    let mut visitor = Browser::new();
+    visitor.get(&app, "/anonymous").await;
+    assert_eq!(visitor.get(&app, "/read").await, "ada");
+}
+
+/// Session fixation: an attacker who gave the victim an identifier before
+/// sign-in must not be able to use it afterwards.
+#[tokio::test]
+async fn sign_in_makes_an_identifier_from_before_it_worthless() {
+    let app = app(&production()).await;
+    let mut browser = Browser::new();
+    browser.get(&app, "/token").await;
+    let planted = browser.clone();
+    let before = browser.get(&app, "/id").await;
+    browser.get(&app, "/put").await;
+    let after = browser.get(&app, "/id").await;
+    assert_ne!(before, after);
+    assert_eq!(browser.get(&app, "/read").await, "ada");
+    assert_eq!(planted.clone().get(&app, "/read").await, "");
+}
+
+#[tokio::test]
+async fn a_form_token_is_stable_and_only_it_passes() {
+    let app = app(&production()).await;
+    let mut browser = Browser::new();
+    let token = browser.get(&app, "/token").await;
+    assert_eq!(token.len(), 64);
+    assert_eq!(browser.get(&app, "/token").await, token);
+    assert_eq!(browser.get(&app, &format!("/check?{token}")).await, "true");
+    assert_eq!(browser.get(&app, "/check?wrong").await, "false");
+    assert_eq!(browser.get(&app, "/check").await, "false");
+}
+
+#[tokio::test]
+async fn a_form_token_belongs_to_one_session() {
+    let app = app(&production()).await;
+    let token = Browser::new().get(&app, "/token").await;
+    let mut other = Browser::new();
+    other.get(&app, "/token").await;
+    assert_eq!(other.get(&app, &format!("/check?{token}")).await, "false");
+}
+
+#[tokio::test]
+async fn a_session_with_no_token_refuses_every_post() {
+    let app = app(&production()).await;
+    assert_eq!(Browser::new().get(&app, "/check?").await, "false");
+}
+
+#[tokio::test]
+async fn sign_in_replaces_the_form_token() {
+    let app = app(&production()).await;
+    let mut browser = Browser::new();
+    let before = browser.get(&app, "/token").await;
+    browser.get(&app, "/put").await;
+    assert_eq!(
+        browser.get(&app, &format!("/check?{before}")).await,
+        "false"
+    );
+    assert_ne!(browser.get(&app, "/token").await, before);
 }
 
 #[cfg(feature = "postgres")]
@@ -309,8 +380,14 @@ mod postgres {
     use super::*;
 
     async fn put(session: SessionPgSession) -> String {
+        session.set_store(true);
         session.set("note", "plainly readable");
         session.get_session_id()
+    }
+
+    async fn visit(session: SessionPgSession) -> &'static str {
+        session.set("note", "anonymous");
+        "seen"
     }
 
     async fn read(session: SessionPgSession) -> String {
@@ -322,7 +399,30 @@ mod postgres {
         Router::new()
             .route("/put", get(put))
             .route("/read", get(read))
+            .route("/visit", get(visit))
             .layer(layer(store))
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn anonymous_visitors_add_no_rows() {
+        let url = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let options = production().table_name("axa_test_anonymous");
+        let app = pg_app(&pool, &options).await;
+        for _ in 0..20 {
+            Browser::new().get(&app, "/visit").await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let rows: i64 = sqlx::query_scalar("SELECT count(*) FROM axa_test_anonymous")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
+        sqlx::query("DROP TABLE axa_test_anonymous")
+            .execute(&pool)
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

@@ -87,5 +87,8 @@ sqlx = { version = "0.9", default-features = false, features = ["postgres", "run
 tokio = { version = "1", features = ["io-util", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
 
+[package.metadata.docs.rs]
+all-features = true
+
 [lints]
 workspace = true

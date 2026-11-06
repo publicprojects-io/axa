@@ -69,7 +69,14 @@ pub struct Server {
     pub binding: String,
     /// Public base URL.
     pub host: String,
+    /// How long, once told to stop, to wait for requests and jobs to finish. `0`
+    /// waits for as long as they take.
+    pub shutdown_timeout_seconds: u64,
 }
+
+/// How long shutdown waits unless `SHUTDOWN_TIMEOUT_SECONDS` says otherwise. It
+/// sits under an orchestrator's usual 30 seconds before it kills a process.
+pub const DEFAULT_SHUTDOWN_TIMEOUT_SECONDS: u64 = 25;
 
 /// Logging settings.
 #[derive(Debug, Clone)]
@@ -466,6 +473,8 @@ impl Config {
                 ),
                 binding: vars.text("BINDING", if production { "0.0.0.0" } else { "localhost" }),
                 host: vars.text("HOST", "http://localhost"),
+                shutdown_timeout_seconds: vars
+                    .parsed("SHUTDOWN_TIMEOUT_SECONDS", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS),
             },
             logger: Logger {
                 enable: vars.flag("LOG_ENABLE", !test),
@@ -556,6 +565,10 @@ impl Config {
             ("PORT", server.port.to_string()),
             ("BINDING", server.binding.clone()),
             ("HOST", server.host.clone()),
+            (
+                "SHUTDOWN_TIMEOUT_SECONDS",
+                server.shutdown_timeout_seconds.to_string(),
+            ),
             ("LOG_ENABLE", logger.enable.to_string()),
             ("LOG_LEVEL", logger.level.to_string()),
             ("LOG_FORMAT", logger.format.to_string()),

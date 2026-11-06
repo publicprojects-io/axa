@@ -163,9 +163,35 @@ fn resource_not_found() -> (StatusCode, ErrorDetail) {
     )
 }
 
+impl Error {
+    /// Log what a service needs to act on. A client's mistake is not an incident,
+    /// and its text can quote what the client sent, which may be personal data, so
+    /// it gets one debug line and no text.
+    fn log(&self) {
+        let client_mistake = match self {
+            Self::NotFound | Self::BadRequest(_) | Self::JsonRejection(_) => true,
+            Self::CustomError(status, _) => status.is_client_error(),
+            #[cfg(feature = "sea-orm")]
+            Self::Model(
+                crate::model::ModelError::EntityNotFound
+                | crate::model::ModelError::EntityAlreadyExists
+                | crate::model::ModelError::Validation(_),
+            ) => true,
+            _ => false,
+        };
+        if client_mistake {
+            tracing::debug!("controller_client_error");
+        } else if let Self::Unauthorized(reason) = self {
+            tracing::warn!(error.msg = %reason, "controller_unauthorized");
+        } else {
+            tracing::error!(error.msg = %self, error.details = ?self, "controller_error");
+        }
+    }
+}
+
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
-        tracing::error!(error.msg = %self, error.details = ?self, "controller_error");
+        self.log();
         let (status, detail) = match self {
             Self::NotFound => resource_not_found(),
             Self::Unauthorized(_) => (

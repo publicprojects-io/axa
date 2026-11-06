@@ -9,6 +9,21 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `axa-session`, for web sessions over `axum_session`, behind the `session` feature.
   Production needs two keys, and gets signed `Secure` cookies and encrypted storage.
+  Nothing is stored for an anonymous visitor. `sign_in` stores a session and renews
+  its identifier, and `csrf_token` and `csrf_verify` protect forms.
+- `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, so a hung request or job cannot hold a
+  process until it is killed. `config::Server` gains a field, so code building one
+  by hand must set it.
+- docs.rs now builds with all features, so `queue`, `testing`, and the subcrates
+  appear in the published documentation.
+
+### Changed
+
+- **`axa_tera::Templates::html` returns a `Page`**, which sends its own
+  `content-security-policy`. `axa`'s production default blocks a page's stylesheets
+  and images.
+- Only a server fault logs as an error. A client's mistake, such as a `404`, used to
+  log at error level with its full text, which can quote personal data.
 
 ## [0.2.0] - 2026-11-05
 

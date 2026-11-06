@@ -1,15 +1,13 @@
 //! Serving a router until the process is asked to stop.
 
-use std::{future::Future, net::SocketAddr};
+use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::Router;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::Notify};
 
 #[cfg(feature = "queue")]
 use crate::{Error, queue::Queue};
 use crate::{Result, config::Server};
-#[cfg(feature = "queue")]
-use std::sync::Arc;
 #[cfg(feature = "queue")]
 use tokio::sync::watch;
 
@@ -69,6 +67,14 @@ pub async fn serve_until(
     Ok(())
 }
 
+/// Wait out the shutdown time limit, or for ever when it is zero.
+async fn grace(config: &Server) {
+    if config.shutdown_timeout_seconds == 0 {
+        std::future::pending::<()>().await;
+    }
+    tokio::time::sleep(Duration::from_secs(config.shutdown_timeout_seconds)).await;
+}
+
 async fn bind_and_serve(
     router: Router,
     config: &Server,
@@ -77,7 +83,22 @@ async fn bind_and_serve(
     let address = format!("{}:{}", config.binding, config.port);
     let listener = TcpListener::bind(&address).await?;
     tracing::info!(address, "listening");
-    serve_until(router, listener, stop).await
+    let stopping = Arc::new(Notify::new());
+    let told = stopping.clone();
+    let signal = async move {
+        stop.await;
+        told.notify_one();
+    };
+    tokio::select! {
+        served = serve_until(router, listener, signal) => served,
+        () = async {
+            stopping.notified().await;
+            grace(config).await;
+        } => {
+            tracing::warn!("requests were still running at the shutdown time limit");
+            Ok(())
+        }
+    }
 }
 
 /// Serve `router`, run `queue`, or both, until [`shutdown_signal`]: what `start`, `start --worker`,
@@ -116,8 +137,15 @@ async fn run_until(
     };
     let _ = stop_jobs.send(true);
     if let Some(jobs) = jobs {
-        jobs.await
-            .map_err(|error| Error::string(&format!("job loops failed: {error}")))?;
+        tokio::select! {
+            finished = jobs => {
+                finished.map_err(|error| Error::string(&format!("job loops failed: {error}")))?;
+            }
+            // A job left running is recovered as lost by the next worker.
+            () = grace(config) => {
+                tracing::warn!("jobs were still running at the shutdown time limit");
+            }
+        }
     }
     served
 }
@@ -179,6 +207,7 @@ mod tests {
             port: 1,
             binding: "256.0.0.1".to_string(),
             host: String::new(),
+            shutdown_timeout_seconds: 0,
         };
         assert!(serve(Router::new(), &config).await.is_err());
     }
@@ -189,7 +218,60 @@ mod tests {
             port: 0,
             binding: "127.0.0.1".to_string(),
             host: String::new(),
+            shutdown_timeout_seconds: 0,
         }
+    }
+
+    /// A request that never ends, and a server told to stop once it has started.
+    async fn stop_with_a_hung_request(shutdown_timeout_seconds: u64) -> bool {
+        let router = Router::new().route("/", get(std::future::pending::<&'static str>));
+        let config = Server {
+            port: 0,
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds,
+        };
+        let (reach, reached) = tokio::sync::oneshot::channel::<()>();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        drop(listener);
+        let config = Server {
+            port: address.port(),
+            ..config
+        };
+        let client = tokio::spawn(async move {
+            for _ in 0..200 {
+                if let Ok(mut stream) = tokio::net::TcpStream::connect(address).await {
+                    stream
+                        .write_all(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
+                        .await
+                        .unwrap();
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    let _ = reach.send(());
+                    let mut held = Vec::new();
+                    let _ = stream.read_to_end(&mut held).await;
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        let stop = async move {
+            let _ = reached.await;
+        };
+        let served = bind_and_serve(router, &config, stop);
+        let ended = tokio::time::timeout(Duration::from_secs(4), served).await;
+        client.abort();
+        ended.is_ok()
+    }
+
+    #[tokio::test]
+    async fn a_hung_request_cannot_hold_shutdown_past_its_limit() {
+        assert!(stop_with_a_hung_request(1).await);
+    }
+
+    #[tokio::test]
+    async fn a_zero_shutdown_limit_waits_for_requests() {
+        assert!(!stop_with_a_hung_request(0).await);
     }
 
     #[cfg(feature = "queue")]
@@ -216,6 +298,49 @@ mod tests {
     #[cfg(feature = "queue")]
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_hung_job_cannot_hold_shutdown_past_its_limit() {
+        use crate::{AppContext, worker::BackgroundWorker};
+
+        struct Hang;
+
+        #[async_trait::async_trait]
+        impl BackgroundWorker<()> for Hang {
+            fn build(_ctx: &AppContext) -> Self {
+                Self
+            }
+
+            async fn perform(&self, (): ()) -> Result<()> {
+                std::future::pending().await
+            }
+        }
+
+        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let options = crate::queue::QueueOptions::default();
+        let mut queue = Queue::connect(&uri, options).await.unwrap();
+        queue.register(Hang);
+        let id = queue
+            .enqueue("Hang", serde_json::json!(null))
+            .await
+            .unwrap();
+        let config = Server {
+            shutdown_timeout_seconds: 1,
+            ..local()
+        };
+        let stop = tokio::time::sleep(Duration::from_millis(1_500));
+        let run = run_until(None, Some(Arc::new(queue)), &config, stop);
+        let ended = tokio::time::timeout(Duration::from_secs(6), run).await;
+        ended.expect("a hung job held shutdown").unwrap();
+        let pool = sqlx::PgPool::connect(&uri).await.unwrap();
+        sqlx::query("DELETE FROM axa_queue WHERE id = $1")
+            .bind(uuid::Uuid::parse_str(&id).unwrap())
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "queue")]
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
     async fn a_worker_alone_stops_when_told() {
         run_until(None, Some(queue().await), &local(), async {})
             .await
@@ -230,6 +355,7 @@ mod tests {
             port: 1,
             binding: "256.0.0.1".to_string(),
             host: String::new(),
+            shutdown_timeout_seconds: 0,
         };
         let router = Some(Router::new());
         let run = run_until(router, Some(queue().await), &config, std::future::pending());

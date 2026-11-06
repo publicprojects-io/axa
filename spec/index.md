@@ -148,6 +148,7 @@ CORS, timeout, compression, body limit.
 | ERR-4 | A custom error keeps its status and body. | `custom_errors_keep_their_status_and_body` |
 | ERR-5 | `not_found`, `unauthorized`, and `bad_request` build the matching variants. | `helpers_build_the_matching_variants`, `statuses_match_their_variants` |
 | ERR-6 | The `IntoResponse` match has no wildcard arm, so a new variant must choose its status. | Enforced by the compiler |
+| ERR-7 | Only a server fault logs as an error. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 
 The body is currently `{error, description, errors}`. See §6 for the move to
 RFC 9457.
@@ -233,6 +234,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
 | SRV-3 | `server::run` runs a server, a job queue, or both, and logs which. With neither it is an error. | `nothing_to_run_is_an_error`, `a_server_alone_stops_when_told`, `a_worker_alone_stops_when_told` |
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
+| SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
 
 ### 4.12 SeaORM support
 
@@ -280,6 +282,7 @@ stated here and proved by their own tests.
 | TRA-2 | `axa-tera` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
 | TRA-3 | `axa-tera` | A failed render shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
 | TRA-4 | `axa-tera` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
+| TRA-5 | `axa-tera` | A page sends its own `content-security-policy`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy` |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
@@ -301,11 +304,13 @@ stated here and proved by their own tests.
 | SES-1 | `axa-session` | `production` refuses a key under 64 bytes, rather than letting the session crate panic on it, and refuses two identical keys. | `a_short_key_is_refused_not_a_panic`, `the_two_keys_must_differ` |
 | SES-2 | `axa-session` | Production cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, and signed. Only `development` is unsigned. | `a_production_cookie_is_secure_and_signed`, `a_development_cookie_is_neither_secure_nor_signed` |
 | SES-3 | `axa-session` | A live session's identifier without its signature, or with a changed one, reads nothing. | `a_real_id_with_no_signature_reads_nothing`, `a_changed_signature_reads_nothing`, `an_unsigned_cookie_can_be_forged_in_development` |
-| SES-4 | `axa-session` | A session survives between requests, `renew` changes its identifier and keeps its data, and `destroy` ends it. | `a_session_survives_between_requests`, `renew_changes_the_id_and_keeps_the_data`, `destroy_ends_the_session` |
+| SES-4 | `axa-session` | A session survives between requests, `renew` changes its identifier and keeps its data, and `sign_out` ends it. | `a_session_survives_between_requests`, `renew_changes_the_id_and_keeps_the_data`, `destroy_ends_the_session` |
 | SES-5 | `axa-session` | Keys are never printed. | `debug_output_hides_the_keys` |
 | SES-6 | `axa-session` | A session is not tied to the client's IP, so a phone changing networks keeps it. | `a_session_survives_a_new_ip_address` |
-| SES-7 | `axa-session` | With `opt_in`, nothing is stored until the service allows it. | `opt_in_stores_nothing_until_allowed` |
+| SES-7 | `axa-session` | An anonymous visitor keeps no cookie, as they are sent only a deletion, and has no stored data and no row, unless a service asks for every visitor to be stored. | `an_anonymous_visitor_keeps_no_cookie_and_nothing_is_stored`, `anonymous_visitors_add_no_rows`, `every_visitor_can_be_stored_when_a_service_asks` |
 | SES-8 | `axa-session` | In Postgres, session data is encrypted at rest and survives a restart of the store. | `postgres_sessions_are_encrypted_and_survive_a_restart` |
+| SES-9 | `axa-session` | `sign_in` makes an identifier from before it worthless, keeps the session stored, and replaces the form token. | `sign_in_makes_an_identifier_from_before_it_worthless`, `sign_in_replaces_the_form_token` |
+| SES-10 | `axa-session` | A form token is stable within a session, passes only for that session, and a session with none refuses every post. | `a_form_token_is_stable_and_only_it_passes`, `a_form_token_belongs_to_one_session`, `a_session_with_no_token_refuses_every_post`, `only_the_same_text_is_the_same` |
 | PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
 | PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |

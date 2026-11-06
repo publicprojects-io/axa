@@ -20,6 +20,7 @@ axum_session_sqlx = { version = "0.12", default-features = false, features = ["p
 sqlx = { version = "0.9", default-features = false, features = ["postgres"], optional = true }
 thiserror = "2"
 time = "0.3"
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 axum = "0.8"
@@ -27,6 +28,9 @@ serde_json = "1"
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 tower = { version = "0.5", features = ["util"] }
+
+[package.metadata.docs.rs]
+all-features = true
 
 [lints]
 workspace = true
