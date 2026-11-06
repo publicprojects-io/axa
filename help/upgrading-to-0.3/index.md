@@ -1,0 +1,74 @@
+# Upgrading to axa 0.3
+
+This covers a service on 0.1 or 0.2. Most of the work is small, but several changes
+compile cleanly and behave differently, so read
+[What changes with no compile error](#what-changes-with-no-compile-error) first.
+
+## What will not compile
+
+| Change | Since | What to do |
+|---|---|---|
+| `config::Http` has `hsts_max_age`, `csp`, and `timeout_overrides` | 0.2 | Set them, if you build one by hand |
+| `config::Server` has `shutdown_timeout_seconds` | 0.3 | Set it, if you build one by hand |
+| `config::Logger` has `warnings` | 0.2 | Set it, if you build one by hand |
+| `queue::QueueOptions` has `heartbeat_interval`, and more | 0.2 | Use `..QueueOptions::default()` |
+| `cli::Command` has `Check` | 0.2 | Add an arm to an exhaustive `match`, calling `cli::check` |
+| `axa_tera::Templates::html` returns a `Page` | 0.3 | Return it as before. Its text is `page.0` |
+
+## What changes with no compile error
+
+**A release build with no `APP_ENV` is production.** It used to be development. A
+container that never set `APP_ENV` now needs `DATABASE_URL`, and gets production's
+stricter behaviour.
+
+**A setting that makes no sense stops a production boot.** `HTTP_HSTS=tru` used to
+turn HSTS off without a word. Run the new binary's `check` command against each
+environment's settings before you deploy it.
+
+**Production sends a strict `content-security-policy`:**
+`default-src 'none'; frame-ancestors 'none'`. That suits a JSON API and blanks an
+ordinary page. A page rendered with `axa_tera::Templates::html` sends its own policy.
+Any other HTML needs `HTTP_CSP`, or a `content-security-policy` header of its own.
+Swagger UI from `axa-openapi` sets its own.
+
+**`axa-paseto` enforces by default.** `GuardConfig::new` used to leave enforcement
+off. A service relying on that now answers `401`. Call `.require_auth(false)` to keep
+it off, which logs a warning.
+
+**Logs carry the route template.** The `path` field now reads `/orders/{id}`, or
+`unmatched` for a request that matched no route. A dashboard or alert that matches
+real paths needs changing.
+
+**Only a server fault logs as an error.** A `404`, `400`, or other client mistake
+used to log at error level, with its text. An alert counting those will go quiet.
+
+**`stale_minutes` measures silence, not running time.** A job reports in while it
+runs, so a long job is no longer taken for lost. A job that hangs now reports in for
+ever, and holds its loop until the process stops.
+
+**A job that panics now fails** rather than ending its worker loop, so a queue that
+had been quietly losing loops will start reporting failed jobs.
+
+**Shutdown has a limit.** After 25 seconds, requests and jobs still running are cut
+off. Raise `SHUTDOWN_TIMEOUT_SECONDS` if a service needs longer, and keep it under
+your orchestrator's own limit.
+
+## Deploying the queue
+
+`Queue::connect` adds the `attempts` and `max_attempts` columns by itself, so the
+service's database role needs permission to alter `axa_queue`.
+
+**Do not run old and new workers together for long.** Workers from 0.1 send no
+heartbeat, so a 0.3 worker takes any of their jobs running longer than `stale_minutes`
+for lost, and may run it again. Stop the old workers first, or drain the queue.
+
+## Checking your work
+
+```sh
+cargo run -- check
+cargo test
+cargo test -- --ignored --test-threads=1   # against a real Postgres
+```
+
+Then start the real binary with production settings, and check that it serves
+requests, that pages load their stylesheets, and that it stops cleanly on `SIGTERM`.

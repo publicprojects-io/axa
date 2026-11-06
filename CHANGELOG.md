@@ -5,6 +5,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-06
+
+This covers `axa` 0.3.0, `axa-tera` 0.2.0, and `axa-session` 0.1.0. It breaks 0.2.0:
+see [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
+
 ### Added
 
 - `axa-session`, for web sessions over `axum_session`, behind the `session` feature.

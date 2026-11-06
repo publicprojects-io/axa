@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -65,7 +65,7 @@ axa-redis = { version = "0.1.0", path = "crates/axa-redis", optional = true }
 axa-seaorm = { version = "0.1.0", path = "crates/axa-seaorm", optional = true }
 axa-session = { version = "0.1.0", path = "crates/axa-session", optional = true }
 axa-sqlx = { version = "0.1.0", path = "crates/axa-sqlx", optional = true }
-axa-tera = { version = "0.1.0", path = "crates/axa-tera", optional = true }
+axa-tera = { version = "0.2.0", path = "crates/axa-tera", optional = true }
 axa-versioning = { version = "0.1.0", path = "crates/axa-versioning", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }

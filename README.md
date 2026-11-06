@@ -48,7 +48,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.2"
+axa = "0.3"
 ```
 
 | Feature | Adds |
@@ -452,6 +452,8 @@ Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
 carries a spec edit, a code edit, and a test edit together.
 
 ## Relationship to Loco
+
+To upgrade from an earlier version, read [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
 
 To move a project across, follow
 [Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and
