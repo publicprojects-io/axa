@@ -503,6 +503,7 @@ dependencies = [
  "axa-session",
  "axa-sqlx",
  "axa-tera",
+ "axa-tracing",
  "axa-versioning",
  "axum",
  "axum-test",
@@ -673,6 +674,18 @@ dependencies = [
  "tera",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "axa-tracing"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

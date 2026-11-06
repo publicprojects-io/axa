@@ -238,6 +238,8 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | LOG-2 | Level and format names parse, with safe defaults. | `levels_parse_and_print`, `formats_parse` |
 | LOG-3 | The default filter names the service as its log target reads, with `_` for `-`. | `a_package_name_with_a_hyphen_still_shows_its_logs` |
 | LOG-4 | Colour goes to a terminal only. | **Unverified** by a test |
+| LOG-5 | `logger::init_with` adds layers, which see what the filter lets through, and which keep running when logging is off. | `an_extra_layer_sees_what_the_filter_lets_through`, `extra_layers_keep_running_with_logging_off` |
+| LOG-6 | Extra directives widen the default filter only, and never `RUST_LOG` or an override. | `extra_directives_widen_the_default_filter_only`, `rust_log_wins_over_the_override_and_the_level` |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
 | SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
 | SRV-3 | `server::run` runs a server, a job queue, or both, and logs which. With neither it is an error. | `nothing_to_run_is_an_error`, `a_server_alone_stops_when_told`, `a_worker_alone_stops_when_told` |
@@ -337,6 +339,14 @@ stated here and proved by their own tests.
 | VER-1 | `axa-versioning` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
 | VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406`. | `an_unsupported_version_is_a_406` |
 | VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
+| TRC-1 | `axa-tracing` | `Redacted` hides its value in `Display` and `Debug`, and so in a log line. | `redacted_hides_its_value_in_a_log_line` |
+| TRC-2 | `axa-tracing` | `SlowSpans` reports a span at or past its threshold, inside that span so that it carries its fields, and tells busy time from idle time. A quick span is not reported. | `a_slow_span_is_reported_with_its_fields`, `a_quick_span_is_not_reported`, `busy_and_idle_time_are_told_apart` |
+| TRC-3 | `axa-tracing` | `track` makes the request id readable anywhere the request runs, cleaned by `axa`'s rule, or minted when nothing usable remains. Outside a request there is none. | `a_handler_can_read_the_request_id`, `a_callers_id_is_cleaned_as_axa_cleans_it`, `an_id_is_minted_when_nothing_usable_remains`, `there_is_no_request_id_outside_a_request` |
+| TRC-4 | `axa-tracing` | `propagate` adds the id to a call to a peer, and keeps a value already there. | `propagate_sends_the_id_and_keeps_one_already_set` |
+| TRC-5 | `axa-tracing` | `spawn` keeps the request id and the span in the new task, and works outside a request. | `a_spawned_task_keeps_the_request_id`, `a_spawned_task_keeps_the_span`, `spawn_works_outside_a_request` |
+| TRC-6 | `axa-tracing` | `Watch::watch` tells a future that blocked a runtime thread from one that only waited. | `a_blocking_future_is_reported`, `a_future_that_only_waits_is_slow_but_not_blocking`, `a_quick_future_is_not_reported` |
+| TRC-7 | `axa-tracing` | A task that wakes late is reported with a snapshot of the runtime, and none of this needs `tokio_unstable`. | `a_stalled_runtime_is_reported`, `a_snapshot_describes_the_runtime` |
+| TRC-8 | `axa-tracing` | `log_panics` logs where a panic happened, and never its text. | `a_panic_is_logged_without_its_text` |
 
 ### 4.14 Databases
 

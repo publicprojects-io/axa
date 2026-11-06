@@ -52,6 +52,7 @@ redis = ["dep:axa-redis"]
 session = ["dep:axa-session"]
 sqlx = ["dep:axa-sqlx", "dep:sqlx"]
 tera = ["dep:axa-tera"]
+tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-versioning"]
 
 [dependencies]
@@ -68,6 +69,7 @@ axa-seaorm = { version = "0.2.0", path = "crates/axa-seaorm", optional = true }
 axa-session = { version = "0.1.0", path = "crates/axa-session", optional = true }
 axa-sqlx = { version = "0.1.1", path = "crates/axa-sqlx", optional = true }
 axa-tera = { version = "0.2.0", path = "crates/axa-tera", optional = true }
+axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-versioning = { version = "0.1.0", path = "crates/axa-versioning", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }

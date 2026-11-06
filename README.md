@@ -58,6 +58,7 @@ axa = "0.4"
 | `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
 | `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq` |
 | `tera` | [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors |
+| `tracing` | [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code |
 | `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |

@@ -11,6 +11,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the `keycloak` feature. It stands alone so that it can be run and audited by itself,
   with copies of the code it needs from `authentication-verifier` and `axa-paseto`.
   A guard can accept PASETO tokens as well, through a verifier the service supplies.
+- `axa-tracing`, behind the `tracing` feature: `Redacted` log fields, `SlowSpans`,
+  a request id readable anywhere and kept across `spawn` and peer calls, and
+  diagnostics for a future that blocks the runtime, a stalled runtime, and panics.
+- `logger::init_with`, which installs more layers beside the stdout logs and can
+  widen the default filter. Layers keep running when `LOG_ENABLE=false`.
 
 ## [0.4.0] - 2026-11-06
 

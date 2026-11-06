@@ -12,6 +12,9 @@ use crate::config::Logger;
 /// Crates whose events are shown by default, besides the service itself.
 const DEFAULT_MODULES: &[&str] = &["axa", "sea_orm_migration", "tower_http", "sqlx::query"];
 
+/// A logging layer, as [`init_layer`] returns and [`init_with`] takes.
+pub type BoxedLayer = Box<dyn Layer<Registry> + Send + Sync>;
+
 /// Minimum log level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
@@ -118,16 +121,18 @@ pub fn init_env_filter(
     level: &LogLevel,
 ) -> EnvFilter {
     let rust_log = std::env::var(EnvFilter::DEFAULT_ENV).ok();
-    choose_filter(rust_log.as_deref(), app_name, override_filter, *level)
+    choose_filter(rust_log.as_deref(), app_name, override_filter, *level, &[])
 }
 
 /// The choice behind [`init_env_filter`], given the value of `RUST_LOG`. A blank
-/// or invalid `RUST_LOG` is passed over.
+/// or invalid `RUST_LOG` is passed over. `extra_directives` join the default filter
+/// only, so that an operator's own filter stays exactly as they wrote it.
 fn choose_filter(
     rust_log: Option<&str>,
     app_name: &str,
     override_filter: Option<&String>,
     level: LogLevel,
+    extra_directives: &[&str],
 ) -> EnvFilter {
     let from_rust_log = rust_log
         .filter(|filter| !filter.trim().is_empty())
@@ -145,6 +150,7 @@ fn choose_filter(
                     .copied()
                     .chain(std::iter::once(app_name.as_str()))
                     .map(|module| format!("{module}={level}"))
+                    .chain(extra_directives.iter().map(ToString::to_string))
                     .collect::<Vec<_>>()
                     .join(",");
                 EnvFilter::try_new(directives)
@@ -180,25 +186,71 @@ where
 /// [`Logger::warnings`]. They go to stderr, so that neither a log level nor
 /// `LOG_ENABLE=false` can hide them.
 pub fn init(app_name: &str, config: &Logger) {
+    init_with(app_name, config, Vec::new(), &[]);
+}
+
+/// [`init`], with more layers beside the stdout logs, such as an exporter.
+///
+/// `layers` see what the filter lets through, as the logs do, and they keep running
+/// when `LOG_ENABLE=false` turns off stdout. `extra_directives` widen the default
+/// filter, for example to show an exporter's own errors, and are left out when
+/// `RUST_LOG` or an override filter is set.
+///
+/// # Panics
+///
+/// If an override filter or an extra directive is not valid.
+pub fn init_with(
+    app_name: &str,
+    config: &Logger,
+    layers: Vec<BoxedLayer>,
+    extra_directives: &[&str],
+) {
     for warning in &config.warnings {
         eprintln!("warning: {warning}");
     }
-    if !config.enable {
+    let layers = with_stdout(layers, config);
+    if layers.is_empty() {
         return;
     }
-    let filter = init_env_filter(app_name, config.override_filter.as_ref(), &config.level);
-    let _ = tracing_subscriber::registry()
-        .with(init_layer(
+    let rust_log = std::env::var(EnvFilter::DEFAULT_ENV).ok();
+    let filter = choose_filter(
+        rust_log.as_deref(),
+        app_name,
+        config.override_filter.as_ref(),
+        config.level,
+        extra_directives,
+    );
+    let _ = subscriber(layers, filter).try_init();
+}
+
+/// The stdout layer, when logging is on, ahead of the others.
+fn with_stdout(mut layers: Vec<BoxedLayer>, config: &Logger) -> Vec<BoxedLayer> {
+    if config.enable {
+        let stdout = init_layer(
             std::io::stdout,
             &config.format,
             std::io::stdout().is_terminal(),
-        ))
-        .with(filter)
-        .try_init();
+        );
+        layers.insert(0, stdout);
+    }
+    layers
+}
+
+/// The layers under one filter, in the order [`init_with`] installs them.
+fn subscriber(
+    layers: Vec<BoxedLayer>,
+    filter: EnvFilter,
+) -> impl tracing::Subscriber + Send + Sync {
+    tracing_subscriber::registry().with(layers).with(filter)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
     use super::*;
 
     #[test]
@@ -228,6 +280,7 @@ mod tests {
             "my_service",
             Some(&"from_override=warn".to_string()),
             LogLevel::Debug,
+            &["extra=warn"],
         )
         .to_string();
         assert_eq!(filter, "from_rust_log=trace");
@@ -237,9 +290,66 @@ mod tests {
     fn a_blank_or_invalid_rust_log_is_passed_over() {
         for value in ["", "  ", "a=b=c=d"] {
             let filter =
-                choose_filter(Some(value), "my_service", None, LogLevel::Debug).to_string();
+                choose_filter(Some(value), "my_service", None, LogLevel::Debug, &[]).to_string();
             assert!(filter.contains("my_service=debug"), "{value:?}: {filter}");
         }
+    }
+
+    #[test]
+    fn extra_directives_widen_the_default_filter_only() {
+        let default = choose_filter(None, "my_service", None, LogLevel::Info, &["extra=warn"]);
+        assert!(default.to_string().contains("extra=warn"), "{default}");
+
+        let custom = "my_service=trace".to_string();
+        let filter = choose_filter(
+            None,
+            "my_service",
+            Some(&custom),
+            LogLevel::Info,
+            &["extra=warn"],
+        );
+        assert_eq!(filter.to_string(), custom);
+    }
+
+    /// Counts the events it is shown.
+    #[derive(Clone, Default)]
+    struct Events(Arc<AtomicUsize>);
+
+    impl<S: tracing::Subscriber> Layer<S> for Events {
+        fn on_event(
+            &self,
+            _event: &tracing::Event<'_>,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    #[test]
+    fn an_extra_layer_sees_what_the_filter_lets_through() {
+        let events = Events::default();
+        let filter = EnvFilter::new("shown=info");
+        let subscriber = subscriber(vec![events.clone().boxed()], filter);
+        tracing::subscriber::with_default(subscriber, || {
+            tracing::info!(target: "shown", "yes");
+            tracing::info!(target: "hidden", "no");
+        });
+        assert_eq!(events.0.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn extra_layers_keep_running_with_logging_off() {
+        let config = |enable| Logger {
+            enable,
+            level: LogLevel::Info,
+            format: Format::Compact,
+            override_filter: None,
+            warnings: Vec::new(),
+        };
+        let extra = || vec![Events::default().boxed()];
+        assert_eq!(with_stdout(extra(), &config(true)).len(), 2);
+        assert_eq!(with_stdout(extra(), &config(false)).len(), 1);
+        assert!(with_stdout(Vec::new(), &config(false)).is_empty());
     }
 
     #[test]

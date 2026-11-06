@@ -49,6 +49,7 @@
 //! | `redis` | A Redis cache with mandatory expiry, as `axa::redis` |
 //! | `diesel` | Diesel pooling, migrations, and test resets in pure Rust, as `axa::diesel` |
 //! | `tera` | Tera templates with safe escaping, as `axa::tera` |
+//! | `tracing` | Redaction, request tracking, and asynchronous diagnostics, as `axa::tracing` |
 //! | `session` | Web sessions with safe defaults, as `axa::session` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
@@ -118,6 +119,8 @@ pub use axa_session as session;
 pub use axa_sqlx as sqlx;
 #[cfg(feature = "tera")]
 pub use axa_tera as tera;
+#[cfg(feature = "tracing")]
+pub use axa_tracing as tracing;
 #[cfg(feature = "versioning")]
 pub use axa_versioning as versioning;
 pub use context::AppContext;
