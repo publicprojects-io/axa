@@ -38,7 +38,8 @@ fixed once and an auditor reads it once.
 - Domain logic, handlers, models, and SQL. These stay in each service.
 - Verifying tokens and evaluating policy. These stay in `authentication-verifier`,
   and a service's own rules stay in the service. `axa-paseto` is only the Axum layer
-  that calls them.
+  that calls them. `axa-keycloak` is the exception: it carries its own copy of what
+  it needs, so that it can be run and audited alone.
 
 ### Must not be added
 
@@ -293,6 +294,15 @@ stated here and proved by their own tests.
 | TRA-3 | `axa-tera` | A failed render shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
 | TRA-4 | `axa-tera` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
 | TRA-5 | `axa-tera` | A page sends its own `content-security-policy`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy` |
+| KCK-1 | `axa-keycloak` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |
+| KCK-2 | `axa-keycloak` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
+| KCK-3 | `axa-keycloak` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
+| KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. | `a_refusal_tells_the_caller_nothing_about_why` |
+| KCK-5 | `axa-keycloak` | An unreachable realm refuses every token and never hangs a request. | `an_unreachable_realm_refuses_every_token` |
+| KCK-6 | `axa-keycloak` | A PASETO is accepted only through a verifier the service supplies, and then under the same policy. | `a_paseto_is_refused_unless_the_guard_accepts_them`, `with_paseto_both_kinds_of_token_work_under_one_policy` |
+| KCK-7 | `axa-keycloak` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
+| KCK-8 | `axa-keycloak` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |
+| KCK-9 | `axa-keycloak` | It depends on neither `authentication-verifier` nor any other `axa` crate, and states the source of each copy. | `no_dependency_on_what_this_crate_was_copied_from` |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
@@ -389,5 +399,4 @@ by hand. Publish only from a commit where everything above has passed.
 
 ## 7. Open questions
 
-- `axa-paseto` covers PASETO only. Whether it should also cover the Keycloak path
-  some services use.
+None.

@@ -53,6 +53,7 @@
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
+//! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | RFC 9457 problem details, as `axa::problem` |
 //! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
@@ -93,6 +94,8 @@ pub mod worker;
 #[cfg(feature = "diesel")]
 pub use axa_diesel as diesel;
 pub use axa_environment as environment;
+#[cfg(feature = "keycloak")]
+pub use axa_keycloak as keycloak;
 #[cfg(feature = "openapi")]
 pub use axa_openapi as openapi;
 #[cfg(feature = "pagination")]

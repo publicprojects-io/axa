@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `axa-keycloak`, for Keycloak bearer authentication and ABAC enforcement, behind
+  the `keycloak` feature. It stands alone so that it can be run and audited by itself,
+  with copies of the code it needs from `authentication-verifier` and `axa-paseto`.
+  A guard can accept PASETO tokens as well, through a verifier the service supplies.
+
 ## [0.4.0] - 2026-11-06
 
 This covers `axa` 0.4.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1, and `axa-environment`
@@ -60,7 +67,6 @@ last section covers 0.4.
   500 ms each, matching `axa-sqlx`. The old defaults failed requests after half a
   second of waiting for a connection, and closed idle connections twice a second.
   `axa_seaorm::PoolConfig::new` changes to match.
-
 ## [0.3.0] - 2026-11-06
 
 This covers `axa` 0.3.0, `axa-tera` 0.2.0, and `axa-session` 0.1.0. It breaks 0.2.0:

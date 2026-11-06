@@ -63,6 +63,7 @@ axa = "0.4"
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
+| `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |
