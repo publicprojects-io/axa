@@ -447,6 +447,16 @@ environment, and to fail closed on any unknown name.
 With `APP_ENV=prod-eu`, a guard written that way turns itself off while the
 service otherwise runs as production. Use `ctx.environment.is_production_like()`.
 
+**A router merged after the middleware.** `Router::merge` keeps the fallback of the
+router it is given. So `api.merge(other)`, after `into_app`, throws away the fallback
+that carries the middleware, and a request for an unknown path skips every layer:
+no request id, no security headers, no error format. It still answers `404`, so
+only a test of the response's headers will notice. Write `other.merge(api)`.
+
+**A connection pool of one.** A `test.yaml` with `max_connections: 1` and a 500 ms
+`connect_timeout` fails with `PoolTimedOut` when a machine is busy, in tests that
+have nothing wrong with them. Look at the load before you look at the code.
+
 **A secret that was only ever warned about.** Check every default that production
 used to read from YAML. An empty `get_env(default="")` can become an empty signing
 secret. Refuse to boot instead.
