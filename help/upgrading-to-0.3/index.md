@@ -62,6 +62,22 @@ service's database role needs permission to alter `axa_queue`.
 heartbeat, so a 0.3 worker takes any of their jobs running longer than `stale_minutes`
 for lost, and may run it again. Stop the old workers first, or drain the queue.
 
+## Upgrading to 0.4
+
+Everything above applies. On top of it:
+
+- **`config::Defaults` has `connect_timeout`, `idle_timeout`, and `auto_migrate`.** Use
+  `..Defaults::default()`, or set them.
+- **With the `sqlx` feature, `AppContext::db` is a `PgPool`**, so pass the pool to
+  `AppContext::new` where you passed `()`. A pool you added to `/_readiness` as a named
+  check is now asked twice, so remove it.
+- **`DB_CONNECT_TIMEOUT` is 5 seconds and `DB_IDLE_TIMEOUT` 10 minutes**, up from 500 ms
+  each. Set them to keep the old values. `axa_seaorm::PoolConfig::new` changes to match.
+- **Use `axa::cli::parse` in place of `Cli::parse`.** `Cli::parse` still works, and
+  `--help` and `--version` then say nothing about the service.
+- **Call `Environment::may_destroy_data` before `db reset` or `db down`.** `Cli` only
+  parses those commands, so nothing guards them unless a service does.
+
 ## Checking your work
 
 ```sh

@@ -5,8 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-This breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
-timeouts are longer.
+## [0.4.0] - 2026-11-06
+
+This covers `axa` 0.4.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1, and `axa-environment`
+0.1.1. It breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
+timeouts are longer. See [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose
+last section covers 0.4.
 
 ### Added
 
@@ -20,6 +24,12 @@ timeouts are longer.
 - `Environment::may_destroy_data`, which a service calls before `db reset` or
   `db down`. `Cli` only parses those commands, so a hand-written `run` could leave
   the guard out, and one did.
+
+- `Defaults::connect_timeout`, `Defaults::idle_timeout`, and `Defaults::auto_migrate`,
+  so a service states these in code. `auto_migrate: false` suits a service sharing a
+  database it does not own. Code building a `Defaults` without
+  `..Defaults::default()` must set them.
+- `config::DEFAULT_CONNECT_TIMEOUT` and `config::DEFAULT_IDLE_TIMEOUT`.
 
 ### Fixed
 
@@ -50,14 +60,6 @@ timeouts are longer.
   500 ms each, matching `axa-sqlx`. The old defaults failed requests after half a
   second of waiting for a connection, and closed idle connections twice a second.
   `axa_seaorm::PoolConfig::new` changes to match.
-
-### Added
-
-- `Defaults::connect_timeout`, `Defaults::idle_timeout`, and `Defaults::auto_migrate`,
-  so a service states these in code. `auto_migrate: false` suits a service sharing a
-  database it does not own. Code building a `Defaults` without
-  `..Defaults::default()` must set them.
-- `config::DEFAULT_CONNECT_TIMEOUT` and `config::DEFAULT_IDLE_TIMEOUT`.
 
 ## [0.3.0] - 2026-11-06
 
