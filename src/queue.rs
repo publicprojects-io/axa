@@ -708,6 +708,50 @@ mod tests {
         assert_eq!(status_of(&queue, &id).await.0, "running");
     }
 
+    /// Never finishes.
+    struct HangWorker;
+
+    #[async_trait]
+    impl BackgroundWorker<()> for HangWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, (): ()) -> Result<()> {
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_hung_job_cannot_hold_shutdown_past_its_limit() {
+        let _table = TABLE.lock().await;
+        let mut queue = queue().await;
+        queue.register(HangWorker);
+        let queue = Arc::new(queue);
+        let id = queue
+            .enqueue("HangWorker", serde_json::json!(null))
+            .await
+            .unwrap();
+        let config = crate::config::Server {
+            port: 0,
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds: 1,
+        };
+        for _ in 0..50 {
+            if status_of(&queue, &id).await.0 == "queued" {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        let stop = tokio::time::sleep(Duration::from_millis(500));
+        let run = crate::server::run_until(None, Some(queue.clone()), &config, stop);
+        let ended = tokio::time::timeout(Duration::from_secs(5), run).await;
+        ended.expect("a hung job held shutdown").unwrap();
+        assert_eq!(status_of(&queue, &id).await.0, "running");
+    }
+
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DATABASE_URL"]
     async fn a_job_in_progress_finishes_before_shutdown() {

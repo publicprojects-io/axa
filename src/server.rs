@@ -114,7 +114,7 @@ pub async fn run(router: Option<Router>, queue: Option<Arc<Queue>>, config: &Ser
 }
 
 #[cfg(feature = "queue")]
-async fn run_until(
+pub(crate) async fn run_until(
     router: Option<Router>,
     queue: Option<Arc<Queue>>,
     config: &Server,
@@ -293,49 +293,6 @@ mod tests {
         let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
         let options = crate::queue::QueueOptions::default();
         Arc::new(Queue::connect(&uri, options).await.unwrap())
-    }
-
-    #[cfg(feature = "queue")]
-    #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
-    async fn a_hung_job_cannot_hold_shutdown_past_its_limit() {
-        use crate::{AppContext, worker::BackgroundWorker};
-
-        struct Hang;
-
-        #[async_trait::async_trait]
-        impl BackgroundWorker<()> for Hang {
-            fn build(_ctx: &AppContext) -> Self {
-                Self
-            }
-
-            async fn perform(&self, (): ()) -> Result<()> {
-                std::future::pending().await
-            }
-        }
-
-        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
-        let options = crate::queue::QueueOptions::default();
-        let mut queue = Queue::connect(&uri, options).await.unwrap();
-        queue.register(Hang);
-        let id = queue
-            .enqueue("Hang", serde_json::json!(null))
-            .await
-            .unwrap();
-        let config = Server {
-            shutdown_timeout_seconds: 1,
-            ..local()
-        };
-        let stop = tokio::time::sleep(Duration::from_millis(1_500));
-        let run = run_until(None, Some(Arc::new(queue)), &config, stop);
-        let ended = tokio::time::timeout(Duration::from_secs(6), run).await;
-        ended.expect("a hung job held shutdown").unwrap();
-        let pool = sqlx::PgPool::connect(&uri).await.unwrap();
-        sqlx::query("DELETE FROM axa_queue WHERE id = $1")
-            .bind(uuid::Uuid::parse_str(&id).unwrap())
-            .execute(&pool)
-            .await
-            .unwrap();
     }
 
     #[cfg(feature = "queue")]
