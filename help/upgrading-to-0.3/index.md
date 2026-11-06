@@ -96,6 +96,42 @@ Everything above applies, and `axa-paseto` is now 0.3. On top of it:
   `Cli::parse` does not refuse them, so a service that keeps it must call
   `Environment::may_destroy_data` itself.
 
+## Upgrading to 0.5
+
+- `config::Http` has `trusted_proxies`, and `config::Server` has `max_connections`. Code
+  building either without `..` must set them.
+- `axa_diesel::PoolConfig` has `wait_timeout`, 5 seconds from `PoolConfig::new`.
+- The logs say `auth_refused` in place of `paseto_forbidden` and `keycloak_forbidden`, at
+  `warn`, not `info`, and for every refusal. An alert on the old names needs changing.
+- A service behind a proxy should set `TRUSTED_PROXIES`, take `axa::client::ClientAddr`,
+  and stop reading `X-Forwarded-For` itself. Until it sets them, the address is the
+  proxy's.
+- `axa-redis` logs no longer name the key.
+- The server speaks HTTP/1 only, since 0.4.1. Put a proxy in front to offer HTTP/2.
+
+To add `axa-tracing` or `axa-opentelemetry`, call `logger::init_with` in place of
+`logger::init`, and add their middleware before `middleware::apply`, so that it runs
+inside the request span:
+
+```rust,ignore
+let telemetry = axa::opentelemetry::start(&otlp_config)?;
+let mut layers = telemetry.layers();
+layers.push(Box::new(axa::tracing::SlowSpans::new(Duration::from_secs(1))));
+logger::init_with(
+    "my_service",
+    &config.logger,
+    layers,
+    axa::opentelemetry::DIAGNOSTIC_DIRECTIVES,
+);
+let router = router
+    .layer(from_fn(axa::tracing::track))
+    .layer(from_fn_with_state(telemetry.http_metrics(), axa::opentelemetry::middleware));
+```
+
+Export is off until `OTLP_ENDPOINT` is set, unlike the services' own `observability.rs`,
+which export to `localhost:4317` by default. Call `telemetry.shutdown()` at the end of
+shutdown.
+
 ## Checking your work
 
 ```sh

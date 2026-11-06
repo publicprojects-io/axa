@@ -487,7 +487,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "axa"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "async-trait",
  "axa-diesel",
@@ -526,8 +526,9 @@ dependencies = [
 
 [[package]]
 name = "axa-diesel"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "deadpool",
  "diesel",
  "diesel-async",
  "diesel_migrations",
@@ -545,7 +546,7 @@ version = "0.1.1"
 
 [[package]]
 name = "axa-keycloak"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "axum-keycloak-auth",
@@ -558,6 +559,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -573,7 +575,7 @@ dependencies = [
 
 [[package]]
 name = "axa-opentelemetry"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "opentelemetry",
@@ -601,7 +603,7 @@ dependencies = [
 
 [[package]]
 name = "axa-paseto"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "authentication-verifier",
  "axum",
@@ -613,6 +615,7 @@ dependencies = [
  "tokio",
  "tower",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -637,7 +640,7 @@ dependencies = [
 
 [[package]]
 name = "axa-redis"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "redis",
  "serde",
@@ -712,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "axa-versioning"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "axum",
  "serde_json",
@@ -1607,6 +1610,9 @@ name = "deadpool-runtime"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2657f61fb1dd8bf37a8d51093cc7cee4e77125b22f7753f49b289f831bec2bae"
+dependencies = [
+ "tokio",
+]
 
 [[package]]
 name = "defmt"

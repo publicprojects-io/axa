@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.4.1"
+version = "0.5.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -60,22 +60,22 @@ tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-versioning"]
 
 [dependencies]
-axa-diesel = { version = "0.1.0", path = "crates/axa-diesel", optional = true }
+axa-diesel = { version = "0.2.0", path = "crates/axa-diesel", optional = true }
 axa-environment = { version = "0.1.1", path = "crates/axa-environment" }
 axa-openapi = { version = "0.1.0", path = "crates/axa-openapi", optional = true }
 axa-pagination = { version = "0.1.0", path = "crates/axa-pagination", optional = true }
-axa-keycloak = { version = "0.1.0", path = "crates/axa-keycloak", optional = true }
-axa-paseto = { version = "0.3.0", path = "crates/axa-paseto", optional = true }
+axa-keycloak = { version = "0.1.1", path = "crates/axa-keycloak", optional = true }
+axa-paseto = { version = "0.3.1", path = "crates/axa-paseto", optional = true }
 axa-problem = { version = "0.1.0", path = "crates/axa-problem", optional = true }
 axa-prometheus = { version = "0.1.0", path = "crates/axa-prometheus", optional = true }
-axa-redis = { version = "0.1.0", path = "crates/axa-redis", optional = true }
+axa-redis = { version = "0.1.1", path = "crates/axa-redis", optional = true }
 axa-seaorm = { version = "0.2.0", path = "crates/axa-seaorm", optional = true }
 axa-session = { version = "0.1.0", path = "crates/axa-session", optional = true }
 axa-sqlx = { version = "0.1.1", path = "crates/axa-sqlx", optional = true }
 axa-tera = { version = "0.2.0", path = "crates/axa-tera", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
-axa-opentelemetry = { version = "0.1.0", path = "crates/axa-opentelemetry", optional = true }
-axa-versioning = { version = "0.1.0", path = "crates/axa-versioning", optional = true }
+axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
+axa-versioning = { version = "0.1.1", path = "crates/axa-versioning", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }

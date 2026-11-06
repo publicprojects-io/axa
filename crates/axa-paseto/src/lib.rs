@@ -44,7 +44,7 @@
 //! assert_eq!(action, Action::Destructive);
 //! ```
 
-use std::sync::Arc;
+use std::{net::IpAddr, sync::Arc};
 
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
 use axum::{
@@ -258,7 +258,7 @@ impl Guard {
             .evaluate(claims, action, &self.config.entity)
     }
 
-    /// Decide one request.
+    /// Decide one request. A refusal is logged, as `auth_refused`.
     ///
     /// # Errors
     ///
@@ -270,17 +270,58 @@ impl Guard {
         path: &str,
         headers: &HeaderMap,
     ) -> Result<(), Rejection> {
+        self.check(method, path, headers)
+            .map_err(|refused| refused.logged(None))
+    }
+
+    fn check(&self, method: &Method, path: &str, headers: &HeaderMap) -> Result<(), Refused> {
         if !self.config.require_auth || self.config.is_public(path) {
             return Ok(());
         }
-        let claims = self.claims(headers)?;
-        let decision = self.decide(&claims, derive_action(method, path, &self.config));
+        let action = derive_action(method, path, &self.config);
+        let claims = self.claims(headers).map_err(|rejection| Refused {
+            rejection,
+            subject: None,
+            reason: None,
+            action,
+        })?;
+        let decision = self.decide(&claims, action);
         if decision.allowed {
             Ok(())
         } else {
-            tracing::info!(reason = %decision.reason, "paseto_forbidden");
-            Err((StatusCode::FORBIDDEN, FORBIDDEN.to_string()))
+            Err(Refused {
+                rejection: (StatusCode::FORBIDDEN, FORBIDDEN.to_string()),
+                subject: Some(claims.sub),
+                reason: Some(decision.reason),
+                action,
+            })
         }
+    }
+}
+
+/// A request a guard turned away, and what the audit log needs to know of it.
+struct Refused {
+    rejection: Rejection,
+    subject: Option<String>,
+    reason: Option<String>,
+    action: Action,
+}
+
+impl Refused {
+    /// Write the audit line, and give back what the caller is told. The line is a
+    /// warning, so that a production log level keeps it. It runs inside the request's
+    /// span, which holds the request id, method, and route. It never holds the token,
+    /// and `subject` is the caller's id, not their email.
+    fn logged(self, client: Option<IpAddr>) -> Rejection {
+        tracing::warn!(
+            status = self.rejection.0.as_u16(),
+            action = ?self.action,
+            subject = self.subject.as_deref(),
+            reason = self.reason.as_deref(),
+            client = client.map(|client| client.to_string()).as_deref(),
+            "auth_refused",
+        );
+        self.rejection
     }
 }
 
@@ -291,7 +332,9 @@ pub async fn middleware(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let decision = guard.enforce(request.method(), request.uri().path(), request.headers());
+    let decision = guard
+        .check(request.method(), request.uri().path(), request.headers())
+        .map_err(|refused| refused.logged(request.extensions().get::<IpAddr>().copied()));
     match decision {
         Ok(()) => {
             request.extensions_mut().insert(guard);

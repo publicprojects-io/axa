@@ -1,6 +1,6 @@
 [package]
 name = "axa-keycloak"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -26,6 +26,7 @@ jsonwebtoken = "9.3"
 time = "0.3"
 tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-thread", "time"] }
 tower = { version = "0.5", features = ["util"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "registry"] }
 
 [lints]
 workspace = true

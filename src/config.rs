@@ -16,6 +16,7 @@ use std::{cell::RefCell, fmt};
 use crate::{
     Environment, Error, Result,
     cli::{Cli, Command},
+    client::ProxyNet,
     logger,
     worker::WorkerMode,
 };
@@ -93,6 +94,8 @@ pub struct Server {
     pub shutdown_timeout_seconds: u64,
     /// How long a client has to send a request's headers. `0` allows for ever.
     pub header_read_timeout_seconds: u64,
+    /// The most connections open at once. More wait to be accepted.
+    pub max_connections: usize,
 }
 
 /// How long a client has to send a request's headers unless
@@ -170,6 +173,8 @@ pub struct Http {
     pub hsts_max_age: u64,
     /// The `content-security-policy`, if any.
     pub csp: Option<String>,
+    /// Proxies whose `X-Forwarded-For` entries are believed. Empty ignores the header.
+    pub trusted_proxies: Vec<ProxyNet>,
 }
 
 impl fmt::Debug for Database {
@@ -465,6 +470,31 @@ fn database_uri<F: Fn(&str) -> Option<String>>(
 
 /// The allowed origins. Development serves browser dev servers on other ports,
 /// so it allows any. Production sends no CORS headers until origins are listed.
+/// `MAX_CONNECTIONS`, which must leave room for at least one.
+fn connection_limit<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> usize {
+    let max = vars.parsed("MAX_CONNECTIONS", crate::server::MAX_CONNECTIONS);
+    if max == 0 {
+        vars.invalid("MAX_CONNECTIONS", "0", "at least 1");
+        return crate::server::MAX_CONNECTIONS;
+    }
+    max
+}
+
+/// `TRUSTED_PROXIES`, as a comma-separated list. A list with any bad entry is noted,
+/// and none are trusted, which is the side to fail on.
+fn trusted_proxies<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> Vec<ProxyNet> {
+    let Some(list) = vars.set("TRUSTED_PROXIES") else {
+        return Vec::new();
+    };
+    list.split(',')
+        .map(|net| net.trim().parse())
+        .collect::<std::result::Result<_, _>>()
+        .unwrap_or_else(|_| {
+            vars.invalid("TRUSTED_PROXIES", &list, "addresses or CIDR ranges");
+            Vec::new()
+        })
+}
+
 fn cors_origins<F: Fn(&str) -> Option<String>>(
     vars: &Vars<F>,
     production: bool,
@@ -606,6 +636,7 @@ impl Config {
                     "HEADER_READ_TIMEOUT_SECONDS",
                     DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
                 ),
+                max_connections: connection_limit(&vars),
             },
             logger: Logger {
                 enable: vars.flag("LOG_ENABLE", !test),
@@ -639,6 +670,7 @@ impl Config {
                     .parsed("REQUEST_TIMEOUT_SECONDS", if production { 60 } else { 0 }),
                 timeout_overrides: Vec::new(),
                 cors_origins,
+                trusted_proxies: trusted_proxies(&vars),
                 hsts: vars.flag("HTTP_HSTS", production),
                 hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
                 csp: content_security_policy((vars.lookup)("HTTP_CSP"), production),
@@ -693,6 +725,7 @@ impl Config {
                 "HEADER_READ_TIMEOUT_SECONDS",
                 self.server.header_read_timeout_seconds.to_string(),
             ),
+            ("MAX_CONNECTIONS", self.server.max_connections.to_string()),
             (
                 "SHUTDOWN_TIMEOUT_SECONDS",
                 server.shutdown_timeout_seconds.to_string(),
@@ -727,6 +760,14 @@ impl Config {
                     .join(","),
             ),
             ("CORS_ALLOWED_ORIGINS", http.cors_origins.join(",")),
+            (
+                "TRUSTED_PROXIES",
+                http.trusted_proxies
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ),
             ("HTTP_HSTS", http.hsts.to_string()),
             ("HSTS_MAX_AGE_SECONDS", http.hsts_max_age.to_string()),
             ("HTTP_CSP", http.csp.clone().unwrap_or_default()),
@@ -810,6 +851,38 @@ mod tests {
             assert!(with(&allowed, &Environment::Production).is_ok(), "{uri}");
             assert!(with(&[("DATABASE_URL", uri)], &Environment::Development).is_ok());
         }
+    }
+
+    #[test]
+    fn trusted_proxies_are_read_and_a_bad_list_trusts_none() {
+        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let config = with(
+            &[url, ("TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.1")],
+            &Environment::Production,
+        )
+        .unwrap();
+        assert_eq!(config.http.trusted_proxies.len(), 2);
+
+        let unset = with(&[url], &Environment::Production).unwrap();
+        assert_eq!(unset.http.trusted_proxies.len(), 0);
+
+        let bad = [url, ("TRUSTED_PROXIES", "10.0.0.0/8, nonsense")];
+        assert!(with(&bad, &Environment::Production).is_err());
+        let config = with(&bad, &Environment::Development).unwrap();
+        assert_eq!(config.http.trusted_proxies.len(), 0);
+    }
+
+    #[test]
+    fn the_connection_limit_is_a_setting_and_cannot_be_zero() {
+        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let config = with(&[url, ("MAX_CONNECTIONS", "500")], &Environment::Production).unwrap();
+        assert_eq!(config.server.max_connections, 500);
+        let config = with(&[url], &Environment::Production).unwrap();
+        assert_eq!(
+            config.server.max_connections,
+            crate::server::MAX_CONNECTIONS
+        );
+        assert!(with(&[url, ("MAX_CONNECTIONS", "0")], &Environment::Production).is_err());
     }
 
     #[test]

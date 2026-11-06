@@ -28,7 +28,7 @@
 //!     &Defaults { database: "", ..Defaults::default() },
 //!     |_| None,
 //! )?;
-//! # #[cfg(not(feature = "sea-orm"))] {
+//! # #[cfg(not(any(feature = "sea-orm", feature = "sqlx")))] {
 //! let ctx = AppContext::new(environment, (), config);
 //! let router = AppRoutes::with_default_routes()
 //!     .add_route(Routes::new().prefix("/api").add("/hello", get(hello)))
@@ -68,12 +68,13 @@
 //! this crate can keep its own licence terms.
 
 /// Compiles the Rust examples in `README.md`, so they cannot go stale.
-#[cfg(all(doctest, not(feature = "sea-orm")))]
+#[cfg(all(doctest, not(any(feature = "sea-orm", feature = "sqlx"))))]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
 pub mod boot;
 pub mod cli;
+pub mod client;
 pub mod config;
 pub mod context;
 pub mod db;

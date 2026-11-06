@@ -242,6 +242,8 @@ place.
 | `BODY_LIMIT_BYTES` | Largest accepted request body |
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
 | `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers. 30 by default, and `0` allows for ever |
+| `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
+| `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
 | `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |
 | `HTTP_CSP` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |

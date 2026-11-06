@@ -207,7 +207,13 @@ async fn bind_and_serve(
         told.notify_one();
     };
     tokio::select! {
-        served = accept_until(router, listener, config.header_read_timeout_seconds, signal) => served,
+        served = accept_until_limited(
+            router,
+            listener,
+            config.header_read_timeout_seconds,
+            config.max_connections,
+            signal,
+        ) => served,
         () = async {
             stopping.notified().await;
             grace(config, Instant::now()).await;
@@ -478,6 +484,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds: 0,
             header_read_timeout_seconds: 0,
+            max_connections: 1,
         };
         assert!(serve(Router::new(), &config).await.is_err());
     }
@@ -490,6 +497,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds: 0,
             header_read_timeout_seconds: 0,
+            max_connections: 1,
         }
     }
 
@@ -502,6 +510,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds,
             header_read_timeout_seconds: 0,
+            max_connections: 1,
         };
         let (reach, reached) = tokio::sync::oneshot::channel::<()>();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

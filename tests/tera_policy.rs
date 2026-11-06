@@ -24,6 +24,7 @@ fn production_http() -> Http {
         hsts: true,
         hsts_max_age: 31_536_000,
         csp: Some(DEFAULT_CSP.to_string()),
+        trusted_proxies: Vec::new(),
     }
 }
 

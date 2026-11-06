@@ -18,7 +18,7 @@
 //! ```
 
 use axum::{
-    extract::Request,
+    extract::{Request, State},
     http::{HeaderName, HeaderValue, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
@@ -33,29 +33,81 @@ pub const CURRENT_API_VERSION: &str = "1.0";
 /// Every version served.
 pub const SUPPORTED_API_VERSIONS: &[&str] = &["1.0"];
 
-/// Resolve a requested version to a supported one.
+/// The versions a service serves, for when it serves more than `1.0`.
+///
+/// ```
+/// use axa_versioning::ApiVersions;
+///
+/// let versions = ApiVersions::new("2.0", &["2.0", "1.0"]);
+/// assert_eq!(versions.resolve(None), Ok("2.0"));
+/// assert_eq!(versions.resolve(Some("1")), Ok("1.0"));
+/// assert!(versions.resolve(Some("3")).is_err());
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ApiVersions {
+    current: &'static str,
+    supported: &'static [&'static str],
+}
+
+impl Default for ApiVersions {
+    fn default() -> Self {
+        Self {
+            current: CURRENT_API_VERSION,
+            supported: SUPPORTED_API_VERSIONS,
+        }
+    }
+}
+
+impl ApiVersions {
+    /// Serve `supported`, with `current` for a request that names none. A bare major
+    /// means the first version listed with that major, so list the newest first.
+    ///
+    /// # Panics
+    ///
+    /// If `supported` does not hold `current`. This is fixed in code, so it is a
+    /// mistake to find at boot rather than on a request.
+    #[must_use]
+    pub fn new(current: &'static str, supported: &'static [&'static str]) -> Self {
+        assert!(
+            supported.contains(&current),
+            "the current API version must be supported"
+        );
+        Self { current, supported }
+    }
+
+    /// Resolve a requested version to a supported one.
+    ///
+    /// # Errors
+    ///
+    /// Returns the trimmed, lowercased request when no supported version matches.
+    pub fn resolve(&self, requested: Option<&str>) -> Result<&'static str, String> {
+        let Some(raw) = requested else {
+            return Ok(self.current);
+        };
+        let want = raw.trim().to_ascii_lowercase();
+        if want.is_empty() {
+            return Ok(self.current);
+        }
+        self.supported
+            .iter()
+            .copied()
+            .find(|&version| {
+                version.eq_ignore_ascii_case(&want)
+                    || version
+                        .split_once('.')
+                        .is_some_and(|(major, _)| major == want)
+            })
+            .ok_or(want)
+    }
+}
+
+/// Resolve a requested version to a supported one, of the default versions.
 ///
 /// # Errors
 ///
 /// Returns the trimmed, lowercased request when no supported version matches.
 pub fn resolve_version(requested: Option<&str>) -> Result<&'static str, String> {
-    let Some(raw) = requested else {
-        return Ok(CURRENT_API_VERSION);
-    };
-    let want = raw.trim().to_ascii_lowercase();
-    if want.is_empty() {
-        return Ok(CURRENT_API_VERSION);
-    }
-    SUPPORTED_API_VERSIONS
-        .iter()
-        .copied()
-        .find(|&version| {
-            version.eq_ignore_ascii_case(&want)
-                || version
-                    .split_once('.')
-                    .is_some_and(|(major, _)| major == want)
-        })
-        .ok_or(want)
+    ApiVersions::default().resolve(requested)
 }
 
 /// Whether `path` is under the versioned `/api` surface. FHIR, health, and
@@ -65,8 +117,21 @@ pub fn is_versioned_path(path: &str) -> bool {
     path == "/api" || path.starts_with("/api/")
 }
 
-/// Middleware that negotiates the version for `/api` paths.
+/// Middleware that negotiates the default versions for `/api` paths.
 pub async fn require_version_mw(req: Request, next: Next) -> Response {
+    negotiate(ApiVersions::default(), req, next).await
+}
+
+/// [`require_version_mw`] for a service's own versions, as state.
+pub async fn negotiate_versions(
+    State(versions): State<ApiVersions>,
+    req: Request,
+    next: Next,
+) -> Response {
+    negotiate(versions, req, next).await
+}
+
+async fn negotiate(versions: ApiVersions, req: Request, next: Next) -> Response {
     if !is_versioned_path(req.uri().path()) {
         return next.run(req).await;
     }
@@ -75,7 +140,7 @@ pub async fn require_version_mw(req: Request, next: Next) -> Response {
         .get(VERSION_HEADER)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    match resolve_version(requested.as_deref()) {
+    match versions.resolve(requested.as_deref()) {
         Ok(resolved) => {
             let mut response = next.run(req).await;
             response.headers_mut().insert(
@@ -89,7 +154,7 @@ pub async fn require_version_mw(req: Request, next: Next) -> Response {
             axum::Json(serde_json::json!({
                 "error": "unsupported_api_version",
                 "requested": bad,
-                "supported": SUPPORTED_API_VERSIONS,
+                "supported": versions.supported,
             })),
         )
             .into_response(),
@@ -101,6 +166,35 @@ mod tests {
     use super::*;
     use axum::{Router, body::Body, http, middleware::from_fn, routing::get};
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn a_service_can_serve_its_own_versions() {
+        let versions = ApiVersions::new("2.0", &["2.0", "1.0"]);
+        let app = Router::new()
+            .route("/api/things", get(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(
+                versions,
+                negotiate_versions,
+            ));
+        let call = |version: &'static str| {
+            let app = app.clone();
+            async move {
+                let request = http::Request::get("/api/things").header(VERSION_HEADER, version);
+                app.oneshot(request.body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+        assert_eq!(call("1").await.headers()[VERSION_HEADER], "1.0");
+        assert_eq!(call("2.0").await.headers()[VERSION_HEADER], "2.0");
+        assert_eq!(call("3").await.status(), http::StatusCode::NOT_ACCEPTABLE);
+    }
+
+    #[test]
+    #[should_panic(expected = "must be supported")]
+    fn a_current_version_that_is_not_supported_is_a_mistake() {
+        let _ = ApiVersions::new("2.0", &["1.0"]);
+    }
 
     fn app() -> Router {
         Router::new()

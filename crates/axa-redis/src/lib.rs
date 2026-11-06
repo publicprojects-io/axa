@@ -117,12 +117,16 @@ fn ttl_millis(ttl: Duration) -> Result<u64, Error> {
 }
 
 /// Decode a stored value, treating anything unreadable as a miss.
-fn decode<T: DeserializeOwned>(key: &str, stored: Option<&str>) -> Option<T> {
+fn decode<T: DeserializeOwned>(stored: Option<&str>) -> Option<T> {
     let stored = stored?;
     match serde_json::from_str(stored) {
         Ok(value) => Some(value),
         Err(error) => {
-            tracing::warn!(key, %error, "unreadable cache entry treated as a miss");
+            // The error's text can quote the value, and a key can name a person.
+            tracing::warn!(
+                line = error.line(),
+                "unreadable cache entry treated as a miss"
+            );
             None
         }
     }
@@ -301,7 +305,7 @@ impl Cache {
                 Backend::with_memory(memory, |memory| memory.get(&full, Instant::now()))
             }
         };
-        Ok(decode(&full, stored.as_deref()))
+        Ok(decode(stored.as_deref()))
     }
 
     /// Store a value for the default TTL.
@@ -404,13 +408,13 @@ impl Cache {
             Ok(Some(value)) => return Ok(value),
             Ok(None) => {}
             Err(error) => {
-                tracing::warn!(key, %error, "cache read failed, loading instead");
+                tracing::warn!(%error, "cache read failed, loading instead");
                 return load().await;
             }
         }
         let value = load().await?;
         if let Err(error) = self.set(key, &value).await {
-            tracing::warn!(key, %error, "cache write failed");
+            tracing::warn!(%error, "cache write failed");
         }
         Ok(value)
     }
@@ -539,16 +543,16 @@ mod tests {
 
     #[test]
     fn stored_values_decode() {
-        assert_eq!(decode::<u32>("k", Some("7")), Some(7));
+        assert_eq!(decode::<u32>(Some("7")), Some(7));
     }
 
     #[test]
     fn a_missing_value_is_a_miss() {
-        assert_eq!(decode::<u32>("k", None), None);
+        assert_eq!(decode::<u32>(None), None);
     }
 
     #[test]
     fn an_unreadable_value_is_a_miss() {
-        assert_eq!(decode::<u32>("k", Some("not json")), None);
+        assert_eq!(decode::<u32>(Some("not json")), None);
     }
 }

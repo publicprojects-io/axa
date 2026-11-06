@@ -132,7 +132,7 @@ CORS, timeout, compression, body limit.
 | MID-3 | A UUID is minted when nothing usable remains. | `request_id_is_minted_when_nothing_usable_remains` |
 | MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `security_headers_do_not_replace_a_handlers_own` |
 | MID-5 | `strict-transport-security` is sent when `hsts` is set, for `hsts_max_age` seconds. | `responses_carry_request_id_and_security_headers`, `the_hsts_max_age_is_configurable` |
-| MID-6 | A panic in a handler becomes the `500` of any internal failure, logged as an error with no panic text. | `a_panic_becomes_a_500`, `a_panic_answers_like_any_other_internal_failure`. The log line is **unverified** by a test |
+| MID-6 | A panic in a handler becomes the `500` of any internal failure, logged as an error with no panic text. | `a_panic_becomes_a_500`, `a_panic_answers_like_any_other_internal_failure`, `log_lines_carry_the_request_id_and_not_the_query` |
 | MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
 | MID-9 | A request over `timeout_seconds` is a `408`, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_zero_timeout_means_none` |
@@ -254,6 +254,12 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped, including one that sends nothing. `0` allows for ever. The server speaks HTTP/1 only, so that no step waits with no limit. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address`, `a_client_that_sends_nothing_is_dropped`, `an_http2_client_that_goes_silent_is_dropped` |
 | SRV-8 | At most `server::MAX_CONNECTIONS` connections are open at once. More wait to be accepted, and are not refused. | `connections_past_the_limit_wait_their_turn` |
 | SRV-9 | A connection can still be upgraded, as a WebSocket is. | `a_connection_can_be_upgraded` |
+| SRV-10 | `MAX_CONNECTIONS` sets the limit, and `0` is invalid. | `the_connection_limit_is_a_setting_and_cannot_be_zero` |
+| CLT-1 | With no `TRUSTED_PROXIES`, and for any peer not listed, `X-Forwarded-For` is ignored. | `with_no_proxies_the_header_is_ignored`, `a_caller_that_is_no_proxy_cannot_name_an_address`, `with_no_trusted_proxy_a_forged_header_changes_nothing` |
+| CLT-2 | Behind trusted proxies, the client is the rightmost untrusted entry, so an entry the caller wrote is not believed. | `the_rightmost_untrusted_entry_is_the_client`, `an_entry_the_caller_wrote_is_not_believed`, `repeated_headers_read_as_one_list`, `with_only_proxies_the_leftmost_is_the_client`, `an_ipv4_address_inside_ipv6_is_the_same_address` |
+| CLT-3 | An unreadable entry ends the walk at the last good address, and at most 32 entries are read. | `an_unreadable_entry_ends_the_walk`, `a_long_header_stops_at_the_limit` |
+| CLT-4 | The address reaches a handler through `ClientAddr`, and a layer as a plain `IpAddr` extension, and stays out of the request span. | `a_handler_gets_the_address_behind_a_trusted_proxy` |
+| CLT-5 | `TRUSTED_PROXIES` takes addresses and CIDR ranges. A bad list trusts none, and refuses to boot in production. | `ranges_read_and_match`, `a_bad_range_is_refused`, `trusted_proxies_are_read_and_a_bad_list_trusts_none` |
 
 ### 4.12 SeaORM support
 
@@ -288,7 +294,7 @@ stated here and proved by their own tests.
 | PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
 | PAG-4 | `axa-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
 | PST-1 | `axa-paseto` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
-| PST-8 | `axa-paseto` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off` (the warning is **unverified**) |
+| PST-8 | `axa-paseto` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | PST-2 | `axa-paseto` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
 | PST-3 | `axa-paseto` | A missing, forged, or expired token is a `401`. | `a_missing_token_is_a_401`, `a_token_signed_by_another_key_is_a_401`, `an_expired_token_is_a_401` |
 | PST-4 | `axa-paseto` | Under the default policy any valid token reads, and every mutation needs an explicit allow. | `any_valid_token_may_read`, `no_attributes_means_no_mutation`, `write_access_writes_but_cannot_delete_or_merge`, `admin_access_may_delete_and_merge` |
@@ -300,6 +306,7 @@ stated here and proved by their own tests.
 | DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| DSL-5 | `axa-diesel` | A pool that is all in use answers with an error within `wait_timeout`, rather than waiting for ever. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
 | DSL-4 | `axa-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
 | TRA-1 | `axa-tera` | HTML templates escape values unless a template says `safe`. | `html_templates_escape_values`, `safe_turns_escaping_off` |
 | TRA-2 | `axa-tera` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
@@ -316,6 +323,7 @@ stated here and proved by their own tests.
 | KCK-8 | `axa-keycloak` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |
 | KCK-9 | `axa-keycloak` | It depends on neither `authentication-verifier` nor any other `axa` crate, and states the source of each copy. | `no_dependency_on_what_this_crate_was_copied_from` |
 | KCK-10 | `axa-keycloak` | Only an access token passes: one with no audience, a `typ` other than `Bearer`, or an `nbf` or `iat` in the future is a `401`. | `only_a_current_access_token_for_this_audience_passes` |
+| RDS-7 | `axa-redis` | A log line holds neither a key, which can name a person, nor a stored value. | Read in `decode` and `get_or_load`, and **unverified** by a test |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
@@ -349,6 +357,7 @@ stated here and proved by their own tests.
 | PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
 | VER-1 | `axa-versioning` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
 | VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406`. | `an_unsupported_version_is_a_406` |
+| VER-4 | `axa-versioning` | A service can state its own versions, and a current version it does not support is a mistake found at boot. | `a_service_can_serve_its_own_versions`, `a_current_version_that_is_not_supported_is_a_mistake` |
 | VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
 | OTL-1 | `axa-opentelemetry` | Export is off until an endpoint is set, and off leaves requests working with no header. | `export_is_off_until_an_endpoint_is_set`, `off_means_no_layers_no_header_and_the_request_still_works` |
 | OTL-2 | `axa-opentelemetry` | A span and the request metric reach a real collector, with the service's name and version. | `a_request_reaches_the_collector_as_a_span_and_a_metric` |
@@ -357,7 +366,10 @@ stated here and proved by their own tests.
 | OTL-5 | `axa-opentelemetry` | A collector that is down never holds up a request. | `a_collector_that_is_down_stops_nothing` |
 | OTL-6 | `axa-opentelemetry` | A metric's attributes are the method, status, and route template. An unknown method is `_OTHER`, and a path's value never appears. | `an_unknown_method_cannot_create_a_series`, `a_request_reaches_the_collector_as_a_span_and_a_metric` |
 | OTL-7 | `axa-opentelemetry` | The middleware adds to the request span `axa` opens, and puts its `traceparent` on the response. A server error marks the span. | `the_middleware_joins_the_request_span_axa_opens`, `a_server_error_marks_the_span` |
+| OTL-9 | `axa-opentelemetry` | A panic and a cancelled request are counted, with `error.type` saying which. | `a_panic_and_a_cancelled_request_are_still_counted` |
 | OTL-8 | `axa-opentelemetry` | `DIAGNOSTIC_DIRECTIVES` are valid filter directives. | `the_diagnostic_directives_are_valid` |
+| AUD-1 | `axa-paseto`, `axa-keycloak` | A refused request writes one `auth_refused` line at `warn`, with status, action, and the client's address when known, inside the request's span. An allowed request writes none. | `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
+| AUD-2 | `axa-paseto`, `axa-keycloak` | The line never holds the token or email. A policy refusal names the subject's id and the reason. | `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | TRC-1 | `axa-tracing` | `Redacted` hides its value in `Display` and `Debug`, and so in a log line. | `redacted_hides_its_value_in_a_log_line` |
 | TRC-2 | `axa-tracing` | `SlowSpans` reports a span at or past its threshold, inside that span so that it carries its fields, and tells busy time from idle time. A quick span is not reported. | `a_slow_span_is_reported_with_its_fields`, `a_quick_span_is_not_reported`, `busy_and_idle_time_are_told_apart` |
 | TRC-3 | `axa-tracing` | `track` makes the request id readable anywhere the request runs, cleaned by `axa`'s rule, or minted when nothing usable remains. Outside a request there is none. | `a_handler_can_read_the_request_id`, `a_callers_id_is_cleaned_as_axa_cleans_it`, `an_id_is_minted_when_nothing_usable_remains`, `there_is_no_request_id_outside_a_request` |

@@ -265,6 +265,65 @@ async fn a_server_error_marks_the_span() {
     telemetry.shutdown();
 }
 
+async fn panics() -> &'static str {
+    panic!("boom");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_panic_and_a_cancelled_request_are_still_counted() {
+    let (endpoint, collector) = collector().await;
+    let telemetry = start(&config(Some(endpoint))).unwrap();
+    let app = Router::new()
+        .route("/panics", get(panics))
+        .route(
+            "/slow",
+            get(|| async { tokio::time::sleep(Duration::from_hours(1)).await }),
+        )
+        .layer(from_fn_with_state(telemetry.http_metrics(), middleware));
+
+    // A panic reaches the caller here, as no outer layer catches it in this test.
+    let panicking = app.clone();
+    assert!(
+        tokio::spawn(async move { get_path(panicking, "/panics").await })
+            .await
+            .is_err()
+    );
+    // A timeout outside the middleware drops it, as `axa`'s own timeout does.
+    let slow = tokio::time::timeout(Duration::from_millis(50), get_path(app, "/slow"));
+    assert!(slow.await.is_err());
+
+    telemetry.flush();
+    let received = {
+        let collector = collector.clone();
+        wait_for(move || !collector.metrics.lock().unwrap().is_empty()).await
+    };
+    assert!(received, "nothing reached the collector");
+
+    let metrics = collector.metrics.lock().unwrap();
+    let points: Vec<_> = metrics
+        .iter()
+        .flat_map(|request| &request.resource_metrics)
+        .flat_map(|resource| &resource.scope_metrics)
+        .flat_map(|scope| &scope.metrics)
+        .filter(|metric| metric.name == "http.server.request.duration")
+        .filter_map(|metric| match &metric.data {
+            Some(Data::Histogram(histogram)) => Some(&histogram.data_points),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    let error_of = |route: &str| {
+        points
+            .iter()
+            .find(|point| text(attribute(&point.attributes, "http.route")) == Some(route))
+            .and_then(|point| text(attribute(&point.attributes, "error.type")))
+    };
+    assert_eq!(error_of("/panics"), Some("panic"));
+    assert_eq!(error_of("/slow"), Some("cancelled"));
+    drop(metrics);
+    telemetry.shutdown();
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn off_means_no_layers_no_header_and_the_request_still_works() {
     let telemetry = start(&config(None)).unwrap();

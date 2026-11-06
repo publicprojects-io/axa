@@ -5,7 +5,7 @@
 //! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
 //! ```
 
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use axa_diesel::{
     Error, Pool, PoolConfig, connect, dangerously_recreate,
@@ -125,6 +125,23 @@ async fn recreating_keeps_extensions() {
     )
     .await;
     assert_eq!(found, 1);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn a_pool_that_is_all_in_use_answers_with_an_error_in_time() {
+    let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let config = PoolConfig {
+        max_connections: 1,
+        wait_timeout: Duration::from_millis(100),
+        ..PoolConfig::new(uri)
+    };
+    let pool = connect(&config).await.unwrap();
+    let held = pool.get().await.unwrap();
+    let waited = tokio::time::timeout(Duration::from_secs(2), pool.get()).await;
+    assert!(waited.expect("the pool's own limit comes first").is_err());
+    drop(held);
+    assert!(pool.get().await.is_ok());
 }
 
 #[tokio::test]

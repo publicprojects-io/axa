@@ -276,6 +276,10 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
                 .make_span_with(|request: &Request| request_span(request))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
+        .layer(from_fn_with_state(
+            Arc::new(config.trusted_proxies.clone()),
+            crate::client::record,
+        ))
         .layer(from_fn(request_id)))
 }
 
@@ -295,6 +299,7 @@ mod tests {
             hsts: true,
             hsts_max_age: 31_536_000,
             csp: Some("default-src 'none'".to_string()),
+            trusted_proxies: Vec::new(),
         }
     }
 

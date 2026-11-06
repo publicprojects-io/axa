@@ -47,6 +47,7 @@ async fn the_middleware_joins_the_request_span_axa_opens() {
         hsts: false,
         hsts_max_age: 0,
         csp: None,
+        trusted_proxies: Vec::new(),
     };
     let response = middleware::apply(router, &http)
         .unwrap()

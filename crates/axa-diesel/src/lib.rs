@@ -24,8 +24,9 @@
 //! A database behind a private certificate authority needs a custom connection
 //! setup, which [`pool_with_tls`] accepts.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
+use deadpool::Runtime;
 pub use diesel;
 use diesel::{
     ConnectionError, ConnectionResult, QueryableByName,
@@ -79,6 +80,9 @@ pub struct PoolConfig {
     pub uri: String,
     /// Largest number of connections.
     pub max_connections: usize,
+    /// How long a caller waits for a connection, whether a free one or a new one,
+    /// before it gets an error.
+    pub wait_timeout: Duration,
 }
 
 impl PoolConfig {
@@ -88,6 +92,7 @@ impl PoolConfig {
         Self {
             uri: uri.into(),
             max_connections: 10,
+            wait_timeout: Duration::from_secs(5),
         }
     }
 }
@@ -126,8 +131,12 @@ pub fn pool_with_tls(config: &PoolConfig, tls: rustls::ClientConfig) -> Result<P
         Box::pin(establish(uri, tls))
     });
     let manager = AsyncDieselConnectionManager::new_with_config(&config.uri, setup);
+    // With no limit, a caller waits for ever behind a pool that is all in use.
     Ok(Pool::builder(manager)
         .max_size(config.max_connections)
+        .wait_timeout(Some(config.wait_timeout))
+        .create_timeout(Some(config.wait_timeout))
+        .runtime(Runtime::Tokio1)
         .build()?)
 }
 

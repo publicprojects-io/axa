@@ -50,6 +50,14 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
                 "ok"
             }),
         );
+    let router = router.route(
+        "/panics",
+        get(|| async {
+            panic!("the secret is hunter2");
+            #[allow(unreachable_code)]
+            "never"
+        }),
+    );
     let config = Http {
         body_limit: 1_000,
         compression: false,
@@ -59,6 +67,7 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         hsts: false,
         hsts_max_age: 0,
         csp: None,
+        trusted_proxies: Vec::new(),
     };
     let request = Request::builder()
         .uri("/?email=alice@example.org")
@@ -76,7 +85,13 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         .uri("/person/alice@example.net")
         .body(Body::empty())
         .unwrap();
-    app.oneshot(unknown).await.unwrap();
+    app.clone().oneshot(unknown).await.unwrap();
+    let panics = Request::builder()
+        .uri("/panics")
+        .header("x-request-id", "panicking")
+        .body(Body::empty())
+        .unwrap();
+    app.oneshot(panics).await.unwrap();
 
     let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
     let line = logs
@@ -93,6 +108,14 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
     assert!(line.contains("path=/unsubscribe/{token}"), "{line}");
     assert!(!logs.contains("secret-token"), "{logs}");
     assert!(logs.contains("path=unmatched"), "{logs}");
+    // A panic is an error with the request's id, and its text stays out.
+    let line = logs
+        .lines()
+        .find(|line| line.contains("handler_panicked"))
+        .expect("the panic's line");
+    assert!(line.contains("ERROR"), "{line}");
+    assert!(line.contains("request_id=panicking"), "{line}");
+    assert!(!logs.contains("hunter2"), "{logs}");
     // Each finished request is logged at info, so it appears in production.
     assert!(logs.contains("finished processing request"), "{logs}");
 }

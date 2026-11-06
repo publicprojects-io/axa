@@ -5,6 +5,35 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+This covers `axa` 0.5.0, `axa-diesel` 0.2.0, `axa-keycloak` 0.1.1, `axa-opentelemetry`
+0.1.1, `axa-paseto` 0.3.1, `axa-redis` 0.1.1, and `axa-versioning` 0.1.1. It breaks 0.4 for
+code that builds `config::Http`, `config::Server`, or `axa_diesel::PoolConfig` without
+`..`, because each has a new field. See
+[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.5 also shows
+how to add `axa-tracing` and `axa-opentelemetry`.
+
+### Added
+
+- **`axa::client`: the real client address.** `X-Forwarded-For` is believed only from
+  proxies listed in `TRUSTED_PROXIES`, read from the right, so an entry the caller wrote
+  is not. A handler takes `ClientAddr`, and a layer reads a plain `IpAddr` request
+  extension. The address stays out of the request span, because it is personal data.
+- **Every refusal writes an audit line.** `axa-paseto` and `axa-keycloak` log
+  `auth_refused` at `warn`, with status, action, client address, and for a policy
+  refusal the subject's id and reason. It never holds the token or email. It replaces
+  `paseto_forbidden` and `keycloak_forbidden`.
+- `MAX_CONNECTIONS`, the setting for `server::MAX_CONNECTIONS`, which is its default.
+- `axa_versioning::ApiVersions`, so that a service's 2.0 needs no `axa` release.
+- `axa_diesel::PoolConfig::wait_timeout`. A pool that was all in use made a caller wait
+  for ever.
+
+### Fixed
+
+- `axa-opentelemetry` counts a panic and a cancelled request, with `error.type`. They
+  used to leave no metric, as they never reached the recording line.
+- `axa-redis` logs neither keys nor error text that can quote a stored value.
+- The examples compile under the `sqlx` feature, and CI now builds it without `sea-orm`.
+
 ## [0.4.1] - 2026-11-06
 
 This covers `axa` 0.4.1. Its API has no breaking change, and two behaviours are

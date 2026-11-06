@@ -66,7 +66,7 @@ use std::time::{Duration, Instant};
 
 use axum::{
     extract::{MatchedPath, Request, State},
-    http::{HeaderName, HeaderValue, Method, Uri, uri::Scheme},
+    http::{HeaderName, HeaderValue, Method, StatusCode, Uri, uri::Scheme},
     middleware::Next,
     response::Response,
 };
@@ -383,36 +383,84 @@ pub async fn middleware(
     request: Request,
     next: Next,
 ) -> Response {
-    let method = method_label(request.method());
     let route = request
         .extensions()
         .get::<MatchedPath>()
         .map_or(UNMATCHED, MatchedPath::as_str)
         .to_string();
     let span = tracing::Span::current();
-    let started = Instant::now();
+    let mut recording = Recording {
+        metrics,
+        method: method_label(request.method()),
+        route,
+        started: Instant::now(),
+        span: span.clone(),
+        done: false,
+    };
 
     let mut response = next.run(request).await;
 
-    let elapsed = started.elapsed().as_secs_f64();
-    let status = i64::from(response.status().as_u16());
-    span.set_attribute("http.route", route.clone());
-    span.set_attribute("http.response.status_code", status);
-    if response.status().is_server_error() {
-        span.set_status(Status::error("server error"));
-    }
-    metrics.duration.record(
-        elapsed,
-        &[
-            KeyValue::new("http.request.method", method),
-            KeyValue::new("http.response.status_code", status),
-            KeyValue::new("http.route", route),
-        ],
-    );
+    recording.finish(response.status());
     if let Some(value) = traceparent(&span) {
         response.headers_mut().insert(TRACEPARENT, value);
     }
     response
+}
+
+/// One request being measured.
+///
+/// A panic unwinds through [`middleware`], and a timeout or a client that hangs up
+/// drops it, so neither reaches the line after `next.run`. Both still run this `Drop`,
+/// so those requests are counted, with `error.type` saying which it was, and with no
+/// status, because the outer layers choose that.
+struct Recording {
+    metrics: HttpMetrics,
+    method: &'static str,
+    route: String,
+    started: Instant,
+    span: tracing::Span,
+    done: bool,
+}
+
+impl Recording {
+    fn finish(&mut self, status: StatusCode) {
+        self.done = true;
+        let code = i64::from(status.as_u16());
+        self.span.set_attribute("http.route", self.route.clone());
+        self.span.set_attribute("http.response.status_code", code);
+        if status.is_server_error() {
+            self.span.set_status(Status::error("server error"));
+        }
+        self.record(KeyValue::new("http.response.status_code", code));
+    }
+
+    fn record(&self, outcome: KeyValue) {
+        self.metrics.duration.record(
+            self.started.elapsed().as_secs_f64(),
+            &[
+                KeyValue::new("http.request.method", self.method),
+                KeyValue::new("http.route", self.route.clone()),
+                outcome,
+            ],
+        );
+    }
+}
+
+impl Drop for Recording {
+    fn drop(&mut self) {
+        if self.done {
+            return;
+        }
+        let error = if std::thread::panicking() {
+            "panic"
+        } else {
+            "cancelled"
+        };
+        self.span.set_attribute("http.route", self.route.clone());
+        self.span.set_attribute("error.type", error);
+        self.span.set_status(Status::error(error));
+        self.record(KeyValue::new("error.type", error));
+    }
 }
 
 /// The W3C `traceparent` of `span`. `None` without export, as the span has no trace.
