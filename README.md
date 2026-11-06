@@ -468,6 +468,10 @@ The last command runs the queue tests against a real Postgres. Those tests have
 caught a real race that nothing else did, so run them when you touch the queue.
 The full list that CI runs is in [section 5 of the spec](spec/index.md#5-verification).
 
+AI agents have two skills: [`axa-skill`](skill/axa-skill/SKILL.md) for building a
+service with axa, and [`axa-maintainer-skill`](skill/axa-maintainer-skill/SKILL.md) for
+working on axa itself.
+
 Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
 carries a spec edit, a code edit, and a test edit together.
 

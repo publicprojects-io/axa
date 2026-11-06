@@ -8,6 +8,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - `DbCommand::destroys_data` and `cli::DESTROY_DATA_VAR`.
+- Two AI agent skills: `skill/axa-skill` for building a service with axa, and
+  `skill/axa-maintainer-skill` for working on axa itself.
 
 ### Changed
 

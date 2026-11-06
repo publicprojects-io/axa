@@ -16,7 +16,11 @@
       "help/from-loco-into-axa/index.md",
       "help/from-loco-seaorm-into-axa-seaorm/index.md",
       "help/upgrading-to-0.3/index.md"
-    ]
+    ],
+    "skills": {
+      "user": "skill/axa-skill/SKILL.md",
+      "maintainer": "skill/axa-maintainer-skill/SKILL.md"
+    }
   },
   "features": [
     {

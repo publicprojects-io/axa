@@ -40,3 +40,10 @@ full list that CI runs, including the Postgres and Redis tests. `[lints]` in
   no service yet.
 - Raise any new dependency with the user first.
 - Update `llms.txt` and `llms.json` when a feature, crate, or module changes.
+
+## Skills
+
+- [`skill/axa-maintainer-skill`](skill/axa-maintainer-skill/SKILL.md): working on this
+  codebase, including the traps and the release checklist.
+- [`skill/axa-skill`](skill/axa-skill/SKILL.md): using axa in a service. Update it when
+  anything a service sees changes.

@@ -25,6 +25,7 @@ include = [
     "src/**/*",
     "spec/**/*",
     "help/**/*",
+    "skill/**/*",
     "LICENSE.md",
     "README.md",
     "CHANGELOG.md",

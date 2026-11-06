@@ -12,6 +12,11 @@
 - [Changelog](CHANGELOG.md): changes by version
 - [llms.json](llms.json): this index, machine-readable
 
+## Skills
+
+- [axa-skill](skill/axa-skill/SKILL.md): building a service with axa
+- [axa-maintainer-skill](skill/axa-maintainer-skill/SKILL.md): working on the axa codebase
+
 ## Guides
 
 - [From Loco into axa](help/from-loco-into-axa/index.md)
