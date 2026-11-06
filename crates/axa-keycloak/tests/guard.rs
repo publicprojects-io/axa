@@ -3,7 +3,11 @@
 
 mod idp;
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use axa_keycloak::{
     AuthUser, Claims, Guard, GuardConfig, KeycloakSettings, KeycloakVerifier, PasetoVerifier,
@@ -167,6 +171,50 @@ async fn bad_tokens_are_401s() {
             "{name}"
         );
     }
+}
+
+#[tokio::test]
+async fn only_a_current_access_token_for_this_audience_passes() {
+    let idp = TestIdp::start().await;
+    let app = app(guard(settings(&idp), true));
+    let an_hour_ahead = json!(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3600
+    );
+    let refused = [
+        (
+            "no audience",
+            idp.token(|c| drop(c.as_object_mut().unwrap().remove("aud"))),
+        ),
+        (
+            "no audience, issued to another client",
+            idp.token(|c| {
+                c.as_object_mut().unwrap().remove("aud");
+                c["azp"] = json!("other-client");
+            }),
+        ),
+        ("ID token", idp.token(|c| c["typ"] = json!("ID"))),
+        ("refresh token", idp.token(|c| c["typ"] = json!("Refresh"))),
+        ("nbf ahead", idp.token(|c| c["nbf"] = an_hour_ahead.clone())),
+        ("iat ahead", idp.token(|c| c["iat"] = an_hour_ahead.clone())),
+    ];
+    for (name, token) in refused {
+        assert_eq!(
+            status(&app, "GET", "/api/places", Some(&token)).await,
+            StatusCode::UNAUTHORIZED,
+            "{name}"
+        );
+    }
+
+    // The checks refuse the token, not everything that carries one of these claims.
+    let token = idp.token(|c| c["nbf"] = json!(1_000_000_000));
+    assert_eq!(
+        status(&app, "GET", "/api/places", Some(&token)).await,
+        StatusCode::OK
+    );
 }
 
 #[tokio::test]

@@ -11,7 +11,9 @@ to the original does not reach a copy.
 
 It covers:
 
-- Checking a token's signature, audience, issuer, and expiry.
+- Checking a token's signature, audience, issuer, type, and times. Only an access
+  token that names a configured audience passes, so a realm may need an audience
+  mapper on its clients.
 - Turning Keycloak roles into ABAC attributes through an explicit role map, so an
   unmapped role grants nothing.
 - Evaluating ABAC policy on each request, with a guard, middleware, and an extractor.
