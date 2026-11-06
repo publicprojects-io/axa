@@ -171,6 +171,20 @@ pub struct Guard {
     keycloak: Arc<KeycloakVerifier>,
     paseto: Option<Arc<dyn PasetoVerifier>>,
     policy: Arc<ReloadablePolicy>,
+    honoured: Vec<String>,
+}
+
+/// A request the policy allowed: who is calling, and the decision. Read it as a handler
+/// argument, where the decision's obligations are the handler's to carry out.
+///
+/// There is none on a public path or with enforcement off, because nothing was decided,
+/// and a handler taking this is then refused.
+#[derive(Debug, Clone)]
+pub struct Allowed {
+    /// The verified caller.
+    pub claims: Claims,
+    /// The policy's decision.
+    pub decision: Decision,
 }
 
 impl std::fmt::Debug for Guard {
@@ -199,7 +213,21 @@ impl Guard {
             keycloak,
             paseto: None,
             policy,
+            honoured: Vec::new(),
         }
+    }
+
+    /// Declare the obligations this service carries out, reading them from [`Allowed`].
+    ///
+    /// A policy can allow a request only if something is done alongside it, such as
+    /// `"audit"`. Nothing here can do that, so a decision carrying an obligation not
+    /// declared here is refused with a `403`, rather than allowed with the condition
+    /// quietly dropped.
+    #[must_use]
+    pub fn honouring<S: Into<String>>(mut self, obligations: impl IntoIterator<Item = S>) -> Self {
+        self.honoured
+            .extend(obligations.into_iter().map(Into::into));
+        self
     }
 
     /// Also accept PASETO tokens.
@@ -245,26 +273,34 @@ impl Guard {
             .evaluate(claims, action, &self.config.entity)
     }
 
-    /// Decide one request. A refusal is logged, as `auth_refused`.
+    /// Decide one request, giving back what was allowed. `None` means nothing needed
+    /// deciding: the path is public, or enforcement is off. A refusal is logged, as
+    /// `auth_refused`.
     ///
     /// # Errors
     ///
-    /// Fails with `401` for a missing or bad credential, and `403` when the
-    /// credential is valid and the policy denies it.
-    pub async fn enforce(
+    /// Fails with `401` for a missing or bad credential, and `403` when the policy
+    /// denies a valid credential, or allows it on a condition this service has not
+    /// declared with [`Guard::honouring`].
+    pub async fn authorize(
         &self,
         method: &Method,
         path: &str,
         headers: &HeaderMap,
-    ) -> Result<(), Rejection> {
+    ) -> Result<Option<Allowed>, Rejection> {
         self.check(method, path, headers)
             .await
             .map_err(|refused| refused.logged(None))
     }
 
-    async fn check(&self, method: &Method, path: &str, headers: &HeaderMap) -> Result<(), Refused> {
+    async fn check(
+        &self,
+        method: &Method,
+        path: &str,
+        headers: &HeaderMap,
+    ) -> Result<Option<Allowed>, Refused> {
         if !self.config.require_auth || self.config.is_public(path) {
-            return Ok(());
+            return Ok(None);
         }
         let action = derive_action(method, path, &self.config);
         let claims = self.claims(headers).await.map_err(|rejection| Refused {
@@ -274,16 +310,38 @@ impl Guard {
             action,
         })?;
         let decision = self.decide(&claims, action);
-        if decision.allowed {
-            Ok(())
+        let refusal = if decision.allowed {
+            decision
+                .obligations
+                .iter()
+                .find(|obligation| !self.honoured.contains(obligation))
+                .map(|obligation| format!("obligation not carried out: {obligation}"))
         } else {
-            Err(Refused {
-                rejection: (StatusCode::FORBIDDEN, FORBIDDEN.to_string()),
+            Some(decision.reason.clone())
+        };
+        if let Some(reason) = refusal {
+            return Err(Refused {
+                rejection: forbidden(),
                 subject: Some(claims.sub),
-                reason: Some(decision.reason),
+                reason: Some(reason),
                 action,
-            })
+            });
         }
+        Ok(Some(Allowed { claims, decision }))
+    }
+
+    /// Decide one request, as [`Guard::authorize`] does, keeping only the outcome.
+    ///
+    /// # Errors
+    ///
+    /// See [`Guard::authorize`].
+    pub async fn enforce(
+        &self,
+        method: &Method,
+        path: &str,
+        headers: &HeaderMap,
+    ) -> Result<(), Rejection> {
+        self.authorize(method, path, headers).await.map(|_| ())
     }
 }
 
@@ -317,8 +375,12 @@ fn invalid_token() -> Rejection {
     (StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
 }
 
+fn forbidden() -> Rejection {
+    (StatusCode::FORBIDDEN, FORBIDDEN.to_string())
+}
+
 /// Middleware applying a [`Guard`] to every request. It also makes the guard
-/// available to [`AuthUser`].
+/// available to [`AuthUser`], and what was decided available to [`Allowed`].
 pub async fn middleware(
     State(guard): State<Arc<Guard>>,
     mut request: Request,
@@ -329,7 +391,10 @@ pub async fn middleware(
         .await
         .map_err(|refused| refused.logged(request.extensions().get::<IpAddr>().copied()));
     match decision {
-        Ok(()) => {
+        Ok(allowed) => {
+            if let Some(allowed) = allowed {
+                request.extensions_mut().insert(allowed);
+            }
             request.extensions_mut().insert(guard);
             next.run(request).await
         }
@@ -346,6 +411,10 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
     type Rejection = Rejection;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // Already verified for this request, so there is no need to do it twice.
+        if let Some(allowed) = parts.extensions.get::<Allowed>() {
+            return Ok(Self(allowed.claims.clone()));
+        }
         // Fail closed: without the middleware there is nothing to verify against,
         // so this must never let the request through.
         let guard = parts.extensions.get::<Arc<Guard>>().cloned().ok_or((
@@ -353,6 +422,23 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
             "authentication is not configured".to_string(),
         ))?;
         guard.claims(&parts.headers).await.map(Self)
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Allowed {
+    type Rejection = Rejection;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        std::future::ready(
+            parts
+                .extensions
+                .get::<Self>()
+                .cloned()
+                .ok_or_else(invalid_token),
+        )
     }
 }
 

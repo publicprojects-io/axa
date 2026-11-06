@@ -69,6 +69,18 @@
 //! # }
 //! ```
 //!
+//! # Obligations
+//!
+//! A policy rule can allow a request on a condition, such as `"audit"`, that this crate
+//! cannot carry out. A decision with an obligation the service has not declared through
+//! [`Guard::honouring`] is therefore a `403`. A handler reads the decision through the
+//! [`Allowed`] extractor and acts on it.
+//!
+//! # Readiness
+//!
+//! Until the realm's keys arrive, the service runs and refuses every token. Add
+//! [`KeycloakVerifier::ready`] to `/_readiness` so that traffic waits for them.
+//!
 //! # Keycloak and PASETO together
 //!
 //! [`Guard::with_paseto`] accepts both. A token beginning `v4.` goes to the service's
@@ -103,7 +115,7 @@ pub mod keycloak;
 
 pub use abac::{Action, ActionPattern, Decision, Effect, Policy, ReloadablePolicy, Rule};
 pub use guard::{
-    AuthUser, Guard, GuardConfig, PasetoVerifier, Rejection, bearer_token, derive_action,
+    Allowed, AuthUser, Guard, GuardConfig, PasetoVerifier, Rejection, bearer_token, derive_action,
     middleware,
 };
 pub use keycloak::{KeycloakSettings, KeycloakVerifier, settings_from_lookup};

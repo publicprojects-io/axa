@@ -10,8 +10,8 @@ use std::{
 };
 
 use axa_keycloak::{
-    AuthUser, Claims, Guard, GuardConfig, KeycloakSettings, KeycloakVerifier, PasetoVerifier,
-    Policy, ReloadablePolicy, VerifyError, middleware,
+    Allowed, AuthUser, Claims, Guard, GuardConfig, KeycloakSettings, KeycloakVerifier,
+    PasetoVerifier, Policy, ReloadablePolicy, VerifyError, middleware,
 };
 use axum::{
     Json, Router,
@@ -282,6 +282,79 @@ async fn an_unreachable_realm_refuses_every_token() {
     .await
     .expect("the guard must not hang on an unreachable realm");
     assert_eq!(refused, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn ready_says_whether_tokens_can_be_verified() {
+    let idp = TestIdp::start().await;
+    let verifier = KeycloakVerifier::new(settings(&idp)).unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while verifier.ready().is_err() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("keys arrive from a reachable realm");
+
+    let mut unreachable = settings(&idp);
+    unreachable.url = "http://127.0.0.1:1".to_string();
+    let verifier = KeycloakVerifier::new(unreachable).unwrap();
+    assert!(verifier.ready().is_err());
+}
+
+// Obligations.
+
+fn with_obligation(idp: &TestIdp) -> Guard {
+    let policy = Policy::from_json(
+        r#"{ "rules": [{ "effect": "allow", "actions": ["read"], "obligations": ["audit"] }] }"#,
+    )
+    .unwrap();
+    Guard::new(
+        config(true),
+        Arc::new(KeycloakVerifier::new(settings(idp)).unwrap()),
+        Arc::new(ReloadablePolicy::new(policy)),
+    )
+}
+
+fn obligation_app(guard: Guard) -> Router {
+    Router::new()
+        .route(
+            "/api/places",
+            get(|Allowed { decision, .. }: Allowed| async move {
+                decision.requires("audit").to_string()
+            }),
+        )
+        .layer(from_fn_with_state(Arc::new(guard), middleware))
+}
+
+#[tokio::test]
+async fn an_obligation_nobody_carries_out_is_refused() {
+    let idp = TestIdp::start().await;
+    let token = idp.token(|_| {});
+    let app = obligation_app(with_obligation(&idp));
+    assert_eq!(
+        status(&app, "GET", "/api/places", Some(&token)).await,
+        StatusCode::FORBIDDEN
+    );
+}
+
+#[tokio::test]
+async fn a_handler_reads_the_obligations_the_service_declared() {
+    let idp = TestIdp::start().await;
+    let token = idp.token(|_| {});
+    let app = obligation_app(with_obligation(&idp).honouring(["audit"]));
+    let (code, body) = send(&app, "GET", "/api/places", Some(&token)).await;
+    assert_eq!((code, body.as_str()), (StatusCode::OK, "true"));
+}
+
+#[tokio::test]
+async fn allowed_is_refused_where_nothing_was_decided() {
+    let idp = TestIdp::start().await;
+    let app = obligation_app(guard(settings(&idp), false));
+    assert_eq!(
+        status(&app, "GET", "/api/places", None).await,
+        StatusCode::UNAUTHORIZED
+    );
 }
 
 // Authorization.

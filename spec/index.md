@@ -96,6 +96,7 @@ fixed once and an auditor reads it once.
 | CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DATABASE_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
 | CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production` (writing them to stderr was seen once by hand, and is **unverified** by a test) |
 | CFG-25 | The `Debug` text of `Database`, and so of `Config` and `AppContext`, hides any password in the connection string. | `debug_output_never_prints_a_password`, `a_pools_debug_text_holds_no_password` |
+| CFG-26 | The `Debug` text of `PoolConfig`, in `axa-sqlx` and `axa-seaorm`, leaves the connection string out. | `debug_text_leaves_out_the_connection_string` |
 | CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
 | CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
 | CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CSP` names one, and an empty `HTTP_CSP` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
@@ -323,6 +324,8 @@ stated here and proved by their own tests.
 | KCK-8 | `axa-keycloak` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |
 | KCK-9 | `axa-keycloak` | It depends on neither `authentication-verifier` nor any other `axa` crate, and states the source of each copy. | `no_dependency_on_what_this_crate_was_copied_from` |
 | KCK-10 | `axa-keycloak` | Only an access token passes: one with no audience, a `typ` other than `Bearer`, or an `nbf` or `iat` in the future is a `401`. | `only_a_current_access_token_for_this_audience_passes` |
+| KCK-11 | `axa-keycloak` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
+| KCK-12 | `axa-keycloak` | `KeycloakVerifier::ready` fails until the realm's keys have been fetched. | `ready_says_whether_tokens_can_be_verified` |
 | RDS-7 | `axa-redis` | A log line holds neither a key, which can name a person, nor a stored value. | Read in `decode` and `get_or_load`, and **unverified** by a test |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |

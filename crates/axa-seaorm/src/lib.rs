@@ -32,7 +32,7 @@ pub mod schema;
 pub mod validation;
 
 /// Pool settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct PoolConfig {
     /// Connection string.
     pub uri: String,
@@ -46,6 +46,19 @@ pub struct PoolConfig {
     pub idle_timeout_ms: u64,
     /// Log every statement.
     pub enable_logging: bool,
+}
+
+impl std::fmt::Debug for PoolConfig {
+    /// Leaves the connection string out, because it can carry a password.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PoolConfig")
+            .field("min_connections", &self.min_connections)
+            .field("max_connections", &self.max_connections)
+            .field("connect_timeout_ms", &self.connect_timeout_ms)
+            .field("idle_timeout_ms", &self.idle_timeout_ms)
+            .field("enable_logging", &self.enable_logging)
+            .finish_non_exhaustive()
+    }
 }
 
 impl PoolConfig {
@@ -103,6 +116,13 @@ pub async fn truncate_table<T: EntityTrait>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_text_leaves_out_the_connection_string() {
+        let text = format!("{:?}", PoolConfig::new("postgres://me:hunter2@db/app"));
+        assert!(!text.contains("hunter2"), "{text}");
+        assert!(text.contains("max_connections"), "{text}");
+    }
 
     #[test]
     fn the_default_timeouts_suit_a_real_database() {

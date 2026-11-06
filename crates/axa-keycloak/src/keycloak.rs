@@ -30,7 +30,10 @@
 //!
 //! [`axum-keycloak-auth`]: https://crates.io/crates/axum-keycloak-auth
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use axum_keycloak_auth::{
     Url,
@@ -179,6 +182,7 @@ pub fn settings_from_lookup(
 
 /// Verifies Keycloak access tokens and yields [`Claims`].
 pub struct KeycloakVerifier {
+    instance: Arc<KeycloakAuthInstance>,
     layer: KeycloakAuthLayer<String, KeycloakExtra>,
     issuer: String,
     settings: KeycloakSettings,
@@ -269,12 +273,12 @@ impl KeycloakVerifier {
     /// [`VerifyError::Keycloak`] when [`KeycloakSettings::validate`] fails.
     pub fn new(settings: KeycloakSettings) -> Result<Self, VerifyError> {
         let server = settings.validate()?;
-        let instance = KeycloakAuthInstance::new(
+        let instance = Arc::new(KeycloakAuthInstance::new(
             KeycloakConfig::builder()
                 .server(server)
                 .realm(settings.realm.clone())
                 .build(),
-        );
+        ));
         // The library's default policy is its legacy one, which passes a token with no
         // audience, an ID or refresh token, and one dated in the future.
         let policy = ValidationPolicy::strict()
@@ -283,15 +287,45 @@ impl KeycloakVerifier {
             .build()
             .map_err(|e| VerifyError::Keycloak(e.to_string()))?;
         let layer = KeycloakAuthLayer::<String, KeycloakExtra>::builder()
-            .instance(instance)
+            .instance(instance.clone())
             .expected_audiences(settings.audiences.clone())
             .validation_policy(policy)
             .build();
         Ok(Self {
+            instance,
             layer,
             issuer: settings.expected_issuer(),
             settings,
         })
+    }
+
+    /// Whether tokens can be verified: the realm's keys have been fetched, and a later
+    /// failed refresh keeps them. It reads memory only, so it suits a readiness check,
+    /// without which a service holding no keys says it is ready and refuses every token.
+    ///
+    /// ```no_run
+    /// # fn example(verifier: std::sync::Arc<axa_keycloak::KeycloakVerifier>) {
+    /// // In a service, pass this closure to `axa::health::Checks::add`.
+    /// let check = move || {
+    ///     let verifier = verifier.clone();
+    ///     async move { verifier.ready() }
+    /// };
+    /// # let _ = check;
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`VerifyError::Keycloak`] when there are no keys, with the last failure if any.
+    pub fn ready(&self) -> Result<(), VerifyError> {
+        let status = self.instance.operational_status();
+        if status.is_operational {
+            return Ok(());
+        }
+        Err(VerifyError::Keycloak(status.last_error.map_or_else(
+            || "the realm's keys have not been fetched yet".to_string(),
+            |failure| failure.message,
+        )))
     }
 
     /// Verify a Keycloak access token and map it onto [`Claims`]. The engine
