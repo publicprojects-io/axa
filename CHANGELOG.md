@@ -5,6 +5,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-06
+
 This covers `axa` 0.5.0, `axa-diesel` 0.2.0, `axa-keycloak` 0.2.0, `axa-opentelemetry`
 0.1.1, `axa-paseto` 0.4.0, `axa-redis` 0.1.1, `axa-seaorm` 0.2.1, `axa-sqlx` 0.1.2, and `axa-versioning` 0.1.1. It breaks 0.4 for
 code that builds `config::Http`, `config::Server`, or `axa_diesel::PoolConfig` without

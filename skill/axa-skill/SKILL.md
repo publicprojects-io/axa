@@ -17,7 +17,7 @@ to read the whole path from `main.rs` down. Reach for plain Axum whenever axa ha
 opinion, because everything axa returns is plain Axum.
 
 Check the version in the project's `Cargo.toml` before relying on a detail here. This
-skill describes 0.4, and the version after it where it says so.
+skill describes 0.5, and says so where an earlier version differs.
 
 ## Where the truth lives
 
@@ -37,12 +37,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.4", features = ["sqlx", "queue"] }
+axa = { version = "0.5", features = ["sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa = { version = "0.4", features = ["testing"] }
+axa = { version = "0.5", features = ["testing"] }
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must
@@ -160,6 +160,10 @@ Production fails closed, and these are the usual first-deploy surprises:
 - CORS sends nothing until `CORS_ALLOWED_ORIGINS` lists origins, and `*` is refused.
 - Migrations do not run at boot unless `DB_AUTO_MIGRATE` says so.
 - Any environment name other than `development` or `test` gets production's behaviour.
+- `X-Forwarded-For` is believed only from proxies listed in `TRUSTED_PROXIES`. A handler
+  takes `axa::client::ClientAddr` for the real address, which stays out of the request
+  span because it is personal data.
+- `MAX_CONNECTIONS` limits open connections, and defaults to `server::MAX_CONNECTIONS`.
 
 ## Destructive commands
 
@@ -167,7 +171,7 @@ Production fails closed, and these are the usual first-deploy surprises:
 
 - In 0.4.0, `Cli` only parses them, so a service must call
   `Environment::may_destroy_data` itself before carrying one out.
-- In the version after 0.4.0, `cli::parse` refuses them before the service runs
+- From 0.4.1, `cli::parse` refuses them before the service runs
   anything, unless the process is in development or test and `AXA_DESTROY_DATA=true`
   is set. `--environment` cannot lift this. `Cli::parse` still does not refuse them, so
   a service that keeps it must call the guard itself.
@@ -195,7 +199,14 @@ a `down` does not protect `db reset`.
 extractor over ABAC policy. Every path is protected unless it is listed as public, and
 enforcement is on unless a service turns it off. Refused callers learn nothing about
 why: a `401` says `invalid token` and a `403` says `forbidden`, with the reason in the
-log, so do not match on any other text.
+log, so do not match on any other text. Each refusal writes one `auth_refused` line at
+`warn`, with the status, action, and client address, and it never holds the token or
+email. It replaces `paseto_forbidden` and `keycloak_forbidden`, so update any alert that
+watches for those.
+
+Both refuse a decision with an obligation the service has not declared, so a rule that
+asks for `"audit"` is a `403` until the service declares it with `Guard::honouring`.
+The `Allowed` extractor gives a handler the decision.
 
 With `axa-keycloak`:
 
@@ -204,9 +215,10 @@ With `axa-keycloak`:
 - ID tokens, refresh tokens, and tokens dated in the future are refused.
 - Roles grant nothing unless `role_map` names them, so a realm with no role map yields
   read-only callers under the default policy.
-- Until discovery succeeds every token is refused, and the service still boots.
+- Until discovery succeeds every token is refused, and the service still boots. Use
+  `KeycloakVerifier::ready` for `/_readiness`.
 
-With `axa-paseto` 0.3, `parse_bool` returns `Option<bool>`. `None` is a word it does not
+With `axa-paseto` 0.3 and later, `parse_bool` returns `Option<bool>`. `None` is a word it does not
 know, so refuse to start on it, because a typo read as off could turn enforcement off.
 
 ## Testing

@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Small shared library for services built directly on Axum.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -169,7 +169,7 @@
   "crates": [
     {
       "name": "axa-diesel",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Diesel pooling, migrations, and test resets for Axum services, in pure Rust.",
       "feature": "diesel",
       "readme": "crates/axa-diesel/README.md"
@@ -183,7 +183,7 @@
     },
     {
       "name": "axa-keycloak",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
       "readme": "crates/axa-keycloak/README.md"
@@ -197,7 +197,7 @@
     },
     {
       "name": "axa-opentelemetry",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "OTLP export of traces and request metrics for Axum services.",
       "feature": "opentelemetry",
       "readme": "crates/axa-opentelemetry/README.md"
@@ -211,7 +211,7 @@
     },
     {
       "name": "axa-paseto",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto/README.md"
@@ -232,14 +232,14 @@
     },
     {
       "name": "axa-redis",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "A Redis cache with mandatory expiry for Axum services.",
       "feature": "redis",
       "readme": "crates/axa-redis/README.md"
     },
     {
       "name": "axa-seaorm",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.",
       "feature": "sea-orm",
       "readme": "crates/axa-seaorm/README.md"
@@ -253,7 +253,7 @@
     },
     {
       "name": "axa-sqlx",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.",
       "feature": "sqlx",
       "readme": "crates/axa-sqlx/README.md"
@@ -274,7 +274,7 @@
     },
     {
       "name": "axa-versioning",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Header-based API version negotiation for Axum services.",
       "feature": "versioning",
       "readme": "crates/axa-versioning/README.md"

@@ -48,7 +48,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.4"
+axa = "0.5"
 ```
 
 | Feature | Adds |

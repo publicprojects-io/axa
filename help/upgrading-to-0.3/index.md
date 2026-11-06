@@ -88,7 +88,7 @@ Everything above applies, and `axa-paseto` is now 0.3. On top of it:
 - **Call `Environment::may_destroy_data` before `db reset` or `db down`.** `Cli` only
   parses those commands, so nothing guards them unless a service does.
 
-## After 0.4.0
+## Upgrading to 0.4.1
 
 - **`cli::parse` refuses `db down`, `db reset`, and `db truncate`** outside development
   and test, and everywhere without `AXA_DESTROY_DATA=true`, so a script that runs one
