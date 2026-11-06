@@ -7,14 +7,18 @@ use std::{future::Future, net::SocketAddr, pin::pin, sync::Arc, time::Duration};
 use axum::{Router, extract::ConnectInfo, http::Request};
 use hyper::{
     body::Incoming,
+    server::conn::http1,
     service::{Service, service_fn},
 };
 use hyper_util::{
-    rt::{TokioExecutor, TokioIo, TokioTimer},
-    server::{conn::auto::Builder, graceful::GracefulShutdown},
+    rt::{TokioIo, TokioTimer},
     service::TowerToHyperService,
 };
-use tokio::{net::TcpListener, sync::Notify, time::Instant};
+use tokio::{
+    net::TcpListener,
+    sync::{Notify, Semaphore, watch},
+    time::Instant,
+};
 
 #[cfg(feature = "queue")]
 use crate::{Error, queue::Queue};
@@ -22,8 +26,9 @@ use crate::{
     Result,
     config::{DEFAULT_HEADER_READ_TIMEOUT_SECONDS, Server},
 };
-#[cfg(feature = "queue")]
-use tokio::sync::watch;
+
+/// The most connections a server holds open at once. More wait to be accepted.
+pub const MAX_CONNECTIONS: usize = 10_000;
 
 /// Resolve when the process receives `SIGTERM` or Ctrl-C.
 ///
@@ -82,26 +87,56 @@ pub async fn serve_until(
     .await
 }
 
-/// The connection loop. This is `axum::serve` plus a limit on reading headers, which
-/// `axum::serve` cannot set: without one, a client that trickles out its headers holds
-/// a connection and a task for as long as it likes.
+/// [`accept_until_limited`] with the standard limit.
 async fn accept_until(
     router: Router,
     listener: TcpListener,
     header_read_timeout_seconds: u64,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    let mut builder = Builder::new(TokioExecutor::new());
-    builder
-        .http1()
-        .timer(TokioTimer::new())
-        .header_read_timeout(
-            (header_read_timeout_seconds > 0)
-                .then(|| Duration::from_secs(header_read_timeout_seconds)),
-        );
-    let connections = GracefulShutdown::new();
+    accept_until_limited(
+        router,
+        listener,
+        header_read_timeout_seconds,
+        MAX_CONNECTIONS,
+        shutdown,
+    )
+    .await
+}
+
+/// The connection loop. This is `axum::serve` plus a limit on reading headers and a
+/// limit on connections, which `axum::serve` cannot set: without them, clients that
+/// connect and stall hold a connection and a task each for as long as they like.
+///
+/// It speaks HTTP/1 only, as this crate has always been built to. The header limit
+/// is an HTTP/1 one, and detecting the protocol first would wait, with no limit, for
+/// a client's first bytes. A proxy in front can offer HTTP/2.
+///
+/// Past `max_connections` it stops accepting, so a connection waits in the listen
+/// queue for a place rather than being refused.
+async fn accept_until_limited(
+    router: Router,
+    listener: TcpListener,
+    header_read_timeout_seconds: u64,
+    max_connections: usize,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let mut builder = http1::Builder::new();
+    builder.timer(TokioTimer::new()).header_read_timeout(
+        (header_read_timeout_seconds > 0).then(|| Duration::from_secs(header_read_timeout_seconds)),
+    );
+    let places = Arc::new(Semaphore::new(max_connections));
+    // Each connection holds a receiver, so `closed` below means all have ended.
+    let (stop, stopping) = watch::channel(());
     let mut shutdown = pin!(shutdown);
     loop {
+        let place = tokio::select! {
+            place = Arc::clone(&places).acquire_owned() => place,
+            () = &mut shutdown => break,
+        };
+        let Ok(place) = place else {
+            break;
+        };
         tokio::select! {
             accepted = listener.accept() => {
                 let (stream, address) = match accepted {
@@ -120,11 +155,20 @@ async fn accept_until(
                     router.call(request)
                 });
                 let connection = builder
-                    .serve_connection_with_upgrades(TokioIo::new(stream), service)
-                    .into_owned();
-                let connection = connections.watch(connection);
+                    .serve_connection(TokioIo::new(stream), service)
+                    .with_upgrades();
+                let mut stopping = stopping.clone();
                 tokio::spawn(async move {
-                    if let Err(error) = connection.await {
+                    let _place = place;
+                    let mut connection = pin!(connection);
+                    let ended = tokio::select! {
+                        ended = connection.as_mut() => ended,
+                        _ = stopping.changed() => {
+                            connection.as_mut().graceful_shutdown();
+                            connection.await
+                        }
+                    };
+                    if let Err(error) = ended {
                         tracing::trace!(%error, "connection ended");
                     }
                 });
@@ -133,7 +177,9 @@ async fn accept_until(
         }
     }
     drop(listener);
-    connections.shutdown().await;
+    drop(stopping);
+    let _ = stop.send(());
+    stop.closed().await;
     Ok(())
 }
 
@@ -307,6 +353,97 @@ mod tests {
     #[tokio::test]
     async fn a_client_that_stalls_in_its_headers_is_dropped() {
         assert!(drops_a_stalled_client(1).await);
+    }
+
+    /// Whether a server closes on a client that sends only `opening`.
+    async fn drops_a_client_sending(opening: &[u8]) -> bool {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(accept_until(
+            Router::new(),
+            listener,
+            1,
+            std::future::pending(),
+        ));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(opening).await.unwrap();
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut response))
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test]
+    async fn a_client_that_sends_nothing_is_dropped() {
+        assert!(drops_a_client_sending(b"").await);
+    }
+
+    #[tokio::test]
+    async fn an_http2_client_that_goes_silent_is_dropped() {
+        assert!(drops_a_client_sending(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").await);
+    }
+
+    #[tokio::test]
+    async fn a_connection_can_be_upgraded() {
+        async fn upgrade(request: axum::extract::Request) -> axum::response::Response {
+            tokio::spawn(async move {
+                let upgraded = hyper::upgrade::on(request).await.unwrap();
+                let mut upgraded = TokioIo::new(upgraded);
+                upgraded.write_all(b"upgraded").await.unwrap();
+            });
+            axum::response::Response::builder()
+                .status(axum::http::StatusCode::SWITCHING_PROTOCOLS)
+                .header("connection", "upgrade")
+                .header("upgrade", "test")
+                .body(axum::body::Body::empty())
+                .unwrap()
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(accept_until(
+            Router::new().route("/", get(upgrade)),
+            listener,
+            0,
+            std::future::pending(),
+        ));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: upgrade\r\nUpgrade: test\r\n\r\n")
+            .await
+            .unwrap();
+        let mut received = Vec::new();
+        let read = tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut received));
+        let _ = read.await;
+        let received = String::from_utf8_lossy(&received);
+        assert!(received.starts_with("HTTP/1.1 101"), "{received}");
+        assert!(received.ends_with("upgraded"), "{received}");
+    }
+
+    #[tokio::test]
+    async fn connections_past_the_limit_wait_their_turn() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(accept_until_limited(
+            Router::new().route("/", get(|| async { "ok" })),
+            listener,
+            0,
+            1,
+            std::future::pending(),
+        ));
+        let request = b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
+        let first = TcpStream::connect(address).await.unwrap();
+
+        // The first connection holds the only place, so the second gets no answer.
+        let mut second = TcpStream::connect(address).await.unwrap();
+        second.write_all(request).await.unwrap();
+        let mut answer = [0; 16];
+        let waited = tokio::time::timeout(Duration::from_millis(200), second.read(&mut answer));
+        assert!(waited.await.is_err());
+
+        // Letting go of it lets the second through.
+        drop(first);
+        let answered = tokio::time::timeout(Duration::from_secs(3), second.read(&mut answer));
+        assert!(answered.await.unwrap().unwrap() > 0);
     }
 
     #[tokio::test]

@@ -142,7 +142,7 @@ pub fn warn_if_unserved(ctx: &AppContext, worker_running: bool) -> bool {
     let unserved = ctx.queue_provider.is_some() && !worker_running;
     if unserved {
         tracing::warn!(
-            "jobs are queued but this process runs no worker: use `start --all`, \\
+            "jobs are queued but this process runs no worker: use `start --all`, \
              or run `start --worker` separately"
         );
     }

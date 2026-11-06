@@ -95,6 +95,7 @@ fixed once and an auditor reads it once.
 | CFG-14 | The refusal names every invalid variable and its value, and never the value under a secret-shaped name. | `every_problem_is_named_at_once`, `an_invalid_value_under_a_secret_name_is_not_printed` |
 | CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DATABASE_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
 | CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production` (writing them to stderr was seen once by hand, and is **unverified** by a test) |
+| CFG-25 | The `Debug` text of `Database`, and so of `Config` and `AppContext`, hides any password in the connection string. | `debug_output_never_prints_a_password`, `a_pools_debug_text_holds_no_password` |
 | CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
 | CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
 | CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CSP` names one, and an empty `HTTP_CSP` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
@@ -102,7 +103,7 @@ fixed once and an auditor reads it once.
 | CFG-21 | The database connect timeout is 5 seconds and the idle timeout 10 minutes, unless a service's `Defaults` or a variable says otherwise. | `the_database_timeouts_suit_a_real_database`, `a_service_can_state_its_own_database_defaults` |
 | CFG-22 | Outside production a service migrates at boot unless `Defaults::auto_migrate` is off, and a variable beats that. | `development_migrates_at_boot_by_default`, `a_service_can_state_its_own_database_defaults` |
 | CFG-23 | An unset smallest pool size follows a smaller largest one. A largest size of 0, or a smallest above the largest, is invalid as in CFG-13. | `a_small_largest_pool_size_carries_the_smallest_with_it`, `a_pool_that_cannot_exist_is_refused` |
-| CFG-24 | Production refuses a `DATABASE_URL` that could go in the clear: it must demand TLS or stay on this machine, unless `DB_ALLOW_INSECURE` is set. An address it cannot read is refused, and the error does not quote it. | `production_refuses_a_database_url_that_could_go_in_the_clear`, `production_accepts_a_database_url_that_stays_private` |
+| CFG-24 | Production refuses a `DATABASE_URL` that could go in the clear: it must demand TLS or stay on this machine, judged by `host` and `hostaddr` as the driver reads them, unless `DB_ALLOW_INSECURE` is set. `require` encrypts without checking who answers, and `verify-full` is what checks. An address it cannot read is refused, and the error does not quote it. | `production_refuses_a_database_url_that_could_go_in_the_clear`, `production_accepts_a_database_url_that_stays_private` |
 
 The variables are listed in `README.md`.
 
@@ -250,7 +251,9 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 | SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
 | SRV-6 | Requests and jobs hear of shutdown at once and share one limit, and no job starts after that. | `requests_and_jobs_share_one_limit_and_no_job_starts_during_it` |
-| SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped. `0` allows for ever. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address` |
+| SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped, including one that sends nothing. `0` allows for ever. The server speaks HTTP/1 only, so that no step waits with no limit. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address`, `a_client_that_sends_nothing_is_dropped`, `an_http2_client_that_goes_silent_is_dropped` |
+| SRV-8 | At most `server::MAX_CONNECTIONS` connections are open at once. More wait to be accepted, and are not refused. | `connections_past_the_limit_wait_their_turn` |
+| SRV-9 | A connection can still be upgraded, as a WebSocket is. | `a_connection_can_be_upgraded` |
 
 ### 4.12 SeaORM support
 

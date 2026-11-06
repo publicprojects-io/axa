@@ -47,3 +47,13 @@ impl From<&Database> for axa_sqlx::PoolConfig {
 pub async fn connect(config: &Database) -> Result<axa_sqlx::sqlx::PgPool> {
     Ok(axa_sqlx::connect(&config.into()).await?)
 }
+
+#[cfg(all(test, feature = "sqlx"))]
+mod debug_tests {
+    #[tokio::test]
+    async fn a_pools_debug_text_holds_no_password() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://me:hunter2@db.internal/app").unwrap();
+        let printed = format!("{pool:?}");
+        assert!(!printed.contains("hunter2"), "{printed}");
+    }
+}

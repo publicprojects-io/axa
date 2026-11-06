@@ -11,7 +11,7 @@
 //! [`Logger::warnings`] for [`logger::init`] to write out. A blank value counts
 //! as unset, because that is what a compose file sends for an unset variable.
 
-use std::cell::RefCell;
+use std::{cell::RefCell, fmt};
 
 use crate::{
     Environment, Error, Result,
@@ -119,8 +119,8 @@ pub struct Logger {
     pub warnings: Vec<String>,
 }
 
-/// Database settings.
-#[derive(Debug, Clone)]
+/// Database settings. `Debug` hides any password in the connection string.
+#[derive(Clone)]
 pub struct Database {
     /// Connection string. Empty for a service with no database.
     pub uri: String,
@@ -170,6 +170,32 @@ pub struct Http {
     pub hsts_max_age: u64,
     /// The `content-security-policy`, if any.
     pub csp: Option<String>,
+}
+
+impl fmt::Debug for Database {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Named one by one, so that a new field cannot print without a decision.
+        let Self {
+            uri,
+            min_connections,
+            max_connections,
+            connect_timeout,
+            idle_timeout,
+            enable_logging,
+            auto_migrate,
+            dangerously_truncate,
+        } = self;
+        f.debug_struct("Database")
+            .field("uri", &redact("DATABASE_URL", uri))
+            .field("min_connections", min_connections)
+            .field("max_connections", max_connections)
+            .field("connect_timeout", connect_timeout)
+            .field("idle_timeout", idle_timeout)
+            .field("enable_logging", enable_logging)
+            .field("auto_migrate", auto_migrate)
+            .field("dangerously_truncate", dangerously_truncate)
+            .finish()
+    }
 }
 
 /// All service configuration.
@@ -372,6 +398,8 @@ fn worker_mode(name: &str) -> Option<WorkerMode> {
 
 /// Whether a connection string keeps its traffic private: it demands TLS, or it goes
 /// no further than this machine. An address that cannot be read counts as neither.
+/// `sslmode=require` counts, though it encrypts without checking who answers. Only
+/// `verify-full` checks that.
 fn stays_private(uri: &str) -> bool {
     let Some((_, rest)) = uri.split_once("://") else {
         return false;
@@ -399,7 +427,7 @@ fn stays_private(uri: &str) -> bool {
         Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
         None => address.split(':').next().unwrap_or_default(),
     };
-    let host = parameter(&["host"]).unwrap_or(host);
+    let host = parameter(&["host", "hostaddr"]).unwrap_or(host);
     host.starts_with('/')
         || host.starts_with("%2F")
         || matches!(host, "localhost" | "127.0.0.1" | "::1")
@@ -770,6 +798,8 @@ mod tests {
             "postgres://me:pw@db.internal/app?sslmode=disable",
             "postgres://me:pw@db.internal/app?sslmode=require&sslmode=disable",
             "postgres://localhost:pw@db.internal/app",
+            "postgres://localhost/app?hostaddr=10.0.0.5",
+            "postgres://db.internal/app?hostaddr=127.0.0.1&host=db.internal",
             "postgres:///app",
             "not a url",
         ] {
@@ -783,6 +813,19 @@ mod tests {
     }
 
     #[test]
+    fn debug_output_never_prints_a_password() {
+        for uri in [
+            "postgres://me:hunter2@db.internal/app",
+            "postgres://db.internal/app?password=hunter2",
+        ] {
+            let config = with(&[("DATABASE_URL", uri)], &Environment::Development).unwrap();
+            let printed = format!("{config:?}");
+            assert!(!printed.contains("hunter2"), "{printed}");
+            assert!(printed.contains("db.internal"), "{printed}");
+        }
+    }
+
+    #[test]
     fn production_accepts_a_database_url_that_stays_private() {
         for uri in [
             "postgres://me:pw@db.internal/app?sslmode=require",
@@ -792,6 +835,7 @@ mod tests {
             "postgres://127.0.0.1/app",
             "postgres://[::1]:5432/app",
             "postgres:///app?host=/var/run/postgresql",
+            "postgres://db.internal/app?hostaddr=127.0.0.1",
         ] {
             assert!(
                 with(&[("DATABASE_URL", uri)], &Environment::Production).is_ok(),

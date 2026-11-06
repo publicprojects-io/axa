@@ -5,11 +5,32 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-06
+
+This covers `axa` 0.4.1. Its API has no breaking change, and two behaviours are
+stricter: `cli::parse` refuses commands that destroy data, and a server that had HTTP/2
+turned on by another dependency now speaks HTTP/1 only.
+
 ### Added
 
 - `DbCommand::destroys_data` and `cli::DESTROY_DATA_VAR`.
 - Two AI agent skills: `skill/axa-skill` for building a service with axa, and
   `skill/axa-maintainer-skill` for working on axa itself.
+
+### Fixed
+
+- **The header limit now covers a client that sends nothing.** `HEADER_READ_TIMEOUT_SECONDS`
+  applied only once a client had sent its first bytes, because protocol detection ran
+  first with no limit, so a silent connection stayed open for ever. The server now
+  speaks HTTP/1 directly. It was only ever built for HTTP/1, so no service loses
+  HTTP/2, unless another dependency turned it on, and then a proxy can offer it.
+- **A server holds at most `server::MAX_CONNECTIONS`, 10,000, connections.** More wait
+  to be accepted. It becomes a setting in the next minor release.
+- **`hostaddr` no longer gets past the plaintext check.** `postgres://localhost/app?hostaddr=10.0.0.5`
+  counted as loopback, and the driver connected to `10.0.0.5`.
+- The `Debug` text of `Database`, `Config`, and `AppContext` no longer prints the
+  database password.
+- The warning that no worker serves the queue no longer holds a stray backslash.
 
 ### Changed
 

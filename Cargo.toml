@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -81,7 +81,7 @@ axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }
 # Direct only so that `server` can limit reading headers, which `axum::serve` cannot.
 hyper = { version = "1", features = ["http1", "server"] }
-hyper-util = { version = "0.1", features = ["http1", "server-auto", "server-graceful", "service", "tokio"] }
+hyper-util = { version = "0.1", features = ["http1", "service", "tokio"] }
 serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
