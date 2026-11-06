@@ -48,6 +48,7 @@ paseto = ["dep:axa-paseto"]
 problem = ["dep:axa-problem"]
 prometheus = ["dep:axa-prometheus"]
 redis = ["dep:axa-redis"]
+session = ["dep:axa-session"]
 sqlx = ["dep:axa-sqlx"]
 tera = ["dep:axa-tera"]
 versioning = ["dep:axa-versioning"]
@@ -62,6 +63,7 @@ axa-problem = { version = "0.1.0", path = "crates/axa-problem", optional = true 
 axa-prometheus = { version = "0.1.0", path = "crates/axa-prometheus", optional = true }
 axa-redis = { version = "0.1.0", path = "crates/axa-redis", optional = true }
 axa-seaorm = { version = "0.1.0", path = "crates/axa-seaorm", optional = true }
+axa-session = { version = "0.1.0", path = "crates/axa-session", optional = true }
 axa-sqlx = { version = "0.1.0", path = "crates/axa-sqlx", optional = true }
 axa-tera = { version = "0.1.0", path = "crates/axa-tera", optional = true }
 axa-versioning = { version = "0.1.0", path = "crates/axa-versioning", optional = true }

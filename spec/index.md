@@ -298,6 +298,14 @@ stated here and proved by their own tests.
 | SOR-1 | `axa-seaorm` | Pool settings reach `SeaORM`. | `pool_settings_reach_the_options` |
 | SOR-2 | `axa-seaorm` | `query::condition()` builds the same conditions as Loco's, all of which must hold. | `eq_and_ne_compare_values`, `several_conditions_must_all_hold` |
 | SOR-3 | `axa-seaorm` | Validation failures keep Loco's compact JSON text, so snapshots do not change. | `the_database_error_is_compact_json` |
+| SES-1 | `axa-session` | `production` refuses a key under 64 bytes, rather than letting the session crate panic on it, and refuses two identical keys. | `a_short_key_is_refused_not_a_panic`, `the_two_keys_must_differ` |
+| SES-2 | `axa-session` | Production cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, and signed. Only `development` is unsigned. | `a_production_cookie_is_secure_and_signed`, `a_development_cookie_is_neither_secure_nor_signed` |
+| SES-3 | `axa-session` | A live session's identifier without its signature, or with a changed one, reads nothing. | `a_real_id_with_no_signature_reads_nothing`, `a_changed_signature_reads_nothing`, `an_unsigned_cookie_can_be_forged_in_development` |
+| SES-4 | `axa-session` | A session survives between requests, `renew` changes its identifier and keeps its data, and `destroy` ends it. | `a_session_survives_between_requests`, `renew_changes_the_id_and_keeps_the_data`, `destroy_ends_the_session` |
+| SES-5 | `axa-session` | Keys are never printed. | `debug_output_hides_the_keys` |
+| SES-6 | `axa-session` | A session is not tied to the client's IP, so a phone changing networks keeps it. | `a_session_survives_a_new_ip_address` |
+| SES-7 | `axa-session` | With `opt_in`, nothing is stored until the service allows it. | `opt_in_stores_nothing_until_allowed` |
+| SES-8 | `axa-session` | In Postgres, session data is encrypted at rest and survives a restart of the store. | `postgres_sessions_are_encrypted_and_survive_a_restart` |
 | PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
 | PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
@@ -328,6 +336,7 @@ AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ig
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-session --all-features -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
 ```
 

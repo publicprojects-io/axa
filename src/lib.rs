@@ -49,6 +49,7 @@
 //! | `redis` | A Redis cache with mandatory expiry, as `axa::redis` |
 //! | `diesel` | Diesel pooling, migrations, and test resets in pure Rust, as `axa::diesel` |
 //! | `tera` | Tera templates with safe escaping, as `axa::tera` |
+//! | `session` | Web sessions with safe defaults, as `axa::session` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
@@ -108,6 +109,8 @@ pub use axa_redis as redis;
 pub use axa_seaorm as seaorm;
 #[cfg(feature = "sea-orm")]
 pub use axa_seaorm::{model, query, schema, validation};
+#[cfg(feature = "session")]
+pub use axa_session as session;
 #[cfg(feature = "sqlx")]
 pub use axa_sqlx as sqlx;
 #[cfg(feature = "tera")]
