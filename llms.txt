@@ -70,5 +70,5 @@
 - [axa-tera](crates/axa-tera/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.
 - [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.
 - [axa-idempotency](crates/axa-idempotency/README.md) (feature `idempotency`): Idempotency-Key handling over Postgres for Axum services.
-- [axa-ratelimit](crates/axa-ratelimit/README.md) (feature `ratelimit`): In-process request limits and failed-login lockout for Axum services.
+- [axa-ratelimit](crates/axa-ratelimit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services.
 - [axa-versioning](crates/axa-versioning/README.md) (feature `versioning`): Header-based API version negotiation for Axum services.

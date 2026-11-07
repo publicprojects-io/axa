@@ -72,7 +72,7 @@ axa = "0.6"
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`, so this feature adds nothing |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition. No service uses this yet |
-| `ratelimit` | [`axa-ratelimit`](crates/axa-ratelimit): request limits per client and failed-login lockout, counted in one process. No service uses this yet |
+| `ratelimit` | [`axa-ratelimit`](crates/axa-ratelimit): request limits per client or per key, and failed-login lockout, counted in one process. No service uses this yet |
 | `idempotency` | [`axa-idempotency`](crates/axa-idempotency): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md). No service uses this yet |
 | `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation. No service uses this yet |
 

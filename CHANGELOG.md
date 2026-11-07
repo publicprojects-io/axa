@@ -22,6 +22,23 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     the first time. A schedule removed from code is archived, never deleted, and
     restored if it returns. `Queue::schedules` lists them.
 
+- **`axa-ratelimit` 0.2.0, all opt-in, with today's behaviour unchanged by default:**
+  - `Limiter::key` and the `by_key` layer count by a key a service takes from the
+    request, such as the signed-in user. A request with no key is not counted.
+  - `WhenFull` says what a key not yet held gets once `MAX_KEYS` are: `Share`, as
+    before and still the default, `Allow`, or `Refuse`. `Verdict::overflowed` says
+    when it decided.
+  - `Verdict::first_refusal` is true once per key per window, so a service can write
+    one audit row for a client that went over.
+  - Every response from `by_client`, `by_key`, and `lock_out_failures` carries its
+    `Verdict` as a response extension, for the service's own audit or metric layer.
+  - `Limiter::set_limit_for` and `clear_limit_for` change one key's limit from its next
+    request, with no restart. At most `MAX_OVERRIDES` are held, and past that setting
+    another is refused, never making room by dropping one.
+  - `by_client` warns once, without the address, when its first 100 requests all came
+    from one private or loopback address, as they do from a proxy `TRUSTED_PROXIES`
+    does not list. `axa-ratelimit` now depends on `tracing`, which `axa` already did.
+
 - **Conditional requests, in `axa::conditional`.** The standard stack now answers `304` to
   a `GET` or `HEAD` holding the `ETag` of its answer, whoever set the tag, with weak
   comparison, lists, and `*` as RFC 9110 has them. A `304` keeps what the `200` would have

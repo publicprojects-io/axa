@@ -224,6 +224,12 @@ Unreleased.
   one with `Queue::retry`. See [Background jobs and schedules](../background-jobs/index.md).
 - A service with its own timer for a sweep can move it to `Queue::every`.
 
+- **`axa-ratelimit` 0.2.0:** `Verdict` gains `overflowed` and `first_refusal`, so code
+  that builds a `Verdict` by hand must set them. Nothing else changes unless a service
+  opts in. A service where a refusal can harm someone should choose
+  `.when_full(WhenFull::Allow)`. A `warn` line `ratelimit_one_client` means every
+  request came from one private address: list the proxy in `TRUSTED_PROXIES`.
+
 - **`config::Server` has `send_stall_timeout_seconds`.** Set it where a service builds a
   `Server` by hand, or that code stops compiling. `Config::from_env` needs no change.
 - A client that stops reading a response is now dropped after

@@ -1,10 +1,10 @@
 [package]
 name = "axa-ratelimit"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
-description = "In-process request limits and failed-login lockout for Axum services."
+description = "In-process request limits, per client or per key, and failed-login lockout for Axum services."
 readme = "README.md"
 repository = "https://github.com/publicprojects-io/axa/"
 license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
@@ -13,6 +13,7 @@ license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
 axa-problem = { version = "0.1.0", path = "../axa-problem" }
 axum = "0.8"
 serde_json = "1"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
