@@ -15,7 +15,8 @@
     "guides": [
       "help/from-loco-into-axa/index.md",
       "help/from-loco-seaorm-into-axa-seaorm/index.md",
-      "help/upgrading-to-0.3/index.md"
+      "help/upgrading-to-0.3/index.md",
+      "help/transactional-outbox/index.md"
     ],
     "skills": {
       "user": "skill/axa-skill/SKILL.md",
@@ -50,6 +51,10 @@
     {
       "name": "opentelemetry",
       "crate": "axa-opentelemetry"
+    },
+    {
+      "name": "outbox",
+      "crate": "axa-outbox"
     },
     {
       "name": "pagination",
@@ -209,6 +214,13 @@
       "description": "OTLP export of traces and request metrics for Axum services.",
       "feature": "opentelemetry",
       "readme": "crates/axa-opentelemetry/README.md"
+    },
+    {
+      "name": "axa-outbox",
+      "version": "0.1.0",
+      "description": "A transactional outbox and relay on Postgres for Axum services.",
+      "feature": "outbox",
+      "readme": "crates/axa-outbox/README.md"
     },
     {
       "name": "axa-pagination",

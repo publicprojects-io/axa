@@ -54,6 +54,7 @@
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `opentelemetry` | OTLP export of traces and request metrics, as `axa::opentelemetry` |
+//! | `outbox` | A transactional outbox and relay on Postgres, as `axa::outbox` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
@@ -105,6 +106,8 @@ pub use axa_keycloak as keycloak;
 pub use axa_openapi as openapi;
 #[cfg(feature = "opentelemetry")]
 pub use axa_opentelemetry as opentelemetry;
+#[cfg(feature = "outbox")]
+pub use axa_outbox as outbox;
 #[cfg(feature = "pagination")]
 pub use axa_pagination as pagination;
 #[cfg(feature = "paseto")]
