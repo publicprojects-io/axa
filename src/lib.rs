@@ -52,6 +52,7 @@
 //! | `tracing` | Redaction, request tracking, and asynchronous diagnostics, as `axa::tracing` |
 //! | `session` | Web sessions with safe defaults, as `axa::session` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
+//! | `idempotency` | `Idempotency-Key` handling over Postgres, as `axa::idempotency` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `opentelemetry` | OTLP export of traces and request metrics, as `axa::opentelemetry` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
@@ -99,6 +100,8 @@ pub mod worker;
 #[cfg(feature = "diesel")]
 pub use axa_diesel as diesel;
 pub use axa_environment as environment;
+#[cfg(feature = "idempotency")]
+pub use axa_idempotency as idempotency;
 #[cfg(feature = "keycloak")]
 pub use axa_keycloak as keycloak;
 #[cfg(feature = "openapi")]

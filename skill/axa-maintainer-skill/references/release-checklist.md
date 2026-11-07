@@ -48,8 +48,8 @@ cargo publish --dry-run -p axa-environment -p axa-sqlx -p axa -p ...
 ## 4. Publish
 
 Subcrates publish before `axa`, because it depends on them by version. `axa-problem`
-goes before `axa-paseto` and `axa-versioning`, which depend on it. No other subcrate
-depends on another, so the rest can go in any order.
+goes before `axa-idempotency`, `axa-paseto`, `axa-ratelimit`, and `axa-versioning`, which
+depend on it. No other subcrate depends on another, so the rest can go in any order.
 
 **crates.io limits new crates.** After a small burst, each new name waits about ten
 minutes, and the 429 names the time to retry. Existing crates are not held back. A

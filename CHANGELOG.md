@@ -3,6 +3,24 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **`axa-idempotency`, behind the `idempotency` feature:** `Idempotency-Key` handling
+  over Postgres, so a retried write gets its first answer back, marked
+  `Idempotent-Replayed: true`, instead of running twice. It is one layer, which a service
+  adds inside its guards and inside `axa::middleware::apply`. A closure names the caller,
+  and a key is per caller. The same key on a different request is a `422`, a duplicate
+  while the first runs is a `409`, and a store that cannot be reached is a `503` before
+  anything runs. A `4xx` or `5xx` frees the key. A run reports in while it works, so a
+  crash frees a key in about a minute and a long handler is never run twice, and a run
+  that lost its key cannot overwrite the next run's answer. Three services and the
+  bulk jobs of four more had written their own. No service uses this yet.
+  [Where the layer goes](help/idempotency-keys/index.md).
+- With the `idempotency` feature, `Error` converts from `sqlx::Error`, so `?` works on
+  `Idempotency::check` in a service on SeaORM.
+
 ## [0.6.0] - 2026-11-07
 
 This covers `axa` 0.6.0, `axa-keycloak` 0.3.0, `axa-pagination` 0.1.1, `axa-paseto` 0.5.0,
