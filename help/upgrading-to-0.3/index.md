@@ -209,6 +209,11 @@ No code must change. Check for these if a client or test reads them:
 
 Unreleased.
 
+- **`axa-ratelimit` 0.2.0:** `Verdict` gains `overflowed` and `first_refusal`, so code
+  that builds a `Verdict` by hand must set them. Nothing else changes unless a service
+  opts in. A service where a refusal can harm someone should choose
+  `.when_full(WhenFull::Allow)`.
+
 - **`config::Server` has `send_stall_timeout_seconds`.** Set it where a service builds a
   `Server` by hand, or that code stops compiling. `Config::from_env` needs no change.
 - A client that stops reading a response is now dropped after

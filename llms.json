@@ -310,8 +310,8 @@
     },
     {
       "name": "axa-ratelimit",
-      "version": "0.1.0",
-      "description": "In-process request limits and failed-login lockout for Axum services.",
+      "version": "0.2.0",
+      "description": "In-process request limits, per client or per key, and failed-login lockout for Axum services.",
       "feature": "ratelimit",
       "readme": "crates/axa-ratelimit/README.md"
     },
