@@ -196,6 +196,15 @@ to it does change.
 - A paging helper of your own can go: `Page::bounds`, `Page::respond`, and `?` on
   `PageParams::resolve` replace it.
 
+## Upgrading to 0.6.1
+
+No code must change. Check for these if a client or test reads them:
+
+- A rejected JSON body now says `payload_too_large`, `unsupported_media_type`, or
+  `unprocessable_entity` in `code` at `413`, `415`, or `422`, not `bad_request`.
+- A constraint violation through the model layer answers `409`, not `500`.
+- An `axa::extract::Path` on a route that does not fit it answers `500`, not `400`.
+
 ## Checking your work
 
 ```sh

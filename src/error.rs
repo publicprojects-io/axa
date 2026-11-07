@@ -149,6 +149,10 @@ impl Error {
 /// not used.
 impl From<PathRejection> for Error {
     fn from(rejection: PathRejection) -> Self {
+        // A `Path` that does not fit its route is a bug here, and quotes no value.
+        if rejection.status().is_server_error() {
+            return Self::Message(rejection.body_text());
+        }
         Self::CustomError(
             rejection.status(),
             ErrorDetail::new("bad_request", "A value in the URL is not valid"),
@@ -223,18 +227,18 @@ pub(crate) fn refusal_response(status: StatusCode) -> Response {
         let (status, detail) = resource_not_found();
         return problem(status, detail).into_response();
     }
-    let code = status.canonical_reason().map(|reason| {
-        reason
-            .to_ascii_lowercase()
-            .replace(' ', "_")
-            .replace('\'', "")
-    });
     let detail = ErrorDetail {
-        code,
+        code: reason_code(status),
         detail: None,
         errors: None,
     };
     problem(status, detail).into_response()
+}
+
+/// A status's reason, as a `code`.
+fn reason_code(status: StatusCode) -> Option<String> {
+    let reason = status.canonical_reason()?.to_ascii_lowercase();
+    Some(reason.replace(' ', "_").replace('\'', ""))
 }
 
 /// The body every internal failure shares. It carries no `detail`, as the title
@@ -280,11 +284,13 @@ fn conflict(error: &Error) -> Option<&'static str> {
             _ => None,
         },
         #[cfg(feature = "sea-orm")]
-        Error::DB(error) => match error.sql_err()? {
-            sea_orm::SqlErr::UniqueConstraintViolation(_) => Some(ALREADY_EXISTS),
-            sea_orm::SqlErr::ForeignKeyConstraintViolation(_) => Some(REFERENCE),
-            _ => None,
-        },
+        Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
+            match error.sql_err()? {
+                sea_orm::SqlErr::UniqueConstraintViolation(_) => Some(ALREADY_EXISTS),
+                sea_orm::SqlErr::ForeignKeyConstraintViolation(_) => Some(REFERENCE),
+                _ => None,
+            }
+        }
         _ => None,
     }
 }
@@ -345,8 +351,12 @@ impl IntoResponse for Error {
             Self::CustomError(status, detail) => (status, detail),
             Self::JsonRejection(rejection) => {
                 let status = rejection.status();
-                let description = json_rejection_text(status);
-                (status, ErrorDetail::new("bad_request", description))
+                let detail = ErrorDetail {
+                    code: reason_code(status),
+                    detail: Some(json_rejection_text(status).to_string()),
+                    errors: None,
+                };
+                (status, detail)
             }
             #[cfg(feature = "sea-orm")]
             Self::Model(crate::model::ModelError::EntityNotFound) => resource_not_found(),

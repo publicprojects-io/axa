@@ -3,6 +3,31 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.6.1] - 2026-11-07
+
+This covers `axa` 0.6.1. No subcrate changes. A rejected JSON body's `code` changes at
+`413`, `415`, and `422`; see
+[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.1 says what
+to check.
+
+### Fixed
+
+- **The keep-alive limit cut off a response still reaching a slow client.** `hyper`
+  drops a response's body once it holds the last of it, so a body in one piece, such as
+  JSON or a `Vec`, started the idle timer as sending began. A response taking over 75
+  seconds to deliver was truncated, and at shutdown too. A connection now counts as idle
+  from the last byte written.
+- An upgraded connection released its slot, so WebSockets did not count towards
+  `MAX_CONNECTIONS`. It now keeps the slot until its socket closes.
+- A constraint violation through the model layer, as `ModelError::DbErr`, answered `500`
+  and logged an error. It now answers `409`, as `Error::DB` does.
+- `axa::extract::Path` blamed the caller with `bad_request` on a route that does not fit
+  it. It now answers the generic `500`.
+- A rejected JSON body said `code: bad_request` at every status. A `413`, `415`, or `422`
+  now says `payload_too_large`, `unsupported_media_type`, or `unprocessable_entity`.
+- A timeout too long for the clock, such as `18446744073709551615`, panicked the accept
+  loop at the first connection. It now means no limit.
+
 ## [0.6.0] - 2026-11-07
 
 This covers `axa` 0.6.0, `axa-keycloak` 0.3.0, `axa-pagination` 0.1.1, `axa-paseto` 0.5.0,

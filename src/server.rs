@@ -151,7 +151,7 @@ struct Tracker {
 
 impl Tracker {
     fn new(limits: Limits) -> Self {
-        let deadline = limits.header_read.map(|limit| Instant::now() + limit);
+        let deadline = limits.header_read.and_then(from_now);
         Self {
             phase: watch::Sender::new(Phase::Head(deadline)),
             limits,
@@ -163,8 +163,7 @@ impl Tracker {
         self.phase.send_if_modified(|phase| {
             let idle = matches!(phase, Phase::Idle(_));
             if idle {
-                let deadline = self.limits.header_read.map(|limit| Instant::now() + limit);
-                *phase = Phase::Head(deadline);
+                *phase = Phase::Head(self.limits.header_read.and_then(from_now));
             }
             idle
         });
@@ -175,9 +174,27 @@ impl Tracker {
     }
 
     fn finished(&self) {
-        let deadline = self.limits.keep_alive.map(|limit| Instant::now() + limit);
+        let deadline = self.limits.keep_alive.and_then(from_now);
         self.phase.send_replace(Phase::Idle(deadline));
     }
+
+    /// Bytes reached the socket, so a response is still going out, and the connection
+    /// is not yet idle. A client that stops reading stops this, and is dropped.
+    fn sent(&self) {
+        self.phase.send_if_modified(|phase| {
+            let Phase::Idle(deadline) = phase else {
+                return false;
+            };
+            *deadline = self.limits.keep_alive.and_then(from_now);
+            true
+        });
+    }
+}
+
+/// When a limit ends, or `None` for one too long for the clock to hold, which is no
+/// limit: `Instant` panics on adding it, and any such limit is meant as for ever.
+fn from_now(limit: Duration) -> Option<Instant> {
+    Instant::now().checked_add(limit)
 }
 
 /// Resolve once a connection is past its deadline.
@@ -204,10 +221,13 @@ async fn overdue(mut phase: watch::Receiver<Phase>) {
     }
 }
 
-/// A connection that tells its [`Tracker`] when bytes arrive.
+/// A connection that tells its [`Tracker`] when bytes move. It holds the connection's
+/// slot, because an upgrade outlives the task that serves the connection, and only the
+/// stream lasts as long as the socket.
 struct Tracked {
     stream: TcpStream,
     tracker: Tracker,
+    _slot: OwnedSemaphorePermit,
 }
 
 impl AsyncRead for Tracked {
@@ -232,7 +252,12 @@ impl AsyncWrite for Tracked {
         context: &mut Context<'_>,
         bytes: &[u8],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().stream).poll_write(context, bytes)
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.stream).poll_write(context, bytes);
+        if matches!(polled, Poll::Ready(Ok(written)) if written > 0) {
+            this.tracker.sent();
+        }
+        polled
     }
 
     fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
@@ -248,7 +273,12 @@ impl AsyncWrite for Tracked {
         context: &mut Context<'_>,
         buffers: &[io::IoSlice<'_>],
     ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().stream).poll_write_vectored(context, buffers)
+        let this = self.get_mut();
+        let polled = Pin::new(&mut this.stream).poll_write_vectored(context, buffers);
+        if matches!(polled, Poll::Ready(Ok(written)) if written > 0) {
+            this.tracker.sent();
+        }
+        polled
     }
 
     fn is_write_vectored(&self) -> bool {
@@ -256,8 +286,9 @@ impl AsyncWrite for Tracked {
     }
 }
 
-/// Tells a [`Tracker`] the response has gone. `hyper` drops the body when it has
-/// written the last of it, so a long response is not taken for an idle connection.
+/// Tells a [`Tracker`] the service has finished its response. `hyper` drops the body
+/// when it holds the last of it, which can be long before that reaches the client, so
+/// [`Tracker::sent`] keeps the connection from being taken for idle until then.
 struct Finished(Tracker);
 
 impl Drop for Finished {
@@ -365,11 +396,10 @@ async fn accept_until(
                         }))
                     }
                 });
-                let stream = TokioIo::new(Tracked { stream, tracker });
+                let stream = TokioIo::new(Tracked { stream, tracker, _slot: slot });
                 let connection = builder.serve_connection(stream, service).with_upgrades();
                 let mut stopping = stopping.clone();
                 tokio::spawn(async move {
-                    let _slot = slot;
                     let mut connection = pin!(connection);
                     let stop = async {
                         // A sender dropped is a server gone, and it is told first.
@@ -413,7 +443,10 @@ async fn grace(config: &Server, told: Instant) {
     if config.shutdown_timeout_seconds == 0 {
         std::future::pending::<()>().await;
     }
-    tokio::time::sleep_until(told + Duration::from_secs(config.shutdown_timeout_seconds)).await;
+    match told.checked_add(Duration::from_secs(config.shutdown_timeout_seconds)) {
+        Some(deadline) => tokio::time::sleep_until(deadline).await,
+        None => std::future::pending().await,
+    }
 }
 
 async fn bind_and_serve(
@@ -641,6 +674,144 @@ mod tests {
         let received = String::from_utf8_lossy(&received);
         assert!(received.starts_with("HTTP/1.1 101"), "{received}");
         assert!(received.ends_with("upgraded"), "{received}");
+    }
+
+    /// Read `size` bytes in small steps, and give back how many arrived.
+    async fn read_slowly(stream: &mut TcpStream, size: usize) -> usize {
+        let mut buffer = vec![0; 256 * 1024];
+        let mut total = 0;
+        while total < size {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            match stream.read(&mut buffer).await {
+                Ok(0) | Err(_) => break,
+                Ok(read) => total += read,
+            }
+        }
+        total
+    }
+
+    const LONG_BODY: usize = 16 * 1024 * 1024;
+
+    fn long_body() -> Router {
+        Router::new().route("/", get(|| async { vec![b'x'; LONG_BODY] }))
+    }
+
+    #[tokio::test]
+    async fn a_long_response_outlasts_the_keep_alive_limit() {
+        let address = limited(long_body(), millis(60_000, 200, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        assert!(read_slowly(&mut stream, LONG_BODY).await >= LONG_BODY);
+    }
+
+    #[tokio::test]
+    async fn a_response_going_out_at_shutdown_is_not_cut_off() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, stopped) = oneshot::channel::<()>();
+        let shutdown = async {
+            let _ = stopped.await;
+        };
+        tokio::spawn(accept_until(
+            long_body(),
+            listener,
+            millis(60_000, 200, 0),
+            shutdown,
+        ));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        stop.send(()).unwrap();
+        assert!(read_slowly(&mut stream, LONG_BODY).await >= LONG_BODY);
+    }
+
+    #[tokio::test]
+    async fn a_client_that_stops_reading_a_finished_response_is_dropped() {
+        let address = limited(long_body(), millis(60_000, 200, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(600)).await;
+        let read =
+            tokio::time::timeout(Duration::from_secs(5), read_slowly(&mut stream, usize::MAX))
+                .await;
+        assert!(read.unwrap() < LONG_BODY);
+    }
+
+    #[tokio::test]
+    async fn an_upgraded_connection_keeps_its_slot() {
+        let app = Router::new().route(
+            "/",
+            get(|request: axum::extract::Request| async move {
+                let upgrade = hyper::upgrade::on(request);
+                tokio::spawn(async move {
+                    let mut upgraded = TokioIo::new(upgrade.await.unwrap());
+                    let mut byte = [0; 1];
+                    while upgraded.read_exact(&mut byte).await.is_ok() {}
+                });
+                axum::http::Response::builder()
+                    .status(axum::http::StatusCode::SWITCHING_PROTOCOLS)
+                    .header("connection", "upgrade")
+                    .header("upgrade", "echo")
+                    .body(Body::empty())
+                    .unwrap()
+            })
+            .post(|| async { "answered" }),
+        );
+        let address = limited(app, millis(60_000, 60_000, 1)).await;
+        let mut first = TcpStream::connect(address).await.unwrap();
+        first
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: upgrade\r\nUpgrade: echo\r\n\r\n")
+            .await
+            .unwrap();
+        let mut buffer = vec![0; 1024];
+        let read = first.read(&mut buffer).await.unwrap();
+        assert!(String::from_utf8_lossy(&buffer[..read]).contains("101"));
+
+        let post = b"POST / HTTP/1.1\r\nHost: x\r\nConnection: close\r\nContent-Length: 0\r\n\r\n";
+        let mut second = TcpStream::connect(address).await.unwrap();
+        second.write_all(post).await.unwrap();
+        let waiting = Duration::from_millis(300);
+        assert!(
+            tokio::time::timeout(waiting, second.read(&mut buffer))
+                .await
+                .is_err()
+        );
+
+        drop(first);
+        let read = tokio::time::timeout(Duration::from_secs(5), second.read(&mut buffer))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&buffer[..read]).contains("200"));
+    }
+
+    #[tokio::test]
+    async fn a_limit_too_long_for_the_clock_means_none() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let limits = Limits::new(u64::MAX, u64::MAX, 10);
+        let server = tokio::spawn(accept_until(
+            hello(),
+            listener,
+            limits,
+            std::future::pending(),
+        ));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\n\r\n")
+            .await
+            .unwrap();
+        assert!(response(&mut stream).await.contains("hello"));
+        assert!(!server.is_finished());
     }
 
     #[tokio::test]

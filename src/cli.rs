@@ -186,7 +186,8 @@ fn command(name: &'static str, version: &'static str, about: &'static str) -> cl
 /// Exits as `clap` does on a bad argument, on `--help`, and on `--version`.
 /// Exits non-zero, before the service runs anything, on a command that destroys
 /// data outside development and test, or without [`DESTROY_DATA_VAR`] set to
-/// `true`. `Cli::parse()` refuses the same, so a service cannot leave the guard out.
+/// `true`. `Cli::parse()` refuses the same. A service that flattens [`Command`] into a
+/// parser of its own has neither, and must call `Environment::may_destroy_data` itself.
 #[must_use]
 pub fn parse(name: &'static str, version: &'static str, about: &'static str) -> Cli {
     let matches = command(name, version, about).get_matches();

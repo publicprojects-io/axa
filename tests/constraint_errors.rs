@@ -75,4 +75,9 @@ async fn a_violated_constraint_through_sea_orm_is_a_conflict() {
     assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
     let other = fails(NOT_A_CONSTRAINT).await;
     assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
+
+    // The model layer wraps the same error, and answers the same.
+    let error = db.execute_unprepared(DUPLICATE).await.unwrap_err();
+    let wrapped = Error::Model(axa::model::ModelError::DbErr(error)).into_response();
+    assert_answers(wrapped, StatusCode::CONFLICT, "conflict").await;
 }

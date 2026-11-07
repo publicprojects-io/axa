@@ -121,6 +121,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_path_that_does_not_fit_its_route_is_a_server_fault() {
+        let app = Router::new().route("/", get(|Path(_): Path<u32>| async {}));
+        let request = Request::get("/").body(Body::empty()).unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(body.contains("internal_server_error"), "{body}");
+        assert!(!body.contains("bad_request"), "{body}");
+    }
+
+    #[tokio::test]
     async fn every_rejection_is_a_problem_and_quotes_nothing() {
         let cases = [
             (post_json("{secret"), StatusCode::BAD_REQUEST),
@@ -143,6 +155,9 @@ mod tests {
             assert_eq!(kind, crate::problem::PROBLEM_JSON, "{body}");
             assert!(body.contains("detail"), "{body}");
             assert!(!body.contains("secret"), "{body}");
+            let code = expected.canonical_reason().unwrap();
+            let code = code.to_ascii_lowercase().replace(' ', "_");
+            assert!(body.contains(&format!("\"code\":\"{code}\"")), "{body}");
         }
     }
 }

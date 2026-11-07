@@ -12,7 +12,11 @@ use std::{
     net::{SocketAddr, TcpListener, TcpStream},
     os::unix::process::ExitStatusExt,
     process::{Command, ExitStatus, Stdio},
-    sync::{Arc, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicU16, Ordering},
+        mpsc,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -115,13 +119,18 @@ impl Child {
     }
 }
 
-/// A port that was free a moment ago.
+/// A port that was free a moment ago, from below the range the system hands out for
+/// port 0. The child binds it later, and in that gap another process asking for any
+/// port could be given this one, which this test would then connect to and wait on.
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    static NEXT: AtomicU16 = AtomicU16::new(0);
+    let base = 20_000 + u16::try_from(std::process::id() % 10_000).unwrap();
+    loop {
+        let port = base + NEXT.fetch_add(1, Ordering::Relaxed);
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+    }
 }
 
 /// Connect once the child is listening.
