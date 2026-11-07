@@ -15,6 +15,7 @@
     "guides": [
       "help/from-loco-into-axa/index.md",
       "help/from-loco-seaorm-into-axa-seaorm/index.md",
+      "help/idempotency-keys/index.md",
       "help/upgrading-to-0.3/index.md"
     ],
     "skills": {
@@ -86,6 +87,10 @@
     {
       "name": "tracing",
       "crate": "axa-tracing"
+    },
+    {
+      "name": "idempotency",
+      "crate": "axa-idempotency"
     },
     {
       "name": "ratelimit",
@@ -283,6 +288,13 @@
       "description": "Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.",
       "feature": "tracing",
       "readme": "crates/axa-tracing/README.md"
+    },
+    {
+      "name": "axa-idempotency",
+      "version": "0.1.0",
+      "description": "Idempotency-Key handling over Postgres for Axum services.",
+      "feature": "idempotency",
+      "readme": "crates/axa-idempotency/README.md"
     },
     {
       "name": "axa-ratelimit",

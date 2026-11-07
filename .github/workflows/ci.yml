@@ -92,6 +92,8 @@ jobs:
           cargo test -p axa-seaorm -- --ignored --test-threads=1
           cargo test -p axa-diesel -- --ignored --test-threads=1
           cargo test -p axa-session --all-features -- --ignored --test-threads=1
+          cargo test -p axa-idempotency -- --ignored --test-threads=1
+          cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 
       - name: Redis tests
         env:

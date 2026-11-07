@@ -492,6 +492,7 @@ dependencies = [
  "async-trait",
  "axa-diesel",
  "axa-environment",
+ "axa-idempotency",
  "axa-keycloak",
  "axa-openapi",
  "axa-opentelemetry",
@@ -544,6 +545,22 @@ dependencies = [
 [[package]]
 name = "axa-environment"
 version = "0.1.1"
+
+[[package]]
+name = "axa-idempotency"
+version = "0.1.0"
+dependencies = [
+ "axa-problem",
+ "axum",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
 
 [[package]]
 name = "axa-keycloak"

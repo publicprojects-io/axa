@@ -123,7 +123,7 @@ pub enum Error {
     /// A sqlx database failure. Becomes `409` for a violated unique or foreign key
     /// constraint, and otherwise a generic `500`. A service that means something
     /// else by one maps it first, as with `axa_sqlx::is_unique_violation`.
-    #[cfg(any(feature = "queue", feature = "sqlx"))]
+    #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
     /// Any other error.
@@ -272,12 +272,17 @@ fn json_rejection_text(status: StatusCode) -> &'static str {
 /// What to tell a caller whose write broke a unique or foreign key constraint. The
 /// request caused that, so it is not a fault here, and the database's own text goes
 /// nowhere because it names the row.
-#[cfg(any(feature = "queue", feature = "sqlx", feature = "sea-orm"))]
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm"
+))]
 fn conflict(error: &Error) -> Option<&'static str> {
     const ALREADY_EXISTS: &str = "Resource already exists";
     const REFERENCE: &str = "It refers to a resource that does not exist, or is referred to";
     match error {
-        #[cfg(any(feature = "queue", feature = "sqlx"))]
+        #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
         Error::Sqlx(error) => match error.as_database_error()?.kind() {
             sqlx::error::ErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
             sqlx::error::ErrorKind::ForeignKeyViolation => Some(REFERENCE),
@@ -296,7 +301,12 @@ fn conflict(error: &Error) -> Option<&'static str> {
 }
 
 /// With no database, nothing can break a constraint.
-#[cfg(not(any(feature = "queue", feature = "sqlx", feature = "sea-orm")))]
+#[cfg(not(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm"
+)))]
 fn conflict(_error: &Error) -> Option<&'static str> {
     None
 }
@@ -385,7 +395,7 @@ impl IntoResponse for Error {
             | Self::Any(_) => internal(),
             #[cfg(feature = "sea-orm")]
             Self::Model(_) | Self::DB(_) => internal(),
-            #[cfg(any(feature = "queue", feature = "sqlx"))]
+            #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
             Self::Sqlx(_) => internal(),
         };
         problem(status, detail).into_response()
@@ -610,7 +620,7 @@ mod tests {
         assert_eq!(error.to_string(), "disk full");
     }
 
-    #[cfg(any(feature = "queue", feature = "sqlx"))]
+    #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
     #[tokio::test]
     async fn a_sqlx_error_is_a_generic_500() {
         let error: Error = sqlx::Error::Protocol("secret detail".to_string()).into();

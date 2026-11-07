@@ -1,6 +1,6 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
 ---
 
 # Using axa in your Axum service
@@ -32,6 +32,7 @@ Read these rather than guessing at an API:
 | Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
 | Leaving Loco | [From Loco into axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
 | Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
+| Where the idempotency layer goes | [Guide](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md) |
 
 ## Install
 
@@ -67,6 +68,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Prometheus exposition | `prometheus` |
 | RFC 9457 problem details | Always included, as `axa::problem` |
 | Request limits and failed-login lockout | `ratelimit` |
+| `Idempotency-Key` on writes, over Postgres | `idempotency` |
 | `Accepts-version` negotiation | `versioning` |
 
 `features` lists one name per subcrate, and each subcrate is also usable alone.
@@ -237,6 +239,47 @@ The server speaks HTTP/1 alone, and expects TLS to end in front of it. Keep
 - Queue arguments are stored in plain text, so never put a secret in them.
 - `Queue::connect` runs DDL at boot. Where a service's role may not, run
   `queue::SETUP_STATEMENTS` in a migration and call `Queue::connect_existing`.
+
+## Idempotency keys
+
+With the `idempotency` feature, a retried write gets its first answer back instead of
+running twice, once a service mounts the layer. It is unreleased: check that the
+service's version has it.
+
+```rust
+let keys = Idempotency::new(pool, |request| {
+    request.extensions().get::<Allowed>().map(|allowed| allowed.claims.sub.clone())
+});
+keys.check().await?;
+
+let router = routes
+    .into_router(ctx.clone())
+    .layer(from_fn_with_state(keys, idempotent))
+    .layer(from_fn_with_state(guard, paseto::middleware));
+let app = axa::middleware::apply(router, &ctx.config.http)?;
+```
+
+Get these right, because each fails quietly or later:
+
+- **The order is the point.** The layer goes inside `apply`, so that it stores the plain
+  body, and inside the guards, so that a replay reaches only a caller they let through.
+  Do not use `into_app`, which applies the stack before your layers.
+- **The caller comes from the service.** The closure reads what authentication left on
+  the request. `None` refuses the request with a `401`. Returning one text for all
+  anonymous callers makes them share answers.
+- **Run `SETUP_STATEMENTS` in a migration**, and call `check` at boot.
+- **Call `sweep` on a schedule.** Nothing runs by itself, and an expired answer stays on
+  disk until then. It can hold personal data, so add `axa_idempotency` to your retention
+  list, and call `forget_caller` to erase a person.
+- **A `4xx` or `5xx` frees the key**, and a retry runs again. Any other answer that
+  cannot be kept (a stream, an answer over 1 MiB, one a handler compressed) gets the
+  retry a `409`, because the write ran. Only a `2xx` or `3xx` is replayed.
+- **A crash after the handler commits repeats it**, as the answer is stored separately. A
+  handler that must never repeat also needs a unique constraint. A `202` for a job
+  replays even after the job fails, unless the service calls `forget`.
+
+[Where the idempotency layer goes](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md)
+has the whole of this.
 
 ## Authentication
 

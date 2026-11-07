@@ -31,6 +31,7 @@ fixed once and an auditor reads it once.
 - Logging setup and graceful shutdown
 - The shared command line, tasks, and background jobs
 - A Postgres job queue
+- `Idempotency-Key` handling
 - Request-level test helpers
 - SeaORM support, for projects leaving Loco
 
@@ -458,6 +459,57 @@ cannot help. It is a module and not a subcrate because `apply` calls it.
 not handled: no service sends them or sets `Last-Modified`, and on a write it would need
 checking before the work, in the handler.
 
+### 4.16 Idempotency keys
+
+`axa-idempotency` runs a write once per caller and `Idempotency-Key`. A retry gets the
+first answer. It is one layer, and a service adds it after `into_router`, before its
+guards, and before `axa::middleware::apply`, so that the layer sits inside compression
+and inside whatever refuses a caller. [Where the layer goes](../help/idempotency-keys/index.md)
+says why. The crate holds no trait for a service to implement: a closure given to
+`Idempotency::new` names the caller, and a service calls `sweep`, `forget`, and
+`forget_caller` when it chooses. Nothing runs by itself.
+
+The table is `axa_idempotency`. The crate does not own a service's schema, so a service
+runs `SETUP_STATEMENTS` in a migration, and `check` tells it at boot if that was missed.
+
+The guarantee has one known gap: the answer is stored after the handler commits, in a
+separate transaction, so a crash between the two runs the handler again on the retry.
+A handler that must not repeat needs a unique constraint of its own.
+
+The Postgres tests need `AXA_TEST_DATABASE_URL`.
+
+| Id | Requirement | Test |
+|---|---|---|
+| IDM-1 | A request with no key, or a `GET`, `HEAD`, `OPTIONS`, or `TRACE`, runs as if the layer were not there, reaches no store, and leaves no row. | `with_no_key_nothing_is_kept_and_every_request_runs`, `a_method_that_changes_nothing_ignores_its_key`, `the_store_being_down_stops_the_request_before_it_runs` |
+| IDM-2 | The same key and request after a finished `2xx` or `3xx` gets the first status, body, and the headers in `KEPT_HEADERS`, with `Idempotent-Replayed: true`, and runs nothing. A `set-cookie` is not kept. | `a_retry_gets_the_first_answer_and_runs_nothing`, `a_redirect_is_kept_as_the_write_it_answers`, `an_empty_answer_replays_as_an_empty_answer`, `a_replay_hands_out_no_cookie`, `only_the_listed_headers_are_kept`, `a_replay_is_the_first_answer_and_says_so`, `an_empty_answer_has_a_known_size_and_is_kept` |
+| IDM-3 | The same key with a different method, path, query, or body is a `422` with the `code` `idempotency_key_reused`, whether the first finished or not, and runs nothing. The request is compared by a SHA-256 hash that also marks where each part ends. | `the_same_key_on_a_different_request_is_refused`, `a_duplicate_while_the_first_runs_is_told_to_wait`, `the_fingerprint_sees_every_part_and_where_each_ends`, `what_a_key_holds_decides_the_answer` |
+| IDM-4 | Of any number of requests with one key, on any number of replicas, exactly one runs. A duplicate while it runs is a `409` with the `code` `idempotency_in_progress` and `Retry-After: 1`. | `of_many_requests_at_once_on_two_replicas_exactly_one_runs`, `a_duplicate_while_the_first_runs_is_told_to_wait` |
+| IDM-5 | A key belongs to one caller. Two callers with one key run separately, and neither can read the other's answer. | `one_key_is_two_keys_for_two_callers` |
+| IDM-6 | A keyed request with no caller, or an empty one, is a `401` with the `code` `idempotency_no_caller`, runs nothing, and leaves no row. | `with_no_caller_a_keyed_request_is_refused_and_does_not_run` |
+| IDM-7 | Mounted as stated, a guard refuses a caller before a replay can answer it. | `a_guard_outside_the_layer_refuses_before_a_replay_can_answer` |
+| IDM-8 | A `4xx` or `5xx` frees the key, so a retry under it runs, and a refusal from the standard stack does too. | `a_failure_releases_the_key_so_a_retry_runs`, `a_failure_is_released_and_a_success_or_redirect_is_kept`, `the_service_body_limit_still_applies_and_its_refusal_frees_the_key` |
+| IDM-9 | A claim whose run stopped reporting in, by a crash, a hang-up, a panic, or the stack's timeout, can be taken over by the same request once its lease ends, and by exactly one such request. | `a_claim_abandoned_by_a_crash_is_taken_over_by_the_same_request`, `of_many_retries_of_an_abandoned_claim_exactly_one_takes_it`, `a_cancelled_run_stops_reporting_in_and_its_key_comes_free`, `a_panic_is_answered_and_its_key_comes_free_after_the_lease`, `a_request_the_stack_cuts_off_frees_its_key_after_the_lease` |
+| IDM-10 | A different request cannot take over an abandoned claim, as the lost run may have done its work. | `a_different_request_cannot_take_over_an_abandoned_claim` |
+| IDM-11 | A run reports in every third of its lease, so that it can run for as long as it needs without being taken for lost. | `a_run_that_reports_in_outlives_its_lease` |
+| IDM-12 | A run that lost its claim cannot overwrite the answer of the run that took over. | `a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer` |
+| IDM-13 | Mounted as stated, the plain body is stored, and each replay is compressed or not as its caller asked. | `inside_compression_the_plain_body_is_stored_and_each_caller_gets_what_it_asked_for` |
+| IDM-14 | An answer with a `content-encoding` is never stored, wherever the layer sits. The caller gets it, and a retry is a `409` with the `code` `idempotency_answer_not_kept`. | `outside_compression_a_compressed_answer_is_never_stored_or_replayed`, `an_answer_a_handler_compressed_is_sent_and_not_kept`, `what_cannot_be_replayed_is_not_kept` |
+| IDM-15 | An answer of unknown size is a stream, and one over `max_response_bytes`, 1 MiB by default, is too large. Either is passed on without being read, nothing of it is stored, and a retry is the `409` of IDM-14, because the write ran. | `a_stream_is_passed_on_and_not_kept`, `an_answer_over_the_limit_is_sent_and_not_kept`, `what_cannot_be_replayed_is_not_kept` |
+| IDM-16 | A keyed request over `max_request_bytes`, 1 MiB by default, is a `413` with the `code` `idempotency_body_too_large`, and runs nothing. The limit does not apply to a request with no key. | `a_body_over_the_limit_is_refused_before_it_runs` |
+| IDM-17 | A key must be one header value of 1 to 255 visible ASCII characters. Anything else is a `400` with the `code` `idempotency_key_invalid`, and runs nothing. A key is never trimmed or cut. | `a_key_that_is_not_one_clean_value_is_refused`, `a_key_is_one_value_of_visible_ascii_within_the_limit`, `a_key_is_never_cut_so_two_keys_cannot_become_one` |
+| IDM-18 | A store that cannot be reached is a `503` with the `code` `idempotency_unavailable` and no `detail`, and the request does not run. | `the_store_being_down_stops_the_request_before_it_runs` |
+| IDM-19 | A store that fails after the work still gives the caller its answer, and logs an error. The lease then frees the key, so a retry runs. | `the_store_failing_after_the_work_still_answers_the_caller` |
+| IDM-20 | A key lives for `ttl`, 24 hours by default, from when its run finished. Past that an answer is never replayed, swept or not, and any request may use the key. | `an_expired_answer_is_not_replayed_and_the_key_runs_afresh`, `an_expired_answer_is_never_replayed` |
+| IDM-21 | `sweep` deletes what has expired, and leaves a live key and a run still reporting in. | `a_sweep_deletes_what_has_expired_and_nothing_else` |
+| IDM-22 | `forget` frees one finished key of one caller, for a job that failed after its `202`, and leaves a run in progress alone. | `forget_lets_a_retry_run_once_a_job_has_failed`, `forget_leaves_a_run_in_progress_alone` |
+| IDM-23 | `forget_caller` deletes all that is held for one caller and nothing else. | `erasing_a_caller_deletes_what_is_held_for_them_and_for_nobody_else` |
+| IDM-24 | Of a request, a row holds the caller, the key, and a hash. Its path, query, and body are not stored. | `the_row_holds_no_request_and_a_copy_of_the_answer` |
+| IDM-25 | No log line or `Debug` text holds a key, a caller, or a body. | `a_log_line_holds_no_key_caller_or_body`, `the_debug_text_holds_only_settings` |
+| IDM-26 | Every refusal is a problem with its `code`, and with the standard stack it gets the standard headers. | `a_refusal_gets_the_standard_headers`, `a_duplicate_while_the_first_runs_is_told_to_wait` |
+| IDM-27 | `SETUP_STATEMENTS` alone make a working table, and each is safe to repeat. `setup` runs them under an advisory lock, so services booting together all succeed. `check` fails when the table is missing. | `the_setup_statements_alone_make_a_working_table`, `services_booting_together_all_set_up`, `check_finds_a_missing_table` |
+| IDM-28 | `only` narrows what is covered, and cannot widen it to a method that changes nothing. | `only_narrows_what_is_covered_and_cannot_widen_it` |
+| IDM-29 | A row that cannot be read as an answer is not guessed at. It is the `503` of IDM-18, and the request does not run. | `a_row_that_cannot_be_read_is_not_guessed_at` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:
@@ -479,6 +531,8 @@ AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-session --all-features -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
 ```
 
@@ -495,7 +549,7 @@ gitleaks detect --source . --redact --no-banner
 
 Subcrates publish before `axa`, because it depends on them by version.
 `axa-environment` has no dependencies, so it can go first. `axa-problem` goes before
-`axa-paseto` and `axa-versioning`, which depend on it.
+`axa-idempotency`, `axa-paseto`, `axa-ratelimit`, and `axa-versioning`, which depend on it.
 
 All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile

@@ -23,6 +23,20 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   which is a `412` problem with the `code` `precondition_failed`, and a missing `If-Match`
   a `428` with `precondition_required`.
 
+- **`axa-idempotency`, behind the `idempotency` feature:** `Idempotency-Key` handling
+  over Postgres, so a retried write gets its first answer back, marked
+  `Idempotent-Replayed: true`, instead of running twice. It is one layer, which a service
+  adds inside its guards and inside `axa::middleware::apply`. A closure names the caller,
+  and a key is per caller. The same key on a different request is a `422`, a duplicate
+  while the first runs is a `409`, and a store that cannot be reached is a `503` before
+  anything runs. A `4xx` or `5xx` frees the key. A run reports in while it works, so a
+  crash frees a key in about a minute and a long handler is never run twice, and a run
+  that lost its key cannot overwrite the next run's answer. Three services and the
+  bulk jobs of four more had written their own. No service uses this yet.
+  [Where the layer goes](help/idempotency-keys/index.md).
+- With the `idempotency` feature, `Error` converts from `sqlx::Error`, so `?` works on
+  `Idempotency::check` in a service on SeaORM.
+
 ### Changed
 
 - With origins listed, CORS exposes `etag`, so a page can read a tag to send back.

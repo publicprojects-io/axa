@@ -82,6 +82,9 @@ one and fail on the other.
 `AXA_TEST_REDIS_URL` turn them on, and a plain `cargo test` skips them silently. Start
 a throwaway container on a random loopback port, or rely on CI, and say which you did.
 
+**Idempotency tests share one table.** Each starts by truncating `axa_idempotency`,
+so these suites run with `--test-threads=1`, and in parallel they fail intermittently.
+
 **Queue tests share one table.** Every test that touches `axa_queue` must hold the
 `TABLE` lock in `src/queue.rs`, or tests that race on it fail intermittently. A test
 that drops a column must put it back.
