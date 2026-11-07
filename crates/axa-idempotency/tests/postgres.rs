@@ -538,15 +538,16 @@ async fn of_many_retries_of_an_abandoned_claim_exactly_one_takes_it() {
 async fn a_run_that_reports_in_outlives_its_lease() {
     let pool = pool().await;
     let runs = Runs::default();
-    let finish = Arc::new(Notify::new());
+    let (started, finish) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
     let routes = {
-        let (finish, runs) = (finish.clone(), runs.clone());
+        let (started, finish, runs) = (started.clone(), finish.clone(), runs.clone());
         Router::new().route(
             "/long",
             post(move || async move {
                 // Only the first run waits, so that a take-over fails below and does not hang.
                 let run = runs.add();
                 if run == 1 {
+                    started.notify_one();
                     finish.notified().await;
                 }
                 run.to_string()
@@ -560,6 +561,9 @@ async fn a_run_that_reports_in_outlives_its_lease() {
         let app = app.clone();
         async move { send(&app, write("/long", "ana", Some("k"), "x")).await }
     });
+    // The spawned request must hold the key before the test sends its own. If the
+    // test's request claimed it first, that request would be run 1 and wait forever.
+    started.notified().await;
     // Several leases go by while the first still runs.
     for _ in 0..4 {
         tokio::time::sleep(lease).await;
@@ -567,7 +571,7 @@ async fn a_run_that_reports_in_outlives_its_lease() {
         assert_eq!(waiting.status(), StatusCode::CONFLICT);
     }
     assert_eq!(runs.count(), 1, "a live run was taken over");
-    finish.notify_waiters();
+    finish.notify_one();
     assert_eq!(first.await.unwrap().status(), StatusCode::OK);
 }
 
