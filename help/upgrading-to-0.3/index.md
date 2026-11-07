@@ -205,6 +205,12 @@ No code must change. Check for these if a client or test reads them:
 - A constraint violation through the model layer answers `409`, not `500`.
 - An `axa::extract::Path` on a route that does not fit it answers `500`, not `400`.
 
+## Upgrading to 0.6.2
+
+No code must change. A write that breaks a check or not-null constraint now answers
+`422`, with code `unprocessable_entity`, not `500`. A client or test that expected a
+`500` there must expect `422`.
+
 ## Checking your work
 
 ```sh

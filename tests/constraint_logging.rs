@@ -43,6 +43,14 @@ async fn a_violated_constraint_logs_nothing_at_error() {
     sqlx::query(insert).execute(&mut *setup).await.unwrap();
     let error = sqlx::query(insert).execute(&mut *setup).await.unwrap_err();
     let _ = Error::from(error).into_response();
+    let mut setup = pool.begin().await.unwrap();
+    sqlx::query("CREATE TEMPORARY TABLE axa_checked (sex TEXT CHECK (sex IN ('female')))")
+        .execute(&mut *setup)
+        .await
+        .unwrap();
+    let insert = "INSERT INTO axa_checked VALUES ('banana')";
+    let error = sqlx::query(insert).execute(&mut *setup).await.unwrap_err();
+    let _ = Error::from(error).into_response();
     let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
     assert_eq!(logs, "");
 }

@@ -5,6 +5,22 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-07
+
+This covers `axa` 0.6.2. No subcrate changes. A write that breaks a check or not-null
+constraint answers `422`, not `500`; see
+[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.2 says what
+to check.
+
+### Fixed
+
+- **A violated check or not-null constraint answered `500` and logged an error.** The
+  write was the caller's mistake, as a unique or foreign key violation is. It now
+  answers `422` with code `unprocessable_entity`, and logs as a client's mistake. Its
+  detail names no column or value: "A value is outside what this field allows" or "A
+  required value is missing". This holds through sqlx, `Error::DB`, and
+  `ModelError::DbErr`.
+
 ## [0.6.1] - 2026-11-07
 
 This covers `axa` 0.6.1. No subcrate changes. A rejected JSON body's `code` changes at

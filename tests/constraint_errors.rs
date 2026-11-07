@@ -13,13 +13,16 @@ use axum::{
 const SCHEMA: [&str; 4] = [
     "DROP TABLE IF EXISTS axa_constraint_child",
     "DROP TABLE IF EXISTS axa_constraint_parent",
-    "CREATE TABLE axa_constraint_parent (id INT PRIMARY KEY, email TEXT UNIQUE)",
+    "CREATE TABLE axa_constraint_parent (id INT PRIMARY KEY, email TEXT UNIQUE, \
+     sex TEXT CHECK (sex IN ('female', 'male')), name TEXT NOT NULL DEFAULT 'carol')",
     "CREATE TABLE axa_constraint_child (id INT PRIMARY KEY, \
      parent INT NOT NULL REFERENCES axa_constraint_parent (id))",
 ];
 const INSERT_PARENT: &str = "INSERT INTO axa_constraint_parent VALUES (1, 'carol@example.org')";
 const DUPLICATE: &str = "INSERT INTO axa_constraint_parent VALUES (2, 'carol@example.org')";
 const NO_PARENT: &str = "INSERT INTO axa_constraint_child VALUES (1, 99)";
+const OUT_OF_RANGE: &str = "INSERT INTO axa_constraint_parent (id, sex) VALUES (3, 'banana')";
+const MISSING: &str = "INSERT INTO axa_constraint_parent (id, name) VALUES (4, NULL)";
 const NOT_A_CONSTRAINT: &str = "SELECT * FROM axa_constraint_no_such_table";
 
 fn url() -> String {
@@ -37,12 +40,14 @@ async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
     assert!(body.contains(reason), "{body}");
     assert!(!body.contains("carol"), "{body}");
     assert!(!body.contains("axa_constraint"), "{body}");
+    assert!(!body.contains("banana"), "{body}");
+    assert!(!body.contains("sex"), "{body}");
 }
 
 #[cfg(any(feature = "queue", feature = "sqlx"))]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DATABASE_URL"]
-async fn a_violated_constraint_through_sqlx_is_a_conflict() {
+async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
     let pool = sqlx::PgPool::connect(&url()).await.unwrap();
     for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
         sqlx::query(statement).execute(&pool).await.unwrap();
@@ -53,6 +58,16 @@ async fn a_violated_constraint_through_sqlx_is_a_conflict() {
     };
     assert_answers(fails(DUPLICATE).await, StatusCode::CONFLICT, "conflict").await;
     assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let out_of_range = fails(OUT_OF_RANGE).await;
+    assert_answers(
+        out_of_range,
+        unprocessable,
+        "outside what this field allows",
+    )
+    .await;
+    let missing = fails(MISSING).await;
+    assert_answers(missing, unprocessable, "A required value is missing").await;
     let other = fails(NOT_A_CONSTRAINT).await;
     assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 }
@@ -60,7 +75,7 @@ async fn a_violated_constraint_through_sqlx_is_a_conflict() {
 #[cfg(feature = "sea-orm")]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DATABASE_URL"]
-async fn a_violated_constraint_through_sea_orm_is_a_conflict() {
+async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
     use sea_orm::{ConnectionTrait, Database};
 
     let db = Database::connect(url()).await.unwrap();
@@ -73,6 +88,16 @@ async fn a_violated_constraint_through_sea_orm_is_a_conflict() {
     };
     assert_answers(fails(DUPLICATE).await, StatusCode::CONFLICT, "conflict").await;
     assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let out_of_range = fails(OUT_OF_RANGE).await;
+    assert_answers(
+        out_of_range,
+        unprocessable,
+        "outside what this field allows",
+    )
+    .await;
+    let missing = fails(MISSING).await;
+    assert_answers(missing, unprocessable, "A required value is missing").await;
     let other = fails(NOT_A_CONSTRAINT).await;
     assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 
@@ -80,4 +105,12 @@ async fn a_violated_constraint_through_sea_orm_is_a_conflict() {
     let error = db.execute_unprepared(DUPLICATE).await.unwrap_err();
     let wrapped = Error::Model(axa::model::ModelError::DbErr(error)).into_response();
     assert_answers(wrapped, StatusCode::CONFLICT, "conflict").await;
+    let error = db.execute_unprepared(OUT_OF_RANGE).await.unwrap_err();
+    let wrapped = Error::Model(axa::model::ModelError::DbErr(error)).into_response();
+    assert_answers(
+        wrapped,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "unprocessable_entity",
+    )
+    .await;
 }
