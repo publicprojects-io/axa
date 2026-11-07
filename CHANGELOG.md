@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- A test for LOG-4, the one requirement in the spec with no test at all: logs written
+  to a pipe carry no colour.
+- A test for CFG-16's last part: `logger::init` writes settings warnings to stderr,
+  even with logging off.
+
 ### Changed
 
 - `axa-cursor-pagination` uses `base64` 0.23. Cursors are encoded as before, so a

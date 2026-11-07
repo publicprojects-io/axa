@@ -99,7 +99,7 @@ fixed once and an auditor reads it once.
 | CFG-13 | A production-like environment refuses a number, flag, level, format, worker mode, or log filter that is set but invalid. | `production_refuses_an_unparsable_number`, `a_number_out_of_range_is_refused`, `production_refuses_a_flag_it_does_not_know`, `production_refuses_a_name_it_does_not_know`, `a_bad_log_filter_is_refused_and_never_reaches_the_logger` |
 | CFG-14 | The refusal names every invalid variable and its value, and never the value under a secret-shaped name. | `every_problem_is_named_at_once`, `an_invalid_value_under_a_secret_name_is_not_printed` |
 | CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DATABASE_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
-| CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production` (writing them to stderr was seen once by hand, and is **unverified** by a test) |
+| CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production`, `settings_warnings_go_to_stderr_whatever_the_logging` |
 | CFG-25 | The `Debug` text of `Database`, and so of `Config` and `AppContext`, hides any password in the connection string. | `debug_output_never_prints_a_password`, `a_pools_debug_text_holds_no_password` |
 | CFG-26 | The `Debug` text of `PoolConfig`, in `axa-sqlx` and `axa-seaorm`, leaves the connection string out. | `debug_text_leaves_out_the_connection_string` |
 | CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
@@ -269,7 +269,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | LOG-1 | `RUST_LOG` wins, then the override filter, then the default modules plus the service. | `default_filter_names_the_service_and_shared_modules`, `an_override_replaces_the_default_filter`, `rust_log_wins_over_the_override_and_the_level`, `a_blank_or_invalid_rust_log_is_passed_over` |
 | LOG-2 | Level and format names parse, with safe defaults. | `levels_parse_and_print`, `formats_parse` |
 | LOG-3 | The default filter names the service as its log target reads, with `_` for `-`. | `a_package_name_with_a_hyphen_still_shows_its_logs` |
-| LOG-4 | Colour goes to a terminal only. | **Unverified** by a test |
+| LOG-4 | Colour goes to a terminal only. | `logs_to_a_pipe_carry_no_colour`, `colour_once_turned_on_shows` |
 | LOG-5 | `logger::init_with` adds layers, which see what the filter lets through, and which keep running when logging is off. | `an_extra_layer_sees_what_the_filter_lets_through`, `extra_layers_keep_running_with_logging_off` |
 | LOG-6 | Extra directives widen the default filter only, and never `RUST_LOG` or an override. | `extra_directives_widen_the_default_filter_only`, `rust_log_wins_over_the_override_and_the_level` |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
