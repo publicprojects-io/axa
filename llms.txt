@@ -24,6 +24,7 @@
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)
 - [Upgrading to 0.3](help/upgrading-to-0.3/index.md)
 - [The transactional outbox](help/transactional-outbox/index.md)
+- [Background jobs and schedules](help/background-jobs/index.md)
 
 ## Modules
 
@@ -40,7 +41,7 @@
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`
 - [middleware](src/middleware.rs): The standard HTTP middleware stack
 - [prelude](src/prelude.rs): Common imports
-- [queue](src/queue.rs): The Postgres job queue (feature `queue`)
+- [queue](src/queue.rs): The Postgres job queue, over `axa-worker` (feature `queue`)
 - [routes](src/routes.rs): Route tables that become an ordinary `Router`
 - [server](src/server.rs): Serving, connection limits, and graceful shutdown
 - [store](src/store.rs): Shared in-process store
@@ -56,6 +57,7 @@
 - [axa-openapi](crates/axa-openapi/README.md) (feature `openapi`): Serve OpenAPI documents and a pinned Swagger UI from Axum services.
 - [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services.
 - [axa-outbox](crates/axa-outbox/README.md) (feature `outbox`): A transactional outbox and relay on Postgres for Axum services.
+- [axa-worker](crates/axa-worker/README.md) (feature `queue`): A Postgres job queue, worker pool, and recurring schedules for Axum services.
 - [axa-pagination](crates/axa-pagination/README.md) (feature `pagination`): Offset pagination, count headers, and LIKE escaping for Axum services.
 - [axa-paseto](crates/axa-paseto/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
 - [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.

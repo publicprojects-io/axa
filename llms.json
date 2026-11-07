@@ -17,6 +17,7 @@
       "help/from-loco-seaorm-into-axa-seaorm/index.md",
       "help/idempotency-keys/index.md",
       "help/transactional-outbox/index.md",
+      "help/background-jobs/index.md",
       "help/upgrading-to-0.3/index.md"
     ],
     "skills": {
@@ -230,6 +231,13 @@
       "description": "A transactional outbox and relay on Postgres for Axum services.",
       "feature": "outbox",
       "readme": "crates/axa-outbox/README.md"
+    },
+    {
+      "name": "axa-worker",
+      "version": "0.1.0",
+      "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
+      "feature": "queue",
+      "readme": "crates/axa-worker/README.md"
     },
     {
       "name": "axa-pagination",

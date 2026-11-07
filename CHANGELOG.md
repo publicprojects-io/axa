@@ -7,6 +7,21 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`axa-worker`, the queue's engine, now its own crate.** The `queue` feature uses it,
+  and `axa::queue` keeps its paths and signatures. New in it:
+  - A limit per job type in a process, `Queue::limit`, below `QueueOptions::workers`.
+  - Delayed jobs, `run_in` and `run_at`, on the database's clock, including in a
+    transaction with `queue::enqueue_job_on`, and `BackgroundWorker::perform_in`.
+  - Priorities, and batches queued whole or not at all with `Queue::enqueue_all`.
+  - A job's status by id with `Queue::job`, and `cancel`, `retry`, and `counts`.
+  - A time limit only when one is set: `NewJob::timeout` or `BackgroundWorker::timeout`.
+  - **A run that lost its claim is stopped**, and its job waits in `needs_review` for a
+    person, instead of finishing or being retried by itself.
+  - **Schedules**: `Queue::every` queues a job each interval, once per due time across
+    replicas, with no drift, one job for missed times, and no stacking. `first_at` sets
+    the first time. A schedule removed from code is archived, never deleted, and
+    restored if it returns. `Queue::schedules` lists them.
+
 - **Conditional requests, in `axa::conditional`.** The standard stack now answers `304` to
   a `GET` or `HEAD` holding the `ETag` of its answer, whoever set the tag, with weak
   comparison, lists, and `*` as RFC 9110 has them. A `304` keeps what the `200` would have
@@ -54,6 +69,18 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   building one by hand must set it.
 
 ### Changed
+
+- **The queue's tables change.** `axa_queue` gains `priority` and `timeout_ms`, and
+  there is a new `axa_schedule`. `Queue::connect` adds them. A service on
+  `Queue::connect_existing` must run the new `queue::SETUP_STATEMENTS`, which now has
+  eight statements, or it stops at boot.
+- **A run that finishes after its claim was taken now marks its job `needs_review`**,
+  where it only logged before.
+- Cancelled rows are deleted with finished ones after `retention_days`.
+- A job's error text kept on its row is cut to 1024 bytes.
+- `Queue::run` stops its jobs when it is dropped, so a hung job no longer outlives the
+  shutdown time limit in the background.
+- The queue's pool has `workers + 2` connections, one more than before, for schedules.
 
 - With origins listed, CORS exposes `etag`, so a page can read a tag to send back.
 

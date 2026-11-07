@@ -509,6 +509,7 @@ dependencies = [
  "axa-tera",
  "axa-tracing",
  "axa-versioning",
+ "axa-worker",
  "axum",
  "axum-test",
  "clap",
@@ -766,6 +767,17 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
+]
+
+[[package]]
+name = "axa-worker"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

@@ -53,7 +53,7 @@ axa = "0.6"
 
 | Feature | Adds |
 |---|---|
-| `queue` | The Postgres job queue |
+| `queue` | The Postgres job queue, worker pool, and schedules, from [`axa-worker`](crates/axa-worker). No service uses the pool limits, job status, or schedules yet |
 | `testing` | Request-level test helpers, built on `axum-test` |
 | `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
 | `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`. No service uses this yet |
@@ -520,6 +520,15 @@ so a crash cannot loop forever. Finished rows are deleted after `retention_days`
 `queue::enqueue_on` queues a job on the caller's sqlx transaction, so the job and
 the record it is about commit together. `Queue::enqueue` uses its own connection.
 
+A process runs `workers` jobs at once, 2 by default, and `Queue::limit` holds one job
+type below that. A job may be delayed, given a priority, or given a time limit, and has
+none unless it is given one. `Queue::job`, `cancel`, `retry`, and `counts` say and
+change where a job is. A run that lost its claim is stopped, and its job waits in
+`needs_review` for a person. `Queue::every` queues a job each interval, once per due
+time across replicas, with no drift, one job for times missed, and no stacking, and a
+schedule removed from code is archived, not deleted. See
+[Background jobs and schedules](help/background-jobs/index.md).
+
 **Nothing runs jobs by itself.** A service needs `start --all` or a separate
 `start --worker`, and `queue::warn_if_unserved` says so at boot. Queue arguments
 are stored in plain text, so never put a secret in them.
@@ -574,6 +583,7 @@ cargo test --features queue,testing
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-worker -- --ignored --test-threads=1
 ```
 
 The last command runs the queue tests against a real Postgres. Those tests have

@@ -30,7 +30,7 @@ fixed once and an auditor reads it once.
 - Configuration from the process environment
 - Logging setup and graceful shutdown
 - The shared command line, tasks, and background jobs
-- A Postgres job queue
+- A Postgres job queue, worker pool, and recurring schedules
 - `Idempotency-Key` handling
 - A transactional outbox and relay on Postgres
 - Request-level test helpers
@@ -233,10 +233,12 @@ a browser (TRA-3).
 | JOB-1 | `ForegroundBlocking` runs the job before returning and reports its failure. | `foreground_jobs_run_before_returning_and_report_failure` |
 | JOB-2 | `BackgroundQueue` with no queue is an error, never a silent drop. | `queued_jobs_fail_without_a_queue` |
 | JOB-3 | `BackgroundQueue` with a queue enqueues the job. | `perform_later_enqueues_in_queue_mode` |
+| JOB-4 | `perform_in` keeps its delay on the queued job, and a worker's `timeout` goes on its jobs. There is no default limit. | `perform_in_delays_a_queued_job_and_carries_its_workers_timeout` |
 
 ### 4.10 Queue
 
-A job gets one attempt by default, because a retry repeats its work. Raising
+The engine is `axa-worker` (section 4.18), and `axa::queue` puts `BackgroundWorker`
+over it. These rows are proved through `axa::queue`. A job gets one attempt by default, because a retry repeats its work. Raising
 `max_attempts` makes delivery at least once, so that job's work must be safe to
 repeat. These tests need `AXA_TEST_DATABASE_URL`.
 
@@ -255,7 +257,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | QUE-11 | A table created by 0.1.0 gains the `attempts` and `max_attempts` columns. | `the_attempts_column_is_added_to_an_older_table`, `the_max_attempts_column_is_added_to_an_older_table` |
 | QUE-12 | A job that panics counts as failed, and its loop carries on. | `a_job_that_panics_fails_and_its_loop_carries_on` |
 | QUE-13 | A running job reports in, so it can run past `stale_minutes` without being taken for lost. | `a_long_job_that_reports_in_is_not_taken_for_lost` |
-| QUE-14 | A run that was given up on cannot overwrite the job's later state. | `a_job_given_up_on_cannot_overwrite_its_replacement` |
+| QUE-14 | A run that was given up on cannot overwrite the job's later state. It is marked `needs_review` instead (WRK-12). | `a_job_given_up_on_cannot_overwrite_its_replacement` |
 | QUE-15 | A job queued on a transaction commits or rolls back with it. | `a_job_queued_in_a_transaction_rolls_back_with_it` |
 | QUE-16 | `Queue::connect_existing` changes no schema, and fails at connect when the table is missing or out of date. | `connecting_to_an_existing_table_changes_no_schema` |
 
@@ -549,6 +551,38 @@ These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/lib.r
 | OBX-20 | Options that cannot work are refused before connecting. | `options_that_cannot_work_are_refused`, `refused_options_stop_a_connect_before_it_reaches_the_network`, `the_default_options_are_valid` |
 | OBX-21 | The crate depends on no broker client. | `this_crate_depends_on_no_broker_client` |
 
+### 4.18 Worker pool, job status, and schedules
+
+`axa-worker` holds the queue's engine: its tables and SQL, the job loops, and what is
+below. It does not depend on `axa`, so its handlers are closures over JSON, its error is
+its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`.
+
+| Id | Requirement | Test |
+|---|---|---|
+| WRK-1 | A process runs at most `workers` jobs at once. | `a_process_runs_no_more_jobs_at_once_than_its_loops` |
+| WRK-2 | `limit` caps one job type in a process, at least one, and other types keep the remaining loops. A limit is per process, not across replicas. | `a_limit_holds_one_job_type_and_the_rest_keep_the_loops` |
+| WRK-3 | Any number of processes run each job once. | `two_processes_run_each_job_once` |
+| WRK-4 | Jobs in progress finish at shutdown. Dropping `run` at a time limit stops its jobs too, and leaves them for stale recovery. | `jobs_in_flight_finish_at_shutdown_and_dropping_the_run_stops_them` |
+| WRK-5 | A job delayed by `run_in` or `run_at` is not claimed before its time, on the database's clock. | `a_delayed_job_is_not_claimed_before_its_time` |
+| WRK-6 | A ready job with a higher priority is claimed first, and equal priorities oldest first. | `a_higher_priority_runs_first` |
+| WRK-7 | `job` gives a job's state, attempts, priority, time limit, times, and last error, never its arguments, and `None` for no such job. A kept error is at most 1024 bytes. | `a_job_status_follows_it_and_leaves_out_its_arguments`, `a_long_error_is_cut_on_a_character_boundary` |
+| WRK-8 | `cancel` stops only a job still queued, once, and a cancelled job never runs. Cancelling while loops claim either cancels a job or lets it run, never both. | `a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled`, `cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both` |
+| WRK-9 | `retry` queues a failed job, or one in review, for one more try, and a run given up on still cannot write over it. | `a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_it` |
+| WRK-10 | `enqueue_all` queues a batch whole or not at all, and `enqueue_all_on` rolls back with its transaction. | `a_batch_is_queued_whole_or_not_at_all` |
+| WRK-11 | A job has no time limit unless it is given one. Past its limit a run is stopped and fails with `timed out after` and the limit. | `a_job_has_no_time_limit_unless_it_is_given_one` |
+| WRK-12 | A run whose claim is taken, or that cannot report in for `stale_minutes`, is stopped, and its job is marked `needs_review` with the reason. So is one that finishes and finds its claim gone. Stale recovery, retention, and attempts never touch it, and only `retry` releases it. | `a_run_that_loses_its_claim_is_stopped_and_waits_for_review`, `a_run_that_finishes_after_losing_its_claim_waits_for_review` |
+| WRK-13 | `counts` says how many jobs are in each state, and how long the oldest ready one has waited. | `a_delayed_job_is_not_claimed_before_its_time`, `a_run_that_loses_its_claim_is_stopped_and_waits_for_review` |
+| WRK-14 | `connect_existing` fails on tables without the `priority` and `timeout_ms` columns or the `axa_schedule` table, and changes no schema. | `connecting_to_tables_without_the_new_columns_fails_and_changes_nothing` |
+| WRK-15 | Across any number of processes ticking at once, each due time of a schedule is queued once, as an ordinary job. | `replicas_ticking_together_queue_each_due_time_once`, `a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks` |
+| WRK-16 | Times missed while every process was down queue one job, and the schedule keeps its place on the grid of its first time. | `missed_times_queue_one_job_and_the_schedule_keeps_its_place` |
+| WRK-17 | A due time is skipped while the schedule's last job is queued or running, and is not skipped after it completed, failed, was cancelled, or went to review. | `a_due_time_is_skipped_while_the_last_job_has_not_finished` |
+| WRK-18 | Due times count from the first, not from when a job ran, so they do not drift. | `due_times_count_from_the_first_and_do_not_drift` |
+| WRK-19 | `first_at` applies only when the schedule's row is made. | `a_first_time_applies_only_when_the_row_is_made` |
+| WRK-20 | Shutdown stops the ticks. | `a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks` |
+| WRK-21 | A schedule no live process has seen for `stale_minutes` is archived, once, never deleted, and queues nothing. Its queued job still runs, `schedules` lists it, and a schedule of that name in code restores the same row, keeping its place. | `a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns` |
+| WRK-22 | A schedule with no name, a name over 200 characters, a name used twice, or an interval under a second panics at boot, and a delay on a schedule's job is ignored. | `a_schedule_under_a_second_is_refused_at_boot`, `a_schedule_with_no_name_is_refused_at_boot`, `a_schedule_added_twice_is_refused_at_boot`, `a_schedule_ignores_a_delay_on_its_job` |
+| WRK-23 | The `Debug` text of `NewJob` and `Schedule` leaves out a job's arguments. | `the_debug_text_leaves_out_arguments` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:
@@ -568,6 +602,7 @@ AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ig
 AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-outbox --all-features -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-worker -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
@@ -589,7 +624,8 @@ gitleaks detect --source . --redact --no-banner
 
 
 Subcrates publish before `axa`, because it depends on them by version.
-`axa-environment` has no dependencies, so it can go first. `axa-problem` goes before
+`axa-environment` has no dependencies, so it can go first. `axa-worker` goes before
+`axa`, which its `queue` feature needs. `axa-problem` goes before
 `axa-idempotency`, `axa-paseto`, `axa-ratelimit`, and `axa-versioning`, which depend on it.
 
 All must pass before a commit is pushed or a version is published. The feature

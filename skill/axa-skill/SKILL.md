@@ -1,6 +1,6 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, the outbox, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, the outbox, `axa-worker`, scheduled jobs, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
 ---
 
 # Using axa in your Axum service
@@ -241,6 +241,19 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
 - Queue arguments are stored in plain text, so never put a secret in them.
 - `Queue::connect` runs DDL at boot. Where a service's role may not, run
   `queue::SETUP_STATEMENTS` in a migration and call `Queue::connect_existing`.
+- `QueueOptions::workers` is how many jobs a process runs at once. `queue.limit::<_, W>(n)`
+  holds one job type below that, per process, not across replicas.
+- A job has **no time limit unless its worker sets `timeout`**. Delay with `perform_in`,
+  or build a job with `queue::job::<W, _>(&args)?` and `run_at`, `priority`, `timeout`.
+- Keep the id `perform_later` returns to call `queue.job`, `cancel`, or `retry`. Expose
+  them only behind the service's own authorisation, and never send a job's error text
+  to a client.
+- A job in **`needs_review`** lost its claim and was stopped, so it may have run in part
+  or twice. Nothing retries it: check what it did, then call `queue.retry`.
+- **Schedules** are `queue.every::<_, W>("name", interval, &args)?` in code, never config.
+  Each due time is queued once across replicas, missed times come to one job, and a time
+  is skipped while the last job runs. Schedule the `axa-idempotency` sweep this way. A
+  schedule removed from code is archived, and returns if put back.
 
 ## Idempotency keys
 

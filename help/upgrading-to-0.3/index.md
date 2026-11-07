@@ -209,6 +209,15 @@ No code must change. Check for these if a client or test reads them:
 
 Unreleased.
 
+- **Run the new `queue::SETUP_STATEMENTS` in a migration** if the service uses
+  `Queue::connect_existing`. They add `priority` and `timeout_ms` to `axa_queue` and make
+  `axa_schedule`, and `connect_existing` refuses to start without them. Code that names
+  the type `[&str; 4]` must say `[&str; 8]`.
+- Watch for jobs in `needs_review`. A run that loses its claim, or finishes after losing
+  it, is stopped there for a person, instead of being retried or only logged. Release
+  one with `Queue::retry`. See [Background jobs and schedules](../background-jobs/index.md).
+- A service with its own timer for a sweep can move it to `Queue::every`.
+
 - **`config::Server` has `send_stall_timeout_seconds`.** Set it where a service builds a
   `Server` by hand, or that code stops compiling. `Config::from_env` needs no change.
 - A client that stops reading a response is now dropped after

@@ -1,5 +1,7 @@
 //! Background jobs.
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 use uuid::Uuid;
@@ -46,9 +48,34 @@ where
     where
         Self: Sized + 'static,
     {
+        Self::perform_in(ctx, args, Duration::ZERO).await
+    }
+
+    /// Run or enqueue a job no sooner than `delay` from now, per [`WorkerMode`], and
+    /// return its id. On the queue the delay is kept on the job's row.
+    /// `BackgroundAsync` sleeps for it in this process, so a restart loses that job,
+    /// and `ForegroundBlocking` runs the job straight away, as tests want.
+    ///
+    /// # Errors
+    ///
+    /// Fails when queueing fails, no queue is configured, or a foreground
+    /// job fails.
+    async fn perform_in(ctx: &AppContext, args: A, delay: Duration) -> Result<String>
+    where
+        Self: Sized + 'static,
+    {
         match ctx.config.workers {
             WorkerMode::BackgroundQueue => {
-                enqueue::<A>(ctx, &Self::class_name(), Self::max_attempts(), &args).await
+                #[cfg(feature = "queue")]
+                {
+                    let job = crate::queue::job::<Self, A>(&args)?.run_in(delay);
+                    enqueue(ctx, &job).await
+                }
+                #[cfg(not(feature = "queue"))]
+                {
+                    let _ = (args, delay);
+                    no_queue()
+                }
             }
             WorkerMode::ForegroundBlocking => {
                 Self::build(ctx).perform(args).await?;
@@ -57,6 +84,9 @@ where
             WorkerMode::BackgroundAsync => {
                 let worker = Self::build(ctx);
                 tokio::spawn(async move {
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
                     if let Err(error) = worker.perform(args).await {
                         tracing::error!(%error, "background job failed");
                     }
@@ -77,36 +107,34 @@ where
         None
     }
 
+    /// How long a run of this worker's job may take before it is stopped and
+    /// counted as failed. `None`, the default, sets no limit: a job has one only
+    /// when its worker says so.
+    #[must_use]
+    fn timeout() -> Option<Duration>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
     /// The job's work.
     async fn perform(&self, args: A) -> Result<()>;
 }
 
 /// Add a job to the context's queue.
 #[cfg(feature = "queue")]
-async fn enqueue<A: Serialize + Sync>(
-    ctx: &AppContext,
-    name: &str,
-    max_attempts: Option<i32>,
-    args: &A,
-) -> Result<String> {
+async fn enqueue(ctx: &AppContext, job: &crate::queue::NewJob) -> Result<String> {
     let queue = ctx
         .queue_provider
         .as_ref()
         .ok_or_else(|| Error::Worker("no job queue configured".to_string()))?;
-    queue
-        .enqueue_limited(name, serde_json::to_value(args)?, max_attempts)
-        .await
+    queue.enqueue_job(job).await
 }
 
 /// Without the `queue` feature there is nowhere to put a job.
 #[cfg(not(feature = "queue"))]
-#[allow(clippy::unused_async)]
-async fn enqueue<A: Serialize + Sync>(
-    _ctx: &AppContext,
-    _name: &str,
-    _max_attempts: Option<i32>,
-    _args: &A,
-) -> Result<String> {
+fn no_queue() -> Result<String> {
     Err(Error::Worker("no job queue configured".to_string()))
 }
 

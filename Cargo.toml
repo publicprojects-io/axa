@@ -39,8 +39,8 @@ include = [
 default = []
 # A SeaORM-backed `AppContext`, plus `axa-seaorm`.
 sea-orm = ["dep:sea-orm", "dep:axa-seaorm", "axa-outbox?/sea-orm"]
-# The Postgres job queue (`FOR UPDATE SKIP LOCKED`).
-queue = ["dep:sqlx"]
+# The Postgres job queue, worker pool, and schedules, from `axa-worker`.
+queue = ["dep:sqlx", "dep:axa-worker"]
 # Test helpers built on `axum-test`, for request-level tests.
 testing = ["dep:axum-test"]
 # Each of these re-exports a subcrate under the same name.
@@ -85,6 +85,7 @@ axa-tera = { version = "0.2.1", path = "crates/axa-tera", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-versioning = { version = "0.2.0", path = "crates/axa-versioning", optional = true }
+axa-worker = { version = "0.1.0", path = "crates/axa-worker", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }
