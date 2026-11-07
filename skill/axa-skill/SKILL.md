@@ -29,7 +29,7 @@ Read these rather than guessing at an API:
 | Everything axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
-| Upgrading to 0.3 and 0.4 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
+| Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
 | Leaving Loco | [From Loco into axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
 | Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
 
@@ -156,6 +156,21 @@ let cli = axa::cli::parse(
 - Give a slow route its own limit where it is declared, with `Routes::timeout` or
   `Routes::add_with_timeout`, rather than raising `REQUEST_TIMEOUT_SECONDS` for all.
 - Raise the body limit on one route with `middleware::body_limit`, not on all.
+
+## Conditional requests
+
+- The standard stack answers `304` for you. Set an `ETag` on the answer and the handler
+  need not read `If-None-Match`: `Ok((tag, format::json(body)?).into_response())`.
+- A body with a timestamp in it, such as `as_of`, needs a tag that leaves it out:
+  `ETag::weak_of(&payload)?`, taken before the timestamp goes in.
+- `conditional::etag` tags a route's answers from the body. It is opt-in. Add it before
+  `apply`, outside anything that shapes the body such as paging, and outside what sets
+  `Cache-Control`, so it can see `no-store` and skip the hash.
+- A `304` comes after the handler has run, so it saves bytes and not the query.
+- `If-Match` compares strongly, so use `ETag::strong` or `ETag::strong_of`. A weak tag
+  never passes, and every write answers `412`. Call `conditional::if_match` after
+  authorising the caller and loading the record, and put the check and the write in one
+  transaction or a `WHERE version = $1`.
 
 ## Configuration
 

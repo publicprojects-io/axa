@@ -27,6 +27,7 @@
 
 - [boot](src/boot.rs): Test boot helpers, including `TestApp`
 - [cli](src/cli.rs): The shared command line
+- [conditional](src/conditional.rs): `ETag`, `304`, and `If-Match`, as RFC 9110 has them
 - [config](src/config.rs): Configuration from the process environment
 - [context](src/context.rs): `AppContext`, plain Axum state
 - [db](src/db.rs): Database helpers for the context

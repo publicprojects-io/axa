@@ -525,7 +525,7 @@ have not finished. Commit with explicit paths.
 | Content security policy | A strict policy in production. A service that serves pages must set `HTTP_CSP` |
 | HSTS | On in production |
 | `x-powered-by` | Gone |
-| Automatic `If-None-Match` comparison | Gone. A handler that sets its own `ETag` must also return its own `304` |
+| Automatic `If-None-Match` comparison | Kept, in the standard stack, and now weak, with lists and `*`, as RFC 9110 has it. A handler sets an `ETag` and need not return its own `304`. Neither Loco nor `axa` generates a tag unless a route adds `conditional::etag` |
 | Missing `DATABASE_URL` in production | Refuses to boot |
 | Release build with no `APP_ENV` or `LOCO_ENV` | Production, not development, so it refuses to boot with no `DATABASE_URL`, and binds `0.0.0.0`. A debug build is still development. Set `APP_ENV` where you run a release build locally |
 | A setting set but invalid | Refuses to boot in production and any unknown environment, naming the variable. Warned about elsewhere |

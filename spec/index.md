@@ -24,6 +24,7 @@ fixed once and an auditor reads it once.
 
 - Route tables that become an ordinary Axum `Router`
 - The standard HTTP middleware stack
+- Conditional requests
 - Health routes
 - The error type and its HTTP mapping
 - Configuration from the process environment
@@ -124,7 +125,7 @@ The variables are listed in `README.md`.
 ### 4.4 Middleware
 
 From the outside in: request id, tracing, security headers, CORS, timeout,
-compression, refusal shaping, body limit, panic catching.
+`304`s (CND-1), compression, refusal shaping, body limit, panic catching.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -161,7 +162,7 @@ compression, refusal shaping, body limit, panic catching.
 | ERR-8 | With the `sqlx`, `queue`, or `sea-orm` feature, a violated unique or foreign key constraint answers `409`, and logs as a client's mistake, with no text from the database. Any other database error is a generic `500`. | `a_sqlx_error_is_a_generic_500`, `a_violated_constraint_through_sqlx_is_a_conflict`, `a_violated_constraint_through_sea_orm_is_a_conflict`, `a_violated_constraint_logs_nothing_at_error` |
 | ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 | ERR-9 | Every error `axa` answers is an RFC 9457 problem with the media type `application/problem+json`: `type` is `about:blank`, `title` is the status's reason, `status` is the status, and `detail` is present only when there is something more to say. A success stays bare JSON. | `the_bodies_are_exactly_these`, `model_errors_answer_as_problems`, `a_panic_answers_like_any_other_internal_failure`, `json_serializes_with_a_json_content_type` |
-| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header` |
+| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, `precondition_failed`, `precondition_required`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_stale_write_is_a_412_problem_and_writes_nothing`, `if_match_is_optional_unless_required` |
 | ERR-11 | Field errors are the `errors` extension member. A model's validation failure is a `400` with the `code` `validation`. | `field_errors_are_an_extension_member`, `a_validation_failure_keeps_its_field_errors` |
 | ERR-12 | A rejected JSON body keeps the rejection's status, its `code` is that status's, and `detail` says what was wrong in fixed text. The parser's text, which can quote the body, is not returned. | `a_rejected_json_body_keeps_its_status_and_hides_its_text` |
 | ERR-13 | With the standard stack, an error with no `content-type`, or with `text/plain`, becomes a problem for its status with no `detail`. That covers an unmatched path, a wrong method, and an extractor's rejection. Its text is dropped, as a rejection's can quote the request, its headers stay, and any other media type is left alone. An unmatched path answers as `Error::NotFound` does. | `an_unmatched_path_answers_like_not_found`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_rejected_extractor_is_a_problem_that_quotes_nothing`, `a_handlers_plain_text_error_is_not_sent`, `a_bare_status_is_a_problem_and_keeps_its_headers`, `an_error_with_its_own_media_type_and_a_success_are_left_alone`, `only_a_missing_type_or_plain_text_is_bare`, `a_refusal_is_compressed_like_any_other_answer` |
@@ -424,6 +425,38 @@ and stays so that a service naming it still builds.
 `AppContext::db` is a SeaORM connection with the `sea-orm` feature, a `PgPool`
 with the `sqlx` feature, and `()` with neither. With both, it is the SeaORM
 connection. `db::connect` opens either from `config::Database`.
+
+### 4.15 Conditional requests
+
+`axa::conditional` follows RFC 9110. Comparing costs nothing, so it is in the standard
+stack, and it changes an answer only where a handler set an `ETag` and the caller sent
+`If-None-Match`. Hashing a body costs time and suits only some routes, so a route or
+router opts in. Most routes that want a tag have a timestamp in the body and need a tag
+of their own, and some services send `no-store` on every `/api` answer, which a hash
+cannot help. It is a module and not a subcrate because `apply` calls it.
+
+| Id | Requirement | Test |
+|---|---|---|
+| CND-1 | The standard stack answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer, whoever set that tag. The comparison is weak, reads a list over any number of header lines with commas inside tags allowed, and `*` alone matches any success, tagged or not. | `a_caller_holding_the_tag_gets_a_304_with_no_body`, `a_caller_with_an_old_tag_or_none_gets_the_whole_answer`, `lists_and_weak_tags_compare_weakly`, `two_header_lines_read_as_one_list`, `a_star_matches_an_answer_with_no_tag`, `a_head_is_compared_like_a_get`, `weak_comparison_ignores_who_is_weak`, `a_list_is_read_with_commas_inside_tags_and_empty_members`, `a_list_can_run_over_several_header_lines`, `a_star_stands_for_anything_but_only_alone`, `bytes_outside_ascii_are_compared_as_bytes` |
+| CND-2 | An `If-None-Match` that cannot be read holds nothing, so the caller gets the whole answer. | `what_is_not_a_tag_matches_nothing`, `lists_and_weak_tags_compare_weakly` |
+| CND-3 | A `304` has no body and no header describing one, `content-length` included, and keeps every other header the answer had, so `etag`, `cache-control`, `vary`, `expires`, `content-location`, `set-cookie`, and a count header survive. | `a_304_keeps_what_the_200_said_and_nothing_about_a_body`, `a_304_is_sent_with_no_body_on_a_real_connection` |
+| CND-4 | The comparison sits outside compression, so a `304` has the `vary` its `200` would have had, and inside everything else, so it gets the request id, security headers, and CORS headers. | `a_304_has_the_vary_compression_would_have_added`, `a_304_gets_everything_the_stack_adds` |
+| CND-5 | Only a `2xx` to a `GET` or `HEAD` is compared. A write has done its work by then and is never touched. | `only_a_success_is_compared`, `a_write_is_never_answered_with_a_304` |
+| CND-6 | A `304` is made from the answer the caller was about to get. Nothing is stored and nothing short-circuits, so a refused caller gets the refusal whatever they hold, wherever the auth layer sits, and a tag covers what this caller may see. | `a_caller_who_is_refused_gets_the_refusal_whatever_they_hold`, `a_tag_covers_what_this_caller_may_see` |
+| CND-7 | The comparison reads the tag on the outgoing answer, so a layer inside it that removes the tag, as paging does on a partial page, means no `304`. | `a_layer_that_takes_the_tag_away_means_no_304` |
+| CND-8 | `conditional::etag`, added to a router or a route, gives a `GET`'s `200` a weak tag from a hash of its body, the same on every replica. It covers what passes through it, so outside paging it covers the page. | `an_answer_gets_a_weak_tag_from_its_body_and_then_a_304`, `a_changed_body_has_a_new_tag`, `a_hash_covers_only_a_gets_200`, `one_route_can_opt_in_alone`, `a_hash_outside_paging_covers_the_page`, `a_digest_is_the_same_each_time_and_differs_by_content` |
+| CND-9 | `conditional::etag` leaves alone an answer with an `ETag`, with `no-store`, with an empty body, or already encoded. A handler's own tag still works on a `no-store` answer. A `HEAD` gets no generated tag, as RFC 9110 allows, because Axum has dropped the body. | `a_handlers_own_tag_is_left_alone`, `no_store_gets_no_generated_tag_and_a_handlers_tag_still_works`, `no_store_is_read_as_a_directive`, `an_empty_answer_gets_no_tag`, `an_already_encoded_answer_is_not_hashed`, `a_head_gets_no_generated_tag_and_keeps_its_length` |
+| CND-10 | `conditional::etag` hashes plain bytes, inside compression, so the tag is weak and the same for every encoding, and a tag held from one encoding matches on another. A handler's strong tag is left alone when compressed. | `the_tag_is_the_same_whichever_encoding_is_asked_for`, `a_handlers_strong_tag_is_left_alone_when_its_answer_is_compressed` |
+| CND-11 | `conditional::etag` reads only a body of exact known size, up to `MAX_BODY` (8 MB), which is nearly always in memory already. A stream and server-sent events pass through unread, and a larger body untagged. A body that fails while being read is the generic `500`. | `a_stream_is_never_buffered`, `server_sent_events_reach_the_caller_as_they_are_sent`, `a_body_at_the_limit_is_tagged_and_one_past_it_is_not`, `a_body_that_fails_is_a_generic_500` |
+| CND-12 | A timestamp or request id in a body changes the hash each time, so a caller never matches and gets the whole answer, which gains nothing and harms nothing. A handler can leave it out with its own tag. | `a_timestamp_in_the_body_never_matches_and_does_no_harm`, `a_handler_can_leave_a_timestamp_out_of_its_tag` |
+| CND-13 | `ETag` builds a weak or strong tag from text, refusing what a tag cannot hold, or from a value's JSON, where `ETag::weak_of` gives what `conditional::etag` gives the same JSON. | `a_tag_holds_only_what_a_tag_can_hold`, `weak_of_gives_the_tag_the_layer_gives_the_same_json` |
+| CND-14 | `conditional::if_match` passes a write with the current tag or `*`, or with no `If-Match`. It compares strongly, so a weak tag on either side fails. Anything else, including what cannot be read, is a `412` problem with the `code` `precondition_failed`. | `a_write_with_the_current_tag_goes_through`, `a_stale_write_is_a_412_problem_and_writes_nothing`, `a_weak_current_tag_never_passes_if_match`, `strong_comparison_refuses_any_weak_tag` |
+| CND-15 | `conditional::require_if_match` does the same, and a missing `If-Match` is a `428` problem with the `code` `precondition_required`. `conditional::if_match_holds` gives the answer alone, for a service with its own refusal. | `if_match_is_optional_unless_required`, `a_service_can_give_its_own_answer_to_a_stale_write` |
+| CND-16 | With origins listed, CORS exposes `etag`, so a page can read a tag to send back. | `a_page_on_a_listed_origin_can_read_the_tag` |
+
+`If-Modified-Since`, `If-Unmodified-Since`, `If-Range`, and `If-None-Match` on a write are
+not handled: no service sends them or sets `Last-Modified`, and on a write it would need
+checking before the work, in the handler.
 
 ## 5. Verification
 

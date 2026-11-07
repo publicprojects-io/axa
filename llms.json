@@ -106,6 +106,10 @@
       "purpose": "The shared command line"
     },
     {
+      "name": "conditional",
+      "purpose": "`ETag`, `304`, and `If-Match`, as RFC 9110 has them"
+    },
+    {
       "name": "config",
       "purpose": "Configuration from the process environment"
     },

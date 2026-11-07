@@ -1,8 +1,8 @@
 //! The standard middleware stack.
 //!
 //! From the outside in: request id, tracing, security headers, CORS, timeout,
-//! compression, refusal shaping, body limit, panic catching. A panic is caught last
-//! in, so that its answer gets everything any other answer gets.
+//! `304`s, compression, refusal shaping, body limit, panic catching. A panic is caught
+//! last in, so that its answer gets everything any other answer gets.
 
 use std::{
     any::Any,
@@ -103,7 +103,9 @@ pub fn cors(origins: &[String]) -> Result<Option<CorsLayer>> {
                 Method::PATCH,
                 Method::DELETE,
             ]))
-            .allow_headers(AllowHeaders::mirror_request()),
+            .allow_headers(AllowHeaders::mirror_request())
+            // A browser hides this from a page unless told, and a page needs it to send back.
+            .expose_headers([header::ETAG]),
     ))
 }
 
@@ -280,6 +282,9 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     if config.compression {
         router = router.layer(CompressionLayer::new());
     }
+    // Outside compression, so that a `304` has the `vary` the `200` would have had, and
+    // nothing is compressed only to be dropped.
+    router = router.layer(from_fn(crate::conditional::not_modified));
     if config.timeout_seconds > 0 || !config.timeout_overrides.is_empty() {
         router = router.layer(from_fn_with_state(Arc::new(config.clone()), timeout));
     }
