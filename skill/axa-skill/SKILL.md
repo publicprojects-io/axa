@@ -111,6 +111,11 @@ async fn run() -> Result<()> {
 It serves `/api/hello`, `/_ping`, `/_health`, and `/_readiness` on port 1241 under the
 standard middleware, and stops cleanly on `SIGTERM` or Ctrl-C.
 
+With layers of your own, such as an auth guard, call `into_router`, add them, and then
+call `middleware::apply`. Added after `into_app`, a layer sits outside the standard
+stack: its refusals have no request id, security headers, or CORS headers, and it has no
+panic or timeout protection.
+
 With the `sqlx` feature, pass a pool where this passes `()`. Then `/_readiness` asks it
 as `database`, so do not add it again as a named check:
 

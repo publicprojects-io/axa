@@ -325,6 +325,112 @@ mod tests {
             .unwrap()
     }
 
+    async fn refuse(_: Request, _: Next) -> Response {
+        StatusCode::UNAUTHORIZED.into_response()
+    }
+
+    #[tokio::test]
+    async fn a_refusal_from_a_layer_inside_the_stack_gets_the_standard_headers() {
+        let router = Router::new()
+            .route("/", get(|| async { "ok" }))
+            .layer(from_fn(refuse));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(response.headers().contains_key(&X_REQUEST_ID));
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refusal_from_a_layer_outside_the_stack_gets_none_of_them() {
+        let response = app()
+            .layer(from_fn(refuse))
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(!response.headers().contains_key(&X_REQUEST_ID));
+        assert!(
+            !response
+                .headers()
+                .contains_key(header::X_CONTENT_TYPE_OPTIONS)
+        );
+    }
+
+    /// What a layer that reads an error's body sees of it.
+    async fn read_body(request: Request, next: Next) -> Response {
+        let response = next.run(request).await;
+        let (parts, body) = response.into_parts();
+        let bytes = axum::body::to_bytes(body, usize::MAX).await.unwrap();
+        let readable = serde_json::from_slice::<serde_json::Value>(&bytes).is_ok();
+        let mut response = Response::from_parts(parts, Body::from(bytes));
+        response.extensions_mut().insert(readable);
+        response
+    }
+
+    async fn an_error() -> impl IntoResponse {
+        (
+            StatusCode::NOT_FOUND,
+            axum::Json(serde_json::json!({
+                "error": "not_found",
+                "description": "Resource was not found, and this body is long enough to compress",
+            })),
+        )
+    }
+
+    fn compressing() -> Http {
+        Http {
+            compression: true,
+            ..config()
+        }
+    }
+
+    fn accepting_gzip() -> http::Request<Body> {
+        http::Request::builder()
+            .uri("/")
+            .header(header::ACCEPT_ENCODING, "gzip")
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_layer_outside_the_stack_reads_a_compressed_body() {
+        let router = Router::new().route("/", get(an_error));
+        let response = apply(router, &compressing())
+            .unwrap()
+            .layer(from_fn(read_body))
+            .oneshot(accepting_gzip())
+            .await
+            .unwrap();
+        assert_eq!(response.headers()[header::CONTENT_ENCODING], "gzip");
+        assert_eq!(response.extensions().get::<bool>(), Some(&false));
+    }
+
+    #[tokio::test]
+    async fn a_layer_inside_the_stack_reads_a_plain_body() {
+        async fn saw_it_plain(request: Request, next: Next) -> Response {
+            let response = read_body(request, next).await;
+            let readable = response.extensions().get::<bool>().copied();
+            assert_eq!(readable, Some(true));
+            response
+        }
+        let router = Router::new()
+            .route("/", get(an_error))
+            .layer(from_fn(saw_it_plain));
+        let response = apply(router, &compressing())
+            .unwrap()
+            .oneshot(accepting_gzip())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
     #[test]
     fn request_id_keeps_safe_text_and_strips_the_rest() {
         let value = HeaderValue::from_static("abc-123_x@y;\tdrop");

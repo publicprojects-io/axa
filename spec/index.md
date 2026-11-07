@@ -145,6 +145,8 @@ CORS, timeout, compression, body limit.
 | MID-15 | `content-security-policy` is sent when a policy is set, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `no_policy_means_no_csp_header`, `a_handler_may_set_its_own_policy` |
 | MID-16 | A policy that is not a valid header value refuses to boot. | `a_policy_that_is_not_a_header_value_refuses_to_boot` |
 | MID-17 | The request's own `x-request-id` header carries the cleaned or minted id, so that an inner layer reads what the response will carry. | `the_request_header_carries_the_id_the_response_does`, `the_tracked_id_is_the_id_the_response_carries` |
+| MID-18 | A layer added before `apply` is inside the standard stack, so a refusal from it has a request id and the security headers. One added after `apply` is outside, and its refusal has neither. | `a_refusal_from_a_layer_inside_the_stack_gets_the_standard_headers`, `a_refusal_from_a_layer_outside_the_stack_gets_none_of_them` |
+| MID-19 | A layer outside the stack reads a response body compressed when compression is on, and one inside reads it plain. | `a_layer_outside_the_stack_reads_a_compressed_body`, `a_layer_inside_the_stack_reads_a_plain_body` |
 
 ### 4.5 Errors
 
@@ -440,8 +442,9 @@ by hand. Publish only from a commit where everything above has passed.
 
 - **RFC 9457 errors.** Errors will become `application/problem+json`, with
   bare JSON for successes. This changes the older services' `ApiResponse`
-  envelope and their front-ends, so it lands as its own change. `axa-problem`
-  is built, and no service uses it yet.
+  envelope and their front-ends, so it lands as its own change. `axa::Error` still
+  answers `{error, description, errors}`, so each service that uses `axa-problem`
+  converts that body in a layer of its own.
 
 ## 7. Open questions
 

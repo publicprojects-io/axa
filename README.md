@@ -56,20 +56,20 @@ axa = "0.5"
 | `queue` | The Postgres job queue |
 | `testing` | Request-level test helpers, built on `axum-test` |
 | `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
-| `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq` |
-| `tera` | [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors |
+| `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`. No service uses this yet |
+| `tera` | [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors. No service uses this yet |
 | `tracing` | [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code. No service uses this yet |
 | `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
 | `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
 | `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set. No service uses this yet |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
-| `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping |
+| `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping. No service uses this yet |
 | `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
-| `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. No service uses this yet |
-| `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition |
-| `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation |
+| `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details |
+| `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition. No service uses this yet |
+| `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation. No service uses this yet |
 
 `Environment` lives in [`axa-environment`](crates/axa-environment), which has no
 dependencies and is always included, so a migration crate can read the environment
@@ -190,7 +190,17 @@ let reports = Routes::new()
 ### Middleware
 
 `AppRoutes::into_app` applies this stack, or call `middleware::apply` on any
-router. From the outside in:
+router. A service with layers of its own, such as an auth guard, adds them first and
+applies the stack last, because a layer added afterwards sits outside it. Its responses
+get no request id, security headers, or CORS headers, it has no panic or timeout
+protection, and it reads response bodies compressed:
+
+```rust,ignore
+let router = routes.into_router(ctx.clone()).layer(from_fn(require_auth));
+let router = axa::middleware::apply(router, &ctx.config.http)?;
+```
+
+From the outside in:
 
 | Layer | Behaviour |
 |---|---|

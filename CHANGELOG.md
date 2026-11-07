@@ -5,6 +5,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Loco guide told services to call `into_app` and then add their own layers, which
+  puts them outside the standard stack, so an auth guard's refusal had no request id,
+  security headers, or CORS headers. It now says to add them first and call
+  `middleware::apply` last, and the README, the skill, and the upgrade guide say so too.
+- The README and spec said no service uses `axa-problem`, and several do.
+- The README now marks every subcrate no service uses, as the spec requires. Five were unmarked.
+
 ## [0.5.0] - 2026-11-06
 
 This covers `axa` 0.5.0, `axa-diesel` 0.2.0, `axa-keycloak` 0.2.0, `axa-opentelemetry`

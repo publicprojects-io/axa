@@ -161,8 +161,9 @@ impl App {
     }
 
     pub async fn router(ctx: &AppContext) -> Result<AxumRouter> {
-        let router = Self::routes(ctx).into_app(ctx.clone())?;
-        Self::after_routes(router, ctx).await
+        let router = Self::routes(ctx).into_router(ctx.clone());
+        let router = Self::after_routes(router, ctx).await?;
+        axa::middleware::apply(router, &ctx.config.http)
     }
 
     async fn db(ctx: &AppContext, command: DbCommand) -> Result<()> {
@@ -234,8 +235,13 @@ it an error.
 If you keep the Loco ports, set them in `Defaults`. Otherwise you get axa's
 default, 1241, and any proxy or healthcheck pointing at the old port breaks.
 
-Router order matches Loco: `into_app` applies the standard middleware, and
-`after_routes` then layers on top of it.
+Router order differs from Loco on purpose: `after_routes` adds your layers first, and
+`middleware::apply` wraps them. Do not keep Loco's order of `into_app` and then
+`after_routes`. A layer added after the standard middleware sits outside it, so an auth
+guard's `401` has no request id, security headers, or CORS headers, a preflight reaches
+the guard, and that layer gets no panic or timeout protection. A layer that reads a
+response body would also get it compressed. It compiles and passes any test that only
+checks the status, so test a refusal's headers.
 
 If you override `init_logger`, call it before falling back to
 `axa::logger::init`. Replace `init_env_filter::<Self>(a, b)` with

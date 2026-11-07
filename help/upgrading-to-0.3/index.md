@@ -110,6 +110,9 @@ Everything above applies, and `axa-paseto` is now 0.3. On top of it:
   and stop reading `X-Forwarded-For` itself. Until it sets them, the address is the
   proxy's.
 - `axa-redis` logs no longer name the key.
+- The Loco guide used to say to call `into_app` and then add your layers, which was
+  wrong. Check `App::router`: use `into_router`, add your layers, and call
+  `middleware::apply` last, or your guard's refusals miss the standard stack.
 - The server speaks HTTP/1 only, since 0.4.1. Put a proxy in front to offer HTTP/2.
 
 To add `axa-tracing` or `axa-opentelemetry`, call `logger::init_with` in place of
