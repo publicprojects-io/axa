@@ -249,7 +249,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | LOG-5 | `logger::init_with` adds layers, which see what the filter lets through, and which keep running when logging is off. | `an_extra_layer_sees_what_the_filter_lets_through`, `extra_layers_keep_running_with_logging_off` |
 | LOG-6 | Extra directives widen the default filter only, and never `RUST_LOG` or an override. | `extra_directives_widen_the_default_filter_only`, `rust_log_wins_over_the_override_and_the_level` |
 | SRV-1 | An address that cannot be bound is an error. | `serve_reports_an_address_it_cannot_bind` |
-| SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish` (the signal handling itself was seen on `case-folder`'s real binary) |
+| SRV-2 | Shutdown lets in-flight requests finish. | `shutdown_lets_a_request_in_flight_finish`, `sigterm_lets_a_request_in_flight_finish_and_exits_cleanly` |
 | SRV-3 | `server::run` runs a server, a job queue, or both, and logs which. With neither it is an error. | `nothing_to_run_is_an_error`, `a_server_alone_stops_when_told`, `a_worker_alone_stops_when_told` |
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 | SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
@@ -258,6 +258,8 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-8 | At most `server::MAX_CONNECTIONS` connections are open at once. More wait to be accepted, and are not refused. | `connections_past_the_limit_wait_their_turn` |
 | SRV-9 | A connection can still be upgraded, as a WebSocket is. | `a_connection_can_be_upgraded` |
 | SRV-10 | `MAX_CONNECTIONS` sets the limit, and `0` is invalid. | `the_connection_limit_is_a_setting_and_cannot_be_zero` |
+| SRV-11 | A real `SIGTERM` stops `server::run` cleanly: the process exits with success, and a request in flight and a job in progress finish first, whether the job runs in a worker or beside a server. | `sigterm_lets_a_request_in_flight_finish_and_exits_cleanly`, `sigterm_lets_a_job_in_progress_finish_in_a_worker`, `sigterm_lets_a_job_in_progress_finish_beside_a_server` |
+| SRV-12 | Ctrl-C (`SIGINT`) stops `server::run` as `SIGTERM` does: a request in flight finishes, and the process exits with success. | `ctrl_c_lets_a_request_in_flight_finish_and_exits_cleanly` |
 | CLT-1 | With no `TRUSTED_PROXIES`, and for any peer not listed, `X-Forwarded-For` is ignored. | `with_no_proxies_the_header_is_ignored`, `a_caller_that_is_no_proxy_cannot_name_an_address`, `with_no_trusted_proxy_a_forged_header_changes_nothing` |
 | CLT-2 | Behind trusted proxies, the client is the rightmost untrusted entry, so an entry the caller wrote is not believed. | `the_rightmost_untrusted_entry_is_the_client`, `an_entry_the_caller_wrote_is_not_believed`, `repeated_headers_read_as_one_list`, `with_only_proxies_the_leftmost_is_the_client`, `an_ipv4_address_inside_ipv6_is_the_same_address` |
 | CLT-3 | An unreadable entry ends the walk at the last good address, and at most 32 entries are read. | `an_unreadable_entry_ends_the_walk`, `a_long_header_stops_at_the_limit` |
