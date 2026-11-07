@@ -606,6 +606,7 @@ name = "axa-paseto"
 version = "0.4.0"
 dependencies = [
  "authentication-verifier",
+ "axa-problem",
  "axum",
  "base64 0.23.1",
  "ed25519-dalek 3.0.0",
@@ -717,6 +718,7 @@ dependencies = [
 name = "axa-versioning"
 version = "0.1.1"
 dependencies = [
+ "axa-problem",
  "axum",
  "serde_json",
  "tokio",

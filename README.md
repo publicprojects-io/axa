@@ -67,7 +67,7 @@ axa = "0.5"
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping. No service uses this yet |
 | `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
-| `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details |
+| `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`, so this feature adds nothing |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition. No service uses this yet |
 | `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation. No service uses this yet |
 
@@ -215,23 +215,30 @@ From the outside in:
 
 ### Errors
 
-Handlers return `Result<T>` using `axa::Error`, which maps to a status and a JSON
-body:
+Handlers return `Result<T>` using `axa::Error`, which maps to a status and an
+[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem, with the media type
+`application/problem+json`. Successes stay bare JSON.
 
-| Error | Status | Body |
-|---|---|---|
-| `Error::NotFound` | `404` | Fixed text |
-| `Error::Unauthorized(_)` | `401` | Fixed text; yours is only logged |
-| `Error::BadRequest(_)` | `400` | Your text |
-| `Error::CustomError(status, detail)` | Yours | Yours |
-| Anything else | `500` | Fixed text; the real error is only logged |
+| Error | Status | `code` | `detail` |
+|---|---|---|---|
+| `Error::NotFound` | `404` | `not_found` | Fixed text |
+| `Error::Unauthorized(_)` | `401` | `unauthorized` | Fixed text; yours is only logged |
+| `Error::BadRequest(_)` | `400` | `bad_request` | Your text |
+| `Error::CustomError(status, detail)` | Yours | Yours | Yours |
+| Anything else | `500` | `internal_server_error` | None; the real error is only logged |
 
 So a failed database call cannot put a hostname or a query in a client's
 response. The `not_found`, `unauthorized`, and `bad_request` functions build
 these for you.
 
-The body is `{"error": ..., "description": ...}` today, and is moving to RFC 9457
-`application/problem+json`.
+```json
+{"type":"about:blank","title":"Bad Request","status":400,"detail":"name is required","code":"bad_request"}
+```
+
+`code` is the machine-readable reason. Field errors go in an `errors` member, which
+`ErrorDetail::errors` sets. Axum writes some refusals itself, and those are not
+problems: an unmatched path's `404`, a wrong method's `405`, and the rejection of an
+extractor a handler takes directly.
 
 ### Configuration
 
@@ -304,7 +311,7 @@ assert_eq!(config.server.port, 8000);
 | Route | Meaning |
 |---|---|
 | `/_ping`, `/_health` | The process is up |
-| `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, with `{"ok":false,"failed":[...]}` |
+| `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, as a problem whose `failed` names them |
 
 The route knows the database and queue only when axa holds them, which includes
 the pool in `AppContext::db` with the `sqlx` feature. Anything else is a named

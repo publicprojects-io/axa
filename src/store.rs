@@ -19,7 +19,7 @@ use axum::{
     http::request::Parts,
 };
 
-use crate::{AppContext, Error, error::ErrorDetail};
+use crate::{AppContext, Error};
 
 /// Values keyed by type. Holds one value per type.
 #[derive(Default)]
@@ -92,12 +92,7 @@ where
             .shared_store
             .get::<T>()
             .map(Self)
-            .ok_or_else(|| {
-                Error::CustomError(
-                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorDetail::new("internal_server_error", "Internal Server Error"),
-                )
-            })
+            .ok_or(Error::InternalServerError)
     }
 }
 
@@ -114,5 +109,36 @@ mod tests {
         assert_eq!(store.get::<u32>(), Some(2));
         assert_eq!(store.get::<String>().as_deref(), Some("text"));
         assert!(!store.contains::<u8>());
+    }
+
+    // With a database in the context, a test cannot build one.
+    #[cfg(not(any(feature = "sea-orm", feature = "sqlx")))]
+    #[tokio::test]
+    async fn a_missing_shared_value_is_the_generic_500() {
+        use axum::{extract::FromRequestParts, http::Request, response::IntoResponse};
+
+        use crate::{
+            Environment,
+            config::{Config, Defaults},
+        };
+
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let ctx = AppContext::for_test(Environment::Test, config);
+        let (mut parts, ()) = Request::new(()).into_parts();
+        let Err(error) = SharedStore::<u8>::from_request_parts(&mut parts, &ctx).await else {
+            panic!("nothing was stored");
+        };
+        let response = error.into_response();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            bytes,
+            r#"{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}"#
+        );
     }
 }

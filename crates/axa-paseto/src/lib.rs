@@ -14,7 +14,8 @@
 //! | Valid token, policy denies | `403` |
 //! | Valid token, policy allows | Allowed |
 //!
-//! A refused caller is told nothing about why. The reason goes to the log.
+//! A refusal is an RFC 9457 problem, and a refused caller is told nothing about why.
+//! The reason goes to the log.
 //!
 //! Every path is protected unless it is listed as public, so a new route can
 //! never be exposed by forgetting to add it to a list.
@@ -47,6 +48,7 @@
 use std::{future::Future, net::IpAddr, sync::Arc};
 
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
+use axa_problem::Problem;
 use axum::{
     extract::{FromRequestParts, Request, State},
     http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION, request::Parts},
@@ -60,11 +62,27 @@ const INVALID_TOKEN: &str = "invalid token";
 /// What a caller the policy refuses is told. The reason goes to the log.
 const FORBIDDEN: &str = "forbidden";
 
-/// A refusal: the status and the text sent to the caller.
-pub type Rejection = (StatusCode, String);
+/// A refusal: the status and the text sent to the caller. It answers as an RFC 9457
+/// problem, with the text as `detail` and a `code` that says no more than the status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rejection(pub StatusCode, pub String);
+
+impl IntoResponse for Rejection {
+    fn into_response(self) -> Response {
+        let code = if self.0 == StatusCode::FORBIDDEN {
+            FORBIDDEN
+        } else {
+            "unauthorized"
+        };
+        Problem::new(self.0)
+            .with_detail(self.1)
+            .with_extension("code", code.into())
+            .into_response()
+    }
+}
 
 fn invalid_token() -> Rejection {
-    (StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
+    Rejection(StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
 }
 
 /// What a service declares about itself.
@@ -348,7 +366,7 @@ impl Guard {
         };
         if let Some(reason) = refusal {
             return Err(Refused {
-                rejection: (StatusCode::FORBIDDEN, FORBIDDEN.to_string()),
+                rejection: Rejection(StatusCode::FORBIDDEN, FORBIDDEN.to_string()),
                 subject: Some(claims.sub),
                 reason: Some(reason),
                 action,
@@ -782,15 +800,31 @@ mod tests {
             Some("Bearer garbage".to_string()),
             Some(format!("Bearer {forged}")),
         ] {
-            let refused = (StatusCode::UNAUTHORIZED, "invalid token".to_string());
+            let refused = (
+                StatusCode::UNAUTHORIZED,
+                r#"{"type":"about:blank","title":"Unauthorized","status":401,"detail":"invalid token","code":"unauthorized"}"#.to_string(),
+            );
             assert_eq!(answer("GET", header).await, refused);
         }
 
         let token = token(&json!({}));
-        let refused = (StatusCode::FORBIDDEN, "forbidden".to_string());
+        let refused = (
+            StatusCode::FORBIDDEN,
+            r#"{"type":"about:blank","title":"Forbidden","status":403,"detail":"forbidden","code":"forbidden"}"#.to_string(),
+        );
         assert_eq!(
             answer("POST", Some(format!("Bearer {token}"))).await,
             refused
+        );
+    }
+
+    #[test]
+    fn a_rejection_answers_with_the_problem_media_type() {
+        let response = invalid_token().into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers()[axum::http::header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
         );
     }
 

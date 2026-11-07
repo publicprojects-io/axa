@@ -18,9 +18,13 @@
 //! round of checks runs at a time. However often the route is called, a
 //! dependency is asked at most once per round. A check that outlasts its time
 //! limit, or panics, counts as failed.
+//!
+//! A passing answer is bare JSON. A failing one is an RFC 9457 problem, which still
+//! carries `ok` and `failed`.
 
 use std::{fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
 
+use axa_problem::Problem;
 use axum::{
     Json,
     extract::State,
@@ -259,12 +263,14 @@ fn built_in(ctx: &AppContext) -> Vec<Check> {
 
 async fn readiness(State(ctx): State<AppContext>) -> Response {
     let answer = ctx.health_checks.answer(built_in(&ctx)).await;
-    let status = if answer.ok {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    };
-    (status, Json(answer)).into_response()
+    if answer.ok {
+        return Json(answer).into_response();
+    }
+    Problem::new(StatusCode::SERVICE_UNAVAILABLE)
+        .with_extension("code", "not_ready".into())
+        .with_extension("failed", answer.failed.into())
+        .with_extension("ok", false.into())
+        .into_response()
 }
 
 /// The health routes.
@@ -309,6 +315,13 @@ mod tests {
             .await
             .unwrap();
         (status, String::from_utf8(body.to_vec()).unwrap())
+    }
+
+    /// The body of a failing answer, naming `failed`.
+    fn refused(failed: &str) -> String {
+        format!(
+            r#"{{"type":"about:blank","title":"Service Unavailable","status":503,"code":"not_ready","failed":{failed},"ok":false}}"#
+        )
     }
 
     fn with_checks(checks: Checks) -> axum::Router {
@@ -363,7 +376,23 @@ mod tests {
             .add("cache", fails);
         let (status, body) = answer(with_checks(checks)).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(body, r#"{"ok":false,"failed":["search","cache"]}"#);
+        assert_eq!(body, refused(r#"["search","cache"]"#));
+    }
+
+    #[tokio::test]
+    async fn only_a_failing_answer_is_a_problem() {
+        let call = |checks| async move {
+            let request = Request::builder()
+                .uri("/_readiness")
+                .body(Body::empty())
+                .unwrap();
+            let response = with_checks(checks).oneshot(request).await.unwrap();
+            response.headers()[axum::http::header::CONTENT_TYPE].clone()
+        };
+        let passing = Checks::new().add("a", passes);
+        assert_eq!(call(passing).await, "application/json");
+        let failing = Checks::new().add("a", fails);
+        assert_eq!(call(failing).await, axa_problem::PROBLEM_JSON);
     }
 
     #[tokio::test]
@@ -383,7 +412,7 @@ mod tests {
             });
         let (status, body) = answer(with_checks(checks)).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(body, r#"{"ok":false,"failed":["slow"]}"#);
+        assert_eq!(body, refused(r#"["slow"]"#));
     }
 
     #[tokio::test]
@@ -393,7 +422,7 @@ mod tests {
             .add("broken", || async { panic!("boom") as Result<(), String> });
         let (status, body) = answer(with_checks(checks)).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(body, r#"{"ok":false,"failed":["broken"]}"#);
+        assert_eq!(body, refused(r#"["broken"]"#));
     }
 
     #[tokio::test(start_paused = true)]
@@ -471,7 +500,7 @@ mod tests {
         let router = AppRoutes::with_default_routes().into_router(ctx);
         let (status, body) = answer(router).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(body, r#"{"ok":false,"failed":["queue"]}"#);
+        assert_eq!(body, refused(r#"["queue"]"#));
     }
 
     #[test]

@@ -1,16 +1,24 @@
 //! The Axum layer: a [`Guard`], its [`middleware`], and the [`AuthUser`] extractor.
 //!
 //! [`GuardConfig`], [`derive_action`], and [`bearer_token`] are copied from
-//! `axa-paseto` 0.2.0, so that this crate does not depend on it.
+//! `axa-paseto` 0.2.0, so that this crate does not depend on it. The shape of the
+//! body [`Rejection`] answers with is copied from `axa-problem` 0.1.0, for the same
+//! reason.
 
 use std::{net::IpAddr, sync::Arc};
 
 use axum::{
+    Json,
     extract::{FromRequestParts, Request, State},
-    http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION, request::Parts},
+    http::{
+        HeaderMap, HeaderValue, Method, StatusCode,
+        header::{AUTHORIZATION, CONTENT_TYPE},
+        request::Parts,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
 };
+use serde::Serialize;
 
 use crate::{
     Claims, VerifyError,
@@ -27,8 +35,46 @@ const INVALID_TOKEN: &str = "invalid token";
 /// What a caller the policy refuses is told. The reason goes to the log.
 const FORBIDDEN: &str = "forbidden";
 
-/// A refusal: the status and the reason sent to the caller.
-pub type Rejection = (StatusCode, String);
+/// The media type of a refusal.
+const PROBLEM_JSON: &str = "application/problem+json";
+
+/// A refusal: the status and the reason sent to the caller. It answers as an RFC 9457
+/// problem, with the reason as `detail` and a `code` that says no more than the status.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Rejection(pub StatusCode, pub String);
+
+/// The body of a refusal, as RFC 9457 defines it.
+#[derive(Serialize)]
+struct Problem<'a> {
+    #[serde(rename = "type")]
+    kind: &'a str,
+    title: &'a str,
+    status: u16,
+    detail: &'a str,
+    code: &'a str,
+}
+
+impl IntoResponse for Rejection {
+    fn into_response(self) -> Response {
+        let Self(status, detail) = self;
+        let problem = Problem {
+            kind: "about:blank",
+            title: status.canonical_reason().unwrap_or("Error"),
+            status: status.as_u16(),
+            detail: &detail,
+            code: if status == StatusCode::FORBIDDEN {
+                FORBIDDEN
+            } else {
+                "unauthorized"
+            },
+        };
+        let mut response = (status, Json(problem)).into_response();
+        response
+            .headers_mut()
+            .insert(CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));
+        response
+    }
+}
 
 /// What a service declares about itself.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,7 +181,7 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<&str, Rejection> {
     let header = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .ok_or((
+        .ok_or(Rejection(
             StatusCode::UNAUTHORIZED,
             "missing authorization header".to_string(),
         ))?;
@@ -143,7 +189,7 @@ pub fn bearer_token(headers: &HeaderMap) -> Result<&str, Rejection> {
         .strip_prefix("Bearer ")
         .or_else(|| header.strip_prefix("bearer "))
         .map(str::trim)
-        .ok_or((
+        .ok_or(Rejection(
             StatusCode::UNAUTHORIZED,
             "expected bearer token".to_string(),
         ))
@@ -372,11 +418,11 @@ impl Refused {
 }
 
 fn invalid_token() -> Rejection {
-    (StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
+    Rejection(StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
 }
 
 fn forbidden() -> Rejection {
-    (StatusCode::FORBIDDEN, FORBIDDEN.to_string())
+    Rejection(StatusCode::FORBIDDEN, FORBIDDEN.to_string())
 }
 
 /// Middleware applying a [`Guard`] to every request. It also makes the guard
@@ -417,10 +463,14 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
         }
         // Fail closed: without the middleware there is nothing to verify against,
         // so this must never let the request through.
-        let guard = parts.extensions.get::<Arc<Guard>>().cloned().ok_or((
-            StatusCode::UNAUTHORIZED,
-            "authentication is not configured".to_string(),
-        ))?;
+        let guard = parts
+            .extensions
+            .get::<Arc<Guard>>()
+            .cloned()
+            .ok_or(Rejection(
+                StatusCode::UNAUTHORIZED,
+                "authentication is not configured".to_string(),
+            ))?;
         guard.claims(&parts.headers).await.map(Self)
     }
 }
@@ -473,6 +523,13 @@ mod tests {
         assert!(config.is_public("/swagger-ui/index.html"));
         assert!(!config.is_public("/swagger-uiX"));
         assert!(!config.is_public("/api/swagger-ui"));
+    }
+
+    #[test]
+    fn a_rejection_answers_with_the_problem_media_type() {
+        let response = invalid_token().into_response();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
     }
 
     #[test]

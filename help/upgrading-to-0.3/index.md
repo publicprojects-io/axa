@@ -138,6 +138,49 @@ Export is off until `OTLP_ENDPOINT` is set, unlike the services' own `observabil
 which export to `localhost:4317` by default. Call `telemetry.shutdown()` at the end of
 shutdown.
 
+## Upgrading to 0.6
+
+**Every error `axa` answers is now an RFC 9457 problem**, with the media type
+`application/problem+json`. Successes stay bare JSON. A service's own `ApiResponse`
+envelope is its own, and this does not change it, but a response from `axa::Error` next
+to it does change.
+
+| Was | Is |
+|---|---|
+| `error` | `code`, an extension member |
+| `description` | `detail`, absent when there is nothing more to say |
+| `errors` | `errors`, an extension member |
+| | `type`, `title`, and `status`, always |
+
+```json
+{"type":"about:blank","title":"Bad Request","status":400,"detail":"name is required","code":"bad_request"}
+{"type":"about:blank","title":"Not Found","status":404,"detail":"Resource was not found","code":"not_found"}
+{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}
+{"type":"about:blank","title":"Bad Request","status":400,"code":"validation","errors":{"name":[{"code":"length","message":"is required"}]}}
+```
+
+- `ErrorDetail::new` and `with_reason` are unchanged. Code naming the fields changes:
+  `ErrorDetail { error, description, errors }` is now
+  `ErrorDetail { code, detail, errors }`, which the compiler will point out.
+- These compile and behave differently, so search for them. `Error::BadRequest` and a
+  rejected JSON body say `bad_request`, not `Bad Request`. A `500` has no `detail`, so
+  show `title`. A model's validation failure has a `code`, `validation`, where it had no
+  reason.
+- A client or test reading `error` or `description` must read `code` and `detail`. A
+  client that checks for `application/json` before parsing an error must accept
+  `application/problem+json` too.
+- `axa_paseto::Rejection` and `axa_keycloak::Rejection` are structs, and answer as
+  problems. Code destructuring `(status, text)` writes `Rejection(status, text)`. A `401`
+  or `403` from them was plain text, and a client reading that text must read `detail`.
+- `axa_versioning`'s `406` has `code` in place of `error`, and keeps `requested` and
+  `supported`.
+- A `408` had an empty body, and a failing `/_readiness` keeps `ok` and `failed`. An
+  orchestrator reading the status needs no change.
+- Axum still writes some refusals itself, and those are not problems: an unmatched path's
+  `404`, a wrong method's `405`, and the rejection of an extractor a handler takes
+  directly.
+- `axa::problem` no longer needs the `problem` feature, which adds nothing now.
+
 ## Checking your work
 
 ```sh

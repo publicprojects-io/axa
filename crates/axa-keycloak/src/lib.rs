@@ -17,7 +17,7 @@
 //! | Valid token, policy denies | `403`, with the reason |
 //! | Valid token, policy allows | Allowed |
 //!
-//! A `401` says only `invalid token`. The cause goes to the log at `debug`, because
+//! A refusal is an RFC 9457 problem. A `401`'s `detail` says only `invalid token`. The cause goes to the log at `debug`, because
 //! it can name the realm's issuer and its keys, and a caller has no use for either.
 //!
 //! # What a token must satisfy

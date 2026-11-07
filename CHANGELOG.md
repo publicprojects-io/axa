@@ -5,6 +5,32 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: errors are RFC 9457 problems.** Every error `axa` answers is
+  `application/problem+json`, with `type`, `title`, `status`, and where there is more to
+  say `detail`. Successes stay bare JSON. The body used to be `{error, description,
+  errors}`: `error` is now the `code` extension member, `description` is `detail`, and
+  `errors` is an extension member as before. See
+  [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what
+  a service changes.
+- **Breaking: `ErrorDetail`'s fields are `code` and `detail`**, in place of `error` and
+  `description`. `ErrorDetail::new` and `with_reason` take what they took.
+- **Breaking: some `code`s differ from the old `error`.** `Error::BadRequest` and a
+  rejected JSON body say `bad_request`, not `Bad Request`, a model's validation failure
+  says `validation`, where it said nothing, and a `500` has no `detail`.
+- **Breaking: `axa-paseto` and `axa-keycloak`'s `Rejection` is a struct**, not a
+  `(StatusCode, String)` alias, and answers as a problem rather than plain text.
+  `rejection.0` and `rejection.1` still work. `axa-keycloak` writes the body itself, so
+  that it still depends on no `axa` crate.
+- **Breaking: `axa-versioning`'s `406` is a problem**, with `code` in place of `error`,
+  and `requested` and `supported` as extension members.
+- A request past its time limit is a `408` problem, where it had an empty body.
+- A failing `/_readiness` is a `503` problem, which still carries `ok` and `failed`.
+- `axa` always depends on `axa-problem`, and `axa::problem` always exists. The `problem`
+  feature adds nothing, and stays so that a service naming it still builds. `axa-paseto`
+  and `axa-versioning` now depend on `axa-problem` too. No external dependency is added.
+
 ### Fixed
 
 - The Loco guide told services to call `into_app` and then add their own layers, which
@@ -13,6 +39,7 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `middleware::apply` last, and the README, the skill, and the upgrade guide say so too.
 - The README and spec said no service uses `axa-problem`, and several do.
 - The README now marks every subcrate no service uses, as the spec requires. Five were unmarked.
+- A panic's `500` gets the security and CORS headers. The panic was caught outside them.
 
 ## [0.5.0] - 2026-11-06
 

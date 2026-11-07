@@ -53,7 +53,7 @@
 - [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services.
 - [axa-pagination](crates/axa-pagination/README.md) (feature `pagination`): Offset pagination, count headers, and LIKE escaping for Axum services.
 - [axa-paseto](crates/axa-paseto/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
-- [axa-problem](crates/axa-problem/README.md) (feature `problem`): RFC 9457 problem details responses for Axum services.
+- [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.
 - [axa-prometheus](crates/axa-prometheus/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
 - [axa-redis](crates/axa-redis/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services.
 - [axa-seaorm](crates/axa-seaorm/README.md) (feature `sea-orm`): SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.

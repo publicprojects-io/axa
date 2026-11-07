@@ -73,7 +73,7 @@ fixed once and an auditor reads it once.
 | ENV-3 | Any name other than development and test is production-like. | `unknown_environment_is_production_like` |
 | ENV-4 | With no name, a debug build is development and a release build is production, so a release binary started with no variables fails closed. The build is read from `cfg!(debug_assertions)`. | `a_debug_build_with_no_name_is_development`, `a_release_build_with_no_name_is_production`, `parsing_a_blank_name_follows_the_build`. The whole binary is **unverified** in CI: this was seen once by hand |
 | ENV-5 | A name means the same in every build. | `a_name_means_the_same_in_every_build` |
-| ENV-6 | The lookup lives in `axa-environment`, which has no dependencies, and `axa` re-exports it, so a migration's guard cannot read the environment in a different order from its service. It is the one subcrate that is not optional. | `this_crate_has_no_dependencies`, `axa_reads_the_environment_through_the_lighter_crate` |
+| ENV-6 | The lookup lives in `axa-environment`, which has no dependencies, and `axa` re-exports it, so a migration's guard cannot read the environment in a different order from its service. It is not optional. | `this_crate_has_no_dependencies`, `axa_reads_the_environment_through_the_lighter_crate` |
 
 ### 4.2 Configuration
 
@@ -123,8 +123,8 @@ The variables are listed in `README.md`.
 
 ### 4.4 Middleware
 
-From the outside in: request id, tracing, panic catching, security headers,
-CORS, timeout, compression, body limit.
+From the outside in: request id, tracing, security headers, CORS, timeout,
+compression, body limit, panic catching.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -133,10 +133,10 @@ CORS, timeout, compression, body limit.
 | MID-3 | A UUID is minted when nothing usable remains. | `request_id_is_minted_when_nothing_usable_remains` |
 | MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `security_headers_do_not_replace_a_handlers_own` |
 | MID-5 | `strict-transport-security` is sent when `hsts` is set, for `hsts_max_age` seconds. | `responses_carry_request_id_and_security_headers`, `the_hsts_max_age_is_configurable` |
-| MID-6 | A panic in a handler becomes the `500` of any internal failure, logged as an error with no panic text. | `a_panic_becomes_a_500`, `a_panic_answers_like_any_other_internal_failure`, `log_lines_carry_the_request_id_and_not_the_query` |
+| MID-6 | A panic in a handler becomes the `500` of any internal failure, logged as an error with no panic text, and it gets the same security and CORS headers as any other answer. | `a_panic_becomes_a_500`, `a_panic_answers_like_any_other_internal_failure`, `a_panic_gets_the_same_headers_as_any_other_answer`, `log_lines_carry_the_request_id_and_not_the_query` |
 | MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
-| MID-9 | A request over `timeout_seconds` is a `408`, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_zero_timeout_means_none` |
+| MID-9 | A request over `timeout_seconds` is a `408` problem, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_route_limit_answers_as_a_problem`, `a_zero_timeout_means_none` |
 | MID-10 | Every log line written while serving a request carries its request id, method, and route template, and never the path itself or its query string. An unmatched request logs as `unmatched`. | `log_lines_carry_the_request_id_and_not_the_query` |
 | MID-11 | One route can have its own timeout. | `a_route_can_have_a_longer_timeout`, `an_override_can_turn_the_timeout_off`, `a_trailing_slash_still_matches_an_override` |
 | MID-12 | One route can accept a larger body than the service-wide limit. | `one_route_can_accept_a_larger_body` |
@@ -152,17 +152,32 @@ CORS, timeout, compression, body limit.
 
 | Id | Requirement | Test |
 |---|---|---|
-| ERR-1 | Internal failures become a generic `500` that contains none of the original text. | `internal_errors_do_not_leak_their_text` |
+| ERR-1 | Internal failures become a generic `500` that contains none of the original text. | `internal_errors_do_not_leak_their_text`, `a_missing_shared_value_is_the_generic_500` |
 | ERR-2 | Unauthorized text is logged and not returned. | `unauthorized_text_is_logged_but_not_returned` |
 | ERR-3 | Bad-request text is returned to the caller. | `bad_request_text_is_returned` |
-| ERR-4 | A custom error keeps its status and body. | `custom_errors_keep_their_status_and_body` |
+| ERR-4 | A custom error keeps its status, `code`, `detail`, and `errors`. | `custom_errors_keep_their_status_and_body`, `a_status_with_no_standard_reason_is_still_a_problem` |
 | ERR-5 | `not_found`, `unauthorized`, and `bad_request` build the matching variants. | `helpers_build_the_matching_variants`, `statuses_match_their_variants` |
 | ERR-6 | The `IntoResponse` match has no wildcard arm, so a new variant must choose its status. | Enforced by the compiler |
 | ERR-8 | With the `sqlx` or `queue` feature, a sqlx error converts to `Error::Sqlx`, a generic `500`. | `a_sqlx_error_is_a_generic_500` |
 | ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
+| ERR-9 | Every error `axa` answers is an RFC 9457 problem with the media type `application/problem+json`: `type` is `about:blank`, `title` is the status's reason, `status` is the status, and `detail` is present only when there is something more to say. A success stays bare JSON. | `the_bodies_are_exactly_these`, `model_errors_answer_as_problems`, `a_panic_answers_like_any_other_internal_failure`, `json_serializes_with_a_json_content_type` |
+| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, and `internal_server_error`. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408` |
+| ERR-11 | Field errors are the `errors` extension member. A model's validation failure is a `400` with the `code` `validation`. | `field_errors_are_an_extension_member`, `a_validation_failure_keeps_its_field_errors` |
+| ERR-12 | A rejected JSON body keeps the rejection's status, and the parser's text, which can quote the body, is not returned. | `a_rejected_json_body_keeps_its_status_and_hides_its_text` |
 
-The body is currently `{error, description, errors}`. See §6 for the move to
-RFC 9457.
+The body of a failed request, with a `detail` and with none:
+
+```json
+{"type":"about:blank","title":"Bad Request","status":400,"detail":"name is required","code":"bad_request"}
+{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}
+```
+
+Axum writes some refusals itself, and those are not problems: an unmatched path's
+`404`, a wrong method's `405`, and the rejection of an extractor a handler takes
+directly, such as a `413` from a body over the limit. A handler that takes
+`Result<Json<T>, JsonRejection>` and returns the rejection as an `Error` gets a
+problem. `axa-tera` answers a failed render in plain text, as its reader is a
+browser (TRA-3).
 
 ### 4.6 Responses
 
@@ -179,7 +194,7 @@ RFC 9457.
 |---|---|---|
 | HLT-1 | `/_ping`, `/_health`, and `/_readiness` answer `200` and `{"ok":true}` when healthy. | `every_health_route_answers_ok` |
 | HLT-2 | `/_readiness` answers `503` when the database or queue does not answer, naming it, while `/_ping` still passes. | `readiness_fails_when_the_database_does_not_answer`, `readiness_names_the_database`, `readiness_names_a_queue_that_does_not_answer` |
-| HLT-3 | A service can register named async checks in `AppContext::health_checks`. All passing gives `{"ok":true}`. Any failing gives `503` and `{"ok":false,"failed":[...]}`, in the order added. | `readiness_with_every_check_passing_is_just_ok`, `readiness_names_what_failed_in_the_order_added` |
+| HLT-3 | A service can register named async checks in `AppContext::health_checks`. All passing gives `{"ok":true}`. Any failing gives a `503` problem with the `code` `not_ready`, `ok` of `false`, and `failed` naming the checks in the order added. | `readiness_with_every_check_passing_is_just_ok`, `readiness_names_what_failed_in_the_order_added`, `only_a_failing_answer_is_a_problem` |
 | HLT-4 | A check's error text is logged and never sent. | `readiness_never_sends_a_checks_error_text` |
 | HLT-5 | A check past its time limit, or one that panics, has failed. | `a_check_past_its_time_limit_fails`, `a_check_that_panics_fails` |
 | HLT-6 | One answer, passing or failing, is reused for a few seconds, and only one round runs at a time, so a public route cannot drive load at a dependency. A caller that hangs up does not cancel the round. | `one_answer_is_reused_until_it_goes_stale`, `a_failed_answer_is_reused_too`, `callers_during_a_round_share_it`, `a_caller_that_hangs_up_does_not_waste_the_round` |
@@ -282,7 +297,10 @@ move.
 
 Each subcrate is optional, is enabled by a feature of `axa`, and is re-exported
 under that feature's name. Each can also be used alone. Their requirements are
-stated here and proved by their own tests.
+stated here and proved by their own tests. There are two exceptions.
+`axa-environment` (ENV-6) and `axa-problem` are always included, and `axa::problem`
+always exists, as `axa::Error` answers with it. The `problem` feature adds nothing,
+and stays so that a service naming it still builds.
 
 | Id | Crate | Requirement | Test |
 |---|---|---|---|
@@ -306,7 +324,7 @@ stated here and proved by their own tests.
 | PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
 | PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
 | PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
-| PST-9 | `axa-paseto` | A refused caller learns nothing about why. A `401` always says `invalid token` and a `403` always says `forbidden`, and the reason goes to the log. | `a_refusal_tells_the_caller_nothing_about_why` |
+| PST-9 | `axa-paseto` | A refused caller learns nothing about why. A refusal is a problem. A `401`'s `detail` is always `invalid token` and a `403`'s is always `forbidden`, its `code` says no more than its status, and the reason goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_rejection_answers_with_the_problem_media_type` |
 | PST-10 | `axa-paseto` | `parse_bool` does not read an unknown word as off. | `on_off_settings_parse` |
 | PST-11 | `axa-paseto` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
 | DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
@@ -322,7 +340,7 @@ stated here and proved by their own tests.
 | KCK-1 | `axa-keycloak` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |
 | KCK-2 | `axa-keycloak` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
 | KCK-3 | `axa-keycloak` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
-| KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. A `403` does not name the rule, which goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_forbidden_caller_is_not_told_which_rule_refused_them` |
+| KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. A refusal is a problem, written here because of KCK-9. A `403` does not name the rule, which goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_forbidden_caller_is_not_told_which_rule_refused_them`, `a_rejection_answers_with_the_problem_media_type` |
 | KCK-5 | `axa-keycloak` | An unreachable realm refuses every token, and a request waits about five seconds at most for the realm's keys. | `an_unreachable_realm_refuses_every_token` |
 | KCK-6 | `axa-keycloak` | A PASETO is accepted only through a verifier the service supplies, and then under the same policy. | `a_paseto_is_refused_unless_the_guard_accepts_them`, `with_paseto_both_kinds_of_token_work_under_one_policy` |
 | KCK-7 | `axa-keycloak` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
@@ -364,7 +382,7 @@ stated here and proved by their own tests.
 | PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
 | VER-1 | `axa-versioning` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
-| VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406`. | `an_unsupported_version_is_a_406` |
+| VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406` problem, with the `code` `unsupported_api_version` and the `requested` and `supported` extension members. | `an_unsupported_version_is_a_406` |
 | VER-4 | `axa-versioning` | A service can state its own versions, and a current version it does not support is a mistake found at boot. | `a_service_can_serve_its_own_versions`, `a_current_version_that_is_not_supported_is_a_mistake` |
 | VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
 | OTL-1 | `axa-opentelemetry` | Export is off until an endpoint is set, and off leaves requests working with no header. | `export_is_off_until_an_endpoint_is_set`, `off_means_no_layers_no_header_and_the_request_still_works` |
@@ -428,7 +446,8 @@ gitleaks detect --source . --redact --no-banner
 
 
 Subcrates publish before `axa`, because it depends on them by version.
-`axa-environment` has no dependencies, so it can go first.
+`axa-environment` has no dependencies, so it can go first. `axa-problem` goes before
+`axa-paseto` and `axa-versioning`, which depend on it.
 
 All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile
@@ -442,11 +461,7 @@ by hand. Publish only from a commit where everything above has passed.
 
 ## 6. Decided, not yet built
 
-- **RFC 9457 errors.** Errors will become `application/problem+json`, with
-  bare JSON for successes. This changes the older services' `ApiResponse`
-  envelope and their front-ends, so it lands as its own change. `axa::Error` still
-  answers `{error, description, errors}`, so each service that uses `axa-problem`
-  converts that body in a layer of its own.
+None.
 
 ## 7. Open questions
 

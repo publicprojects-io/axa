@@ -2,7 +2,7 @@
 
 RFC 9457 problem details for Axum services, from the [axa](https://github.com/publicprojects-io/axa) family.
 
-Enable it through the `problem` feature of `axa`, or depend on this crate alone. See the crate documentation for usage.
+`axa` always includes it, as `axa::problem`, and every `axa::Error` answers with it. You can also depend on this crate alone. See the crate documentation for usage.
 
 ## License
 

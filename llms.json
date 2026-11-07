@@ -220,7 +220,7 @@
       "name": "axa-problem",
       "version": "0.1.0",
       "description": "RFC 9457 problem details responses for Axum services.",
-      "feature": "problem",
+      "feature": null,
       "readme": "crates/axa-problem/README.md"
     },
     {

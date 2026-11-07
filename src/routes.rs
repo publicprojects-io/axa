@@ -497,6 +497,22 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn a_route_limit_answers_as_a_problem() {
+        let app = slow_table(Duration::from_secs(75))
+            .into_app(context_with(60))
+            .unwrap();
+        let request = Request::builder()
+            .uri("/export")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.headers()[axum::http::header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn a_group_limit_applies_and_a_routes_own_limit_beats_it() {
         let app = slow_table(Duration::from_mins(2))
             .into_app(context_with(60))

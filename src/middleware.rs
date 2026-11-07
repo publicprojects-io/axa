@@ -1,7 +1,8 @@
 //! The standard middleware stack.
 //!
-//! From the outside in: request id, tracing, panic catching, security
-//! headers, CORS, timeout, compression, body limit.
+//! From the outside in: request id, tracing, security headers, CORS, timeout,
+//! compression, body limit, panic catching. A panic is caught last in, so that
+//! its answer gets everything any other answer gets.
 
 use std::{
     any::Any,
@@ -15,9 +16,9 @@ use std::{
 use axum::{
     Router,
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{HeaderName, HeaderValue, Method, StatusCode, header},
+    http::{HeaderName, HeaderValue, Method, header},
     middleware::{Next, from_fn, from_fn_with_state},
-    response::{IntoResponse, Response},
+    response::Response,
     routing::MethodRouter,
 };
 use tower_http::{
@@ -194,7 +195,7 @@ async fn timeout(State(config): State<Arc<Http>>, mut request: Request, next: Ne
     if taken_over.0.load(Ordering::SeqCst) {
         run.await
     } else {
-        StatusCode::REQUEST_TIMEOUT.into_response()
+        crate::error::timeout_response()
     }
 }
 
@@ -208,7 +209,7 @@ async fn route_timeout(limit: Duration, request: Request, next: Next) -> Respons
     }
     tokio::time::timeout(limit, next.run(request))
         .await
-        .unwrap_or_else(|_| StatusCode::REQUEST_TIMEOUT.into_response())
+        .unwrap_or_else(|_| crate::error::timeout_response())
 }
 
 /// `method` with its own time limit, in place of the stack's. Zero means no
@@ -239,7 +240,10 @@ fn default_header(name: HeaderName, value: HeaderValue) -> SetResponseHeaderLaye
 ///
 /// Fails when a CORS origin is invalid.
 pub fn apply(router: Router, config: &Http) -> Result<Router> {
-    let mut router = router.layer(DefaultBodyLimit::max(config.body_limit));
+    // Innermost, so that a panic's answer passes through everything below.
+    let mut router = router
+        .layer(CatchPanicLayer::custom(panicked))
+        .layer(DefaultBodyLimit::max(config.body_limit));
     if config.compression {
         router = router.layer(CompressionLayer::new());
     }
@@ -270,7 +274,6 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         ))
         .layer(set_default_header(header::X_FRAME_OPTIONS, "DENY"))
         .layer(set_default_header(header::REFERRER_POLICY, "no-referrer"))
-        .layer(CatchPanicLayer::custom(panicked))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request| request_span(request))
@@ -286,7 +289,7 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http, routing::get};
+    use axum::{body::Body, http, http::StatusCode, routing::get};
     use tower::ServiceExt;
 
     fn config() -> Http {
@@ -601,6 +604,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            bytes,
+            r#"{"type":"about:blank","title":"Request Timeout","status":408,"code":"request_timeout"}"#
+        );
     }
 
     #[test]
@@ -692,15 +706,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_panic_gets_the_same_headers_as_any_other_answer() {
+        let origin = "https://app.example.com";
+        let mut http = config();
+        http.cors_origins = vec![origin.to_string()];
+        let router = Router::new().route("/panic", get(panics));
+        let app = apply(router, &http).unwrap();
+        let request = http::Request::get("/panic")
+            .header(header::ORIGIN, origin)
+            .body(Body::empty())
+            .unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let headers = response.headers();
+        assert_eq!(headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+        assert_eq!(headers[header::X_FRAME_OPTIONS], "DENY");
+        assert_eq!(headers[header::REFERRER_POLICY], "no-referrer");
+        assert!(headers.contains_key(header::STRICT_TRANSPORT_SECURITY));
+        assert_eq!(
+            headers[header::CONTENT_SECURITY_POLICY],
+            "default-src 'none'"
+        );
+        assert_eq!(headers[header::ACCESS_CONTROL_ALLOW_ORIGIN], origin);
+    }
+
+    #[tokio::test]
     async fn a_panic_answers_like_any_other_internal_failure() {
         let response = app().oneshot(get_request("/panic")).await.unwrap();
-        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
+        );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();
         let body = String::from_utf8(bytes.to_vec()).unwrap();
-        assert!(body.contains("internal_server_error"), "{body}");
-        assert!(!body.contains("boom"), "{body}");
+        assert_eq!(
+            body,
+            r#"{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}"#
+        );
     }
 
     #[tokio::test]

@@ -254,7 +254,10 @@ async fn a_refusal_tells_the_caller_nothing_about_why() {
     for token in [wrong_issuer.as_str(), "garbage", "v4.public.garbage"] {
         let (code, body) = send(&app, "GET", "/api/places", Some(token)).await;
         assert_eq!(code, StatusCode::UNAUTHORIZED);
-        assert_eq!(body, "invalid token");
+        assert_eq!(
+            body,
+            r#"{"type":"about:blank","title":"Unauthorized","status":401,"detail":"invalid token","code":"unauthorized"}"#
+        );
     }
 }
 
@@ -265,7 +268,10 @@ async fn a_forbidden_caller_is_not_told_which_rule_refused_them() {
     let token = with_roles(&idp, &["editor"]);
     let (code, body) = send(&app, "DELETE", "/api/places/1", Some(&token)).await;
     assert_eq!(code, StatusCode::FORBIDDEN);
-    assert_eq!(body, "forbidden");
+    assert_eq!(
+        body,
+        r#"{"type":"about:blank","title":"Forbidden","status":403,"detail":"forbidden","code":"forbidden"}"#
+    );
 }
 
 #[tokio::test]

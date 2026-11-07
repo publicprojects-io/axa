@@ -1,5 +1,10 @@
 //! The error type handlers return, and its HTTP mapping.
 //!
+//! Every error answers as an [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem,
+//! with the media type `application/problem+json`. The machine-readable reason is the
+//! `code` extension member, and field errors are the `errors` one. Successes stay bare
+//! JSON.
+//!
 //! Internal failures always become a generic `500`: a database or transport
 //! error is logged, never sent to the client.
 //!
@@ -15,8 +20,8 @@
 //! assert_eq!(response.status(), StatusCode::NOT_FOUND);
 //! ```
 
+use axa_problem::Problem;
 use axum::{
-    Json,
     extract::rejection::JsonRejection,
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -26,39 +31,40 @@ use serde::Serialize;
 /// Result alias using [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// JSON body of an error response.
+/// What an error says beyond its status, sent as members of the problem.
 #[derive(Debug, Clone, Serialize)]
 pub struct ErrorDetail {
-    /// Short machine-readable reason.
+    /// Short machine-readable reason, sent as the `code` extension member.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// Human-readable description.
+    pub code: Option<String>,
+    /// Human-readable explanation of this occurrence, sent as `detail`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    /// Structured detail, such as per-field validation errors.
+    pub detail: Option<String>,
+    /// Structured detail, such as per-field validation errors, sent as the
+    /// `errors` extension member.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<serde_json::Value>,
 }
 
 impl ErrorDetail {
-    /// Build a detail from a reason and a description. An empty description
+    /// Build a detail from a reason and an explanation. An empty explanation
     /// is omitted from the body.
     #[must_use]
-    pub fn new<A: Into<String>, B: Into<String> + AsRef<str>>(error: A, description: B) -> Self {
-        let description = (!description.as_ref().is_empty()).then(|| description.into());
+    pub fn new<A: Into<String>, B: Into<String> + AsRef<str>>(code: A, detail: B) -> Self {
+        let detail = (!detail.as_ref().is_empty()).then(|| detail.into());
         Self {
-            error: Some(error.into()),
-            description,
+            code: Some(code.into()),
+            detail,
             errors: None,
         }
     }
 
     /// Build a detail carrying only a reason.
     #[must_use]
-    pub fn with_reason<A: Into<String>>(error: A) -> Self {
+    pub fn with_reason<A: Into<String>>(code: A) -> Self {
         Self {
-            error: Some(error.into()),
-            description: None,
+            code: Some(code.into()),
+            detail: None,
             errors: None,
         }
     }
@@ -149,17 +155,40 @@ impl From<&str> for Error {
     }
 }
 
+/// `detail` as members of a problem for `status`.
+fn problem(status: StatusCode, detail: ErrorDetail) -> Problem {
+    let mut problem = Problem::new(status);
+    problem.detail = detail.detail;
+    if let Some(code) = detail.code {
+        problem = problem.with_extension("code", code.into());
+    }
+    if let Some(errors) = detail.errors {
+        problem = problem.with_extension("errors", errors);
+    }
+    problem
+}
+
 /// The response to a handler that panicked: the same as any internal failure.
 pub(crate) fn internal_response() -> Response {
     let (status, detail) = internal();
-    (status, Json(detail)).into_response()
+    problem(status, detail).into_response()
 }
 
-/// The body every internal failure shares.
+/// The response to a request that ran past its time limit.
+pub(crate) fn timeout_response() -> Response {
+    problem(
+        StatusCode::REQUEST_TIMEOUT,
+        ErrorDetail::with_reason("request_timeout"),
+    )
+    .into_response()
+}
+
+/// The body every internal failure shares. It carries no `detail`, as the title
+/// says all a client may be told.
 fn internal() -> (StatusCode, ErrorDetail) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
-        ErrorDetail::new("internal_server_error", "Internal Server Error"),
+        ErrorDetail::with_reason("internal_server_error"),
     )
 }
 
@@ -212,11 +241,11 @@ impl IntoResponse for Error {
             ),
             Self::BadRequest(message) => (
                 StatusCode::BAD_REQUEST,
-                ErrorDetail::new("Bad Request", message),
+                ErrorDetail::new("bad_request", message),
             ),
             Self::CustomError(status, detail) => (status, detail),
             Self::JsonRejection(rejection) => {
-                (rejection.status(), ErrorDetail::with_reason("Bad Request"))
+                (rejection.status(), ErrorDetail::with_reason("bad_request"))
             }
             #[cfg(feature = "sea-orm")]
             Self::Model(crate::model::ModelError::EntityNotFound) => resource_not_found(),
@@ -229,8 +258,8 @@ impl IntoResponse for Error {
             Self::Model(crate::model::ModelError::Validation(errors)) => (
                 StatusCode::BAD_REQUEST,
                 ErrorDetail {
-                    error: None,
-                    description: None,
+                    code: Some("validation".to_string()),
+                    detail: None,
                     errors: Some(serde_json::to_value(&errors.errors).unwrap_or_default()),
                 },
             ),
@@ -248,7 +277,7 @@ impl IntoResponse for Error {
             #[cfg(any(feature = "queue", feature = "sqlx"))]
             Self::Sqlx(_) => internal(),
         };
-        (status, Json(detail)).into_response()
+        problem(status, detail).into_response()
     }
 }
 
@@ -283,6 +312,14 @@ pub fn bad_request<T>(message: &str) -> Result<T> {
 mod tests {
     use super::*;
 
+    use axa_problem::PROBLEM_JSON;
+    use axum::{
+        Json,
+        extract::{FromRequest, Request},
+        http::header::CONTENT_TYPE,
+    };
+    use serde_json::{Value, json};
+
     async fn body_text(response: Response) -> String {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -290,33 +327,152 @@ mod tests {
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 
+    /// The body of a response, which must be a problem and agree with its status.
+    async fn problem_of(error: Error) -> (StatusCode, Value) {
+        let response = error.into_response();
+        let status = response.status();
+        assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
+        let body: Value = serde_json::from_str(&body_text(response).await).unwrap();
+        assert_eq!(body["status"], status.as_u16());
+        (status, body)
+    }
+
     #[tokio::test]
     async fn internal_errors_do_not_leak_their_text() {
-        let response = Error::Message("connection to 10.0.0.1 refused".into()).into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let body = body_text(response).await;
-        assert!(!body.contains("10.0.0.1"), "{body}");
-        assert!(body.contains("internal_server_error"));
+        let error = Error::Message("connection to 10.0.0.1 refused".into());
+        let (status, body) = problem_of(error).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            body,
+            json!({
+                "type": "about:blank",
+                "title": "Internal Server Error",
+                "status": 500,
+                "code": "internal_server_error",
+            })
+        );
     }
 
     #[tokio::test]
     async fn unauthorized_text_is_logged_but_not_returned() {
-        let response = Error::Unauthorized("token signature invalid".into()).into_response();
-        assert!(!body_text(response).await.contains("signature"));
+        let error = Error::Unauthorized("token signature invalid".into());
+        let (status, body) = problem_of(error).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert_eq!(body["code"], "unauthorized");
+        assert!(!body.to_string().contains("signature"), "{body}");
     }
 
     #[tokio::test]
     async fn bad_request_text_is_returned() {
-        let body = body_text(Error::BadRequest("name is required".into()).into_response()).await;
-        assert!(body.contains("name is required"));
+        let (status, body) = problem_of(Error::BadRequest("name is required".into())).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["code"], "bad_request");
+        assert_eq!(body["detail"], "name is required");
     }
 
     #[tokio::test]
     async fn custom_errors_keep_their_status_and_body() {
-        let error = Error::CustomError(StatusCode::CONFLICT, ErrorDetail::with_reason("duplicate"));
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::CONFLICT);
-        assert!(body_text(response).await.contains("duplicate"));
+        let detail = ErrorDetail::new("duplicate", "That name is taken");
+        let (status, body) = problem_of(Error::CustomError(StatusCode::CONFLICT, detail)).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["title"], "Conflict");
+        assert_eq!(body["code"], "duplicate");
+        assert_eq!(body["detail"], "That name is taken");
+    }
+
+    #[tokio::test]
+    async fn a_status_with_no_standard_reason_is_still_a_problem() {
+        let status = StatusCode::from_u16(599).unwrap();
+        let (kept, body) =
+            problem_of(Error::CustomError(status, ErrorDetail::with_reason("odd"))).await;
+        assert_eq!(kept, status);
+        assert_eq!(body["title"], "Error");
+    }
+
+    /// Pinned as text, as this is what a client parses and what the upgrade guide shows.
+    #[tokio::test]
+    async fn the_bodies_are_exactly_these() {
+        let bad = Error::BadRequest("name is required".into()).into_response();
+        assert_eq!(
+            body_text(bad).await,
+            r#"{"type":"about:blank","title":"Bad Request","status":400,"detail":"name is required","code":"bad_request"}"#
+        );
+        assert_eq!(
+            body_text(Error::NotFound.into_response()).await,
+            r#"{"type":"about:blank","title":"Not Found","status":404,"detail":"Resource was not found","code":"not_found"}"#
+        );
+        assert_eq!(
+            body_text(Error::InternalServerError.into_response()).await,
+            r#"{"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn field_errors_are_an_extension_member() {
+        let detail = ErrorDetail {
+            code: Some("validation".to_string()),
+            detail: None,
+            errors: Some(json!({ "name": ["is required"] })),
+        };
+        let error = Error::CustomError(StatusCode::UNPROCESSABLE_ENTITY, detail);
+        let (status, body) = problem_of(error).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["errors"], json!({ "name": ["is required"] }));
+    }
+
+    #[tokio::test]
+    async fn a_rejected_json_body_keeps_its_status_and_hides_its_text() {
+        let request = Request::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from("{\"secret\": oops"))
+            .unwrap();
+        let rejection = Json::<Value>::from_request(request, &())
+            .await
+            .map(|_| ())
+            .unwrap_err();
+        let (status, body) = problem_of(rejection.into()).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["code"], "bad_request");
+        assert_eq!(body.get("detail"), None);
+    }
+
+    #[cfg(feature = "sea-orm")]
+    #[tokio::test]
+    async fn a_validation_failure_keeps_its_field_errors() {
+        use crate::{
+            model::ModelError,
+            validation::{ModelValidationErrors, ValidationError},
+        };
+
+        let failure = ValidationError {
+            code: "length".to_string(),
+            message: Some("is required".to_string()),
+            params: std::collections::HashMap::new(),
+        };
+        let error = ModelError::Validation(ModelValidationErrors {
+            errors: [("name".to_string(), vec![failure])].into(),
+        });
+        let response = Error::Model(error).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
+        let text = body_text(response).await;
+        assert_eq!(
+            text,
+            r#"{"type":"about:blank","title":"Bad Request","status":400,"code":"validation","errors":{"name":[{"code":"length","message":"is required"}]}}"#
+        );
+    }
+
+    #[cfg(feature = "sea-orm")]
+    #[tokio::test]
+    async fn model_errors_answer_as_problems() {
+        use crate::model::ModelError;
+
+        let (status, body) = problem_of(ModelError::EntityNotFound.into()).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["code"], "not_found");
+        let (status, body) = problem_of(ModelError::EntityAlreadyExists.into()).await;
+        assert_eq!(status, StatusCode::CONFLICT);
+        assert_eq!(body["code"], "conflict");
     }
 
     #[test]
@@ -346,9 +502,10 @@ mod tests {
     #[tokio::test]
     async fn a_sqlx_error_is_a_generic_500() {
         let error: Error = sqlx::Error::Protocol("secret detail".to_string()).into();
-        let response = error.into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        assert!(!body_text(response).await.contains("secret"));
+        let (status, body) = problem_of(error).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["code"], "internal_server_error");
+        assert!(!body.to_string().contains("secret"), "{body}");
     }
 
     #[test]
@@ -363,6 +520,6 @@ mod tests {
 
     #[test]
     fn empty_description_is_omitted() {
-        assert_eq!(ErrorDetail::new("x", "").description, None);
+        assert_eq!(ErrorDetail::new("x", "").detail, None);
     }
 }

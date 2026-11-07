@@ -50,7 +50,9 @@ openapi = ["dep:axa-openapi"]
 opentelemetry = ["dep:axa-opentelemetry"]
 pagination = ["dep:axa-pagination"]
 paseto = ["dep:axa-paseto"]
-problem = ["dep:axa-problem"]
+# `axa::error` answers with `axa-problem`, so this adds nothing, and stays so that a
+# service naming it still builds.
+problem = []
 prometheus = ["dep:axa-prometheus"]
 redis = ["dep:axa-redis"]
 session = ["dep:axa-session"]
@@ -66,7 +68,7 @@ axa-openapi = { version = "0.1.0", path = "crates/axa-openapi", optional = true 
 axa-pagination = { version = "0.1.0", path = "crates/axa-pagination", optional = true }
 axa-keycloak = { version = "0.2.0", path = "crates/axa-keycloak", optional = true }
 axa-paseto = { version = "0.4.0", path = "crates/axa-paseto", optional = true }
-axa-problem = { version = "0.1.0", path = "crates/axa-problem", optional = true }
+axa-problem = { version = "0.1.0", path = "crates/axa-problem" }
 axa-prometheus = { version = "0.1.0", path = "crates/axa-prometheus", optional = true }
 axa-redis = { version = "0.1.1", path = "crates/axa-redis", optional = true }
 axa-seaorm = { version = "0.2.1", path = "crates/axa-seaorm", optional = true }

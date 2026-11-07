@@ -65,7 +65,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Redaction, request tracking, async diagnostics | `tracing` |
 | OTLP traces and request metrics | `opentelemetry` |
 | Prometheus exposition | `prometheus` |
-| RFC 9457 problem details | `problem` |
+| RFC 9457 problem details | Always included, as `axa::problem` |
 | `Accepts-version` negotiation | `versioning` |
 
 `features` lists one name per subcrate, and each subcrate is also usable alone.
@@ -142,7 +142,12 @@ let cli = axa::cli::parse(
   error, which is how a hostname or a row reaches a client.
 - Use `not_found()`, `unauthorized(..)`, and `bad_request(..)`. Only `BadRequest` and
   `CustomError` text reaches the caller, so treat that text as public.
-- The body is `{"error": ..., "description": ...}` today, and is moving to RFC 9457.
+- An error's body is an RFC 9457 problem, `application/problem+json`, and a success is
+  bare JSON. Read the reason from `code`, the text from `detail`, which can be absent, and
+  field errors from `errors`. `ErrorDetail::new("code", "detail")` sets the first two.
+- Axum's own refusals are not problems: an unmatched path's `404`, a wrong method's `405`,
+  and the rejection of an extractor a handler takes directly. Take
+  `Result<Json<T>, JsonRejection>` and return the rejection with `?` to get a problem.
 - A `"/"` route is served at the prefix with no trailing slash, and two methods on one
   path merge.
 - Give a slow route its own limit where it is declared, with `Routes::timeout` or

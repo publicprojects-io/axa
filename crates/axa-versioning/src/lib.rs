@@ -7,7 +7,7 @@
 //! |---|---|
 //! | No header, or an empty one | The current version |
 //! | A supported version, or its bare major such as `1` | That version |
-//! | Anything else | `406 Not Acceptable`, naming what is supported |
+//! | Anything else | `406 Not Acceptable`, as an RFC 9457 problem naming what is supported |
 //!
 //! ```
 //! use axa_versioning::resolve_version;
@@ -17,6 +17,7 @@
 //! assert!(resolve_version(Some("9.9")).is_err());
 //! ```
 
+use axa_problem::Problem;
 use axum::{
     extract::{Request, State},
     http::{HeaderName, HeaderValue, StatusCode},
@@ -149,14 +150,10 @@ async fn negotiate(versions: ApiVersions, req: Request, next: Next) -> Response 
             );
             response
         }
-        Err(bad) => (
-            StatusCode::NOT_ACCEPTABLE,
-            axum::Json(serde_json::json!({
-                "error": "unsupported_api_version",
-                "requested": bad,
-                "supported": versions.supported,
-            })),
-        )
+        Err(bad) => Problem::new(StatusCode::NOT_ACCEPTABLE)
+            .with_extension("code", "unsupported_api_version".into())
+            .with_extension("requested", bad.into())
+            .with_extension("supported", serde_json::json!(versions.supported))
             .into_response(),
     }
 }
@@ -248,6 +245,17 @@ mod tests {
     async fn an_unsupported_version_is_a_406() {
         let response = call("/api/things", Some("9.9")).await;
         assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
+        assert_eq!(
+            response.headers()[http::header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            bytes,
+            r#"{"type":"about:blank","title":"Not Acceptable","status":406,"code":"unsupported_api_version","requested":"9.9","supported":["1.0"]}"#
+        );
     }
 
     #[tokio::test]

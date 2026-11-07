@@ -57,7 +57,7 @@
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
-//! | `problem` | RFC 9457 problem details, as `axa::problem` |
+//! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
 //! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
 //! | `versioning` | `Accepts-version` negotiation, as `axa::versioning` |
 //!
@@ -107,7 +107,6 @@ pub use axa_opentelemetry as opentelemetry;
 pub use axa_pagination as pagination;
 #[cfg(feature = "paseto")]
 pub use axa_paseto as paseto;
-#[cfg(feature = "problem")]
 pub use axa_problem as problem;
 #[cfg(feature = "prometheus")]
 pub use axa_prometheus as prometheus;
