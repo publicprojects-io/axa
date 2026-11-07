@@ -256,7 +256,12 @@ Paging is now two crates, and `axa-pagination` 0.1.1 is superseded:
   cursor with `422`, never clamping. A client that read `X-Total-Count`, or sent
   `?offset=`, must follow the `Link` instead.
 
-## Upgrading axa-outbox to 0.2
+## Upgrading to 0.8
+
+`axa` 0.8.0 carries `axa-outbox` 0.2.0, which breaks, and nothing else that a service
+must act on. A service without the `outbox` feature changes only its version.
+
+### Upgrading axa-outbox to 0.2
 
 `axa-outbox` 0.2.0 keeps a record in place of a table of state, and nothing of 0.1.0 is
 kept beside it as an option. An event and everything that happened to it are only ever

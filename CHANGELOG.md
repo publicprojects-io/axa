@@ -5,12 +5,26 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-07
+
+This covers `axa` 0.8.0, `axa-outbox` 0.2.0, and `axa-cursor-pagination` 0.1.1.
+`axa-outbox` 0.2.0 breaks; see
+[Upgrading to 0.8](help/upgrading-to-0.3/index.md#upgrading-to-08). Nothing else a
+service uses changes.
+
 ### Added
 
 - A test for LOG-4, the one requirement in the spec with no test at all: logs written
   to a pipe carry no colour.
 - A test for CFG-16's last part: `logger::init` writes settings warnings to stderr,
   even with logging off.
+- **`outbox-encryption`, and the `encryption` feature of `axa-outbox`:** payloads sealed
+  at rest with XChaCha20-Poly1305 under keys the service supplies, bound to their event,
+  with a key id so that a key can be replaced. A key's material is wiped from memory
+  when it is dropped. It adds `chacha20poly1305` 0.11, and uses `zeroize`, already in
+  the workspace through `axa-paseto`.
+- `axa::outbox::inbox::seen`, an insert-only inbox a consumer dedupes with in its own
+  transaction.
 
 ### Changed
 
@@ -45,26 +59,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     day.
 - The spec gains principles P-7 to P-10, and P-2 admits code that one service needs to
   keep a control it is held to.
-
 - `axa-cursor-pagination` uses `base64` 0.23. Cursors are encoded as before, so a
   cursor issued by 0.1.0 still reads.
 - The `axa` agent skill explains how to page a collection with signed cursors.
-
-### Added
-
-- **`outbox-encryption`, and the `encryption` feature of `axa-outbox`:** payloads sealed
-  at rest with XChaCha20-Poly1305 under keys the service supplies, bound to their event,
-  with a key id so that a key can be replaced. A key's material is wiped from memory
-  when it is dropped. It adds `chacha20poly1305` 0.11, and uses `zeroize`, already in
-  the workspace through `axa-paseto`.
-- `axa::outbox::inbox::seen`, an insert-only inbox a consumer dedupes with in its own
-  transaction.
 
 ### Fixed
 
 - An `axa-outbox` relay given up on could mark a row sent by its id alone. Every outcome
   now matches the claim it ends.
-
 - Two `axa-outbox` heartbeat tests waited a fixed 100 ms, and could fail on a busy
   machine. They now wait for the claim and for the relay to report in.
 - `axa-tracing`'s stalled-runtime test could stop the monitor before it logged, and
