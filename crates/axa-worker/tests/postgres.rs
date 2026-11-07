@@ -11,7 +11,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axa_worker::{
@@ -254,7 +254,8 @@ async fn a_delayed_job_is_not_claimed_before_its_time() {
         .unwrap();
     let soon = queue
         .enqueue_job(
-            &NewJob::new("Job", serde_json::Value::Null).run_in(Duration::from_millis(400)),
+            // Far enough off that the checks below finish first, however slow the machine.
+            &NewJob::new("Job", serde_json::Value::Null).run_in(Duration::from_secs(2)),
         )
         .await
         .unwrap();
@@ -267,8 +268,11 @@ async fn a_delayed_job_is_not_claimed_before_its_time() {
     assert_eq!(state(&queue, due).await, JobState::Completed);
     assert!(!queue.run_one().await.unwrap(), "nothing else is due yet");
     assert_eq!(state(&queue, soon).await, JobState::Queued);
-    tokio::time::sleep(Duration::from_millis(450)).await;
-    assert!(queue.run_one().await.unwrap());
+    let until = Instant::now() + Duration::from_secs(20);
+    while !queue.run_one().await.unwrap() {
+        assert!(Instant::now() < until, "the delayed job never came due");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     assert_eq!(state(&queue, soon).await, JobState::Completed);
     assert_eq!(state(&queue, later).await, JobState::Queued);
     let counts = queue.counts().await.unwrap();
@@ -913,7 +917,7 @@ async fn a_job_has_no_time_limit_unless_it_is_given_one() {
         )
         .await
         .unwrap();
-    let started = std::time::Instant::now();
+    let started = Instant::now();
     assert!(queue.run_one().await.unwrap());
     assert!(
         started.elapsed() < Duration::from_secs(2),

@@ -24,6 +24,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   machine. They now wait for the claim and for the relay to report in.
 - `axa-tracing`'s stalled-runtime test could stop the monitor before it logged, and
   failed about one run in twenty. It now waits for the warning.
+- `axa-worker`'s delayed-job test gave its job 400 ms, and on a slow CI runner the job
+  came due before the test looked. It now has 2 seconds, and the test waits for it.
 
 ## [0.7.0] - 2026-11-07
 
