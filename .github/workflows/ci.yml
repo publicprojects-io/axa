@@ -87,6 +87,7 @@ jobs:
           AXA_TEST_DATABASE_URL: postgres://axa:axa@localhost:5432/axa_test
         run: |
           cargo test --features queue,testing -- --ignored
+          cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
           cargo test -p axa-sqlx -- --ignored --test-threads=1
           cargo test -p axa-seaorm -- --ignored --test-threads=1
           cargo test -p axa-diesel -- --ignored --test-threads=1

@@ -80,6 +80,7 @@ pub mod config;
 pub mod context;
 pub mod db;
 pub mod error;
+pub mod extract;
 pub mod format;
 pub mod health;
 pub mod logger;

@@ -22,7 +22,7 @@
 
 use axa_problem::Problem;
 use axum::{
-    extract::rejection::JsonRejection,
+    extract::rejection::{JsonRejection, PathRejection, QueryRejection},
     http::StatusCode,
     response::{IntoResponse, Response},
 };
@@ -92,7 +92,8 @@ pub enum Error {
     /// An explicit status and body.
     #[error("{0} {1:?}")]
     CustomError(StatusCode, ErrorDetail),
-    /// A rejected JSON body.
+    /// A rejected JSON body. Becomes its status, with a description that quotes
+    /// nothing the caller sent.
     #[error(transparent)]
     JsonRejection(#[from] JsonRejection),
     /// An Axum failure.
@@ -114,13 +115,14 @@ pub enum Error {
     #[cfg(feature = "sea-orm")]
     #[error(transparent)]
     Model(#[from] crate::model::ModelError),
-    /// A database failure.
+    /// A database failure. Becomes `409` for a violated unique or foreign key
+    /// constraint, and otherwise a generic `500`.
     #[cfg(feature = "sea-orm")]
     #[error(transparent)]
     DB(#[from] sea_orm::DbErr),
-    /// A sqlx database failure. Becomes a generic `500`, and a service that
-    /// means something else by one maps it first, as with
-    /// `axa_sqlx::is_unique_violation`.
+    /// A sqlx database failure. Becomes `409` for a violated unique or foreign key
+    /// constraint, and otherwise a generic `500`. A service that means something
+    /// else by one maps it first, as with `axa_sqlx::is_unique_violation`.
     #[cfg(any(feature = "queue", feature = "sqlx"))]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
@@ -140,6 +142,36 @@ impl Error {
     #[must_use]
     pub fn wrap(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Any(Box::new(err))
+    }
+}
+
+/// A rejected value in the URL. The rejection's own text quotes the value, so it is
+/// not used.
+impl From<PathRejection> for Error {
+    fn from(rejection: PathRejection) -> Self {
+        Self::CustomError(
+            rejection.status(),
+            ErrorDetail::new("bad_request", "A value in the URL is not valid"),
+        )
+    }
+}
+
+/// A rejected query string. The rejection's own text quotes the value, so it is not
+/// used.
+impl From<QueryRejection> for Error {
+    fn from(rejection: QueryRejection) -> Self {
+        Self::CustomError(
+            rejection.status(),
+            ErrorDetail::new("bad_request", "A query parameter is not valid"),
+        )
+    }
+}
+
+/// An offset past a list's maximum, which is the caller's to fix.
+#[cfg(feature = "pagination")]
+impl From<axa_pagination::OffsetTooLarge> for Error {
+    fn from(error: axa_pagination::OffsetTooLarge) -> Self {
+        Self::BadRequest(error.to_string())
     }
 }
 
@@ -222,6 +254,47 @@ fn resource_not_found() -> (StatusCode, ErrorDetail) {
     )
 }
 
+/// What to tell a caller about a rejected JSON body. The rejection's own text can quote
+/// the body, so it is not used.
+fn json_rejection_text(status: StatusCode) -> &'static str {
+    match status {
+        StatusCode::BAD_REQUEST => "The request body is not valid JSON",
+        StatusCode::UNSUPPORTED_MEDIA_TYPE => "Send the request body as application/json",
+        StatusCode::PAYLOAD_TOO_LARGE => "The request body is too large",
+        _ => "The request body does not fit this route",
+    }
+}
+
+/// What to tell a caller whose write broke a unique or foreign key constraint. The
+/// request caused that, so it is not a fault here, and the database's own text goes
+/// nowhere because it names the row.
+#[cfg(any(feature = "queue", feature = "sqlx", feature = "sea-orm"))]
+fn conflict(error: &Error) -> Option<&'static str> {
+    const ALREADY_EXISTS: &str = "Resource already exists";
+    const REFERENCE: &str = "It refers to a resource that does not exist, or is referred to";
+    match error {
+        #[cfg(any(feature = "queue", feature = "sqlx"))]
+        Error::Sqlx(error) => match error.as_database_error()?.kind() {
+            sqlx::error::ErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
+            sqlx::error::ErrorKind::ForeignKeyViolation => Some(REFERENCE),
+            _ => None,
+        },
+        #[cfg(feature = "sea-orm")]
+        Error::DB(error) => match error.sql_err()? {
+            sea_orm::SqlErr::UniqueConstraintViolation(_) => Some(ALREADY_EXISTS),
+            sea_orm::SqlErr::ForeignKeyConstraintViolation(_) => Some(REFERENCE),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// With no database, nothing can break a constraint.
+#[cfg(not(any(feature = "queue", feature = "sqlx", feature = "sea-orm")))]
+fn conflict(_error: &Error) -> Option<&'static str> {
+    None
+}
+
 impl Error {
     /// Log what a service needs to act on. A client's mistake is not an incident,
     /// and its text can quote what the client sent, which may be personal data, so
@@ -236,7 +309,7 @@ impl Error {
                 | crate::model::ModelError::EntityAlreadyExists
                 | crate::model::ModelError::Validation(_),
             ) => true,
-            _ => false,
+            _ => conflict(self).is_some(),
         };
         if client_mistake {
             tracing::debug!("controller_client_error");
@@ -252,6 +325,10 @@ impl Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         self.log();
+        if let Some(description) = conflict(&self) {
+            let detail = ErrorDetail::new("conflict", description);
+            return problem(StatusCode::CONFLICT, detail).into_response();
+        }
         let (status, detail) = match self {
             Self::NotFound => resource_not_found(),
             Self::Unauthorized(_) => (
@@ -267,7 +344,9 @@ impl IntoResponse for Error {
             ),
             Self::CustomError(status, detail) => (status, detail),
             Self::JsonRejection(rejection) => {
-                (rejection.status(), ErrorDetail::with_reason("bad_request"))
+                let status = rejection.status();
+                let description = json_rejection_text(status);
+                (status, ErrorDetail::new("bad_request", description))
             }
             #[cfg(feature = "sea-orm")]
             Self::Model(crate::model::ModelError::EntityNotFound) => resource_not_found(),
@@ -455,7 +534,8 @@ mod tests {
         let (status, body) = problem_of(rejection.into()).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(body["code"], "bad_request");
-        assert_eq!(body.get("detail"), None);
+        assert_eq!(body["detail"], "The request body is not valid JSON");
+        assert!(!body.to_string().contains("secret"), "{body}");
     }
 
     #[cfg(feature = "sea-orm")]
@@ -543,5 +623,17 @@ mod tests {
     #[test]
     fn empty_description_is_omitted() {
         assert_eq!(ErrorDetail::new("x", "").detail, None);
+    }
+
+    #[cfg(feature = "pagination")]
+    #[tokio::test]
+    async fn an_offset_too_large_is_a_bad_request() {
+        let error = axa_pagination::OffsetTooLarge {
+            requested: 11,
+            max_offset: 10,
+        };
+        let response = Error::from(error).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(body_text(response).await.contains("exceeds the maximum"));
     }
 }
