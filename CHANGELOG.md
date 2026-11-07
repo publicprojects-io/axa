@@ -5,6 +5,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-07
+
+This covers `axa` 0.7.0, `axa-ratelimit` 0.2.0, and five new crates: `axa-worker`
+0.1.0, `axa-idempotency` 0.1.0, `axa-outbox` 0.1.0, `axa-cursor-pagination` 0.1.0, and
+`axa-offset-pagination` 0.1.0. `axa-offset-pagination` supersedes `axa-pagination`
+0.1.1. Some changes break; see
+[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.7 says what
+to change.
+
 ### Added
 
 - **`axa-worker`, the queue's engine, now its own crate.** The `queue` feature uses it,

@@ -7,7 +7,7 @@ The crate documentation has the rules, and section 4.17 of the
 [spec](../../spec/index.md#417-outbox) has what is proved.
 
 ```toml
-axa = { version = "0.6", features = ["outbox"] }
+axa = { version = "0.7", features = ["outbox"] }
 ```
 
 ## Make the table

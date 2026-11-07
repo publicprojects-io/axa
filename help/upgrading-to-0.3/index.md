@@ -211,9 +211,7 @@ No code must change. A write that breaks a check or not-null constraint now answ
 `422`, with code `unprocessable_entity`, not `500`. A client or test that expected a
 `500` there must expect `422`.
 
-## Upgrading past 0.6
-
-Unreleased.
+## Upgrading to 0.7
 
 - **Run the new `queue::SETUP_STATEMENTS` in a migration** if the service uses
   `Queue::connect_existing`. They add `priority` and `timeout_ms` to `axa_queue` and make
