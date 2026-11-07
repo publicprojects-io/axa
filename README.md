@@ -64,6 +64,7 @@ axa = "0.6"
 | `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set. No service uses this yet |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
+| `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres, with the broker client left in the service. Turns on `queue`. No service uses this yet |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping. No service uses this yet |
 | `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
@@ -522,6 +523,25 @@ the record it is about commit together. `Queue::enqueue` uses its own connection
 `start --worker`, and `queue::warn_if_unserved` says so at boot. Queue arguments
 are stored in plain text, so never put a secret in them.
 
+### The outbox
+
+With the `outbox` feature, an event is a row in `axa_outbox`, written with
+`outbox::write` on the caller's transaction, so it commits or rolls back with the change
+it describes. A relay then publishes it, so a crash between the commit and the publish
+loses nothing. `Outbox::run` takes the publisher as a closure, so the broker client
+stays in the service, and a service that wants more runs its own loop on `claim` and
+`sent`.
+
+Delivery is at least once, so a consumer must dedupe on `event_id`. Several relays can
+run at once, and each row normally goes out once. Events with one topic and key go out in
+order. A broker that is down charges no row, and a row it keeps refusing ends as `failed`
+and holds up nothing else. A claim whose relay died comes back after `stale_minutes`.
+
+**Nothing relays by itself.** See the
+[guide](help/transactional-outbox/index.md) for what a service writes. Payloads are
+stored in plain JSON, so sent rows are deleted after `retention_days`, and a `failed`
+row stays until someone deals with it.
+
 ### Testing
 
 With the `testing` feature, a service implements `TestApp` to say how it boots
@@ -543,7 +563,7 @@ async fn health_answers() {
 ## Requirements
 
 - Rust 1.97 or newer, on edition 2024
-- PostgreSQL for the `queue` and `sea-orm` features
+- PostgreSQL for the `queue`, `outbox`, and `sea-orm` features
 
 ## Development
 

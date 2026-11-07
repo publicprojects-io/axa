@@ -1,6 +1,6 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, the outbox, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
 ---
 
 # Using axa in your Axum service
@@ -53,6 +53,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 |---|---|
 | Postgres through sqlx, the preferred way. `AppContext::db` becomes a `PgPool` | `sqlx` |
 | Postgres job queue | `queue` |
+| Transactional outbox and relay on Postgres | `outbox` |
 | Keep SeaORM | `sea-orm` |
 | Diesel, with no `libpq` | `diesel` |
 | Request-level tests | `testing` |
@@ -280,6 +281,29 @@ Get these right, because each fails quietly or later:
 
 [Where the idempotency layer goes](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md)
 has the whole of this.
+
+## Outbox
+
+Use the outbox, not a broker call after the commit, whenever an event must not be lost.
+The [guide](../../help/transactional-outbox/index.md) has the whole of it.
+
+- `outbox::write(&mut transaction, &event)` takes a transaction, never a pool, and
+  `write_seaorm` takes SeaORM's. Change the record first: its row lock is what keeps one
+  key's events in commit order.
+- **Nothing relays by itself.** Spawn `Outbox::run` in `main.rs` with the publisher as a
+  closure, and stop it after `server::run` returns. The broker client stays in the service.
+- Answer `Ok` only once the broker has acknowledged. A publisher that logs, or a send that
+  only queues locally, marks rows sent that nobody received.
+- Say which failure it was: `Failure::unavailable` charges no row and waits, and
+  `Failure::rejected` charges this row, which ends as `failed` after `max_attempts`.
+- Delivery is at least once, so a consumer must dedupe on `event_id`. `id` rises with each
+  event for a key, so a consumer applying state can refuse anything older.
+- Watch `Outbox::stats`. A `failed` row is never swept: fix the cause and call
+  `Outbox::retry_failed`.
+- A payload is plain JSONB, so prefer an id to a snapshot, and never put a secret in one.
+  Erasing a person includes `DELETE FROM axa_outbox WHERE key = $1`.
+- `Outbox::connect` runs DDL at boot. Where a service's role may not, run
+  `outbox::SETUP_STATEMENTS` in a migration and call `Outbox::connect_existing`.
 
 ## Authentication
 

@@ -32,12 +32,15 @@ fixed once and an auditor reads it once.
 - The shared command line, tasks, and background jobs
 - A Postgres job queue
 - `Idempotency-Key` handling
+- A transactional outbox and relay on Postgres
 - Request-level test helpers
 - SeaORM support, for projects leaving Loco
 
 ### Out of scope
 
 - Domain logic, handlers, models, and SQL. These stay in each service.
+- Broker clients, topics, and event envelopes. `axa` depends on no broker, and a
+  service passes its publisher in.
 - Verifying tokens and evaluating policy. These stay in `authentication-verifier`,
   and a service's own rules stay in the service. `axa-paseto` is only the Axum layer
   that calls them. `axa-keycloak` is the exception: it carries its own copy of what
@@ -510,6 +513,40 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 | IDM-28 | `only` narrows what is covered, and cannot widen it to a method that changes nothing. | `only_narrows_what_is_covered_and_cannot_widen_it` |
 | IDM-29 | A row that cannot be read as an answer is not guessed at. It is the `503` of IDM-18, and the request does not run. | `a_row_that_cannot_be_read_is_not_guessed_at` |
 
+### 4.17 Outbox
+
+`axa-outbox` holds events in one `axa_outbox` table, written in the caller's transaction,
+and a relay publishes them. A publisher is a closure passed to `Outbox::run`, or a
+service runs its own loop on `claim` and `sent`, so there is no trait to implement and
+no broker client here. Delivery is at least once: a consumer must dedupe on `event_id`.
+A row is `pending`, `claimed`, `sent`, or `failed`.
+
+These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/lib.rs`.
+
+| Id | Requirement | Test |
+|---|---|---|
+| OBX-1 | An event commits or rolls back with the caller's transaction, through sqlx or SeaORM. Writing takes a transaction and not a pool, so that the type refuses the mistake. A repeated `event_id` fails the write. | `an_event_rolls_back_with_its_transaction`, `an_event_commits_with_its_transaction`, `a_seaorm_transaction_carries_an_event_too`, `a_repeated_event_id_fails_the_write`, `each_event_gets_its_own_id` |
+| OBX-2 | A crash after the commit loses nothing, and neither does a relay killed mid-batch. | `an_event_committed_before_a_crash_is_still_published`, `a_relay_killed_mid_batch_loses_nothing` |
+| OBX-3 | A row is marked sent only after its publisher answers `Ok`. A row caught between the broker and the ack is published again, and that is the one duplicate a crash leaves. | `a_failed_publish_is_not_marked_sent`, `a_relay_killed_mid_batch_loses_nothing` |
+| OBX-4 | Each row is claimed by one relay at a time, using `FOR UPDATE SKIP LOCKED`, so several relays publish each row once in the normal case. | `several_relays_publish_each_event_once`, `two_claims_at_once_share_nothing` |
+| OBX-5 | A claim not heard from for `stale_minutes` comes back if it has attempts left, and otherwise ends as `failed`, so a row that kills relays cannot loop for ever. Every `claim` does this first, so nothing else has to run. A relay reports in every `heartbeat_interval`, across a whole batch, so a live one is not taken for lost. | `a_claim_not_heard_from_comes_back`, `a_row_that_keeps_killing_relays_ends_as_failed`, `a_slow_publish_that_reports_in_is_not_taken_for_lost`, `a_batch_of_quick_publishes_reports_in_too` |
+| OBX-6 | A relay given up on cannot change a row's later state by failing or releasing it. Its success still counts, as the broker has the event whoever says so. | `a_late_failure_changes_nothing`, `a_late_release_changes_nothing`, `a_late_success_still_counts` |
+| OBX-7 | A row the broker refuses holds up no other key. After `max_attempts` it is left as `failed`, keeping its error and its payload, and frees its key. It can be put back with `retry_failed`. | `a_poison_row_does_not_hold_up_other_keys`, `a_row_out_of_attempts_is_kept_and_frees_its_key`, `failed_rows_can_be_tried_again` |
+| OBX-8 | Events with one topic and key go out in `id` order, across relays, through retries and recovery. A retry holds back only its own key. A key's order assumes each transaction changes the same row before writing, and does not hold across a row that ended as `failed`. | `a_key_goes_out_in_order_across_relays`, `one_topic_and_key_is_one_line`, `a_retry_holds_back_only_its_own_key`, `a_recovered_row_goes_before_those_behind_it` |
+| OBX-9 | A publisher that says the broker is unavailable charges no row. The round stops, the rest of the batch goes back, and the relay waits twice as long each time, up to a minute. The rows go out once the broker is back. The row being tried waits `retry_backoff`, so the next round tries another, and a refusal called an outage holds up only its own key. | `an_outage_charges_no_row_and_stops_the_round`, `the_rows_go_out_once_the_broker_is_back`, `a_refusal_called_an_outage_holds_up_only_its_key`, `an_outage_waits_longer_each_time_up_to_a_minute` |
+| OBX-10 | A refused row waits `retry_backoff`, doubling each time up to an hour. At most 1024 characters of its error are kept. | `a_retry_waits_for_its_backoff`, `each_retry_waits_twice_as_long_up_to_a_limit`, `long_error_text_is_cut_short` |
+| OBX-11 | A publisher that panics has refused that row, and the loop carries on. | `a_publisher_that_panics_fails_that_row_and_the_loop_carries_on` |
+| OBX-12 | A publish past `publish_timeout` is charged an attempt and stops the round as an outage does, as a hang can be either. | `a_publish_past_its_limit_is_charged_and_stops_the_round` |
+| OBX-13 | Sent rows are deleted after `retention_days`, by the relay, and nothing else is. A `failed` row is still owed. | `only_old_sent_rows_are_swept`, `the_relay_sweeps_by_itself`, `a_row_out_of_attempts_is_kept_and_frees_its_key` |
+| OBX-14 | A log line holds no payload, key, or publisher's error text, and the `Debug` text of `Event` and `Claimed` leaves out the payload and the key. | `no_log_line_holds_a_payload_a_key_or_a_failure_text`, `debug_text_leaves_out_the_payload_and_the_key` |
+| OBX-15 | Relays booting together all connect, and `Outbox::connect_existing` changes no schema and fails at connect when the table is missing. A migration runs `SETUP_STATEMENTS`. | `relays_booting_together_all_connect`, `connecting_to_an_existing_table_changes_no_schema` |
+| OBX-16 | Rows already sent do not slow a claim or `stats`. | `what_is_owed_is_found_without_reading_sent_rows` |
+| OBX-17 | On shutdown a publish in progress finishes and the rest of the batch goes back, charged nothing. A relay started beside `server::run` and stopped after it survives a real `SIGTERM`, and the process exits with success. A relay whose sender is gone stops rather than spins. | `a_publish_in_progress_finishes_and_the_rest_go_back`, `sigterm_lets_a_publish_in_progress_finish_beside_a_server`, `a_relay_stops_while_waiting_for_work`, `a_relay_nobody_can_stop_stops` |
+| OBX-18 | `Outbox::stats` counts what is pending, claimed, and failed, and how long the oldest unsent row has waited. | `stats_say_what_is_owed` |
+| OBX-19 | A service can do all of this from its own loop, with `claim`, `sent`, `failed`, `release`, and `heartbeat`. | `a_service_can_drive_the_outbox_from_its_own_loop` |
+| OBX-20 | Options that cannot work are refused before connecting. | `options_that_cannot_work_are_refused`, `refused_options_stop_a_connect_before_it_reaches_the_network`, `the_default_options_are_valid` |
+| OBX-21 | The crate depends on no broker client. | `this_crate_depends_on_no_broker_client` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:
@@ -527,6 +564,8 @@ cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-outbox --all-features -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1

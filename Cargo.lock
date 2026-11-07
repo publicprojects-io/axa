@@ -496,6 +496,7 @@ dependencies = [
  "axa-keycloak",
  "axa-openapi",
  "axa-opentelemetry",
+ "axa-outbox",
  "axa-pagination",
  "axa-paseto",
  "axa-problem",
@@ -608,6 +609,19 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "axa-outbox"
+version = "0.1.0"
+dependencies = [
+ "sea-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

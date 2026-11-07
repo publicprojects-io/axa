@@ -37,6 +37,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - With the `idempotency` feature, `Error` converts from `sqlx::Error`, so `?` works on
   `Idempotency::check` in a service on SeaORM.
 
+- **`axa-outbox`, behind the `outbox` feature:** a transactional outbox and relay on
+  Postgres. `outbox::write` puts an event in the caller's transaction, sqlx or SeaORM,
+  and `Outbox::run` publishes it through a closure the service passes in, so the broker
+  client stays in the service. It is at least once, keeps each key in order, charges
+  a broker outage to no row, leaves a row it cannot publish as `failed` without holding
+  up other keys, and brings back a claim whose relay died. A service with a batching
+  client can run its own loop on `claim` and `sent`. Thirteen services had written
+  their own outbox table, and ten their own relay. See
+  [The transactional outbox](help/transactional-outbox/index.md). The `outbox` feature
+  turns on `queue`.
+
 ### Changed
 
 - With origins listed, CORS exposes `etag`, so a page can read a tag to send back.

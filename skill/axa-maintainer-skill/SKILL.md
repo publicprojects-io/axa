@@ -89,6 +89,14 @@ so these suites run with `--test-threads=1`, and in parallel they fail intermitt
 `TABLE` lock in `src/queue.rs`, or tests that race on it fail intermittently. A test
 that drops a column must put it back.
 
+**Outbox tests share one table too.** They hold the `TABLE` lock in
+`crates/axa-outbox/tests/postgres.rs`, and CI runs them with `--test-threads=1`, which
+also keeps `logging.rs` off that table. They run only with `-p axa-outbox --all-features
+-- --ignored`, and a plain `--features queue,testing` run does not reach them. The
+claim's `FOR UPDATE ... SKIP LOCKED` is the only thing stopping two relays taking one row,
+as the outer `UPDATE` does not check `status` again: `several_relays_publish_each_event_once`
+is the test that says so.
+
 **Logging tests get their own binary.** `tracing` caches per process whether a log site
 is on, so a test that captures logs lives in its own file under `tests/`.
 
