@@ -332,6 +332,7 @@ place.
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
 | `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers, once it connects or starts another request. 30 by default, and `0` allows for ever |
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | How long an idle connection is kept for a next request. Keep it above any load balancer's idle timeout. 75 by default, and `0` keeps it for ever |
+| `SEND_STALL_TIMEOUT_SECONDS` | How long a client that has stopped reading may hold up a response before it is dropped. Any write that goes through starts this again. 60 by default, and `0` waits for ever |
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |

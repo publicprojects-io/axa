@@ -156,6 +156,7 @@ fn config() -> Server {
         shutdown_timeout_seconds: 10,
         header_read_timeout_seconds: 10,
         keep_alive_timeout_seconds: 0,
+        send_stall_timeout_seconds: 0,
         max_connections: 10,
     }
 }

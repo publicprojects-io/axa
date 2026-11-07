@@ -3,8 +3,8 @@
 A service that commits a change and then tells a broker can crash in between, and the
 event is gone. With `axa-outbox` the event is a row, written in the same transaction as
 the change, and a relay publishes it afterwards. This guide is what a service writes.
-The crate documentation has the rules, and section 4.15 of the
-[spec](../../spec/index.md#415-outbox) has what is proved.
+The crate documentation has the rules, and section 4.17 of the
+[spec](../../spec/index.md#417-outbox) has what is proved.
 
 ```toml
 axa = { version = "0.6", features = ["outbox"] }

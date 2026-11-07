@@ -48,9 +48,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   [The transactional outbox](help/transactional-outbox/index.md). The `outbox` feature
   turns on `queue`.
 
+- `SEND_STALL_TIMEOUT_SECONDS`, 60 by default, drops a client that has stopped reading a
+  response. **Breaking:** `config::Server` gains `send_stall_timeout_seconds`, so code
+  building one by hand must set it.
+
 ### Changed
 
 - With origins listed, CORS exposes `etag`, so a page can read a tag to send back.
+
+### Fixed
+
+- A client that stopped reading a streaming response held its connection slot for ever,
+  and could hold up shutdown until its limit. The keep-alive limit only covers a response
+  whose body has ended, so now the send stall limit covers both.
 
 ## [0.6.1] - 2026-11-07
 

@@ -207,7 +207,14 @@ No code must change. Check for these if a client or test reads them:
 
 ## Upgrading past 0.6
 
-Unreleased. Nothing stops compiling.
+Unreleased.
+
+- **`config::Server` has `send_stall_timeout_seconds`.** Set it where a service builds a
+  `Server` by hand, or that code stops compiling. `Config::from_env` needs no change.
+- A client that stops reading a response is now dropped after
+  `SEND_STALL_TIMEOUT_SECONDS`, 60 by default. Before, it held its connection slot until
+  the client went away. Any write that goes through starts the limit again, so a slow
+  download is unaffected, and an idle stream of events sends nothing and is unaffected.
 
 The standard stack now answers `304` to a `GET` or `HEAD` holding the `ETag` of its
 answer, so a handler's own comparison can go. It changes an answer only where a handler

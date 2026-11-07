@@ -97,6 +97,11 @@ pub struct Server {
     /// How long an idle connection is kept for a next request. Keep this longer than
     /// the idle timeout of any load balancer in front. `0` keeps it for ever.
     pub keep_alive_timeout_seconds: u64,
+    /// How long a client that has stopped reading may hold up a response, counted from
+    /// the first write it blocks. Any write that goes through starts this again, so a
+    /// slow client is not cut off, and a handler with nothing to send is not affected.
+    /// `0` waits for ever.
+    pub send_stall_timeout_seconds: u64,
     /// The most connections open at once. More wait to be accepted.
     pub max_connections: usize,
 }
@@ -108,6 +113,10 @@ pub const DEFAULT_HEADER_READ_TIMEOUT_SECONDS: u64 = 30;
 /// How long an idle connection is kept unless `KEEP_ALIVE_TIMEOUT_SECONDS` says
 /// otherwise. It beats the 60 seconds many load balancers keep a connection idle.
 pub const DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS: u64 = 75;
+
+/// How long a client that has stopped reading may hold up a response unless
+/// `SEND_STALL_TIMEOUT_SECONDS` says otherwise.
+pub const DEFAULT_SEND_STALL_TIMEOUT_SECONDS: u64 = 60;
 
 /// How long shutdown waits unless `SHUTDOWN_TIMEOUT_SECONDS` says otherwise. It
 /// sits under an orchestrator's usual 30 seconds before it kills a process.
@@ -647,6 +656,10 @@ impl Config {
                     "KEEP_ALIVE_TIMEOUT_SECONDS",
                     DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS,
                 ),
+                send_stall_timeout_seconds: vars.parsed(
+                    "SEND_STALL_TIMEOUT_SECONDS",
+                    DEFAULT_SEND_STALL_TIMEOUT_SECONDS,
+                ),
                 max_connections: connection_limit(&vars),
             },
             logger: Logger {
@@ -740,6 +753,10 @@ impl Config {
             (
                 "KEEP_ALIVE_TIMEOUT_SECONDS",
                 server.keep_alive_timeout_seconds.to_string(),
+            ),
+            (
+                "SEND_STALL_TIMEOUT_SECONDS",
+                server.send_stall_timeout_seconds.to_string(),
             ),
             ("MAX_CONNECTIONS", server.max_connections.to_string()),
             (
@@ -899,6 +916,21 @@ mod tests {
             crate::server::MAX_CONNECTIONS
         );
         assert!(with(&[url, ("MAX_CONNECTIONS", "0")], &Environment::Production).is_err());
+    }
+
+    #[test]
+    fn the_send_stall_limit_is_a_setting() {
+        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let config = with(&[url], &Environment::Production).unwrap();
+        assert_eq!(config.server.send_stall_timeout_seconds, 60);
+        let set = [url, ("SEND_STALL_TIMEOUT_SECONDS", "0")];
+        let config = with(&set, &Environment::Production).unwrap();
+        assert_eq!(config.server.send_stall_timeout_seconds, 0);
+        assert!(
+            config
+                .settings()
+                .contains(&("SEND_STALL_TIMEOUT_SECONDS", "0".to_string()))
+        );
     }
 
     #[test]

@@ -225,7 +225,8 @@ a `down` does not protect `db reset`.
 
 The server speaks HTTP/1 alone, and expects TLS to end in front of it. Keep
 `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, above any load balancer's idle timeout, and
-`MAX_CONNECTIONS`, 10,000 by default, under the process's open-file limit.
+`MAX_CONNECTIONS`, 10,000 by default, under the process's open-file limit. A client that
+stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by default.
 
 ## Jobs
 
