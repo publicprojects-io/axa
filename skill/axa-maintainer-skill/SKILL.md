@@ -99,6 +99,15 @@ is on, so a test that captures logs lives in its own file under `tests/`.
 **A public struct gaining a field is a breaking change**, because services build these
 by hand. Note it in the upgrade guide.
 
+**A `304` must not say its size.** Axum writes `content-length: 0` on any answer whose
+body says it is empty, and on a `304` that header can only state the `200`'s length. So
+`conditional` uses a body with no size, and `Body::empty()` there is a bug no status check
+would catch.
+
+**`conditional::not_modified` stays outside compression.** `tower-http` adds
+`vary: accept-encoding` only to what it could compress, which a `304` is not, so inside it
+a `304` loses the `vary` its `200` had.
+
 **`axum::serve` is not used.** `server.rs` runs its own connection loop, because
 `axum::serve` cannot limit a connection. A change to serving belongs there, and an axum
 upgrade should be checked against axum's own loop. `hyper`'s header timer stays off:

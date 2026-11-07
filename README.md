@@ -211,8 +211,76 @@ From the outside in:
 | Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
 | CORS | Off unless origins are configured |
 | Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
+| Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
 | Compression | Gzip, Brotli, and Zstd when enabled |
 | Body limit | Answers `413` over `BODY_LIMIT_BYTES`. `middleware::body_limit` raises it on one route |
+
+### Conditional requests
+
+`axa::conditional` follows RFC 9110. The standard stack answers `304` to a `GET` or
+`HEAD` that holds the `ETag` of its answer, whoever set the tag, so a handler only sets
+one. An `ETag` goes on a response like any header. Leave a timestamp out of it, or the
+tag moves every time:
+
+```rust
+use axa::{conditional::ETag, prelude::*};
+use serde_json::json;
+
+async fn dashboard() -> Result<Response> {
+    let payload = json!({ "open": 3 });
+    let tag = ETag::weak_of(&payload)?;
+    let mut body = payload;
+    body["as_of"] = json!("2026-11-07T09:00:00Z");
+    Ok((tag, format::json(body)?).into_response())
+}
+```
+
+`ETag::weak` and `ETag::strong` take text of your own, such as a version. For a tag from
+the body, add `conditional::etag` to a router or a route, before `apply` as with any
+layer:
+
+```rust
+use axa::{conditional, prelude::*};
+use axum::{Router, middleware::from_fn};
+
+# async fn list() -> &'static str { "[]" }
+let catalogue: Router = Router::new()
+    .route("/catalogue", get(list).layer(from_fn(conditional::etag)));
+```
+
+It hashes a `GET`'s `200` and gives it a weak tag, the same on every replica and for
+every encoding. It reads only a body of exact known size up to `conditional::MAX_BODY`
+(8 MB), so a stream or server-sent events pass through unread. It leaves alone an answer
+that has an `ETag` or says `no-store`, and a `HEAD`, whose body Axum has already dropped.
+It is opt-in because a body with a timestamp in it gains nothing, and because hashing
+what is marked `no-store` would put a hash of personal data on an answer nobody can
+revalidate. Put it outside what shapes the body, such as paging, and outside what sets
+`Cache-Control`. No service uses this layer yet.
+
+To refuse a stale write, read the record, then ask, once the caller is authorised:
+
+```rust
+use axa::{conditional::{self, ETag}, prelude::*};
+use axum::http::HeaderMap;
+
+async fn rename(headers: HeaderMap) -> Result<Response> {
+    # let version = 7;
+    conditional::require_if_match(&headers, &ETag::strong(&format!("v{version}"))?)?;
+    format::empty()
+}
+```
+
+`require_if_match` answers `428` with no `If-Match`, and `if_match` lets that through.
+Both answer `412` to a stale tag, and `if_match_holds` gives the answer alone for a
+service with a refusal of its own. `If-Match` compares strongly, as RFC 9110 requires, so
+a weak tag never passes it and a tag meant for it must be strong. The check and the write
+are two steps, so close the gap with a lock on the row or `UPDATE ... WHERE version = $1`.
+
+A `304` comes after the handler has run, so it saves bytes and not the query. It is made
+from the answer the caller would have had, so a refused caller gets the refusal and a tag
+says nothing about what they may not see. The hash is std's `DefaultHasher`, which catches
+accidents and not an adversary: a tag defending against someone who writes the data should
+be a version counter or a real digest.
 
 ### Errors
 
@@ -515,6 +583,7 @@ axa was extracted from what the Main X Index services relied on in
 | Permissive CORS when enabled | Listed origins only in production |
 | `x-powered-by` header | None |
 | No request timeout or security headers by default | Both on in production; headers everywhere |
+| `If-None-Match` compared as one exact string | Weak comparison, lists, and `*`, as RFC 9110 has it |
 
 The code was written afresh rather than copied, so this crate can keep its own
 licence terms.

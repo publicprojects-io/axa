@@ -196,6 +196,17 @@ to it does change.
 - A paging helper of your own can go: `Page::bounds`, `Page::respond`, and `?` on
   `PageParams::resolve` replace it.
 
+## Upgrading past 0.6
+
+Unreleased. Nothing stops compiling.
+
+The standard stack now answers `304` to a `GET` or `HEAD` holding the `ETag` of its
+answer, so a handler's own comparison can go. It changes an answer only where a handler
+sets an `ETag`, the caller sends `If-None-Match`, and the handler did not already match
+it, which means a list of tags, `*`, or a route that never compared. With origins listed,
+CORS now exposes `etag`. See
+[Conditional requests](../../README.md#conditional-requests).
+
 ## Checking your work
 
 ```sh

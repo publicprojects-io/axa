@@ -76,6 +76,7 @@ struct ReadmeDoctests;
 pub mod boot;
 pub mod cli;
 pub mod client;
+pub mod conditional;
 pub mod config;
 pub mod context;
 pub mod db;

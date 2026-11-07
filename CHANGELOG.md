@@ -3,6 +3,30 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Conditional requests, in `axa::conditional`.** The standard stack now answers `304` to
+  a `GET` or `HEAD` holding the `ETag` of its answer, whoever set the tag, with weak
+  comparison, lists, and `*` as RFC 9110 has them. A `304` keeps what the `200` would have
+  said, such as `vary` and `cache-control`, and it gets the request id, security headers,
+  and CORS headers. It is made from the answer the caller would have had, so a refused
+  caller gets the refusal. PPM, CRM, and patient-flow had each written their own.
+- `conditional::etag`, a layer a route or router opts into, gives a `GET`'s `200` a weak
+  tag from a hash of its body. It reads only a body of exact known size up to
+  `conditional::MAX_BODY` (8 MB), so streams and server-sent events pass through unread,
+  and it skips `no-store`. No new dependency: the hash is std's.
+- `ETag`, which goes on a response like any header: `ETag::weak` and `ETag::strong` from
+  text, `ETag::weak_of` and `ETag::strong_of` from a value's JSON.
+- `conditional::if_match`, `require_if_match`, and `if_match_holds` for a stale write,
+  which is a `412` problem with the `code` `precondition_failed`, and a missing `If-Match`
+  a `428` with `precondition_required`.
+
+### Changed
+
+- With origins listed, CORS exposes `etag`, so a page can read a tag to send back.
+
 ## [0.6.0] - 2026-11-07
 
 This covers `axa` 0.6.0, `axa-keycloak` 0.3.0, `axa-pagination` 0.1.1, `axa-paseto` 0.5.0,
