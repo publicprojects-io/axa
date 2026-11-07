@@ -54,7 +54,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **`outbox-encryption`, and the `encryption` feature of `axa-outbox`:** payloads sealed
   at rest with XChaCha20-Poly1305 under keys the service supplies, bound to their event,
-  with a key id so that a key can be replaced. It adds `chacha20poly1305` 0.11.
+  with a key id so that a key can be replaced. A key's material is wiped from memory
+  when it is dropped. It adds `chacha20poly1305` 0.11, and uses `zeroize`, already in
+  the workspace through `axa-paseto`.
 - `axa::outbox::inbox::seen`, an insert-only inbox a consumer dedupes with in its own
   transaction.
 

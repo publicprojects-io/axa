@@ -646,6 +646,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
@@ -1031,6 +1032,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
+ "zeroize",
 ]
 
 [[package]]
@@ -1155,6 +1157,7 @@ dependencies = [
  "cipher 0.5.2",
  "cpufeatures 0.3.1",
  "rand_core 0.10.1",
+ "zeroize",
 ]
 
 [[package]]
@@ -1167,6 +1170,7 @@ dependencies = [
  "chacha20",
  "cipher 0.5.2",
  "poly1305",
+ "zeroize",
 ]
 
 [[package]]
@@ -1883,6 +1887,7 @@ dependencies = [
  "const-oid 0.10.2",
  "crypto-common 0.2.2",
  "ctutils",
+ "zeroize",
 ]
 
 [[package]]

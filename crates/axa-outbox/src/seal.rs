@@ -12,6 +12,7 @@ use chacha20poly1305::{
 };
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+use zeroize::Zeroize;
 
 /// The shortest secret [`Key::new`] accepts, in bytes.
 pub const MIN_KEY_LEN: usize = 32;
@@ -26,7 +27,7 @@ const HEADER_LEN: usize = 2 + NONCE_LEN;
 const CONTEXT: &[u8] = b"axa-outbox payload key, version 1\0";
 
 /// One key for sealing payloads, with the id a sealed payload names it by. Its `Debug`
-/// shows the id and never the key.
+/// shows the id and never the key, and its key material is wiped when it is dropped.
 #[derive(Clone)]
 pub struct Key {
     id: u8,
@@ -72,15 +73,16 @@ impl Key {
         if secret.len() < MIN_KEY_LEN {
             return Err(KeyTooShort { len: secret.len() });
         }
-        let derived: [u8; 32] = Sha256::new()
+        // The hasher writes the key straight into one buffer, wiped once the cipher has
+        // it. The hasher wipes itself, and the cipher wipes its own copy when dropped.
+        let mut derived = chacha20poly1305::Key::default();
+        Sha256::new()
             .chain_update(CONTEXT)
             .chain_update(secret)
-            .finalize()
-            .into();
-        Ok(Self {
-            id,
-            cipher: XChaCha20Poly1305::new(&derived.into()),
-        })
+            .finalize_into(&mut derived);
+        let cipher = XChaCha20Poly1305::new(&derived);
+        derived.as_mut_slice().zeroize();
+        Ok(Self { id, cipher })
     }
 
     /// The id a sealed payload names this key by.
