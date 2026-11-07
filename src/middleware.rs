@@ -1,8 +1,8 @@
 //! The standard middleware stack.
 //!
 //! From the outside in: request id, tracing, security headers, CORS, timeout,
-//! compression, body limit, panic catching. A panic is caught last in, so that
-//! its answer gets everything any other answer gets.
+//! compression, refusal shaping, body limit, panic catching. A panic is caught last
+//! in, so that its answer gets everything any other answer gets.
 
 use std::{
     any::Any,
@@ -140,6 +140,38 @@ fn panicked(_panic: Box<dyn Any + Send>) -> Response {
     crate::error::internal_response()
 }
 
+/// Whether an error's `content-type` says it was never meant to be read as data: there
+/// is none, as on an unmatched path, or it is the plain text Axum's rejections use.
+fn is_bare(content_type: Option<&HeaderValue>) -> bool {
+    content_type.is_none_or(|value| {
+        value.to_str().is_ok_and(|value| {
+            let media_type = value.split(';').next().unwrap_or(value);
+            media_type.trim().eq_ignore_ascii_case("text/plain")
+        })
+    })
+}
+
+/// Turn a bare refusal into a problem, as every other error is. Axum writes these
+/// itself: an unmatched path, a wrong method, and an extractor's rejection. The body is
+/// dropped and not carried into `detail`, as a rejection's text quotes what the caller
+/// sent. The headers stay, as a `405`'s `allow` and a `429`'s `retry-after` mean
+/// something.
+async fn shape_refusals(request: Request, next: Next) -> Response {
+    let response = next.run(request).await;
+    let status = response.status();
+    if !(status.is_client_error() || status.is_server_error())
+        || !is_bare(response.headers().get(header::CONTENT_TYPE))
+    {
+        return response;
+    }
+    let (mut parts, _) = response.into_parts();
+    let (problem, body) = crate::error::refusal_response(status).into_parts();
+    parts.headers.remove(header::CONTENT_ENCODING);
+    parts.headers.remove(header::CONTENT_LENGTH);
+    parts.headers.extend(problem.headers);
+    Response::from_parts(parts, body)
+}
+
 /// A body limit for one route, replacing the service-wide limit there.
 ///
 /// Keep the service-wide limit small and raise it only on the routes that need
@@ -243,7 +275,8 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     // Innermost, so that a panic's answer passes through everything below.
     let mut router = router
         .layer(CatchPanicLayer::custom(panicked))
-        .layer(DefaultBodyLimit::max(config.body_limit));
+        .layer(DefaultBodyLimit::max(config.body_limit))
+        .layer(from_fn(shape_refusals));
     if config.compression {
         router = router.layer(CompressionLayer::new());
     }
@@ -289,7 +322,7 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http, http::StatusCode, routing::get};
+    use axum::{body::Body, http, http::StatusCode, response::IntoResponse, routing::get};
     use tower::ServiceExt;
 
     fn config() -> Http {
@@ -758,6 +791,231 @@ mod tests {
             .unwrap();
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// A service with a route for each way to refuse.
+    fn refusing_app() -> Router {
+        #[derive(serde::Deserialize)]
+        struct Named {
+            #[allow(dead_code)]
+            name: String,
+        }
+        async fn takes_json(_: axum::Json<Named>) {}
+        async fn takes_number(_: axum::extract::Path<u32>) {}
+        async fn says_why() -> (StatusCode, [(HeaderName, &'static str); 1], &'static str) {
+            (
+                StatusCode::CONFLICT,
+                [(header::CONTENT_LENGTH, "11")],
+                "secret text",
+            )
+        }
+        async fn only_a_status() -> StatusCode {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+        async fn with_a_header() -> (StatusCode, [(HeaderName, &'static str); 1]) {
+            (StatusCode::TOO_MANY_REQUESTS, [(header::RETRY_AFTER, "30")])
+        }
+        async fn own_error() -> Response {
+            (
+                StatusCode::IM_A_TEAPOT,
+                [(header::CONTENT_TYPE, "application/json")],
+                r#"{"mine":true}"#,
+            )
+                .into_response()
+        }
+        async fn a_success() -> &'static str {
+            "fine"
+        }
+        let router = Router::new()
+            .route("/json", axum::routing::post(takes_json))
+            .route("/number/{n}", get(takes_number))
+            .route("/why", get(says_why))
+            .route("/status", get(only_a_status))
+            .route("/header", get(with_a_header))
+            .route("/own", get(own_error))
+            .route("/fine", get(a_success));
+        apply(router, &config()).unwrap()
+    }
+
+    async fn problem_of(response: Response) -> serde_json::Value {
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
+        );
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
+
+    #[tokio::test]
+    async fn an_unmatched_path_answers_like_not_found() {
+        let response = refusing_app()
+            .oneshot(get_request("/nowhere"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert!(response.headers().contains_key(X_REQUEST_ID));
+        let expected = problem_of(Error::NotFound.into_response()).await;
+        assert_eq!(problem_of(response).await, expected);
+    }
+
+    #[tokio::test]
+    async fn a_wrong_method_is_a_problem_and_keeps_its_allow_header() {
+        let request = http::Request::post("/fine").body(Body::empty()).unwrap();
+        let response = refusing_app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert!(
+            response.headers()[header::ALLOW]
+                .to_str()
+                .unwrap()
+                .contains("GET")
+        );
+        assert_eq!(
+            problem_of(response).await,
+            serde_json::json!({
+                "type": "about:blank",
+                "title": "Method Not Allowed",
+                "status": 405,
+                "code": "method_not_allowed",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn an_oversized_body_is_a_problem() {
+        let request = http::Request::post("/echo")
+            .body(Body::from(vec![b'a'; 17]))
+            .unwrap();
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+        let problem = problem_of(response).await;
+        assert_eq!(problem["status"], 413);
+        assert!(problem.get("detail").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_rejected_extractor_is_a_problem_that_quotes_nothing() {
+        for (request, status) in [
+            (
+                http::Request::post("/json")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(r#"{"name":1234567}"#))
+                    .unwrap(),
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                http::Request::post("/json")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from("{1234567"))
+                    .unwrap(),
+                StatusCode::BAD_REQUEST,
+            ),
+            (
+                http::Request::post("/json").body(Body::from("{}")).unwrap(),
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+            (
+                http::Request::get("/number/1234567x")
+                    .body(Body::empty())
+                    .unwrap(),
+                StatusCode::BAD_REQUEST,
+            ),
+        ] {
+            let response = refusing_app().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), status);
+            let problem = problem_of(response).await;
+            assert_eq!(problem["status"], status.as_u16());
+            assert!(!problem.to_string().contains("1234567"), "{problem}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_handlers_plain_text_error_is_not_sent() {
+        let response = refusing_app().oneshot(get_request("/why")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        // The handler's length belongs to the text that was dropped.
+        let length = response.headers().get(header::CONTENT_LENGTH).cloned();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        if let Some(length) = length {
+            assert_eq!(length.to_str().unwrap(), bytes.len().to_string());
+        }
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(),
+            serde_json::json!({
+                "type": "about:blank",
+                "title": "Conflict",
+                "status": 409,
+                "code": "conflict",
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bare_status_is_a_problem_and_keeps_its_headers() {
+        let response = refusing_app()
+            .oneshot(get_request("/status"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(problem_of(response).await["code"], "service_unavailable");
+
+        let response = refusing_app()
+            .oneshot(get_request("/header"))
+            .await
+            .unwrap();
+        assert_eq!(response.headers()[header::RETRY_AFTER], "30");
+        assert_eq!(problem_of(response).await["code"], "too_many_requests");
+    }
+
+    #[tokio::test]
+    async fn an_error_with_its_own_media_type_and_a_success_are_left_alone() {
+        let response = refusing_app().oneshot(get_request("/own")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::IM_A_TEAPOT);
+        assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&bytes[..], br#"{"mine":true}"#);
+
+        let response = refusing_app().oneshot(get_request("/fine")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/plain; charset=utf-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_refusal_is_compressed_like_any_other_answer() {
+        let mut http = config();
+        http.compression = true;
+        let app = apply(Router::new().route("/fine", get(|| async {})), &http).unwrap();
+        let request = http::Request::get("/nowhere")
+            .header(header::ACCEPT_ENCODING, "gzip")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+        assert_eq!(response.headers()[header::CONTENT_ENCODING], "gzip");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            axa_problem::PROBLEM_JSON
+        );
+        assert!(!response.headers().contains_key(header::CONTENT_LENGTH));
+    }
+
+    #[test]
+    fn only_a_missing_type_or_plain_text_is_bare() {
+        assert!(is_bare(None));
+        for value in ["text/plain", "TEXT/PLAIN; charset=utf-8"] {
+            assert!(is_bare(Some(&HeaderValue::from_static(value))), "{value}");
+        }
+        for value in ["text/html", "application/json", "text/plainer"] {
+            assert!(!is_bare(Some(&HeaderValue::from_static(value))), "{value}");
+        }
     }
 
     #[test]

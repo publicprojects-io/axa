@@ -236,9 +236,10 @@ these for you.
 ```
 
 `code` is the machine-readable reason. Field errors go in an `errors` member, which
-`ErrorDetail::errors` sets. Axum writes some refusals itself, and those are not
-problems: an unmatched path's `404`, a wrong method's `405`, and the rejection of an
-extractor a handler takes directly.
+`ErrorDetail::errors` sets. The standard stack makes Axum's own refusals problems too:
+an unmatched path's `404`, a wrong method's `405`, and an extractor's rejection. It
+treats any error sent as plain text or with no `content-type` the same way and drops
+the text, so a handler that has something to say returns an `Error`.
 
 ### Configuration
 

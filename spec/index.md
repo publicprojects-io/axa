@@ -124,7 +124,7 @@ The variables are listed in `README.md`.
 ### 4.4 Middleware
 
 From the outside in: request id, tracing, security headers, CORS, timeout,
-compression, body limit, panic catching.
+compression, refusal shaping, body limit, panic catching.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -134,7 +134,7 @@ compression, body limit, panic catching.
 | MID-4 | Responses carry `x-content-type-options: nosniff`, `x-frame-options: DENY`, and `referrer-policy: no-referrer`, without replacing a handler's own value. | `responses_carry_request_id_and_security_headers`, `security_headers_do_not_replace_a_handlers_own` |
 | MID-5 | `strict-transport-security` is sent when `hsts` is set, for `hsts_max_age` seconds. | `responses_carry_request_id_and_security_headers`, `the_hsts_max_age_is_configurable` |
 | MID-6 | A panic in a handler becomes the `500` of any internal failure, logged as an error with no panic text, and it gets the same security and CORS headers as any other answer. | `a_panic_becomes_a_500`, `a_panic_answers_like_any_other_internal_failure`, `a_panic_gets_the_same_headers_as_any_other_answer`, `log_lines_carry_the_request_id_and_not_the_query` |
-| MID-7 | A body over the limit is a `413`. | `an_oversized_body_is_refused` |
+| MID-7 | A body over the limit is a `413` problem. | `an_oversized_body_is_refused`, `an_oversized_body_is_a_problem` |
 | MID-8 | An empty origin list adds no CORS layer. Listed origins are validated. | `an_empty_origin_list_means_no_cors_layer`, `listed_origins_are_validated` |
 | MID-9 | A request over `timeout_seconds` is a `408` problem, and `0` turns the timeout off. | `a_request_past_its_timeout_is_a_408`, `a_route_limit_answers_as_a_problem`, `a_zero_timeout_means_none` |
 | MID-10 | Every log line written while serving a request carries its request id, method, and route template, and never the path itself or its query string. An unmatched request logs as `unmatched`. | `log_lines_carry_the_request_id_and_not_the_query` |
@@ -161,9 +161,10 @@ compression, body limit, panic catching.
 | ERR-8 | With the `sqlx` or `queue` feature, a sqlx error converts to `Error::Sqlx`, a generic `500`. | `a_sqlx_error_is_a_generic_500` |
 | ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 | ERR-9 | Every error `axa` answers is an RFC 9457 problem with the media type `application/problem+json`: `type` is `about:blank`, `title` is the status's reason, `status` is the status, and `detail` is present only when there is something more to say. A success stays bare JSON. | `the_bodies_are_exactly_these`, `model_errors_answer_as_problems`, `a_panic_answers_like_any_other_internal_failure`, `json_serializes_with_a_json_content_type` |
-| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, and `internal_server_error`. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408` |
+| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header` |
 | ERR-11 | Field errors are the `errors` extension member. A model's validation failure is a `400` with the `code` `validation`. | `field_errors_are_an_extension_member`, `a_validation_failure_keeps_its_field_errors` |
 | ERR-12 | A rejected JSON body keeps the rejection's status, and the parser's text, which can quote the body, is not returned. | `a_rejected_json_body_keeps_its_status_and_hides_its_text` |
+| ERR-13 | With the standard stack, an error with no `content-type`, or with `text/plain`, becomes a problem for its status with no `detail`. That covers an unmatched path, a wrong method, and an extractor's rejection. Its text is dropped, as a rejection's can quote the request, its headers stay, and any other media type is left alone. An unmatched path answers as `Error::NotFound` does. | `an_unmatched_path_answers_like_not_found`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_rejected_extractor_is_a_problem_that_quotes_nothing`, `a_handlers_plain_text_error_is_not_sent`, `a_bare_status_is_a_problem_and_keeps_its_headers`, `an_error_with_its_own_media_type_and_a_success_are_left_alone`, `only_a_missing_type_or_plain_text_is_bare`, `a_refusal_is_compressed_like_any_other_answer` |
 
 The body of a failed request, with a `detail` and with none:
 
@@ -172,12 +173,11 @@ The body of a failed request, with a `detail` and with none:
 {"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}
 ```
 
-Axum writes some refusals itself, and those are not problems: an unmatched path's
-`404`, a wrong method's `405`, and the rejection of an extractor a handler takes
-directly, such as a `413` from a body over the limit. A handler that takes
+Axum writes some refusals itself, as plain text or with no body, and the standard
+stack makes those problems too (ERR-13). A handler that takes
 `Result<Json<T>, JsonRejection>` and returns the rejection as an `Error` gets a
-problem. `axa-tera` answers a failed render in plain text, as its reader is a
-browser (TRA-3).
+problem with a `detail`. `axa-tera` answers a failed render in HTML, as its reader is
+a browser (TRA-3).
 
 ### 4.6 Responses
 
@@ -334,7 +334,7 @@ and stays so that a service naming it still builds.
 | DSL-4 | `axa-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
 | TRA-1 | `axa-tera` | HTML templates escape values unless a template says `safe`. | `html_templates_escape_values`, `safe_turns_escaping_off` |
 | TRA-2 | `axa-tera` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
-| TRA-3 | `axa-tera` | A failed render shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
+| TRA-3 | `axa-tera` | A failed render is HTML, and shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
 | TRA-4 | `axa-tera` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
 | TRA-5 | `axa-tera` | A page sends its own `content-security-policy`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy` |
 | KCK-1 | `axa-keycloak` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |

@@ -75,7 +75,11 @@ impl From<tera::Error> for Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         tracing::error!(error = %self, "template failed");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Html("Internal Server Error"),
+        )
+            .into_response()
     }
 }
 
@@ -224,6 +228,10 @@ mod tests {
         let error = templates.html("t.html", &json!({})).unwrap_err();
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/html; charset=utf-8"
+        );
         assert_eq!(body_text(response).await, "Internal Server Error");
     }
 }

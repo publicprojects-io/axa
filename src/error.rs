@@ -183,6 +183,28 @@ pub(crate) fn timeout_response() -> Response {
     .into_response()
 }
 
+/// The problem for a refusal that came with nothing to say, which reads as if `axa`
+/// had written it: a `404` is [`Error::NotFound`]'s, and any other has the status's reason
+/// as its `code`.
+pub(crate) fn refusal_response(status: StatusCode) -> Response {
+    if status == StatusCode::NOT_FOUND {
+        let (status, detail) = resource_not_found();
+        return problem(status, detail).into_response();
+    }
+    let code = status.canonical_reason().map(|reason| {
+        reason
+            .to_ascii_lowercase()
+            .replace(' ', "_")
+            .replace('\'', "")
+    });
+    let detail = ErrorDetail {
+        code,
+        detail: None,
+        errors: None,
+    };
+    problem(status, detail).into_response()
+}
+
 /// The body every internal failure shares. It carries no `detail`, as the title
 /// says all a client may be told.
 fn internal() -> (StatusCode, ErrorDetail) {

@@ -176,9 +176,12 @@ to it does change.
   `supported`.
 - A `408` had an empty body, and a failing `/_readiness` keeps `ok` and `failed`. An
   orchestrator reading the status needs no change.
-- Axum still writes some refusals itself, and those are not problems: an unmatched path's
-  `404`, a wrong method's `405`, and the rejection of an extractor a handler takes
-  directly.
+- Any error sent as plain text or with no `content-type` is now a problem with no
+  `detail`. That covers an unmatched path's `404`, a wrong method's `405`, and an
+  extractor's rejection, and these had plain text or nothing. It also covers a handler
+  answering `(StatusCode::CONFLICT, "why")`, and the text is dropped, so search for
+  those and return an `Error`. A layer of your own that rewrites Axum's refusals can go.
+- `axa-tera`'s failed render is `text/html`, where it was `text/plain`.
 - `axa::problem` no longer needs the `problem` feature, which adds nothing now.
 
 ## Checking your work

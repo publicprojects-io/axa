@@ -25,6 +25,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that it still depends on no `axa` crate.
 - **Breaking: `axa-versioning`'s `406` is a problem**, with `code` in place of `error`,
   and `requested` and `supported` as extension members.
+- **Breaking: the standard stack makes a bare refusal a problem.** An error with no
+  `content-type`, or with `text/plain`, becomes a problem for its status with no
+  `detail`, and keeps its headers. That covers Axum's unmatched path, wrong method, and
+  extractor rejections, whose text can quote the request. A handler's own plain-text
+  error is dropped the same way, so it should return an `Error`.
+- `axa-tera` answers a failed render as `text/html`, so that a browser still gets text
+  and the stack leaves it alone.
 - A request past its time limit is a `408` problem, where it had an empty body.
 - A failing `/_readiness` is a `503` problem, which still carries `ok` and `failed`.
 - `axa` always depends on `axa-problem`, and `axa::problem` always exists. The `problem`

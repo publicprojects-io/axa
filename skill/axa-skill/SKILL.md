@@ -145,9 +145,11 @@ let cli = axa::cli::parse(
 - An error's body is an RFC 9457 problem, `application/problem+json`, and a success is
   bare JSON. Read the reason from `code`, the text from `detail`, which can be absent, and
   field errors from `errors`. `ErrorDetail::new("code", "detail")` sets the first two.
-- Axum's own refusals are not problems: an unmatched path's `404`, a wrong method's `405`,
-  and the rejection of an extractor a handler takes directly. Take
-  `Result<Json<T>, JsonRejection>` and return the rejection with `?` to get a problem.
+- The standard stack makes any error sent as plain text or with no `content-type` a
+  problem, and drops the text. That covers Axum's own `404`, `405`, and extractor
+  rejections, and also `(StatusCode::CONFLICT, "why")` from a handler, so return an
+  `Error` to say why. Take `Result<Json<T>, JsonRejection>` and return the rejection with
+  `?` to tell the caller what was wrong with a body.
 - A `"/"` route is served at the prefix with no trailing slash, and two methods on one
   path merge.
 - Give a slow route its own limit where it is declared, with `Routes::timeout` or
