@@ -59,6 +59,7 @@
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
 //! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
+//! | `ratelimit` | In-process request limits and failed-login lockout, as `axa::ratelimit` |
 //! | `versioning` | `Accepts-version` negotiation, as `axa::versioning` |
 //!
 //! # Origin
@@ -110,6 +111,8 @@ pub use axa_paseto as paseto;
 pub use axa_problem as problem;
 #[cfg(feature = "prometheus")]
 pub use axa_prometheus as prometheus;
+#[cfg(feature = "ratelimit")]
+pub use axa_ratelimit as ratelimit;
 #[cfg(feature = "redis")]
 pub use axa_redis as redis;
 #[cfg(feature = "sea-orm")]

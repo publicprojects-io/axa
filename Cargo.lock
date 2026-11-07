@@ -499,6 +499,7 @@ dependencies = [
  "axa-paseto",
  "axa-problem",
  "axa-prometheus",
+ "axa-ratelimit",
  "axa-redis",
  "axa-seaorm",
  "axa-session",
@@ -635,6 +636,17 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "prometheus",
+ "tokio",
+ "tower",
+]
+
+[[package]]
+name = "axa-ratelimit"
+version = "0.1.0"
+dependencies = [
+ "axa-problem",
+ "axum",
+ "serde_json",
  "tokio",
  "tower",
 ]

@@ -66,6 +66,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | OTLP traces and request metrics | `opentelemetry` |
 | Prometheus exposition | `prometheus` |
 | RFC 9457 problem details | Always included, as `axa::problem` |
+| Request limits and failed-login lockout | `ratelimit` |
 | `Accepts-version` negotiation | `versioning` |
 
 `features` lists one name per subcrate, and each subcrate is also usable alone.

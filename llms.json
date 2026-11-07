@@ -88,6 +88,10 @@
       "crate": "axa-tracing"
     },
     {
+      "name": "ratelimit",
+      "crate": "axa-ratelimit"
+    },
+    {
       "name": "versioning",
       "crate": "axa-versioning"
     }
@@ -271,6 +275,13 @@
       "description": "Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.",
       "feature": "tracing",
       "readme": "crates/axa-tracing/README.md"
+    },
+    {
+      "name": "axa-ratelimit",
+      "version": "0.1.0",
+      "description": "In-process request limits and failed-login lockout for Axum services.",
+      "feature": "ratelimit",
+      "readme": "crates/axa-ratelimit/README.md"
     },
     {
       "name": "axa-versioning",

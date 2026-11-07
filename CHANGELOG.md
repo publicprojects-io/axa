@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`axa-ratelimit`, behind the `ratelimit` feature:** a limit per client in a fixed
+  window, and a lockout that counts only `401`s, with the `429`, `Retry-After`, and
+  `RateLimit-*` headers. It keys on the address `axa` resolved, so a forged
+  `X-Forwarded-For` buys no fresh limit. Four projects had written their own.
+
 ### Changed
 
 - **Breaking: errors are RFC 9457 problems.** Every error `axa` answers is
