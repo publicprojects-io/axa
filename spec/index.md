@@ -321,12 +321,12 @@ and stays so that a service naming it still builds.
 | SQX-6 | `axa-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
 | SQX-7 | `axa-sqlx` | `Db` lets one function take the pool or an open transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
 | ENV-D | `axa-environment` | A command that destroys data may run only in development or test, and only when confirmed. | `data_is_destroyed_only_in_development_or_test_and_only_when_confirmed` |
-| PAG-1 | `axa-pagination` | A large limit is clamped, not rejected. | `a_large_limit_is_clamped_not_rejected` |
-| PAG-2 | `axa-pagination` | Zero and unparsable values use the defaults. | `zero_and_unparsable_values_use_the_defaults` |
-| PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
+| PAG-1 | `axa-pagination` | A large limit is clamped, not rejected. To be replaced by PAG-9 (section 6). | `a_large_limit_is_clamped_not_rejected` |
+| PAG-2 | `axa-pagination` | Zero and unparsable values use the defaults. To be replaced by PAG-9 (section 6). | `zero_and_unparsable_values_use_the_defaults` |
+| PAG-3 | `axa-pagination` | An offset past the maximum is refused. To be removed by PAG-7 (section 6). | `an_offset_past_the_maximum_is_refused` |
 | PAG-4 | `axa-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
-| PAG-5 | `axa-pagination` | `Page::bounds` gives Postgres its signed `LIMIT` and `OFFSET`. | `bounds_are_what_postgres_takes` |
-| PAG-6 | `axa-pagination` | `Page::respond` answers a bare JSON array with the count headers. | `a_response_carries_the_count_headers_and_a_json_body` |
+| PAG-5 | `axa-pagination` | `Page::bounds` gives Postgres its signed `LIMIT` and `OFFSET`. To be removed by PAG-7 (section 6). | `bounds_are_what_postgres_takes` |
+| PAG-6 | `axa-pagination` | `Page::respond` answers a bare JSON array with the count headers. To be replaced by PAG-8 and PAG-10 (section 6). | `a_response_carries_the_count_headers_and_a_json_body` |
 | PST-1 | `axa-paseto` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
 | PST-8 | `axa-paseto` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | PST-2 | `axa-paseto` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
@@ -604,7 +604,20 @@ by hand. Publish only from a commit where everything above has passed.
 
 ## 6. Decided, not yet built
 
-None.
+### Cursor paging in `axa-pagination`
+
+`axa-pagination` MUST move from offset paging to cursor paging, the model the
+CRM service already uses (CRM-T51). Until it is built, PAG-1, PAG-2, PAG-3,
+PAG-5 and PAG-6 in section 4.13 describe the crate as it is, and these rows
+replace them. PAG-4, `LIKE` escaping, is unchanged.
+
+| Id | Crate | Requirement |
+|---|---|---|
+| PAG-7 | `axa-pagination` | A collection read MUST NOT take `?offset=`, and MUST NOT send `X-Total-Count`. |
+| PAG-8 | `axa-pagination` | A page is chosen by an opaque `?cursor=`. The response MUST carry the next page as a `Link` header with `rel="next"`, and the last page MUST carry none. |
+| PAG-9 | `axa-pagination` | A limit that is zero, not a number, or above the endpoint's maximum MUST be refused with `422`, never clamped or replaced by the default. Only a missing limit uses the default. |
+| PAG-10 | `axa-pagination` | A response MUST NOT send a total, because a total would count rows the caller's record policy hides. |
+| PAG-11 | `axa-pagination` | A cursor MUST be signed by the service, so that a caller cannot make one up or edit one. A cursor that is malformed, carries a bad signature, or belongs to another query MUST be refused with `422`. |
 
 ## 7. Open questions
 
