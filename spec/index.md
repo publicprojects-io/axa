@@ -24,18 +24,23 @@ fixed once and an auditor reads it once.
 
 - Route tables that become an ordinary Axum `Router`
 - The standard HTTP middleware stack
+- Conditional requests
 - Health routes
 - The error type and its HTTP mapping
 - Configuration from the process environment
 - Logging setup and graceful shutdown
 - The shared command line, tasks, and background jobs
 - A Postgres job queue
+- `Idempotency-Key` handling
+- A transactional outbox and relay on Postgres
 - Request-level test helpers
 - SeaORM support, for projects leaving Loco
 
 ### Out of scope
 
 - Domain logic, handlers, models, and SQL. These stay in each service.
+- Broker clients, topics, and event envelopes. `axa` depends on no broker, and a
+  service passes its publisher in.
 - Verifying tokens and evaluating policy. These stay in `authentication-verifier`,
   and a service's own rules stay in the service. `axa-paseto` is only the Axum layer
   that calls them. `axa-keycloak` is the exception: it carries its own copy of what
@@ -124,7 +129,7 @@ The variables are listed in `README.md`.
 ### 4.4 Middleware
 
 From the outside in: request id, tracing, security headers, CORS, timeout,
-compression, refusal shaping, body limit, panic catching.
+`304`s (CND-1), compression, refusal shaping, body limit, panic catching.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -161,7 +166,7 @@ compression, refusal shaping, body limit, panic catching.
 | ERR-8 | With the `sqlx`, `queue`, or `sea-orm` feature, a violated unique or foreign key constraint answers `409`, and logs as a client's mistake, with no text from the database. Any other database error is a generic `500`. | `a_sqlx_error_is_a_generic_500`, `a_violated_constraint_through_sqlx_is_a_conflict`, `a_violated_constraint_through_sea_orm_is_a_conflict`, `a_violated_constraint_logs_nothing_at_error` |
 | ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 | ERR-9 | Every error `axa` answers is an RFC 9457 problem with the media type `application/problem+json`: `type` is `about:blank`, `title` is the status's reason, `status` is the status, and `detail` is present only when there is something more to say. A success stays bare JSON. | `the_bodies_are_exactly_these`, `model_errors_answer_as_problems`, `a_panic_answers_like_any_other_internal_failure`, `json_serializes_with_a_json_content_type` |
-| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header` |
+| ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, `precondition_failed`, `precondition_required`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_stale_write_is_a_412_problem_and_writes_nothing`, `if_match_is_optional_unless_required` |
 | ERR-11 | Field errors are the `errors` extension member. A model's validation failure is a `400` with the `code` `validation`. | `field_errors_are_an_extension_member`, `a_validation_failure_keeps_its_field_errors` |
 | ERR-12 | A rejected JSON body keeps the rejection's status, its `code` is that status's, and `detail` says what was wrong in fixed text. The parser's text, which can quote the body, is not returned. | `a_rejected_json_body_keeps_its_status_and_hides_its_text` |
 | ERR-13 | With the standard stack, an error with no `content-type`, or with `text/plain`, becomes a problem for its status with no `detail`. That covers an unmatched path, a wrong method, and an extractor's rejection. Its text is dropped, as a rejection's can quote the request, its headers stay, and any other media type is left alone. An unmatched path answers as `Error::NotFound` does. | `an_unmatched_path_answers_like_not_found`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_rejected_extractor_is_a_problem_that_quotes_nothing`, `a_handlers_plain_text_error_is_not_sent`, `a_bare_status_is_a_problem_and_keeps_its_headers`, `an_error_with_its_own_media_type_and_a_success_are_left_alone`, `only_a_missing_type_or_plain_text_is_bare`, `a_refusal_is_compressed_like_any_other_answer` |
@@ -283,6 +288,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | CLT-4 | The address reaches a handler through `ClientAddr`, and a layer as a plain `IpAddr` extension, and stays out of the request span. | `a_handler_gets_the_address_behind_a_trusted_proxy` |
 | CLT-5 | `TRUSTED_PROXIES` takes addresses and CIDR ranges. A bad list trusts none, and refuses to boot in production. | `ranges_read_and_match`, `a_bad_range_is_refused`, `trusted_proxies_are_read_and_a_bad_list_trusts_none` |
 | SRV-13 | An idle connection is kept for `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, a separate limit from SRV-7, so that it can outlast a load balancer's. `0` keeps it for ever. Neither limit cuts off a request being served, a response still reaching the client, or an upgraded connection. A connection is idle from the last byte written, so a client that stops reading a finished response is dropped at this limit. | `an_idle_connection_outlasts_the_header_limit`, `an_idle_connection_is_dropped_at_the_keep_alive_limit`, `neither_limit_cuts_off_a_slow_handler`, `neither_limit_cuts_off_a_slow_response_body`, `an_upgraded_connection_is_left_alone`, `a_limit_of_zero_means_none`, `a_long_response_outlasts_the_keep_alive_limit`, `a_response_going_out_at_shutdown_is_not_cut_off`, `a_client_that_stops_reading_a_finished_response_is_dropped`, `a_limit_too_long_for_the_clock_means_none` |
+| SRV-14 | A client that has stopped reading can hold up a response for `SEND_STALL_TIMEOUT_SECONDS`, 60 by default, counted from a write its socket cannot take, and is then dropped, freeing its slot, at shutdown too. A write that goes through clears the limit, so a slow client keeps its response, and waiting does not move it. A handler or stream with nothing to send never blocks a write, so no time limit applies to it, and an upgraded connection is left alone. `0` waits for ever. | `a_client_that_stops_reading_a_stream_loses_its_slot`, `a_stream_with_no_send_stall_limit_keeps_its_slot`, `a_reader_that_keeps_up_outlasts_the_send_stall_limit`, `a_reader_that_keeps_up_with_a_stream_outlasts_the_send_stall_limit`, `a_stalled_response_is_dropped_with_no_keep_alive_limit`, `a_stalled_client_cannot_hold_shutdown`, `waiting_on_a_blocked_write_does_not_move_its_deadline`, `neither_limit_cuts_off_a_slow_response_body`, `the_send_stall_limit_is_a_setting`, `a_limit_of_zero_means_none` |
 
 ### 4.12 SeaORM support
 
@@ -425,6 +431,124 @@ and stays so that a service naming it still builds.
 with the `sqlx` feature, and `()` with neither. With both, it is the SeaORM
 connection. `db::connect` opens either from `config::Database`.
 
+### 4.15 Conditional requests
+
+`axa::conditional` follows RFC 9110. Comparing costs nothing, so it is in the standard
+stack, and it changes an answer only where a handler set an `ETag` and the caller sent
+`If-None-Match`. Hashing a body costs time and suits only some routes, so a route or
+router opts in. Most routes that want a tag have a timestamp in the body and need a tag
+of their own, and some services send `no-store` on every `/api` answer, which a hash
+cannot help. It is a module and not a subcrate because `apply` calls it.
+
+| Id | Requirement | Test |
+|---|---|---|
+| CND-1 | The standard stack answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer, whoever set that tag. The comparison is weak, reads a list over any number of header lines with commas inside tags allowed, and `*` alone matches any success, tagged or not. | `a_caller_holding_the_tag_gets_a_304_with_no_body`, `a_caller_with_an_old_tag_or_none_gets_the_whole_answer`, `lists_and_weak_tags_compare_weakly`, `two_header_lines_read_as_one_list`, `a_star_matches_an_answer_with_no_tag`, `a_head_is_compared_like_a_get`, `weak_comparison_ignores_who_is_weak`, `a_list_is_read_with_commas_inside_tags_and_empty_members`, `a_list_can_run_over_several_header_lines`, `a_star_stands_for_anything_but_only_alone`, `bytes_outside_ascii_are_compared_as_bytes` |
+| CND-2 | An `If-None-Match` that cannot be read holds nothing, so the caller gets the whole answer. | `what_is_not_a_tag_matches_nothing`, `lists_and_weak_tags_compare_weakly` |
+| CND-3 | A `304` has no body and no header describing one, `content-length` included, and keeps every other header the answer had, so `etag`, `cache-control`, `vary`, `expires`, `content-location`, `set-cookie`, and a count header survive. | `a_304_keeps_what_the_200_said_and_nothing_about_a_body`, `a_304_is_sent_with_no_body_on_a_real_connection` |
+| CND-4 | The comparison sits outside compression, so a `304` has the `vary` its `200` would have had, and inside everything else, so it gets the request id, security headers, and CORS headers. | `a_304_has_the_vary_compression_would_have_added`, `a_304_gets_everything_the_stack_adds` |
+| CND-5 | Only a `2xx` to a `GET` or `HEAD` is compared. A write has done its work by then and is never touched. | `only_a_success_is_compared`, `a_write_is_never_answered_with_a_304` |
+| CND-6 | A `304` is made from the answer the caller was about to get. Nothing is stored and nothing short-circuits, so a refused caller gets the refusal whatever they hold, wherever the auth layer sits, and a tag covers what this caller may see. | `a_caller_who_is_refused_gets_the_refusal_whatever_they_hold`, `a_tag_covers_what_this_caller_may_see` |
+| CND-7 | The comparison reads the tag on the outgoing answer, so a layer inside it that removes the tag, as paging does on a partial page, means no `304`. | `a_layer_that_takes_the_tag_away_means_no_304` |
+| CND-8 | `conditional::etag`, added to a router or a route, gives a `GET`'s `200` a weak tag from a hash of its body, the same on every replica. It covers what passes through it, so outside paging it covers the page. | `an_answer_gets_a_weak_tag_from_its_body_and_then_a_304`, `a_changed_body_has_a_new_tag`, `a_hash_covers_only_a_gets_200`, `one_route_can_opt_in_alone`, `a_hash_outside_paging_covers_the_page`, `a_digest_is_the_same_each_time_and_differs_by_content` |
+| CND-9 | `conditional::etag` leaves alone an answer with an `ETag`, with `no-store`, with an empty body, or already encoded. A handler's own tag still works on a `no-store` answer. A `HEAD` gets no generated tag, as RFC 9110 allows, because Axum has dropped the body. | `a_handlers_own_tag_is_left_alone`, `no_store_gets_no_generated_tag_and_a_handlers_tag_still_works`, `no_store_is_read_as_a_directive`, `an_empty_answer_gets_no_tag`, `an_already_encoded_answer_is_not_hashed`, `a_head_gets_no_generated_tag_and_keeps_its_length` |
+| CND-10 | `conditional::etag` hashes plain bytes, inside compression, so the tag is weak and the same for every encoding, and a tag held from one encoding matches on another. A handler's strong tag is left alone when compressed. | `the_tag_is_the_same_whichever_encoding_is_asked_for`, `a_handlers_strong_tag_is_left_alone_when_its_answer_is_compressed` |
+| CND-11 | `conditional::etag` reads only a body of exact known size, up to `MAX_BODY` (8 MB), which is nearly always in memory already. A stream and server-sent events pass through unread, and a larger body untagged. A body that fails while being read is the generic `500`. | `a_stream_is_never_buffered`, `server_sent_events_reach_the_caller_as_they_are_sent`, `a_body_at_the_limit_is_tagged_and_one_past_it_is_not`, `a_body_that_fails_is_a_generic_500` |
+| CND-12 | A timestamp or request id in a body changes the hash each time, so a caller never matches and gets the whole answer, which gains nothing and harms nothing. A handler can leave it out with its own tag. | `a_timestamp_in_the_body_never_matches_and_does_no_harm`, `a_handler_can_leave_a_timestamp_out_of_its_tag` |
+| CND-13 | `ETag` builds a weak or strong tag from text, refusing what a tag cannot hold, or from a value's JSON, where `ETag::weak_of` gives what `conditional::etag` gives the same JSON. | `a_tag_holds_only_what_a_tag_can_hold`, `weak_of_gives_the_tag_the_layer_gives_the_same_json` |
+| CND-14 | `conditional::if_match` passes a write with the current tag or `*`, or with no `If-Match`. It compares strongly, so a weak tag on either side fails. Anything else, including what cannot be read, is a `412` problem with the `code` `precondition_failed`. | `a_write_with_the_current_tag_goes_through`, `a_stale_write_is_a_412_problem_and_writes_nothing`, `a_weak_current_tag_never_passes_if_match`, `strong_comparison_refuses_any_weak_tag` |
+| CND-15 | `conditional::require_if_match` does the same, and a missing `If-Match` is a `428` problem with the `code` `precondition_required`. `conditional::if_match_holds` gives the answer alone, for a service with its own refusal. | `if_match_is_optional_unless_required`, `a_service_can_give_its_own_answer_to_a_stale_write` |
+| CND-16 | With origins listed, CORS exposes `etag`, so a page can read a tag to send back. | `a_page_on_a_listed_origin_can_read_the_tag` |
+
+`If-Modified-Since`, `If-Unmodified-Since`, `If-Range`, and `If-None-Match` on a write are
+not handled: no service sends them or sets `Last-Modified`, and on a write it would need
+checking before the work, in the handler.
+
+### 4.16 Idempotency keys
+
+`axa-idempotency` runs a write once per caller and `Idempotency-Key`. A retry gets the
+first answer. It is one layer, and a service adds it after `into_router`, before its
+guards, and before `axa::middleware::apply`, so that the layer sits inside compression
+and inside whatever refuses a caller. [Where the layer goes](../help/idempotency-keys/index.md)
+says why. The crate holds no trait for a service to implement: a closure given to
+`Idempotency::new` names the caller, and a service calls `sweep`, `forget`, and
+`forget_caller` when it chooses. Nothing runs by itself.
+
+The table is `axa_idempotency`. The crate does not own a service's schema, so a service
+runs `SETUP_STATEMENTS` in a migration, and `check` tells it at boot if that was missed.
+
+The guarantee has one known gap: the answer is stored after the handler commits, in a
+separate transaction, so a crash between the two runs the handler again on the retry.
+A handler that must not repeat needs a unique constraint of its own.
+
+The Postgres tests need `AXA_TEST_DATABASE_URL`.
+
+| Id | Requirement | Test |
+|---|---|---|
+| IDM-1 | A request with no key that `required` does not name, or a `GET`, `HEAD`, `OPTIONS`, or `TRACE`, runs as if the layer were not there, reaches no store, and leaves no row. | `with_no_key_nothing_is_kept_and_every_request_runs`, `a_method_that_changes_nothing_ignores_its_key`, `the_store_being_down_stops_the_request_before_it_runs` |
+| IDM-2 | The same key and request after a finished `2xx` or `3xx` gets the first status, body, and the headers in `KEPT_HEADERS`, with `Idempotent-Replayed: true`, and runs nothing. A `set-cookie` is not kept. | `a_retry_gets_the_first_answer_and_runs_nothing`, `a_redirect_is_kept_as_the_write_it_answers`, `an_empty_answer_replays_as_an_empty_answer`, `a_replay_hands_out_no_cookie`, `only_the_listed_headers_are_kept`, `a_replay_is_the_first_answer_and_says_so`, `an_empty_answer_has_a_known_size_and_is_kept` |
+| IDM-3 | The same key with a different method, path, query, or body is a `422` with the `code` `idempotency_key_reused`, whether the first finished or not, and runs nothing. The request is compared by a SHA-256 hash that also marks where each part ends. | `the_same_key_on_a_different_request_is_refused`, `a_duplicate_while_the_first_runs_is_told_to_wait`, `the_fingerprint_sees_every_part_and_where_each_ends`, `what_a_key_holds_decides_the_answer` |
+| IDM-4 | Of any number of requests with one key, on any number of replicas, exactly one runs. A duplicate while it runs is a `409` with the `code` `idempotency_in_progress` and `Retry-After: 1`. | `of_many_requests_at_once_on_two_replicas_exactly_one_runs`, `a_duplicate_while_the_first_runs_is_told_to_wait` |
+| IDM-5 | A key belongs to one caller. Two callers with one key run separately, and neither can read the other's answer. | `one_key_is_two_keys_for_two_callers` |
+| IDM-6 | A keyed request with no caller, or an empty one, is a `401` with the `code` `idempotency_no_caller`, runs nothing, and leaves no row. | `with_no_caller_a_keyed_request_is_refused_and_does_not_run` |
+| IDM-7 | Mounted as stated, a guard refuses a caller before a replay can answer it. | `a_guard_outside_the_layer_refuses_before_a_replay_can_answer` |
+| IDM-8 | A `4xx` or `5xx` frees the key, so a retry under it runs, and a refusal from the standard stack does too. | `a_failure_releases_the_key_so_a_retry_runs`, `a_failure_is_released_and_a_success_or_redirect_is_kept`, `the_service_body_limit_still_applies_and_its_refusal_frees_the_key` |
+| IDM-9 | A claim whose run stopped reporting in, by a crash, a hang-up, a panic, or the stack's timeout, can be taken over by the same request once its lease ends, and by exactly one such request. | `a_claim_abandoned_by_a_crash_is_taken_over_by_the_same_request`, `of_many_retries_of_an_abandoned_claim_exactly_one_takes_it`, `a_cancelled_run_stops_reporting_in_and_its_key_comes_free`, `a_panic_is_answered_and_its_key_comes_free_after_the_lease`, `a_request_the_stack_cuts_off_frees_its_key_after_the_lease` |
+| IDM-10 | A different request cannot take over an abandoned claim, as the lost run may have done its work. | `a_different_request_cannot_take_over_an_abandoned_claim` |
+| IDM-11 | A run reports in every third of its lease, so that it can run for as long as it needs without being taken for lost. | `a_run_that_reports_in_outlives_its_lease` |
+| IDM-12 | A run that lost its claim cannot overwrite the answer of the run that took over. | `a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer` |
+| IDM-13 | Mounted as stated, the plain body is stored, and each replay is compressed or not as its caller asked. | `inside_compression_the_plain_body_is_stored_and_each_caller_gets_what_it_asked_for` |
+| IDM-14 | An answer with a `content-encoding` is never stored, wherever the layer sits. The caller gets it, and a retry is a `409` with the `code` `idempotency_answer_not_kept`. | `outside_compression_a_compressed_answer_is_never_stored_or_replayed`, `an_answer_a_handler_compressed_is_sent_and_not_kept`, `what_cannot_be_replayed_is_not_kept` |
+| IDM-15 | An answer of unknown size is a stream, and one over `max_response_bytes`, 1 MiB by default, is too large. Either is passed on without being read, nothing of it is stored, and a retry is the `409` of IDM-14, because the write ran. | `a_stream_is_passed_on_and_not_kept`, `an_answer_over_the_limit_is_sent_and_not_kept`, `what_cannot_be_replayed_is_not_kept` |
+| IDM-16 | A keyed request over `max_request_bytes`, 1 MiB by default, is a `413` with the `code` `idempotency_body_too_large`, and runs nothing. The limit does not apply to a request with no key. | `a_body_over_the_limit_is_refused_before_it_runs` |
+| IDM-17 | A key must be one header value of 1 to 255 visible ASCII characters. Anything else is a `400` with the `code` `idempotency_key_invalid`, and runs nothing. A key is never trimmed or cut. | `a_key_that_is_not_one_clean_value_is_refused`, `a_key_is_one_value_of_visible_ascii_within_the_limit`, `a_key_is_never_cut_so_two_keys_cannot_become_one` |
+| IDM-18 | A store that cannot be reached is a `503` with the `code` `idempotency_unavailable` and no `detail`, and the request does not run. | `the_store_being_down_stops_the_request_before_it_runs` |
+| IDM-19 | A store that fails after the work still gives the caller its answer, and logs an error. The lease then frees the key, so a retry runs. | `the_store_failing_after_the_work_still_answers_the_caller` |
+| IDM-20 | A key lives for `ttl`, 24 hours by default, from when its run finished. Past that an answer is never replayed, swept or not, and any request may use the key. | `an_expired_answer_is_not_replayed_and_the_key_runs_afresh`, `an_expired_answer_is_never_replayed` |
+| IDM-21 | `sweep` deletes what has expired, and leaves a live key and a run still reporting in. | `a_sweep_deletes_what_has_expired_and_nothing_else` |
+| IDM-22 | `forget` frees one finished key of one caller, for a job that failed after its `202`, and leaves a run in progress alone. | `forget_lets_a_retry_run_once_a_job_has_failed`, `forget_leaves_a_run_in_progress_alone` |
+| IDM-23 | `forget_caller` deletes all that is held for one caller and nothing else. | `erasing_a_caller_deletes_what_is_held_for_them_and_for_nobody_else` |
+| IDM-24 | Of a request, a row holds the caller, the key, and a hash. Its path, query, and body are not stored. | `the_row_holds_no_request_and_a_copy_of_the_answer` |
+| IDM-25 | No log line or `Debug` text holds a key, a caller, or a body. | `a_log_line_holds_no_key_caller_or_body`, `the_debug_text_holds_only_settings` |
+| IDM-26 | Every refusal is a problem with its `code`, and with the standard stack it gets the standard headers. | `a_refusal_gets_the_standard_headers`, `a_duplicate_while_the_first_runs_is_told_to_wait` |
+| IDM-27 | `SETUP_STATEMENTS` alone make a working table, and each is safe to repeat. `setup` runs them under an advisory lock, so services booting together all succeed. `check` fails when the table is missing. | `the_setup_statements_alone_make_a_working_table`, `services_booting_together_all_set_up`, `check_finds_a_missing_table` |
+| IDM-28 | `only` narrows what is covered, and cannot widen it to a method that changes nothing. | `only_narrows_what_is_covered_and_cannot_widen_it` |
+| IDM-29 | A row that cannot be read as an answer is not guessed at. It is the `503` of IDM-18, and the request does not run. | `a_row_that_cannot_be_read_is_not_guessed_at` |
+| IDM-30 | `required` refuses a covered request with no key with a `400` and the `code` `idempotency_key_required`, runs nothing, and leaves no row. A key stays optional by default, and `required` cannot widen what is covered. | `a_required_key_refuses_a_request_without_one`, `a_required_key_cannot_widen_what_is_covered` |
+
+### 4.17 Outbox
+
+`axa-outbox` holds events in one `axa_outbox` table, written in the caller's transaction,
+and a relay publishes them. A publisher is a closure passed to `Outbox::run`, or a
+service runs its own loop on `claim` and `sent`, so there is no trait to implement and
+no broker client here. Delivery is at least once: a consumer must dedupe on `event_id`.
+A row is `pending`, `claimed`, `sent`, or `failed`.
+
+These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/lib.rs`.
+
+| Id | Requirement | Test |
+|---|---|---|
+| OBX-1 | An event commits or rolls back with the caller's transaction, through sqlx or SeaORM. Writing takes a transaction and not a pool, so that the type refuses the mistake. A repeated `event_id` fails the write. | `an_event_rolls_back_with_its_transaction`, `an_event_commits_with_its_transaction`, `a_seaorm_transaction_carries_an_event_too`, `a_repeated_event_id_fails_the_write`, `each_event_gets_its_own_id` |
+| OBX-2 | A crash after the commit loses nothing, and neither does a relay killed mid-batch. | `an_event_committed_before_a_crash_is_still_published`, `a_relay_killed_mid_batch_loses_nothing` |
+| OBX-3 | A row is marked sent only after its publisher answers `Ok`. A row caught between the broker and the ack is published again, and that is the one duplicate a crash leaves. | `a_failed_publish_is_not_marked_sent`, `a_relay_killed_mid_batch_loses_nothing` |
+| OBX-4 | Each row is claimed by one relay at a time, using `FOR UPDATE SKIP LOCKED`, so several relays publish each row once in the normal case. | `several_relays_publish_each_event_once`, `two_claims_at_once_share_nothing` |
+| OBX-5 | A claim not heard from for `stale_minutes` comes back if it has attempts left, and otherwise ends as `failed`, so a row that kills relays cannot loop for ever. Every `claim` does this first, so nothing else has to run. A relay reports in every `heartbeat_interval`, across a whole batch, so a live one is not taken for lost. | `a_claim_not_heard_from_comes_back`, `a_row_that_keeps_killing_relays_ends_as_failed`, `a_slow_publish_that_reports_in_is_not_taken_for_lost`, `a_batch_of_quick_publishes_reports_in_too` |
+| OBX-6 | A relay given up on cannot change a row's later state by failing or releasing it. Its success still counts, as the broker has the event whoever says so. | `a_late_failure_changes_nothing`, `a_late_release_changes_nothing`, `a_late_success_still_counts` |
+| OBX-7 | A row the broker refuses holds up no other key. After `max_attempts` it is left as `failed`, keeping its error and its payload, and frees its key. It can be put back with `retry_failed`. | `a_poison_row_does_not_hold_up_other_keys`, `a_row_out_of_attempts_is_kept_and_frees_its_key`, `failed_rows_can_be_tried_again` |
+| OBX-8 | Events with one topic and key go out in `id` order, across relays, through retries and recovery. A retry holds back only its own key. A key's order assumes each transaction changes the same row before writing, and does not hold across a row that ended as `failed`. | `a_key_goes_out_in_order_across_relays`, `one_topic_and_key_is_one_line`, `a_retry_holds_back_only_its_own_key`, `a_recovered_row_goes_before_those_behind_it` |
+| OBX-9 | A publisher that says the broker is unavailable charges no row. The round stops, the rest of the batch goes back, and the relay waits twice as long each time, up to a minute. The rows go out once the broker is back. The row being tried waits `retry_backoff`, so the next round tries another, and a refusal called an outage holds up only its own key. | `an_outage_charges_no_row_and_stops_the_round`, `the_rows_go_out_once_the_broker_is_back`, `a_refusal_called_an_outage_holds_up_only_its_key`, `an_outage_waits_longer_each_time_up_to_a_minute` |
+| OBX-10 | A refused row waits `retry_backoff`, doubling each time up to an hour. At most 1024 characters of its error are kept. | `a_retry_waits_for_its_backoff`, `each_retry_waits_twice_as_long_up_to_a_limit`, `long_error_text_is_cut_short` |
+| OBX-11 | A publisher that panics has refused that row, and the loop carries on. | `a_publisher_that_panics_fails_that_row_and_the_loop_carries_on` |
+| OBX-12 | A publish past `publish_timeout` is charged an attempt and stops the round as an outage does, as a hang can be either. | `a_publish_past_its_limit_is_charged_and_stops_the_round` |
+| OBX-13 | Sent rows are deleted after `retention_days`, by the relay, and nothing else is. A `failed` row is still owed. | `only_old_sent_rows_are_swept`, `the_relay_sweeps_by_itself`, `a_row_out_of_attempts_is_kept_and_frees_its_key` |
+| OBX-14 | A log line holds no payload, key, or publisher's error text, and the `Debug` text of `Event` and `Claimed` leaves out the payload and the key. | `no_log_line_holds_a_payload_a_key_or_a_failure_text`, `debug_text_leaves_out_the_payload_and_the_key` |
+| OBX-15 | Relays booting together all connect, and `Outbox::connect_existing` changes no schema and fails at connect when the table is missing. A migration runs `SETUP_STATEMENTS`. | `relays_booting_together_all_connect`, `connecting_to_an_existing_table_changes_no_schema` |
+| OBX-16 | Rows already sent do not slow a claim or `stats`. | `what_is_owed_is_found_without_reading_sent_rows` |
+| OBX-17 | On shutdown a publish in progress finishes and the rest of the batch goes back, charged nothing. A relay started beside `server::run` and stopped after it survives a real `SIGTERM`, and the process exits with success. A relay whose sender is gone stops rather than spins. | `a_publish_in_progress_finishes_and_the_rest_go_back`, `sigterm_lets_a_publish_in_progress_finish_beside_a_server`, `a_relay_stops_while_waiting_for_work`, `a_relay_nobody_can_stop_stops` |
+| OBX-18 | `Outbox::stats` counts what is pending, claimed, and failed, and how long the oldest unsent row has waited. | `stats_say_what_is_owed` |
+| OBX-19 | A service can do all of this from its own loop, with `claim`, `sent`, `failed`, `release`, and `heartbeat`. | `a_service_can_drive_the_outbox_from_its_own_loop` |
+| OBX-20 | Options that cannot work are refused before connecting. | `options_that_cannot_work_are_refused`, `refused_options_stop_a_connect_before_it_reaches_the_network`, `the_default_options_are_valid` |
+| OBX-21 | The crate depends on no broker client. | `this_crate_depends_on_no_broker_client` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:
@@ -442,10 +566,14 @@ cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-outbox --all-features -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-session --all-features -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
 ```
 
@@ -462,7 +590,7 @@ gitleaks detect --source . --redact --no-banner
 
 Subcrates publish before `axa`, because it depends on them by version.
 `axa-environment` has no dependencies, so it can go first. `axa-problem` goes before
-`axa-paseto` and `axa-versioning`, which depend on it.
+`axa-idempotency`, `axa-paseto`, `axa-ratelimit`, and `axa-versioning`, which depend on it.
 
 All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile

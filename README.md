@@ -64,12 +64,14 @@ axa = "0.6"
 | `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set. No service uses this yet |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
+| `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres, with the broker client left in the service. Turns on `queue`. No service uses this yet |
 | `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping. No service uses this yet |
 | `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`, so this feature adds nothing |
 | `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition. No service uses this yet |
 | `ratelimit` | [`axa-ratelimit`](crates/axa-ratelimit): request limits per client and failed-login lockout, counted in one process. No service uses this yet |
+| `idempotency` | [`axa-idempotency`](crates/axa-idempotency): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md). No service uses this yet |
 | `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation. No service uses this yet |
 
 `Environment` lives in [`axa-environment`](crates/axa-environment), which has no
@@ -211,8 +213,76 @@ From the outside in:
 | Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
 | CORS | Off unless origins are configured |
 | Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
+| Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
 | Compression | Gzip, Brotli, and Zstd when enabled |
 | Body limit | Answers `413` over `BODY_LIMIT_BYTES`. `middleware::body_limit` raises it on one route |
+
+### Conditional requests
+
+`axa::conditional` follows RFC 9110. The standard stack answers `304` to a `GET` or
+`HEAD` that holds the `ETag` of its answer, whoever set the tag, so a handler only sets
+one. An `ETag` goes on a response like any header. Leave a timestamp out of it, or the
+tag moves every time:
+
+```rust
+use axa::{conditional::ETag, prelude::*};
+use serde_json::json;
+
+async fn dashboard() -> Result<Response> {
+    let payload = json!({ "open": 3 });
+    let tag = ETag::weak_of(&payload)?;
+    let mut body = payload;
+    body["as_of"] = json!("2026-11-07T09:00:00Z");
+    Ok((tag, format::json(body)?).into_response())
+}
+```
+
+`ETag::weak` and `ETag::strong` take text of your own, such as a version. For a tag from
+the body, add `conditional::etag` to a router or a route, before `apply` as with any
+layer:
+
+```rust
+use axa::{conditional, prelude::*};
+use axum::{Router, middleware::from_fn};
+
+# async fn list() -> &'static str { "[]" }
+let catalogue: Router = Router::new()
+    .route("/catalogue", get(list).layer(from_fn(conditional::etag)));
+```
+
+It hashes a `GET`'s `200` and gives it a weak tag, the same on every replica and for
+every encoding. It reads only a body of exact known size up to `conditional::MAX_BODY`
+(8 MB), so a stream or server-sent events pass through unread. It leaves alone an answer
+that has an `ETag` or says `no-store`, and a `HEAD`, whose body Axum has already dropped.
+It is opt-in because a body with a timestamp in it gains nothing, and because hashing
+what is marked `no-store` would put a hash of personal data on an answer nobody can
+revalidate. Put it outside what shapes the body, such as paging, and outside what sets
+`Cache-Control`. No service uses this layer yet.
+
+To refuse a stale write, read the record, then ask, once the caller is authorised:
+
+```rust
+use axa::{conditional::{self, ETag}, prelude::*};
+use axum::http::HeaderMap;
+
+async fn rename(headers: HeaderMap) -> Result<Response> {
+    # let version = 7;
+    conditional::require_if_match(&headers, &ETag::strong(&format!("v{version}"))?)?;
+    format::empty()
+}
+```
+
+`require_if_match` answers `428` with no `If-Match`, and `if_match` lets that through.
+Both answer `412` to a stale tag, and `if_match_holds` gives the answer alone for a
+service with a refusal of its own. `If-Match` compares strongly, as RFC 9110 requires, so
+a weak tag never passes it and a tag meant for it must be strong. The check and the write
+are two steps, so close the gap with a lock on the row or `UPDATE ... WHERE version = $1`.
+
+A `304` comes after the handler has run, so it saves bytes and not the query. It is made
+from the answer the caller would have had, so a refused caller gets the refusal and a tag
+says nothing about what they may not see. The hash is std's `DefaultHasher`, which catches
+accidents and not an adversary: a tag defending against someone who writes the data should
+be a version counter or a real digest.
 
 ### Errors
 
@@ -262,6 +332,7 @@ place.
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
 | `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers, once it connects or starts another request. 30 by default, and `0` allows for ever |
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | How long an idle connection is kept for a next request. Keep it above any load balancer's idle timeout. 75 by default, and `0` keeps it for ever |
+| `SEND_STALL_TIMEOUT_SECONDS` | How long a client that has stopped reading may hold up a response before it is dropped. Any write that goes through starts this again. 60 by default, and `0` waits for ever |
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
@@ -453,6 +524,25 @@ the record it is about commit together. `Queue::enqueue` uses its own connection
 `start --worker`, and `queue::warn_if_unserved` says so at boot. Queue arguments
 are stored in plain text, so never put a secret in them.
 
+### The outbox
+
+With the `outbox` feature, an event is a row in `axa_outbox`, written with
+`outbox::write` on the caller's transaction, so it commits or rolls back with the change
+it describes. A relay then publishes it, so a crash between the commit and the publish
+loses nothing. `Outbox::run` takes the publisher as a closure, so the broker client
+stays in the service, and a service that wants more runs its own loop on `claim` and
+`sent`.
+
+Delivery is at least once, so a consumer must dedupe on `event_id`. Several relays can
+run at once, and each row normally goes out once. Events with one topic and key go out in
+order. A broker that is down charges no row, and a row it keeps refusing ends as `failed`
+and holds up nothing else. A claim whose relay died comes back after `stale_minutes`.
+
+**Nothing relays by itself.** See the
+[guide](help/transactional-outbox/index.md) for what a service writes. Payloads are
+stored in plain JSON, so sent rows are deleted after `retention_days`, and a `failed`
+row stays until someone deals with it.
+
 ### Testing
 
 With the `testing` feature, a service implements `TestApp` to say how it boots
@@ -474,7 +564,7 @@ async fn health_answers() {
 ## Requirements
 
 - Rust 1.97 or newer, on edition 2024
-- PostgreSQL for the `queue` and `sea-orm` features
+- PostgreSQL for the `queue`, `outbox`, and `sea-orm` features
 
 ## Development
 
@@ -515,6 +605,7 @@ axa was extracted from what the Main X Index services relied on in
 | Permissive CORS when enabled | Listed origins only in production |
 | `x-powered-by` header | None |
 | No request timeout or security headers by default | Both on in production; headers everywhere |
+| `If-None-Match` compared as one exact string | Weak comparison, lists, and `*`, as RFC 9110 has it |
 
 The code was written afresh rather than copied, so this crate can keep its own
 licence terms.

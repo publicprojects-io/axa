@@ -88,10 +88,14 @@ jobs:
         run: |
           cargo test --features queue,testing -- --ignored
           cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
+          cargo test --features outbox --test outbox_shutdown -- --ignored
+          cargo test -p axa-outbox --all-features -- --ignored --test-threads=1
           cargo test -p axa-sqlx -- --ignored --test-threads=1
           cargo test -p axa-seaorm -- --ignored --test-threads=1
           cargo test -p axa-diesel -- --ignored --test-threads=1
           cargo test -p axa-session --all-features -- --ignored --test-threads=1
+          cargo test -p axa-idempotency -- --ignored --test-threads=1
+          cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 
       - name: Redis tests
         env:

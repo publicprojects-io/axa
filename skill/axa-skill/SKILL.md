@@ -1,6 +1,6 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, the outbox, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
 ---
 
 # Using axa in your Axum service
@@ -29,9 +29,10 @@ Read these rather than guessing at an API:
 | Everything axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
-| Upgrading to 0.3 and 0.4 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
+| Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
 | Leaving Loco | [From Loco into axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
 | Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
+| Where the idempotency layer goes | [Guide](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md) |
 
 ## Install
 
@@ -52,6 +53,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 |---|---|
 | Postgres through sqlx, the preferred way. `AppContext::db` becomes a `PgPool` | `sqlx` |
 | Postgres job queue | `queue` |
+| Transactional outbox and relay on Postgres | `outbox` |
 | Keep SeaORM | `sea-orm` |
 | Diesel, with no `libpq` | `diesel` |
 | Request-level tests | `testing` |
@@ -67,6 +69,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Prometheus exposition | `prometheus` |
 | RFC 9457 problem details | Always included, as `axa::problem` |
 | Request limits and failed-login lockout | `ratelimit` |
+| `Idempotency-Key` on writes, over Postgres | `idempotency` |
 | `Accepts-version` negotiation | `versioning` |
 
 `features` lists one name per subcrate, and each subcrate is also usable alone.
@@ -157,6 +160,21 @@ let cli = axa::cli::parse(
   `Routes::add_with_timeout`, rather than raising `REQUEST_TIMEOUT_SECONDS` for all.
 - Raise the body limit on one route with `middleware::body_limit`, not on all.
 
+## Conditional requests
+
+- The standard stack answers `304` for you. Set an `ETag` on the answer and the handler
+  need not read `If-None-Match`: `Ok((tag, format::json(body)?).into_response())`.
+- A body with a timestamp in it, such as `as_of`, needs a tag that leaves it out:
+  `ETag::weak_of(&payload)?`, taken before the timestamp goes in.
+- `conditional::etag` tags a route's answers from the body. It is opt-in. Add it before
+  `apply`, outside anything that shapes the body such as paging, and outside what sets
+  `Cache-Control`, so it can see `no-store` and skip the hash.
+- A `304` comes after the handler has run, so it saves bytes and not the query.
+- `If-Match` compares strongly, so use `ETag::strong` or `ETag::strong_of`. A weak tag
+  never passes, and every write answers `412`. Call `conditional::if_match` after
+  authorising the caller and loading the record, and put the check and the write in one
+  transaction or a `WHERE version = $1`.
+
 ## Configuration
 
 There are no config files. `Defaults` states a service's defaults in code, and the
@@ -207,7 +225,8 @@ a `down` does not protect `db reset`.
 
 The server speaks HTTP/1 alone, and expects TLS to end in front of it. Keep
 `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, above any load balancer's idle timeout, and
-`MAX_CONNECTIONS`, 10,000 by default, under the process's open-file limit.
+`MAX_CONNECTIONS`, 10,000 by default, under the process's open-file limit. A client that
+stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by default.
 
 ## Jobs
 
@@ -222,6 +241,74 @@ The server speaks HTTP/1 alone, and expects TLS to end in front of it. Keep
 - Queue arguments are stored in plain text, so never put a secret in them.
 - `Queue::connect` runs DDL at boot. Where a service's role may not, run
   `queue::SETUP_STATEMENTS` in a migration and call `Queue::connect_existing`.
+
+## Idempotency keys
+
+With the `idempotency` feature, a retried write gets its first answer back instead of
+running twice, once a service mounts the layer. It is unreleased: check that the
+service's version has it.
+
+```rust
+let keys = Idempotency::new(pool, |request| {
+    request.extensions().get::<Allowed>().map(|allowed| allowed.claims.sub.clone())
+});
+keys.check().await?;
+
+let router = routes
+    .into_router(ctx.clone())
+    .layer(from_fn_with_state(keys, idempotent))
+    .layer(from_fn_with_state(guard, paseto::middleware));
+let app = axa::middleware::apply(router, &ctx.config.http)?;
+```
+
+Get these right, because each fails quietly or later:
+
+- **The order is the point.** The layer goes inside `apply`, so that it stores the plain
+  body, and inside the guards, so that a replay reaches only a caller they let through.
+  Do not use `into_app`, which applies the stack before your layers.
+- **The caller comes from the service.** The closure reads what authentication left on
+  the request. `None` refuses the request with a `401`. Returning one text for all
+  anonymous callers makes them share answers.
+- **Run `SETUP_STATEMENTS` in a migration**, and call `check` at boot.
+- **Call `sweep` on a schedule. This is required.** Nothing runs by itself, and an expired
+  answer stays on disk until then. It can hold personal data, so add `axa_idempotency` to
+  your record of personal data and retention list.
+- **`forget_caller` erases by who asked**, not by whose data an answer holds. An answer to
+  staff about a patient stays until it expires, so a privacy notice must allow for
+  erasure taking up to `ttl`.
+- **`required` refuses a write with no key**, with a `400`. A key is optional otherwise.
+- **A `4xx` or `5xx` frees the key**, and a retry runs again. Any other answer that
+  cannot be kept (a stream, an answer over 1 MiB, one a handler compressed) gets the
+  retry a `409`, because the write ran. Only a `2xx` or `3xx` is replayed.
+- **A crash after the handler commits repeats it**, as the answer is stored separately. A
+  handler that must never repeat also needs a unique constraint. A `202` for a job
+  replays even after the job fails, unless the service calls `forget`.
+
+[Where the idempotency layer goes](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md)
+has the whole of this.
+
+## Outbox
+
+Use the outbox, not a broker call after the commit, whenever an event must not be lost.
+The [guide](../../help/transactional-outbox/index.md) has the whole of it.
+
+- `outbox::write(&mut transaction, &event)` takes a transaction, never a pool, and
+  `write_seaorm` takes SeaORM's. Change the record first: its row lock is what keeps one
+  key's events in commit order.
+- **Nothing relays by itself.** Spawn `Outbox::run` in `main.rs` with the publisher as a
+  closure, and stop it after `server::run` returns. The broker client stays in the service.
+- Answer `Ok` only once the broker has acknowledged. A publisher that logs, or a send that
+  only queues locally, marks rows sent that nobody received.
+- Say which failure it was: `Failure::unavailable` charges no row and waits, and
+  `Failure::rejected` charges this row, which ends as `failed` after `max_attempts`.
+- Delivery is at least once, so a consumer must dedupe on `event_id`. `id` rises with each
+  event for a key, so a consumer applying state can refuse anything older.
+- Watch `Outbox::stats`. A `failed` row is never swept: fix the cause and call
+  `Outbox::retry_failed`.
+- A payload is plain JSONB, so prefer an id to a snapshot, and never put a secret in one.
+  Erasing a person includes `DELETE FROM axa_outbox WHERE key = $1`.
+- `Outbox::connect` runs DDL at boot. Where a service's role may not, run
+  `outbox::SETUP_STATEMENTS` in a migration and call `Outbox::connect_existing`.
 
 ## Authentication
 

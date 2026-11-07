@@ -52,8 +52,10 @@
 //! | `tracing` | Redaction, request tracking, and asynchronous diagnostics, as `axa::tracing` |
 //! | `session` | Web sessions with safe defaults, as `axa::session` |
 //! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
+//! | `idempotency` | `Idempotency-Key` handling over Postgres, as `axa::idempotency` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `opentelemetry` | OTLP export of traces and request metrics, as `axa::opentelemetry` |
+//! | `outbox` | A transactional outbox and relay on Postgres, as `axa::outbox` |
 //! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
@@ -76,6 +78,7 @@ struct ReadmeDoctests;
 pub mod boot;
 pub mod cli;
 pub mod client;
+pub mod conditional;
 pub mod config;
 pub mod context;
 pub mod db;
@@ -99,12 +102,16 @@ pub mod worker;
 #[cfg(feature = "diesel")]
 pub use axa_diesel as diesel;
 pub use axa_environment as environment;
+#[cfg(feature = "idempotency")]
+pub use axa_idempotency as idempotency;
 #[cfg(feature = "keycloak")]
 pub use axa_keycloak as keycloak;
 #[cfg(feature = "openapi")]
 pub use axa_openapi as openapi;
 #[cfg(feature = "opentelemetry")]
 pub use axa_opentelemetry as opentelemetry;
+#[cfg(feature = "outbox")]
+pub use axa_outbox as outbox;
 #[cfg(feature = "pagination")]
 pub use axa_pagination as pagination;
 #[cfg(feature = "paseto")]

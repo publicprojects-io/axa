@@ -492,9 +492,11 @@ dependencies = [
  "async-trait",
  "axa-diesel",
  "axa-environment",
+ "axa-idempotency",
  "axa-keycloak",
  "axa-openapi",
  "axa-opentelemetry",
+ "axa-outbox",
  "axa-pagination",
  "axa-paseto",
  "axa-problem",
@@ -546,6 +548,22 @@ name = "axa-environment"
 version = "0.1.1"
 
 [[package]]
+name = "axa-idempotency"
+version = "0.1.0"
+dependencies = [
+ "axa-problem",
+ "axum",
+ "serde_json",
+ "sha2 0.11.1",
+ "sqlx",
+ "tokio",
+ "tower",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "axa-keycloak"
 version = "0.3.0"
 dependencies = [
@@ -591,6 +609,19 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "axa-outbox"
+version = "0.1.0"
+dependencies = [
+ "sea-orm",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

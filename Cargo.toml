@@ -38,16 +38,19 @@ include = [
 [features]
 default = []
 # A SeaORM-backed `AppContext`, plus `axa-seaorm`.
-sea-orm = ["dep:sea-orm", "dep:axa-seaorm"]
+sea-orm = ["dep:sea-orm", "dep:axa-seaorm", "axa-outbox?/sea-orm"]
 # The Postgres job queue (`FOR UPDATE SKIP LOCKED`).
 queue = ["dep:sqlx"]
 # Test helpers built on `axum-test`, for request-level tests.
 testing = ["dep:axum-test"]
 # Each of these re-exports a subcrate under the same name.
 diesel = ["dep:axa-diesel"]
+idempotency = ["dep:axa-idempotency", "dep:sqlx"]
 keycloak = ["dep:axa-keycloak"]
 openapi = ["dep:axa-openapi"]
 opentelemetry = ["dep:axa-opentelemetry"]
+# Needs `queue` for what it sits beside: sqlx errors as `axa::Error`, and `server::run`.
+outbox = ["dep:axa-outbox", "queue"]
 pagination = ["dep:axa-pagination"]
 paseto = ["dep:axa-paseto"]
 # `axa::error` answers with `axa-problem`, so this adds nothing, and stays so that a
@@ -65,7 +68,9 @@ versioning = ["dep:axa-versioning"]
 [dependencies]
 axa-diesel = { version = "0.2.0", path = "crates/axa-diesel", optional = true }
 axa-environment = { version = "0.1.1", path = "crates/axa-environment" }
+axa-idempotency = { version = "0.1.0", path = "crates/axa-idempotency", optional = true }
 axa-openapi = { version = "0.1.0", path = "crates/axa-openapi", optional = true }
+axa-outbox = { version = "0.1.0", path = "crates/axa-outbox", optional = true }
 axa-pagination = { version = "0.1.1", path = "crates/axa-pagination", optional = true }
 axa-keycloak = { version = "0.3.0", path = "crates/axa-keycloak", optional = true }
 axa-paseto = { version = "0.5.0", path = "crates/axa-paseto", optional = true }

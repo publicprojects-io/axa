@@ -82,9 +82,20 @@ one and fail on the other.
 `AXA_TEST_REDIS_URL` turn them on, and a plain `cargo test` skips them silently. Start
 a throwaway container on a random loopback port, or rely on CI, and say which you did.
 
+**Idempotency tests share one table.** Each starts by truncating `axa_idempotency`,
+so these suites run with `--test-threads=1`, and in parallel they fail intermittently.
+
 **Queue tests share one table.** Every test that touches `axa_queue` must hold the
 `TABLE` lock in `src/queue.rs`, or tests that race on it fail intermittently. A test
 that drops a column must put it back.
+
+**Outbox tests share one table too.** They hold the `TABLE` lock in
+`crates/axa-outbox/tests/postgres.rs`, and CI runs them with `--test-threads=1`, which
+also keeps `logging.rs` off that table. They run only with `-p axa-outbox --all-features
+-- --ignored`, and a plain `--features queue,testing` run does not reach them. The
+claim's `FOR UPDATE ... SKIP LOCKED` is the only thing stopping two relays taking one row,
+as the outer `UPDATE` does not check `status` again: `several_relays_publish_each_event_once`
+is the test that says so.
 
 **Logging tests get their own binary.** `tracing` caches per process whether a log site
 is on, so a test that captures logs lives in its own file under `tests/`.
@@ -98,6 +109,15 @@ is on, so a test that captures logs lives in its own file under `tests/`.
 
 **A public struct gaining a field is a breaking change**, because services build these
 by hand. Note it in the upgrade guide.
+
+**A `304` must not say its size.** Axum writes `content-length: 0` on any answer whose
+body says it is empty, and on a `304` that header can only state the `200`'s length. So
+`conditional` uses a body with no size, and `Body::empty()` there is a bug no status check
+would catch.
+
+**`conditional::not_modified` stays outside compression.** `tower-http` adds
+`vary: accept-encoding` only to what it could compress, which a `304` is not, so inside it
+a `304` loses the `vary` its `200` had.
 
 **`axum::serve` is not used.** `server.rs` runs its own connection loop, because
 `axum::serve` cannot limit a connection. A change to serving belongs there, and an axum
