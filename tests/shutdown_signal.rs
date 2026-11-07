@@ -146,6 +146,7 @@ fn config() -> Server {
         host: String::new(),
         shutdown_timeout_seconds: 10,
         header_read_timeout_seconds: 10,
+        keep_alive_timeout_seconds: 0,
         max_connections: 10,
     }
 }

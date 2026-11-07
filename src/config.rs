@@ -94,6 +94,9 @@ pub struct Server {
     pub shutdown_timeout_seconds: u64,
     /// How long a client has to send a request's headers. `0` allows for ever.
     pub header_read_timeout_seconds: u64,
+    /// How long an idle connection is kept for a next request. Keep this longer than
+    /// the idle timeout of any load balancer in front. `0` keeps it for ever.
+    pub keep_alive_timeout_seconds: u64,
     /// The most connections open at once. More wait to be accepted.
     pub max_connections: usize,
 }
@@ -101,6 +104,10 @@ pub struct Server {
 /// How long a client has to send a request's headers unless
 /// `HEADER_READ_TIMEOUT_SECONDS` says otherwise.
 pub const DEFAULT_HEADER_READ_TIMEOUT_SECONDS: u64 = 30;
+
+/// How long an idle connection is kept unless `KEEP_ALIVE_TIMEOUT_SECONDS` says
+/// otherwise. It beats the 60 seconds many load balancers keep a connection idle.
+pub const DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS: u64 = 75;
 
 /// How long shutdown waits unless `SHUTDOWN_TIMEOUT_SECONDS` says otherwise. It
 /// sits under an orchestrator's usual 30 seconds before it kills a process.
@@ -636,6 +643,10 @@ impl Config {
                     "HEADER_READ_TIMEOUT_SECONDS",
                     DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
                 ),
+                keep_alive_timeout_seconds: vars.parsed(
+                    "KEEP_ALIVE_TIMEOUT_SECONDS",
+                    DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS,
+                ),
                 max_connections: connection_limit(&vars),
             },
             logger: Logger {
@@ -726,6 +737,11 @@ impl Config {
                 self.server.header_read_timeout_seconds.to_string(),
             ),
             ("MAX_CONNECTIONS", self.server.max_connections.to_string()),
+            (
+                "KEEP_ALIVE_TIMEOUT_SECONDS",
+                server.keep_alive_timeout_seconds.to_string(),
+            ),
+            ("MAX_CONNECTIONS", server.max_connections.to_string()),
             (
                 "SHUTDOWN_TIMEOUT_SECONDS",
                 server.shutdown_timeout_seconds.to_string(),

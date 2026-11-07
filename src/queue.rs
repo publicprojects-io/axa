@@ -767,6 +767,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds: 0,
             header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
             max_connections: 1,
         }
     }
@@ -799,6 +800,7 @@ mod tests {
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
             header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
             max_connections: 1,
             ..local_server()
         };
@@ -838,6 +840,7 @@ mod tests {
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
             header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
             max_connections: 1,
             port: address.port(),
             ..local_server()

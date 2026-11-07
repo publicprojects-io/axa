@@ -2,21 +2,28 @@
 
 #[cfg(feature = "queue")]
 use std::sync::OnceLock;
-use std::{future::Future, net::SocketAddr, pin::pin, sync::Arc, time::Duration};
+use std::{
+    convert::Infallible,
+    future::Future,
+    io,
+    net::SocketAddr,
+    pin::{Pin, pin},
+    sync::Arc,
+    task::{Context, Poll},
+    time::Duration,
+};
 
-use axum::{Router, extract::ConnectInfo, http::Request};
+use axum::{Router, body::Body, extract::ConnectInfo, http::Request};
 use hyper::{
-    body::Incoming,
+    body::{Body as HttpBody, Bytes, Frame, Incoming, SizeHint},
     server::conn::http1,
     service::{Service, service_fn},
 };
-use hyper_util::{
-    rt::{TokioIo, TokioTimer},
-    service::TowerToHyperService,
-};
+use hyper_util::{rt::TokioIo, service::TowerToHyperService};
 use tokio::{
-    net::TcpListener,
-    sync::{Notify, Semaphore, watch},
+    io::{AsyncRead, AsyncWrite, ReadBuf},
+    net::{TcpListener, TcpStream},
+    sync::{Notify, OwnedSemaphorePermit, Semaphore, watch},
     time::Instant,
 };
 
@@ -24,10 +31,11 @@ use tokio::{
 use crate::{Error, queue::Queue};
 use crate::{
     Result,
-    config::{DEFAULT_HEADER_READ_TIMEOUT_SECONDS, Server},
+    config::{DEFAULT_HEADER_READ_TIMEOUT_SECONDS, DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS, Server},
 };
 
-/// The most connections a server holds open at once. More wait to be accepted.
+/// The most connections a server holds open at once unless `MAX_CONNECTIONS` says
+/// otherwise. More wait to be accepted.
 pub const MAX_CONNECTIONS: usize = 10_000;
 
 /// Resolve when the process receives `SIGTERM` or Ctrl-C.
@@ -67,8 +75,7 @@ pub async fn serve(router: Router, config: &Server) -> Result<()> {
 }
 
 /// Serve `router` on `listener` until `shutdown` resolves, letting in-flight
-/// requests finish. A client has
-/// [`DEFAULT_HEADER_READ_TIMEOUT_SECONDS`] to send a request's headers.
+/// requests finish. The limits on connections are the defaults: see [`Server`].
 ///
 /// # Errors
 ///
@@ -78,98 +85,308 @@ pub async fn serve_until(
     listener: TcpListener,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
-    accept_until(
-        router,
-        listener,
+    let limits = Limits::new(
         DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
-        shutdown,
-    )
-    .await
+        DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS,
+        MAX_CONNECTIONS,
+    );
+    accept_until(router, listener, limits, shutdown).await
 }
 
-/// [`accept_until_limited`] with the standard limit.
+/// What one connection is allowed.
+#[derive(Clone, Copy)]
+struct Limits {
+    /// From the start of a connection or a request, to the end of its headers.
+    header_read: Option<Duration>,
+    /// From the end of a response, to the start of the next request.
+    keep_alive: Option<Duration>,
+    /// Connections open at once.
+    max_connections: usize,
+}
+
+impl Limits {
+    /// Limits from settings, where a time of `0` means no limit. There is always a
+    /// connection limit, as `Semaphore` with no places would never accept one.
+    fn new(header_read_seconds: u64, keep_alive_seconds: u64, max_connections: usize) -> Self {
+        let seconds = |seconds| (seconds > 0).then(|| Duration::from_secs(seconds));
+        Self {
+            header_read: seconds(header_read_seconds),
+            keep_alive: seconds(keep_alive_seconds),
+            max_connections: max_connections.clamp(1, Semaphore::MAX_PERMITS),
+        }
+    }
+}
+
+impl From<&Server> for Limits {
+    fn from(config: &Server) -> Self {
+        Self::new(
+            config.header_read_timeout_seconds,
+            config.keep_alive_timeout_seconds,
+            config.max_connections,
+        )
+    }
+}
+
+/// What a connection is waiting for, and until when.
+#[derive(Clone, Copy)]
+enum Phase {
+    /// The rest of a request's headers.
+    Head(Option<Instant>),
+    /// A next request. A client or a load balancer may keep this connection for one.
+    Idle(Option<Instant>),
+    /// The service. A request has its own limits, so this one has none.
+    Serving,
+}
+
+/// Moves a connection between its phases. `hyper` has one timer, which runs across
+/// both a request's headers and the wait between requests, and these need different
+/// limits: a short one for a client that stalls, and for an idle connection one longer
+/// than the load balancer in front, which would otherwise reuse a connection as it
+/// closes. So `hyper`'s timer stays off and this does both.
+#[derive(Clone)]
+struct Tracker {
+    phase: watch::Sender<Phase>,
+    limits: Limits,
+}
+
+impl Tracker {
+    fn new(limits: Limits) -> Self {
+        let deadline = limits.header_read.map(|limit| Instant::now() + limit);
+        Self {
+            phase: watch::Sender::new(Phase::Head(deadline)),
+            limits,
+        }
+    }
+
+    /// The first bytes of the next request started its header limit.
+    fn received(&self) {
+        self.phase.send_if_modified(|phase| {
+            let idle = matches!(phase, Phase::Idle(_));
+            if idle {
+                let deadline = self.limits.header_read.map(|limit| Instant::now() + limit);
+                *phase = Phase::Head(deadline);
+            }
+            idle
+        });
+    }
+
+    fn serving(&self) {
+        self.phase.send_replace(Phase::Serving);
+    }
+
+    fn finished(&self) {
+        let deadline = self.limits.keep_alive.map(|limit| Instant::now() + limit);
+        self.phase.send_replace(Phase::Idle(deadline));
+    }
+}
+
+/// Resolve once a connection is past its deadline.
+async fn overdue(mut phase: watch::Receiver<Phase>) {
+    loop {
+        let deadline = match *phase.borrow_and_update() {
+            Phase::Head(deadline) | Phase::Idle(deadline) => deadline,
+            Phase::Serving => None,
+        };
+        let expires = async {
+            match deadline {
+                Some(deadline) => tokio::time::sleep_until(deadline).await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            () = expires => return,
+            changed = phase.changed() => {
+                if changed.is_err() {
+                    return std::future::pending().await;
+                }
+            }
+        }
+    }
+}
+
+/// A connection that tells its [`Tracker`] when bytes arrive.
+struct Tracked {
+    stream: TcpStream,
+    tracker: Tracker,
+}
+
+impl AsyncRead for Tracked {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffer: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let this = self.get_mut();
+        let before = buffer.filled().len();
+        let polled = Pin::new(&mut this.stream).poll_read(context, buffer);
+        if buffer.filled().len() > before {
+            this.tracker.received();
+        }
+        polled
+    }
+}
+
+impl AsyncWrite for Tracked {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        bytes: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write(context, bytes)
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_flush(context)
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Pin::new(&mut self.get_mut().stream).poll_shutdown(context)
+    }
+
+    fn poll_write_vectored(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+        buffers: &[io::IoSlice<'_>],
+    ) -> Poll<io::Result<usize>> {
+        Pin::new(&mut self.get_mut().stream).poll_write_vectored(context, buffers)
+    }
+
+    fn is_write_vectored(&self) -> bool {
+        self.stream.is_write_vectored()
+    }
+}
+
+/// Tells a [`Tracker`] the response has gone. `hyper` drops the body when it has
+/// written the last of it, so a long response is not taken for an idle connection.
+struct Finished(Tracker);
+
+impl Drop for Finished {
+    fn drop(&mut self) {
+        self.0.finished();
+    }
+}
+
+/// A response body that reports its end.
+struct TrackedBody {
+    body: Body,
+    _finished: Finished,
+}
+
+impl HttpBody for TrackedBody {
+    type Data = Bytes;
+    type Error = axum::Error;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<std::result::Result<Frame<Bytes>, axum::Error>>> {
+        Pin::new(&mut self.get_mut().body).poll_frame(context)
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.body.is_end_stream()
+    }
+
+    fn size_hint(&self) -> SizeHint {
+        self.body.size_hint()
+    }
+}
+
+/// Take a slot, then the next connection. Each is safe to cancel, so shutdown can
+/// interrupt this at any point.
+async fn next_connection(
+    listener: &TcpListener,
+    slots: &Arc<Semaphore>,
+) -> (TcpStream, SocketAddr, OwnedSemaphorePermit) {
+    let slot = if let Ok(slot) = slots.clone().try_acquire_owned() {
+        slot
+    } else {
+        tracing::warn!("at the connection limit, so new connections wait");
+        slots
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("the slots are never closed")
+    };
+    loop {
+        match listener.accept().await {
+            Ok((stream, address)) => return (stream, address, slot),
+            // Running out of file descriptors, say. It passes, and a tight loop would
+            // not help it to.
+            Err(error) => {
+                tracing::warn!(%error, "could not accept a connection");
+                tokio::time::sleep(Duration::from_secs(1)).await;
+            }
+        }
+    }
+}
+
+/// The connection loop. This is `axum::serve` plus the limits in [`Limits`], which
+/// `axum::serve` cannot set: without them, a client that sends nothing, or trickles out
+/// its headers, holds a connection and a task for as long as it likes, and enough of
+/// them use up the process's file descriptors.
+///
+/// It speaks HTTP/1 only, as this crate has always been built to. The limits count a
+/// connection as one request at a time, and detecting the protocol first would wait,
+/// with no limit, for a client's first bytes. A proxy in front can offer HTTP/2.
+///
+/// Past its limit it stops accepting, so a connection waits in the listen queue for a
+/// place rather than being refused.
 async fn accept_until(
     router: Router,
     listener: TcpListener,
-    header_read_timeout_seconds: u64,
-    shutdown: impl Future<Output = ()> + Send + 'static,
-) -> Result<()> {
-    accept_until_limited(
-        router,
-        listener,
-        header_read_timeout_seconds,
-        MAX_CONNECTIONS,
-        shutdown,
-    )
-    .await
-}
-
-/// The connection loop. This is `axum::serve` plus a limit on reading headers and a
-/// limit on connections, which `axum::serve` cannot set: without them, clients that
-/// connect and stall hold a connection and a task each for as long as they like.
-///
-/// It speaks HTTP/1 only, as this crate has always been built to. The header limit
-/// is an HTTP/1 one, and detecting the protocol first would wait, with no limit, for
-/// a client's first bytes. A proxy in front can offer HTTP/2.
-///
-/// Past `max_connections` it stops accepting, so a connection waits in the listen
-/// queue for a place rather than being refused.
-async fn accept_until_limited(
-    router: Router,
-    listener: TcpListener,
-    header_read_timeout_seconds: u64,
-    max_connections: usize,
+    limits: Limits,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let mut builder = http1::Builder::new();
-    builder.timer(TokioTimer::new()).header_read_timeout(
-        (header_read_timeout_seconds > 0).then(|| Duration::from_secs(header_read_timeout_seconds)),
-    );
-    let places = Arc::new(Semaphore::new(max_connections));
-    // Each connection holds a receiver, so `closed` below means all have ended.
-    let (stop, stopping) = watch::channel(());
+    // `Tracker` does this, as it says.
+    builder.header_read_timeout(None);
+    let slots = Arc::new(Semaphore::new(limits.max_connections));
+    // Each connection holds a receiver, so the sender sees when the last has gone.
+    let (stop, stopping) = watch::channel(false);
     let mut shutdown = pin!(shutdown);
     loop {
-        let place = tokio::select! {
-            place = Arc::clone(&places).acquire_owned() => place,
-            () = &mut shutdown => break,
-        };
-        let Ok(place) = place else {
-            break;
-        };
         tokio::select! {
-            accepted = listener.accept() => {
-                let (stream, address) = match accepted {
-                    Ok(connection) => connection,
-                    // Running out of file descriptors, say. It passes, and a tight
-                    // loop would not help it to.
-                    Err(error) => {
-                        tracing::warn!(%error, "could not accept a connection");
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-                };
+            (stream, address, slot) = next_connection(&listener, &slots) => {
+                let tracker = Tracker::new(limits);
+                let phase = tracker.phase.subscribe();
                 let router = TowerToHyperService::new(router.clone());
+                let serving = tracker.clone();
                 let service = service_fn(move |mut request: Request<Incoming>| {
                     request.extensions_mut().insert(ConnectInfo::<SocketAddr>(address));
-                    router.call(request)
+                    serving.serving();
+                    let tracker = serving.clone();
+                    let response = router.call(request);
+                    async move {
+                        let response = response.await?;
+                        Ok::<_, Infallible>(response.map(|body| TrackedBody {
+                            body,
+                            _finished: Finished(tracker),
+                        }))
+                    }
                 });
-                let connection = builder
-                    .serve_connection(TokioIo::new(stream), service)
-                    .with_upgrades();
+                let stream = TokioIo::new(Tracked { stream, tracker });
+                let connection = builder.serve_connection(stream, service).with_upgrades();
                 let mut stopping = stopping.clone();
                 tokio::spawn(async move {
-                    let _place = place;
+                    let _slot = slot;
                     let mut connection = pin!(connection);
-                    let ended = tokio::select! {
-                        ended = connection.as_mut() => ended,
-                        _ = stopping.changed() => {
-                            connection.as_mut().graceful_shutdown();
-                            connection.await
-                        }
+                    let stop = async {
+                        // A sender dropped is a server gone, and it is told first.
+                        let _ = stopping.wait_for(|stop| *stop).await;
                     };
-                    if let Err(error) = ended {
-                        tracing::trace!(%error, "connection ended");
+                    tokio::select! {
+                        ended = connection.as_mut() => log_end(ended),
+                        () = overdue(phase.clone()) => {
+                            tracing::debug!("dropped a quiet connection");
+                        }
+                        () = stop => {
+                            connection.as_mut().graceful_shutdown();
+                            tokio::select! {
+                                ended = connection => log_end(ended),
+                                () = overdue(phase) => {}
+                            }
+                        }
                     }
                 });
             }
@@ -178,9 +395,16 @@ async fn accept_until_limited(
     }
     drop(listener);
     drop(stopping);
-    let _ = stop.send(());
+    let _ = stop.send(true);
     stop.closed().await;
     Ok(())
+}
+
+/// A connection ending badly is the client's business, so it is only worth a trace.
+fn log_end(ended: std::result::Result<(), hyper::Error>) {
+    if let Err(error) = ended {
+        tracing::trace!(%error, "connection ended");
+    }
 }
 
 /// Wait until the shutdown time limit has passed since `told`, or for ever when
@@ -207,13 +431,7 @@ async fn bind_and_serve(
         told.notify_one();
     };
     tokio::select! {
-        served = accept_until_limited(
-            router,
-            listener,
-            config.header_read_timeout_seconds,
-            config.max_connections,
-            signal,
-        ) => served,
+        served = accept_until(router, listener, config.into(), signal) => served,
         () = async {
             stopping.notified().await;
             grace(config, Instant::now()).await;
@@ -345,7 +563,7 @@ mod tests {
         tokio::spawn(accept_until(
             Router::new(),
             listener,
-            header_read_timeout_seconds,
+            Limits::new(header_read_timeout_seconds, 0, 0),
             std::future::pending(),
         ));
         let mut stream = TcpStream::connect(address).await.unwrap();
@@ -368,7 +586,7 @@ mod tests {
         tokio::spawn(accept_until(
             Router::new(),
             listener,
-            1,
+            Limits::new(1, 0, 0),
             std::future::pending(),
         ));
         let mut stream = TcpStream::connect(address).await.unwrap();
@@ -409,7 +627,7 @@ mod tests {
         tokio::spawn(accept_until(
             Router::new().route("/", get(upgrade)),
             listener,
-            0,
+            Limits::new(0, 0, 0),
             std::future::pending(),
         ));
         let mut stream = TcpStream::connect(address).await.unwrap();
@@ -429,11 +647,10 @@ mod tests {
     async fn connections_past_the_limit_wait_their_turn() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
-        tokio::spawn(accept_until_limited(
+        tokio::spawn(accept_until(
             Router::new().route("/", get(|| async { "ok" })),
             listener,
-            0,
-            1,
+            Limits::new(0, 0, 1),
             std::future::pending(),
         ));
         let request = b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
@@ -455,6 +672,196 @@ mod tests {
     #[tokio::test]
     async fn a_header_limit_of_zero_waits_for_ever() {
         assert!(!drops_a_stalled_client(0).await);
+    }
+
+    /// Limits short enough to test, and a server under them.
+    async fn limited(app: Router, limits: Limits) -> SocketAddr {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(accept_until(app, listener, limits, std::future::pending()));
+        address
+    }
+
+    fn millis(header_read: u64, keep_alive: u64, max_connections: usize) -> Limits {
+        Limits {
+            header_read: Some(Duration::from_millis(header_read)),
+            keep_alive: Some(Duration::from_millis(keep_alive)),
+            max_connections: if max_connections == 0 {
+                Semaphore::MAX_PERMITS
+            } else {
+                max_connections
+            },
+        }
+    }
+
+    fn hello() -> Router {
+        Router::new().route("/", get(|| async { "hello" }))
+    }
+
+    const REQUEST: &[u8] = b"GET / HTTP/1.1\r\nHost: x\r\n\r\n";
+
+    /// Read until a whole response has arrived.
+    async fn response(stream: &mut TcpStream) -> String {
+        let mut bytes = vec![0; 1024];
+        let read = tokio::time::timeout(Duration::from_secs(3), stream.read(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        String::from_utf8_lossy(&bytes[..read]).into_owned()
+    }
+
+    /// Whether the server closes `stream` within `limit`.
+    async fn closes_within(stream: &mut TcpStream, limit: Duration) -> bool {
+        let mut rest = Vec::new();
+        tokio::time::timeout(limit, stream.read_to_end(&mut rest))
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test]
+    async fn an_idle_connection_outlasts_the_header_limit() {
+        let address = limited(hello(), millis(100, 60_000, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(REQUEST).await.unwrap();
+        assert!(response(&mut stream).await.ends_with("hello"));
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        stream.write_all(REQUEST).await.unwrap();
+        assert!(response(&mut stream).await.ends_with("hello"));
+    }
+
+    #[tokio::test]
+    async fn an_idle_connection_is_dropped_at_the_keep_alive_limit() {
+        let address = limited(hello(), millis(60_000, 100, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(REQUEST).await.unwrap();
+        assert!(response(&mut stream).await.ends_with("hello"));
+        assert!(closes_within(&mut stream, Duration::from_secs(2)).await);
+    }
+
+    #[tokio::test]
+    async fn a_stall_in_a_second_requests_headers_is_dropped() {
+        let address = limited(hello(), millis(100, 60_000, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(REQUEST).await.unwrap();
+        assert!(response(&mut stream).await.ends_with("hello"));
+        stream.write_all(b"GET / HTTP/1.1\r\nHost:").await.unwrap();
+        assert!(closes_within(&mut stream, Duration::from_secs(2)).await);
+    }
+
+    #[tokio::test]
+    async fn neither_limit_cuts_off_a_slow_handler() {
+        let app = Router::new().route(
+            "/",
+            get(|| async {
+                tokio::time::sleep(Duration::from_millis(400)).await;
+                "late"
+            }),
+        );
+        let address = limited(app, millis(100, 100, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(REQUEST).await.unwrap();
+        assert!(response(&mut stream).await.ends_with("late"));
+    }
+
+    #[tokio::test]
+    async fn neither_limit_cuts_off_a_slow_response_body() {
+        let app = Router::new().route(
+            "/",
+            get(|| async {
+                Body::new(SlowBody {
+                    pause: Box::pin(tokio::time::sleep(Duration::from_millis(400))),
+                    sent: 0,
+                })
+            }),
+        );
+        let address = limited(app, millis(100, 100, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        let mut whole = Vec::new();
+        tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut whole))
+            .await
+            .unwrap()
+            .unwrap();
+        let whole = String::from_utf8_lossy(&whole);
+        assert!(
+            whole.contains("first") && whole.contains("second"),
+            "{whole}"
+        );
+    }
+
+    /// Two chunks, with a pause between them.
+    struct SlowBody {
+        pause: Pin<Box<tokio::time::Sleep>>,
+        sent: u8,
+    }
+
+    impl HttpBody for SlowBody {
+        type Data = Bytes;
+        type Error = Infallible;
+
+        fn poll_frame(
+            mut self: Pin<&mut Self>,
+            context: &mut Context<'_>,
+        ) -> Poll<Option<std::result::Result<Frame<Bytes>, Infallible>>> {
+            self.sent += 1;
+            match self.sent {
+                1 => Poll::Ready(Some(Ok(Frame::data(Bytes::from_static(b"first"))))),
+                2 => match self.pause.as_mut().poll(context) {
+                    Poll::Ready(()) => {
+                        Poll::Ready(Some(Ok(Frame::data(Bytes::from_static(b"second")))))
+                    }
+                    Poll::Pending => {
+                        self.sent = 1;
+                        Poll::Pending
+                    }
+                },
+                _ => Poll::Ready(None),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn an_upgraded_connection_is_left_alone() {
+        let app = Router::new().route(
+            "/",
+            get(|request: axum::extract::Request| async move {
+                let upgrade = hyper::upgrade::on(request);
+                tokio::spawn(async move {
+                    let mut upgraded = TokioIo::new(upgrade.await.unwrap());
+                    let mut byte = [0; 1];
+                    while upgraded.read_exact(&mut byte).await.is_ok() {
+                        upgraded.write_all(&byte).await.unwrap();
+                    }
+                });
+                axum::http::Response::builder()
+                    .status(axum::http::StatusCode::SWITCHING_PROTOCOLS)
+                    .header("connection", "upgrade")
+                    .header("upgrade", "echo")
+                    .body(Body::empty())
+                    .unwrap()
+            }),
+        );
+        let address = limited(app, millis(100, 100, 0)).await;
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: upgrade\r\nUpgrade: echo\r\n\r\n")
+            .await
+            .unwrap();
+        assert!(response(&mut stream).await.contains("101"));
+        tokio::time::sleep(Duration::from_millis(400)).await;
+        stream.write_all(b"x").await.unwrap();
+        assert_eq!(response(&mut stream).await, "x");
+    }
+
+    #[test]
+    fn a_limit_of_zero_means_none() {
+        let limits = Limits::new(0, 0, 0);
+        assert_eq!(limits.header_read, None);
+        assert_eq!(limits.keep_alive, None);
+        assert_eq!(limits.max_connections, 1);
     }
 
     #[tokio::test]
@@ -484,6 +891,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds: 0,
             header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
             max_connections: 1,
         };
         assert!(serve(Router::new(), &config).await.is_err());
@@ -497,6 +905,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds: 0,
             header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
             max_connections: 1,
         }
     }
@@ -510,6 +919,7 @@ mod tests {
             host: String::new(),
             shutdown_timeout_seconds,
             header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
             max_connections: 1,
         };
         let (reach, reached) = tokio::sync::oneshot::channel::<()>();
