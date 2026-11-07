@@ -232,6 +232,20 @@ it, which means a list of tags, `*`, or a route that never compared. With origin
 CORS now exposes `etag`. See
 [Conditional requests](../../README.md#conditional-requests).
 
+Paging is now two crates, and `axa-pagination` 0.1.1 is superseded:
+
+- **`axa-offset-pagination`** is the old crate under a new name, with the same API. Its
+  feature is `offset-pagination`, and its path `axa::offset_pagination`. The
+  `pagination` feature and the `axa::pagination` path still work as its old names, so
+  no code must change yet, but they will go. A service depending on `axa-pagination`
+  directly should depend on `axa-offset-pagination` instead.
+- **`axa-cursor-pagination`** is new, and the one to move to. Offset paging is
+  insecure: its total can count rows a caller's record policy hides, an offset is a
+  scan, and the position is the caller's. A cursor list takes `?limit=` and a signed
+  `?cursor=`, answers `Link: rel="next"` and no total, and refuses a bad limit or
+  cursor with `422`, never clamping. A client that read `X-Total-Count`, or sent
+  `?offset=`, must follow the `Link` instead.
+
 ## Checking your work
 
 ```sh

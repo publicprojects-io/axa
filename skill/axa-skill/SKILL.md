@@ -62,7 +62,8 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Browser sessions | `session` |
 | HTML templates | `tera` |
 | Redis cache with mandatory expiry | `redis` |
-| Offset pages and `LIKE` escaping | `pagination` |
+| Signed cursor pages, no total, and `LIKE` escaping | `cursor-pagination` |
+| Offset pages with a total (insecure, prefer cursors) | `offset-pagination`, or the old `pagination` |
 | OpenAPI documents and Swagger UI | `openapi` |
 | Redaction, request tracking, async diagnostics | `tracing` |
 | OTLP traces and request metrics | `opentelemetry` |

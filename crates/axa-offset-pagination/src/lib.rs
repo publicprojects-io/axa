@@ -1,5 +1,18 @@
 //! Offset pagination, count headers, and `LIKE` escaping.
 //!
+//! **This crate is insecure. Prefer [`axa-cursor-pagination`].** It stays for
+//! services that already page this way, and it will not gain features.
+//!
+//! - **A total can leak.** `X-Total-Count` counts the rows matching the query, which
+//!   can include rows the caller's record policy hides, so a caller learns that they
+//!   exist.
+//! - **An offset is a scan.** The database reads and discards every row before the
+//!   offset, up to `max_offset`, for each request.
+//! - **The position is the caller's.** Any caller can ask for any offset up to the
+//!   maximum, and nothing ties it to the query it came from.
+//!
+//! [`axa-cursor-pagination`]: https://docs.rs/axa-cursor-pagination
+//!
 //! A collection read takes `?limit=` and `?offset=`, and reports its total in
 //! response headers, so the body stays a bare array.
 //!
@@ -9,7 +22,7 @@
 //!   read and discard arbitrarily many rows is a cheap denial of service.
 //!
 //! ```
-//! use axa_pagination::{Limits, PageParams};
+//! use axa_offset_pagination::{Limits, PageParams};
 //!
 //! let limits = Limits { default_limit: 100, max_limit: 500, max_offset: 10_000 };
 //! let params = PageParams { limit: Some("9999".into()), offset: Some("50".into()) };
@@ -142,7 +155,7 @@ impl Page {
 /// pattern. Bind the result as a parameter with `ESCAPE '\'`.
 ///
 /// ```
-/// assert_eq!(axa_pagination::escape_like("100%_a"), r"100\%\_a");
+/// assert_eq!(axa_offset_pagination::escape_like("100%_a"), r"100\%\_a");
 /// ```
 #[must_use]
 pub fn escape_like(text: &str) -> String {

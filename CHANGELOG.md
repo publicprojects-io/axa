@@ -68,6 +68,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   response. **Breaking:** `config::Server` gains `send_stall_timeout_seconds`, so code
   building one by hand must set it.
 
+- **`axa-cursor-pagination`, behind the `cursor-pagination` feature:** signed cursor
+  pages. A list takes `?limit=` and an opaque `?cursor=`, and answers a bare JSON array
+  with `Link: rel="next"` while more rows follow, and no total, because a total would
+  count rows the caller's record policy hides. A cursor is signed with HMAC-SHA256 under
+  the service's `CursorKey`, over its position and its query, so a caller cannot make
+  one up, edit one, or carry one to another list or filter. A bad limit or cursor is a
+  `422`, never clamped, and converts to `axa::Error`. CRM pages this way (CRM-T51), with
+  an unsigned cursor. It adds `hmac`, `sha2`, and `base64`, which `axa` already pulled
+  in through other crates.
+
 ### Changed
 
 - **The queue's tables change.** `axa_queue` gains `priority` and `timeout_ms`, and
@@ -82,6 +92,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   shutdown time limit in the background.
 - The queue's pool has `workers + 2` connections, one more than before, for schedules.
 
+- **`axa-pagination` is now `axa-offset-pagination`**, with the same API, and the
+  published `axa-pagination` 0.1.1 is superseded. Its feature is `offset-pagination`,
+  as `axa::offset_pagination`. The `pagination` feature and `axa::pagination` path stay
+  as its old names, and will go. Its documentation now says plainly that offset paging
+  is insecure, and points to `axa-cursor-pagination`.
 - With origins listed, CORS exposes `etag`, so a page can read a tag to send back.
 
 ### Fixed

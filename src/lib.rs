@@ -56,7 +56,9 @@
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `opentelemetry` | OTLP export of traces and request metrics, as `axa::opentelemetry` |
 //! | `outbox` | A transactional outbox and relay on Postgres, as `axa::outbox` |
-//! | `pagination` | Offset pagination and `LIKE` escaping, as `axa::pagination` |
+//! | `cursor-pagination` | Signed cursor pages with no total, and `LIKE` escaping, as `axa::cursor_pagination` |
+//! | `offset-pagination` | Offset pages with a total, and `LIKE` escaping, as `axa::offset_pagination`. Insecure: prefer `cursor-pagination` |
+//! | `pagination` | The old name for `offset-pagination`, as `axa::pagination`. It will go |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
@@ -99,6 +101,8 @@ pub mod task;
 pub mod testing;
 pub mod worker;
 
+#[cfg(feature = "cursor-pagination")]
+pub use axa_cursor_pagination as cursor_pagination;
 #[cfg(feature = "diesel")]
 pub use axa_diesel as diesel;
 pub use axa_environment as environment;
@@ -106,14 +110,18 @@ pub use axa_environment as environment;
 pub use axa_idempotency as idempotency;
 #[cfg(feature = "keycloak")]
 pub use axa_keycloak as keycloak;
+#[cfg(feature = "offset-pagination")]
+pub use axa_offset_pagination as offset_pagination;
+/// The old path of [`offset_pagination`], kept so that a service using it still builds.
+/// It will go.
+#[cfg(feature = "pagination")]
+pub use axa_offset_pagination as pagination;
 #[cfg(feature = "openapi")]
 pub use axa_openapi as openapi;
 #[cfg(feature = "opentelemetry")]
 pub use axa_opentelemetry as opentelemetry;
 #[cfg(feature = "outbox")]
 pub use axa_outbox as outbox;
-#[cfg(feature = "pagination")]
-pub use axa_pagination as pagination;
 #[cfg(feature = "paseto")]
 pub use axa_paseto as paseto;
 pub use axa_problem as problem;
