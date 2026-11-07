@@ -81,7 +81,7 @@ for new code:
 ```
 
 `contains` treats `%` and `_` in its argument as wildcards, so escape text from a
-user first, for example with `axa_pagination::escape_like`.
+user first, for example with `axa_cursor_pagination::escape_like`.
 
 ## 4. Validation
 

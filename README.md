@@ -65,7 +65,9 @@ axa = "0.6"
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
 | `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres, with the broker client left in the service. Turns on `queue`. No service uses this yet |
-| `pagination` | [`axa-pagination`](crates/axa-pagination): offset pages, count headers, and `LIKE` escaping. No service uses this yet |
+| `cursor-pagination` | [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping. No service uses this yet |
+| `offset-pagination` | [`axa-offset-pagination`](crates/axa-offset-pagination): offset pages, count headers, and `LIKE` escaping. **Insecure:** a total can count rows a record policy hides. Prefer `cursor-pagination` |
+| `pagination` | The old name for `offset-pagination`, as `axa::pagination`. It will go |
 | `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`, so this feature adds nothing |

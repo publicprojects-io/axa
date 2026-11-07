@@ -58,8 +58,16 @@
       "crate": "axa-outbox"
     },
     {
+      "name": "cursor-pagination",
+      "crate": "axa-cursor-pagination"
+    },
+    {
+      "name": "offset-pagination",
+      "crate": "axa-offset-pagination"
+    },
+    {
       "name": "pagination",
-      "crate": "axa-pagination"
+      "crate": "axa-offset-pagination"
     },
     {
       "name": "paseto",
@@ -232,11 +240,18 @@
       "readme": "crates/axa-outbox/README.md"
     },
     {
-      "name": "axa-pagination",
-      "version": "0.1.1",
-      "description": "Offset pagination, count headers, and LIKE escaping for Axum services.",
-      "feature": "pagination",
-      "readme": "crates/axa-pagination/README.md"
+      "name": "axa-cursor-pagination",
+      "version": "0.1.0",
+      "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
+      "feature": "cursor-pagination",
+      "readme": "crates/axa-cursor-pagination/README.md"
+    },
+    {
+      "name": "axa-offset-pagination",
+      "version": "0.1.0",
+      "description": "Insecure offset pagination with count headers, and LIKE escaping, for Axum services. Prefer axa-cursor-pagination.",
+      "feature": "offset-pagination",
+      "readme": "crates/axa-offset-pagination/README.md"
     },
     {
       "name": "axa-paseto",

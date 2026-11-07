@@ -56,7 +56,8 @@
 - [axa-openapi](crates/axa-openapi/README.md) (feature `openapi`): Serve OpenAPI documents and a pinned Swagger UI from Axum services.
 - [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services.
 - [axa-outbox](crates/axa-outbox/README.md) (feature `outbox`): A transactional outbox and relay on Postgres for Axum services.
-- [axa-pagination](crates/axa-pagination/README.md) (feature `pagination`): Offset pagination, count headers, and LIKE escaping for Axum services.
+- [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.
+- [axa-offset-pagination](crates/axa-offset-pagination/README.md) (feature `offset-pagination`, or the old `pagination`, which will go): Insecure offset pagination with count headers, and LIKE escaping, for Axum services. Prefer axa-cursor-pagination.
 - [axa-paseto](crates/axa-paseto/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
 - [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.
 - [axa-prometheus](crates/axa-prometheus/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
