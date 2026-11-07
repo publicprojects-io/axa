@@ -5,6 +5,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `axa-cursor-pagination` uses `base64` 0.23. Cursors are encoded as before, so a
+  cursor issued by 0.1.0 still reads.
+- The `axa` agent skill explains how to page a collection with signed cursors.
+
+### Fixed
+
+- Two `axa-outbox` heartbeat tests waited a fixed 100 ms, and could fail on a busy
+  machine. They now wait for the claim and for the relay to report in.
+- `axa-tracing`'s stalled-runtime test could stop the monitor before it logged, and
+  failed about one run in twenty. It now waits for the warning.
+
 ## [0.7.0] - 2026-11-07
 
 This covers `axa` 0.7.0, `axa-ratelimit` 0.2.0, and five new crates: `axa-worker`

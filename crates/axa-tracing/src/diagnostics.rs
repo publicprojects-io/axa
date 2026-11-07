@@ -251,7 +251,12 @@ mod tests {
         // Let the monitor start its sleep, then hold the only thread past it.
         tokio::time::sleep(Duration::from_millis(1)).await;
         std::thread::sleep(Duration::from_millis(30));
-        tokio::time::sleep(Duration::from_millis(1)).await;
+        // The monitor and this test wake together, in either order, so wait for the
+        // warning rather than for a fixed time.
+        let until = Instant::now() + Duration::from_secs(5);
+        while !lines.text().contains("runtime_lagging") && Instant::now() < until {
+            tokio::time::sleep(Duration::from_millis(1)).await;
+        }
         monitor.abort();
         let text = lines.text();
         assert!(text.contains("runtime_lagging"), "{text}");

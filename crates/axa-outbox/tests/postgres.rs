@@ -17,7 +17,7 @@ use std::{
 use axa_outbox::{Claimed, Event, Failure, Outbox, OutboxOptions, SETUP_STATEMENTS, Stats, write};
 use serde_json::json;
 use sqlx::{PgPool, Row, postgres::PgPoolOptions};
-use tokio::sync::watch;
+use tokio::sync::{Notify, watch};
 use uuid::Uuid;
 
 /// Held for a whole test: these tests share one table.
@@ -95,6 +95,40 @@ async fn go_quiet(pool: &PgPool) {
     .execute(pool)
     .await
     .unwrap();
+}
+
+/// Claimed rows, and how many of those have gone quiet.
+async fn claims(pool: &PgPool) -> (i64, i64) {
+    sqlx::query_as(
+        "SELECT count(*), count(*) FILTER (WHERE updated_at < now() - interval '1 minute') \
+         FROM axa_outbox WHERE status = 'claimed'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Wait until a relay holds something.
+async fn until_claimed(pool: &PgPool) {
+    let until = Instant::now() + DEADLINE;
+    while claims(pool).await.0 == 0 {
+        assert!(Instant::now() < until, "the relay claimed nothing");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+/// Wait until every claim that [`go_quiet`] aged has been heard from again.
+async fn until_reported_in(pool: &PgPool) {
+    let until = Instant::now() + DEADLINE;
+    loop {
+        let (claimed, quiet) = claims(pool).await;
+        assert!(claimed > 0, "the claim ended before it reported in");
+        if quiet == 0 {
+            return;
+        }
+        assert!(Instant::now() < until, "the relay never reported in");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
 }
 
 /// Wait until nothing pending or claimed is left.
@@ -540,15 +574,21 @@ async fn a_slow_publish_that_reports_in_is_not_taken_for_lost() {
     })
     .await;
     let event = add(&pool, "1").await;
-    let relay = Relay::start(&outbox, |_| async {
-        tokio::time::sleep(Duration::from_millis(400)).await;
-        Ok(())
+    // The publish lasts until the test lets it go, however slow the machine is.
+    let gate = Arc::new(Notify::new());
+    let held = gate.clone();
+    let relay = Relay::start(&outbox, move |_| {
+        let held = held.clone();
+        async move {
+            held.notified().await;
+            Ok(())
+        }
     });
-    tokio::time::sleep(Duration::from_millis(100)).await;
-    assert_eq!(status(&pool, &event).await, "claimed");
+    until_claimed(&pool).await;
     go_quiet(&pool).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    until_reported_in(&pool).await;
     assert_eq!(outbox.requeue_stale().await.unwrap(), 0);
+    gate.notify_one();
     drained(&outbox).await;
     relay.stop().await;
     assert_eq!(row(&pool, &event).await.1, 1);
@@ -569,14 +609,24 @@ async fn a_batch_of_quick_publishes_reports_in_too() {
     for number in 0..30 {
         events.push(add(&pool, &number.to_string()).await);
     }
-    let relay = Relay::start(&outbox, |_| async {
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        Ok(())
+    // The last waits for the test, so that the batch is still held when it looks.
+    let gate = Arc::new(Notify::new());
+    let held = gate.clone();
+    let relay = Relay::start(&outbox, move |event| {
+        let held = held.clone();
+        async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            if event.key == "29" {
+                held.notified().await;
+            }
+            Ok(())
+        }
     });
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    until_claimed(&pool).await;
     go_quiet(&pool).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    until_reported_in(&pool).await;
     assert_eq!(outbox.requeue_stale().await.unwrap(), 0);
+    gate.notify_one();
     drained(&outbox).await;
     relay.stop().await;
     for event in &events {

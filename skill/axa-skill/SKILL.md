@@ -176,6 +176,23 @@ let cli = axa::cli::parse(
   authorising the caller and loading the record, and put the check and the write in one
   transaction or a `WHERE version = $1`.
 
+## Paging collections
+
+- Page with `cursor-pagination`. A list takes `?limit=` and an opaque, signed `?cursor=`,
+  answers a bare JSON array, and sends `Link: <...>; rel="next"` while more rows follow.
+  It sends **no total**, because a total counts rows the caller's record policy hides.
+- Build one `CursorKey::new(secret)?` at boot from a secret of 32 bytes or more, kept
+  like a session key. Give each endpoint its `CursorLimits { default_limit, max_limit }`.
+- In the handler, `let page = CursorPage::new(&key, limits, &uri)?;`. A bad limit or
+  cursor answers `422` through `?`, and a limit above the maximum is refused, never
+  clamped. Bind `let (limit, offset) = page.bounds();` as `LIMIT $1 OFFSET $2`, then
+  return `page.respond(rows)`.
+- Order every list by something ending in a unique column, such as
+  `ORDER BY created_at, id`.
+- Pass user text for `LIKE` through `escape_like` and bind it with `ESCAPE '\'`.
+- `offset-pagination` sends `X-Total-Count` and takes `?offset=`. It is insecure, and
+  new code does not use it.
+
 ## Configuration
 
 There are no config files. `Defaults` states a service's defaults in code, and the
