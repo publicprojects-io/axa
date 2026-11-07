@@ -14,11 +14,54 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`axa-outbox` 0.2.0 keeps a record, and breaks.** An event and everything that
+  happened to it are only ever inserted, into `axa_outbox_events`,
+  `axa_outbox_attempts`, and `axa_outbox_payloads`, and their triggers refuse `UPDATE`,
+  `DELETE`, and `TRUNCATE` from any role. An event's state is its latest attempt, and
+  every attempt names its relay and its claim. `connect_existing` refuses to start
+  without the triggers. See
+  [Upgrading axa-outbox to 0.2](help/upgrading-to-0.3/index.md#upgrading-axa-outbox-to-02).
+  - `Outbox::run` takes a decision, run before the publisher in the claim's
+    transaction, answering `Deliver`, `Refuse`, which is final, or `Hold`, which charges
+    nothing. It also takes a record, run in each outcome's transaction, so a service's
+    audit row commits with the outcome. Both are required: `decide::deliver_all` and
+    `record::nothing` say there is neither.
+  - The outcome methods of a service's own loop, `delivered`, `failed`, `refused`, and
+    `returned`, take the caller's transaction, and there is no form that takes a pool.
+  - Nothing is swept: `retention_days`, `purge_sent`, and `retry_failed` are gone. A
+    person puts a failed event back with `release`, and erases a payload with `erase`,
+    each naming who and why.
+  - A fingerprint is checked before each decision, and a changed event is
+    `failed: tampered` and never published.
+  - A reason is a code of at most 200 characters with no line breaks. Free error text is
+    never stored or logged.
+  - `write` refuses a payload over 64 KiB. `Writer` takes other limits and a list of
+    denied field names.
+  - A topic can be given `Order::None`.
+  - `IMPORT_STATEMENTS` copy the 0.1.0 table's rows into the record.
+  - The working state is guarded too. `axa_outbox_owed` changes only as the record
+    does, apart from a hold of at most a day, and `REBUILD_OWED_STATEMENTS` make it again
+    from the record. A lease cannot be dated ahead or moved. `hold_interval` is at most a
+    day.
+- The spec gains principles P-7 to P-10, and P-2 admits code that one service needs to
+  keep a control it is held to.
+
 - `axa-cursor-pagination` uses `base64` 0.23. Cursors are encoded as before, so a
   cursor issued by 0.1.0 still reads.
 - The `axa` agent skill explains how to page a collection with signed cursors.
 
+### Added
+
+- **`outbox-encryption`, and the `encryption` feature of `axa-outbox`:** payloads sealed
+  at rest with XChaCha20-Poly1305 under keys the service supplies, bound to their event,
+  with a key id so that a key can be replaced. It adds `chacha20poly1305` 0.11.
+- `axa::outbox::inbox::seen`, an insert-only inbox a consumer dedupes with in its own
+  transaction.
+
 ### Fixed
+
+- An `axa-outbox` relay given up on could mark a row sent by its id alone. Every outcome
+  now matches the claim it ends.
 
 - Two `axa-outbox` heartbeat tests waited a fixed 100 ms, and could fail on a busy
   machine. They now wait for the claim and for the relay to report in.

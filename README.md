@@ -64,7 +64,8 @@ axa = "0.7"
 | `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set. No service uses this yet |
 | `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
 | `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
-| `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres, with the broker client left in the service. Turns on `queue`. No service uses this yet |
+| `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Turns on `queue`. No service uses this yet |
+| `outbox-encryption` | `outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies |
 | `cursor-pagination` | [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping. No service uses this yet |
 | `offset-pagination` | [`axa-offset-pagination`](crates/axa-offset-pagination): offset pages, count headers, and `LIKE` escaping. **Insecure:** a total can count rows a record policy hides. Prefer `cursor-pagination` |
 | `pagination` | The old name for `offset-pagination`, as `axa::pagination`. It will go |
@@ -537,22 +538,30 @@ are stored in plain text, so never put a secret in them.
 
 ### The outbox
 
-With the `outbox` feature, an event is a row in `axa_outbox`, written with
-`outbox::write` on the caller's transaction, so it commits or rolls back with the change
-it describes. A relay then publishes it, so a crash between the commit and the publish
-loses nothing. `Outbox::run` takes the publisher as a closure, so the broker client
-stays in the service, and a service that wants more runs its own loop on `claim` and
-`sent`.
+With the `outbox` feature, an event is a record, written with `outbox::write` on the
+caller's transaction, so it commits or rolls back with the change it describes. A relay
+then decides whether each event may go, publishes it, and records what happened, so a
+crash between the commit and the publish loses nothing. `Outbox::run` takes three
+closures: the decision, run in the claim's transaction, the publisher, so the broker
+client stays in the service, and the record, run in each outcome's transaction, so the
+service's audit row commits with it. A service with no rule and no audit passes
+`decide::deliver_all` and `record::nothing`.
 
-Delivery is at least once, so a consumer must dedupe on `event_id`. Several relays can
-run at once, and each row normally goes out once. Events with one topic and key go out in
-order. A broker that is down charges no row, and a row it keeps refusing ends as `failed`
-and holds up nothing else. A claim whose relay died comes back after `stale_minutes`.
+Events and attempts are only ever inserted, and the database's triggers refuse every
+change, so what was delivered, refused, and failed stays on record. A refusal is final.
+A hold charges nothing. Nothing is swept: a payload that must go is erased by a person,
+with `outbox::erase`, and the erasure is kept. A changed row is never published.
+
+Delivery is at least once, so a consumer must dedupe on `event_id`, which
+`outbox::inbox::seen` does. Several relays can run at once, and each event normally goes
+out once. Events with one topic and key go out in order, unless a topic is given
+`Order::None`. A broker that is down charges no event, and one it keeps refusing ends as
+`failed` and holds up nothing else.
 
 **Nothing relays by itself.** See the
-[guide](help/transactional-outbox/index.md) for what a service writes. Payloads are
-stored in plain JSON, so sent rows are deleted after `retention_days`, and a `failed`
-row stays until someone deals with it.
+[guide](help/transactional-outbox/index.md) for what a service writes. A payload is at
+most 64 KiB by default, may be checked against a list of denied fields, and with
+`outbox-encryption` is sealed at rest. Prefer an id to a snapshot.
 
 ### Testing
 

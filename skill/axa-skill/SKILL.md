@@ -54,6 +54,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Postgres through sqlx, the preferred way. `AppContext::db` becomes a `PgPool` | `sqlx` |
 | Postgres job queue | `queue` |
 | Transactional outbox and relay on Postgres | `outbox` |
+| The outbox, with payloads sealed at rest | `outbox-encryption` |
 | Keep SeaORM | `sea-orm` |
 | Diesel, with no `libpq` | `diesel` |
 | Request-level tests | `testing` |
@@ -321,25 +322,38 @@ has the whole of this.
 ## Outbox
 
 Use the outbox, not a broker call after the commit, whenever an event must not be lost.
-The [guide](../../help/transactional-outbox/index.md) has the whole of it.
+The [guide](../../help/transactional-outbox/index.md) has the whole of it. `axa-outbox`
+0.2 keeps a record: events and attempts are only ever inserted, and triggers refuse
+every change.
 
 - `outbox::write(&mut transaction, &event)` takes a transaction, never a pool, and
   `write_seaorm` takes SeaORM's. Change the record first: its row lock is what keeps one
-  key's events in commit order.
-- **Nothing relays by itself.** Spawn `Outbox::run` in `main.rs` with the publisher as a
-  closure, and stop it after `server::run` returns. The broker client stays in the service.
+  key's events in commit order. A payload over 64 KiB fails the write. For other limits,
+  denied fields, or sealing, build one `outbox::Writer` at boot and call its `write`.
+- **Nothing relays by itself.** Spawn `Outbox::run(decide, publish, record, stopped)` in
+  `main.rs`, and stop it after `server::run` returns. The broker client stays in the
+  service. With no rule or no audit, pass `decide::deliver_all` or `record::nothing`.
+- `decide` runs in the claim's transaction and answers `Decision::Deliver`,
+  `Decision::refuse("code")`, which is final, or `Decision::Hold`, which charges nothing.
+  `record` runs in each outcome's transaction, so write the audit row there.
 - Answer `Ok` only once the broker has acknowledged. A publisher that logs, or a send that
-  only queues locally, marks rows sent that nobody received.
-- Say which failure it was: `Failure::unavailable` charges no row and waits, and
-  `Failure::rejected` charges this row, which ends as `failed` after `max_attempts`.
-- Delivery is at least once, so a consumer must dedupe on `event_id`. `id` rises with each
-  event for a key, so a consumer applying state can refuse anything older.
-- Watch `Outbox::stats`. A `failed` row is never swept: fix the cause and call
-  `Outbox::retry_failed`.
-- A payload is plain JSONB, so prefer an id to a snapshot, and never put a secret in one.
-  Erasing a person includes `DELETE FROM axa_outbox WHERE key = $1`.
+  only queues locally, records deliveries nobody received.
+- Say which failure it was, with a short code, never the broker's text:
+  `Failure::unavailable("broker_down")` charges nothing and waits, and
+  `Failure::rejected("code")` charges this event, which ends as `failed` after
+  `max_attempts`.
+- Delivery is at least once, so a consumer must dedupe on `event_id`:
+  `outbox::inbox::seen(&mut transaction, event_id)` in the consumer's transaction.
+- Watch `Outbox::stats`: `failed` and `tampered` need a person, and `held` with
+  `oldest_held` shows a forgotten hold. Put a failed event back with
+  `outbox::release(&mut transaction, event_id, by, reason)`.
+- Nothing is swept. Erase a payload with `outbox::erase(&mut transaction, event_id, by,
+  reason)`, which keeps who and why. Prefer an id to a snapshot, and never put a secret
+  in a payload.
 - `Outbox::connect` runs DDL at boot. Where a service's role may not, run
-  `outbox::SETUP_STATEMENTS` in a migration and call `Outbox::connect_existing`.
+  `outbox::SETUP_STATEMENTS` in a migration and call `Outbox::connect_existing`, which
+  refuses to start without the triggers. `axa_outbox_owed` is derived working state:
+  never edit it, and if it is ever wrong, run `outbox::REBUILD_OWED_STATEMENTS`.
 
 ## Authentication
 

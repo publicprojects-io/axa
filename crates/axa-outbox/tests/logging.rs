@@ -7,10 +7,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axa_outbox::{Event, Failure, Outbox, OutboxOptions, write};
+use axa_outbox::{Event, Failure, Outbox, OutboxOptions, decide, record, write};
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
 use tokio::sync::watch;
+
+fn outbox_options() -> OutboxOptions {
+    OutboxOptions {
+        max_attempts: 2,
+        poll_interval: Duration::from_millis(10),
+        retry_backoff: Duration::ZERO,
+        ..OutboxOptions::default()
+    }
+}
 
 /// Text a test can read, written by a `tracing` subscriber.
 #[derive(Clone, Default)]
@@ -39,18 +48,16 @@ async fn no_log_line_holds_a_payload_a_key_or_a_failure_text() {
     let _guard = tracing::subscriber::set_default(subscriber);
 
     let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
-    let options = OutboxOptions {
-        max_attempts: 2,
-        poll_interval: Duration::from_millis(10),
-        retry_backoff: Duration::ZERO,
-        ..OutboxOptions::default()
-    };
-    let outbox = Outbox::connect(&uri, options).await.unwrap();
     let pool = PgPoolOptions::new().connect(&uri).await.unwrap();
-    sqlx::query("DELETE FROM axa_outbox")
-        .execute(&pool)
-        .await
-        .unwrap();
+    // The record refuses to be emptied, so this starts from new tables.
+    sqlx::query(
+        "DROP TABLE IF EXISTS axa_outbox_attempts, axa_outbox_payloads, axa_outbox_owed,
+         axa_outbox_leases, axa_outbox_events CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let outbox = Outbox::connect(&uri, outbox_options()).await.unwrap();
 
     let event = Event::new(
         "person",
@@ -64,7 +71,10 @@ async fn no_log_line_holds_a_payload_a_key_or_a_failure_text() {
 
     let (stop, stopped) = watch::channel(false);
     let relay = tokio::spawn(outbox.clone().run(
-        |event| async move { Err(Failure::rejected(format!("refused {}", event.payload))) },
+        decide::deliver_all,
+        // A publisher that wrongly quotes the payload in its reason.
+        |event| async move { Err(Failure::rejected(format!("quoted {}", event.payload))) },
+        record::nothing,
         stopped,
     ));
     let until = Instant::now() + Duration::from_secs(20);
@@ -80,5 +90,5 @@ async fn no_log_line_holds_a_payload_a_key_or_a_failure_text() {
     assert!(log.contains("will be retried"), "{log}");
     assert!(!log.contains("Ada"), "{log}");
     assert!(!log.contains("ada@example.com"), "{log}");
-    assert!(!log.contains("refused"), "{log}");
+    assert!(!log.contains("quoted"), "{log}");
 }

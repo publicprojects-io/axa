@@ -89,13 +89,17 @@ so these suites run with `--test-threads=1`, and in parallel they fail intermitt
 `TABLE` lock in `src/queue.rs`, or tests that race on it fail intermittently. A test
 that drops a column must put it back.
 
-**Outbox tests share one table too.** They hold the `TABLE` lock in
+**Outbox tests share tables too.** They hold the `TABLE` lock in
 `crates/axa-outbox/tests/postgres.rs`, and CI runs them with `--test-threads=1`, which
-also keeps `logging.rs` off that table. They run only with `-p axa-outbox --all-features
--- --ignored`, and a plain `--features queue,testing` run does not reach them. The
-claim's `FOR UPDATE ... SKIP LOCKED` is the only thing stopping two relays taking one row,
-as the outer `UPDATE` does not check `status` again: `several_relays_publish_each_event_once`
-is the test that says so.
+also keeps `logging.rs` off those tables. They run only with `-p axa-outbox --all-features
+-- --ignored`, and a plain `--features queue,testing` run does not reach them. The record
+tables refuse `DELETE` and `TRUNCATE`, so a test starts by dropping them, and one that
+must change a row turns a trigger off and back on with `ENABLE ALWAYS`. The claim's
+`FOR UPDATE ... SKIP LOCKED` on `axa_outbox_owed` is the only thing stopping two relays
+taking one event: `several_relays_publish_each_event_once` is the test that says so.
+Inside the crate, a decision or record closure is passed on as `&D` to a function whose
+parameter is `&D`. Passing `&D` where a function takes its closure by value makes the
+closure type `&'a D`, and rustc then cannot prove the relay's future `Send`.
 
 **Logging tests get their own binary.** `tracing` caches per process whether a log site
 is on, so a test that captures logs lives in its own file under `tests/`.

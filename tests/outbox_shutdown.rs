@@ -15,12 +15,12 @@ use std::{
 
 use axa::{
     config::Server,
-    outbox::{Event, Failure, Outbox, OutboxOptions, write},
+    outbox::{Event, Failure, Outbox, OutboxOptions, decide, record, write},
     server,
 };
 use axum::{Router, routing::get};
 use serde_json::json;
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use tokio::sync::watch;
 
 /// Being set is what makes a process the child.
@@ -59,10 +59,12 @@ async fn service() {
         .unwrap();
     let (stop, stopped) = watch::channel(false);
     let relay = tokio::spawn(outbox.run(
+        decide::deliver_all,
         |_event| async {
             tokio::time::sleep(WORK).await;
             Ok::<(), Failure>(())
         },
+        record::nothing,
         stopped,
     ));
     let router = Router::new().route("/", get(|| async { "ok" }));
@@ -75,13 +77,13 @@ async fn service() {
     served.unwrap();
 }
 
-async fn status_of(pool: &PgPool, event: &Event) -> (String, i32) {
-    let row = sqlx::query("SELECT status, attempts FROM axa_outbox WHERE event_id = $1")
+/// Every attempt of an event, in order.
+async fn outcomes(pool: &PgPool, event: &Event) -> Vec<String> {
+    sqlx::query_scalar("SELECT outcome FROM axa_outbox_attempts WHERE event_id = $1 ORDER BY id")
         .bind(event.event_id)
-        .fetch_one(pool)
+        .fetch_all(pool)
         .await
-        .unwrap();
-    (row.get("status"), row.get("attempts"))
+        .unwrap()
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -92,13 +94,17 @@ async fn sigterm_lets_a_publish_in_progress_finish_beside_a_server() {
         service().await;
         return;
     }
-    // Only for its `connect`, which makes the table.
-    Outbox::connect(&uri(), OutboxOptions::default())
-        .await
-        .unwrap();
+    // The record refuses to be emptied, so this starts from new tables, which
+    // `connect` makes.
     let pool = PgPoolOptions::new().connect(&uri()).await.unwrap();
-    sqlx::query("DELETE FROM axa_outbox")
-        .execute(&pool)
+    sqlx::query(
+        "DROP TABLE IF EXISTS axa_outbox_attempts, axa_outbox_payloads, axa_outbox_owed,
+         axa_outbox_leases, axa_outbox_events CASCADE",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    Outbox::connect(&uri(), OutboxOptions::default())
         .await
         .unwrap();
     let first = Event::new("person", "updated", "1", json!({}));
@@ -115,7 +121,7 @@ async fn sigterm_lets_a_publish_in_progress_finish_beside_a_server() {
         .spawn()
         .unwrap();
     let until = Instant::now() + DEADLINE;
-    while status_of(&pool, &first).await.0 != "claimed" {
+    while outcomes(&pool, &first).await != ["claimed"] {
         assert!(Instant::now() < until, "the relay claimed nothing");
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
@@ -134,6 +140,6 @@ async fn sigterm_lets_a_publish_in_progress_finish_beside_a_server() {
     };
     assert!(status.success(), "{status:?}");
     // The publish in progress finished, and the row it had not reached went back.
-    assert_eq!(status_of(&pool, &first).await, ("sent".to_string(), 1));
-    assert_eq!(status_of(&pool, &second).await, ("pending".to_string(), 0));
+    assert_eq!(outcomes(&pool, &first).await, ["claimed", "delivered"]);
+    assert_eq!(outcomes(&pool, &second).await, ["claimed", "returned"]);
 }

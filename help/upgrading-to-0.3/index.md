@@ -256,6 +256,55 @@ Paging is now two crates, and `axa-pagination` 0.1.1 is superseded:
   cursor with `422`, never clamping. A client that read `X-Total-Count`, or sent
   `?offset=`, must follow the `Link` instead.
 
+## Upgrading axa-outbox to 0.2
+
+`axa-outbox` 0.2.0 keeps a record in place of a table of state, and nothing of 0.1.0 is
+kept beside it as an option. An event and everything that happened to it are only ever
+inserted, and the database refuses every change. See
+[The transactional outbox](../transactional-outbox/index.md).
+
+What will not compile:
+
+| Change | What to do |
+|---|---|
+| `Outbox::run` takes `decide, publish, record, shutdown` | Pass your decision and audit, or `decide::deliver_all` and `record::nothing`, which is one line and visible in review |
+| `Failure::unavailable` and `Failure::rejected` take a code | Pass a short code such as `"broker_down"`, not the broker's error: `.map_err(\|_\| Failure::unavailable("broker_down"))` |
+| `Outbox::claim` takes `decide` and `record` | Pass the same as to `run` |
+| `sent` is `delivered`, and `release` of claimed events is `returned`. Each, with `failed` and the new `refused`, takes the caller's transaction | Begin a transaction, pass it, write the audit row in it, and commit |
+| `requeue_stale` is `recover(record)` | It ends a lost claim with a `lost` or `abandoned` attempt, and edits nothing |
+| `retry_failed` is gone | `outbox::release(tx, event_id, by, reason)` puts one `failed` event back, as an act of a named person |
+| `purge_sent`, `retention_days`, and `maintenance_interval` are gone | Nothing is swept. To remove a person's payload, `outbox::erase(tx, event_id, by, reason)` |
+| `Claimed` has `relay` and `claim`, and `Stats` has `held`, `tampered`, `delivered`, `refused`, `oldest_held`, and `oldest_failed` | Set them where code builds one by hand |
+| `OutboxOptions` has `hold_interval` and `topic_order` | Set them where code builds one without `..OutboxOptions::default()` |
+| `SETUP_STATEMENTS` is `[&str; 33]` | Code that names the type says so |
+
+What changes with no compile error:
+
+- **A payload over 64 KiB fails `write`**, and the caller's transaction with it. A
+  service that must store more builds a `Writer` with a larger `max_payload_bytes`, and
+  should send an id instead.
+- The reason kept on an attempt is the code a publisher gives, at most 200 characters
+  with no line breaks. A longer one is kept as `reason_too_long`. 0.1.0 kept up to 1024
+  characters of free text on the row.
+- `connect_existing` refuses to start unless every table, index, and trigger is there,
+  and the refusing triggers fire always. There is no way to run without them.
+- Tests that emptied `axa_outbox` with `DELETE` or `TRUNCATE` fail, as the record refuses
+  both. Drop the tables instead, or give each test its own database.
+
+To move the rows, in a migration, with every relay stopped:
+
+1. Run `outbox::SETUP_STATEMENTS`. They make the new tables, and do not touch
+   `axa_outbox`, so there is nothing to roll back.
+2. Run `outbox::IMPORT_STATEMENTS`. Each 0.1.0 row is copied with a fingerprint and one
+   attempt for its state: `delivered` for `sent`, `failed` for `failed`, and `imported`
+   for `pending` or `claimed`, which a relay then sends. Its count of attempts goes in the
+   reason, and its error text does not. They are safe to run twice.
+3. Start the 0.2.0 relays.
+4. Drop `axa_outbox` in a later migration of your own, once you no longer need it.
+
+Rows 0.1.0 already swept after `retention_days` cannot be recovered, and the record
+starts with what was left.
+
 ## Checking your work
 
 ```sh

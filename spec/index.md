@@ -61,11 +61,15 @@ fixed once and an auditor reads it once.
 | Id | Principle |
 |---|---|
 | P-1 | **Library, not framework.** A service's `main.rs` stays ordinary Axum and calls in. The control flow is readable from the service's own code. |
-| P-2 | **Two consumers first.** Code is added only once two services need it. A subcrate built ahead of that is marked in the README as having no service yet, and that mark comes off with its first service. |
+| P-2 | **Two consumers first, or one with a safety case.** Code is added only once two services need it, or once one service needs it to keep a control that a hazard log, a regulator, or a security review holds it to. A subcrate built ahead of that is marked in the README as having no service yet, and that mark comes off with its first service. |
 | P-3 | **Fail closed.** A missing or unsafe production setting stops boot. It never falls back to a development value. |
 | P-4 | **Generic errors.** Internal failure text is logged and never sent to a client. |
 | P-5 | **Written afresh.** Loco is Apache-2.0 only and this crate offers five licences, so its source is not copied. |
 | P-6 | **New dependencies are raised first.** They are a cost every consumer pays. |
+| P-7 | **A record is not state.** Where a row is evidence of something a service is answerable for, such as a disclosure, a refusal, or a decision, it is appended and never edited or deleted, and the database is given triggers that refuse it. State that is only a working copy, such as a cache, a lease, or a count, may change. A crate says which of its tables is which. |
+| P-8 | **Final means final.** An outcome a service has called final is never undone by a helper. Putting work back is an act of its own, by a named person, and is kept as a record. |
+| P-9 | **An outcome commits with its audit.** An API that records an outcome takes the caller's transaction, as `outbox::write` already does, so that a service's audit row and the outcome commit together or not at all. |
+| P-10 | **The safe way is the only way.** When a safer or more reliable behaviour replaces a weaker one, the weaker one goes, in a breaking release, with an upgrade path. It is not kept as an option or a default. Where a service must choose, it chooses by passing something explicit, never by leaving a default alone. |
 
 ## 4. Requirements
 
@@ -542,37 +546,63 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 
 ### 4.17 Outbox
 
-`axa-outbox` holds events in one `axa_outbox` table, written in the caller's transaction,
-and a relay publishes them. A publisher is a closure passed to `Outbox::run`, or a
-service runs its own loop on `claim` and `sent`, so there is no trait to implement and
-no broker client here. Delivery is at least once: a consumer must dedupe on `event_id`.
-A row is `pending`, `claimed`, `sent`, or `failed`.
+`axa-outbox` keeps each event as a record, written in the caller's transaction, and a
+relay decides whether it may go, publishes it, and records what happened. A decision, a
+publisher, and a record are closures passed to `Outbox::run`, or a service runs its own
+loop on `claim` and `delivered`, so there is no trait to implement and no broker client
+here. Delivery is at least once: a consumer must dedupe on `event_id`, which
+`inbox::seen` does.
 
-These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/lib.rs`.
+`axa_outbox_events`, `axa_outbox_attempts`, `axa_outbox_payloads`, and `axa_inbox` are
+records (P-7), and are only ever inserted into. `axa_outbox_owed`, which the database
+derives from the attempts, and `axa_outbox_leases`, where a relay reports in, are working
+state, and change only as OBX-39 allows. An event's state is its latest attempt: `claimed`, `delivered`,
+`refused`, `rejected`, `failed`, `lost`, `abandoned`, `returned`, `released`, `erased`,
+or `imported`.
+
+These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/`.
 
 | Id | Requirement | Test |
 |---|---|---|
 | OBX-1 | An event commits or rolls back with the caller's transaction, through sqlx or SeaORM. Writing takes a transaction and not a pool, so that the type refuses the mistake. A repeated `event_id` fails the write. | `an_event_rolls_back_with_its_transaction`, `an_event_commits_with_its_transaction`, `a_seaorm_transaction_carries_an_event_too`, `a_repeated_event_id_fails_the_write`, `each_event_gets_its_own_id` |
 | OBX-2 | A crash after the commit loses nothing, and neither does a relay killed mid-batch. | `an_event_committed_before_a_crash_is_still_published`, `a_relay_killed_mid_batch_loses_nothing` |
-| OBX-3 | A row is marked sent only after its publisher answers `Ok`. A row caught between the broker and the ack is published again, and that is the one duplicate a crash leaves. | `a_failed_publish_is_not_marked_sent`, `a_relay_killed_mid_batch_loses_nothing` |
-| OBX-4 | Each row is claimed by one relay at a time, using `FOR UPDATE SKIP LOCKED`, so several relays publish each row once in the normal case. | `several_relays_publish_each_event_once`, `two_claims_at_once_share_nothing` |
-| OBX-5 | A claim not heard from for `stale_minutes` comes back if it has attempts left, and otherwise ends as `failed`, so a row that kills relays cannot loop for ever. Every `claim` does this first, so nothing else has to run. A relay reports in every `heartbeat_interval`, across a whole batch, so a live one is not taken for lost. | `a_claim_not_heard_from_comes_back`, `a_row_that_keeps_killing_relays_ends_as_failed`, `a_slow_publish_that_reports_in_is_not_taken_for_lost`, `a_batch_of_quick_publishes_reports_in_too` |
-| OBX-6 | A relay given up on cannot change a row's later state by failing or releasing it. Its success still counts, as the broker has the event whoever says so. | `a_late_failure_changes_nothing`, `a_late_release_changes_nothing`, `a_late_success_still_counts` |
-| OBX-7 | A row the broker refuses holds up no other key. After `max_attempts` it is left as `failed`, keeping its error and its payload, and frees its key. It can be put back with `retry_failed`. | `a_poison_row_does_not_hold_up_other_keys`, `a_row_out_of_attempts_is_kept_and_frees_its_key`, `failed_rows_can_be_tried_again` |
-| OBX-8 | Events with one topic and key go out in `id` order, across relays, through retries and recovery. A retry holds back only its own key. A key's order assumes each transaction changes the same row before writing, and does not hold across a row that ended as `failed`. | `a_key_goes_out_in_order_across_relays`, `one_topic_and_key_is_one_line`, `a_retry_holds_back_only_its_own_key`, `a_recovered_row_goes_before_those_behind_it` |
-| OBX-9 | A publisher that says the broker is unavailable charges no row. The round stops, the rest of the batch goes back, and the relay waits twice as long each time, up to a minute. The rows go out once the broker is back. The row being tried waits `retry_backoff`, so the next round tries another, and a refusal called an outage holds up only its own key. | `an_outage_charges_no_row_and_stops_the_round`, `the_rows_go_out_once_the_broker_is_back`, `a_refusal_called_an_outage_holds_up_only_its_key`, `an_outage_waits_longer_each_time_up_to_a_minute` |
-| OBX-10 | A refused row waits `retry_backoff`, doubling each time up to an hour. At most 1024 characters of its error are kept. | `a_retry_waits_for_its_backoff`, `each_retry_waits_twice_as_long_up_to_a_limit`, `long_error_text_is_cut_short` |
-| OBX-11 | A publisher that panics has refused that row, and the loop carries on. | `a_publisher_that_panics_fails_that_row_and_the_loop_carries_on` |
+| OBX-3 | An event is `delivered` only after its publisher answers `Ok`. An event caught between the broker and the ack is published again, and that is the one duplicate a crash leaves. | `a_failed_publish_is_not_delivered`, `a_relay_killed_mid_batch_loses_nothing` |
+| OBX-4 | Each event is claimed by one relay at a time, using `FOR UPDATE SKIP LOCKED`, so several relays publish each event once in the normal case. | `several_relays_publish_each_event_once`, `two_claims_at_once_share_nothing` |
+| OBX-5 | A lost claim is found from its attempts: a `claimed` attempt with no later one, whose lease has not been heard from for `stale_minutes`. Recovery appends a `lost` attempt, charged, or `abandoned` with no attempts left, and edits no record. Every `claim` does this first. A relay reports in every `heartbeat_interval`, across a whole batch, so a live one is not taken for lost. | `a_claim_not_heard_from_comes_back`, `an_event_that_keeps_killing_relays_is_abandoned`, `a_slow_publish_that_reports_in_is_not_taken_for_lost`, `a_batch_of_quick_publishes_reports_in_too` |
+| OBX-6 | A relay given up on cannot change an event's later state by failing or returning it. | `a_late_failure_changes_nothing`, `a_late_return_changes_nothing` |
+| OBX-7 | An event the broker refuses holds up no other key. After `max_attempts` it is `failed`, keeping its payload, and frees its key. Putting it back is `release(tx, event_id, by, reason)`, a `released` attempt naming who and why. A refusal by the service's decision is `refused`, and nothing puts it back (OBX-25). | `a_poison_event_does_not_hold_up_other_keys`, `an_event_out_of_attempts_is_kept_and_frees_its_key`, `a_failed_event_can_be_released_by_a_named_person` |
+| OBX-8 | Events with one topic and key go out in `id` order, across relays, through retries and recovery. A retry or a hold holds back only its own key. A key's order assumes each transaction changes the same row before writing, and does not hold across an event that ended as `failed`. | `a_key_goes_out_in_order_across_relays`, `one_topic_and_key_is_one_line`, `a_retry_holds_back_only_its_own_key`, `a_recovered_event_goes_before_those_behind_it` |
+| OBX-9 | A publisher that says the broker is unavailable charges no event. The round stops, the rest of the batch goes back, and the relay waits twice as long each time, up to a minute. The events go out once the broker is back. The event being tried waits `retry_backoff`, so the next round tries another, and a refusal called an outage holds up only its own key. | `an_outage_charges_nothing_and_stops_the_round`, `the_events_go_out_once_the_broker_is_back`, `a_refusal_called_an_outage_holds_up_only_its_key`, `an_outage_waits_longer_each_time_up_to_a_minute` |
+| OBX-10 | A rejected event waits `retry_backoff`, doubling each time up to an hour. What is kept is a reason, a code (OBX-32). Free error text is never stored. | `a_retry_waits_for_its_backoff`, `each_retry_waits_twice_as_long_up_to_a_limit`, `a_long_reason_is_kept_as_a_code` |
+| OBX-11 | A publisher that panics has rejected that event, and the loop carries on. | `a_publisher_that_panics_fails_that_event_and_the_loop_carries_on` |
 | OBX-12 | A publish past `publish_timeout` is charged an attempt and stops the round as an outage does, as a hang can be either. | `a_publish_past_its_limit_is_charged_and_stops_the_round` |
-| OBX-13 | Sent rows are deleted after `retention_days`, by the relay, and nothing else is. A `failed` row is still owed. | `only_old_sent_rows_are_swept`, `the_relay_sweeps_by_itself`, `a_row_out_of_attempts_is_kept_and_frees_its_key` |
-| OBX-14 | A log line holds no payload, key, or publisher's error text, and the `Debug` text of `Event` and `Claimed` leaves out the payload and the key. | `no_log_line_holds_a_payload_a_key_or_a_failure_text`, `debug_text_leaves_out_the_payload_and_the_key` |
-| OBX-15 | Relays booting together all connect, and `Outbox::connect_existing` changes no schema and fails at connect when the table is missing. A migration runs `SETUP_STATEMENTS`. | `relays_booting_together_all_connect`, `connecting_to_an_existing_table_changes_no_schema` |
-| OBX-16 | Rows already sent do not slow a claim or `stats`. | `what_is_owed_is_found_without_reading_sent_rows` |
+| OBX-13 | Removed in 0.2.0. Nothing is swept (OBX-30). | `nothing_is_swept` |
+| OBX-14 | A log line holds no payload, key, reason, or publisher's error text, and the `Debug` text of `Event`, `Claimed`, and `Attempt` leaves out the payload and the key. | `no_log_line_holds_a_payload_a_key_or_a_failure_text`, `debug_text_leaves_out_the_payload_and_the_key` |
+| OBX-15 | Relays booting together all connect, and `Outbox::connect_existing` changes no schema. A migration runs `SETUP_STATEMENTS`. | `relays_booting_together_all_connect`, `connecting_to_existing_tables_changes_no_schema` |
+| OBX-16 | Events already delivered do not slow a claim or `stats`: a claim reads only what is owed, and `stats` only that and the last hour of outcomes. | `what_is_owed_is_found_without_reading_delivered_events` |
 | OBX-17 | On shutdown a publish in progress finishes and the rest of the batch goes back, charged nothing. A relay started beside `server::run` and stopped after it survives a real `SIGTERM`, and the process exits with success. A relay whose sender is gone stops rather than spins. | `a_publish_in_progress_finishes_and_the_rest_go_back`, `sigterm_lets_a_publish_in_progress_finish_beside_a_server`, `a_relay_stops_while_waiting_for_work`, `a_relay_nobody_can_stop_stops` |
-| OBX-18 | `Outbox::stats` counts what is pending, claimed, and failed, and how long the oldest unsent row has waited. | `stats_say_what_is_owed` |
-| OBX-19 | A service can do all of this from its own loop, with `claim`, `sent`, `failed`, `release`, and `heartbeat`. | `a_service_can_drive_the_outbox_from_its_own_loop` |
+| OBX-18 | `Outbox::stats` says what is owed, held, and failed, and how long the oldest of each has waited (OBX-24). | `stats_count_every_outcome` |
+| OBX-19 | A service can do all of this from its own loop, with `claim`, `delivered`, `failed`, `refused`, `returned`, and `heartbeat`. Each outcome takes the caller's transaction (OBX-28). | `a_service_can_drive_the_outbox_from_its_own_loop` |
 | OBX-20 | Options that cannot work are refused before connecting. | `options_that_cannot_work_are_refused`, `refused_options_stop_a_connect_before_it_reaches_the_network`, `the_default_options_are_valid` |
 | OBX-21 | The crate depends on no broker client. | `this_crate_depends_on_no_broker_client` |
+| OBX-22 | `connect_existing` refuses to start unless every table, its indexes, the fingerprint function, and every trigger are present, the guards of OBX-39 included, with the refusing triggers set to fire always. `connect` creates all of them. There is no option to run without the triggers. | `a_missing_trigger_stops_the_relay`, `connect_makes_the_triggers` |
+| OBX-23 | Events and attempts are only ever inserted. `UPDATE`, `DELETE`, and `TRUNCATE` on either, and on payloads, are refused by the database, whoever sends them and with `session_replication_role` set to `replica`, apart from the one erasure (OBX-30). | `the_tables_refuse_every_change` |
+| OBX-24 | An event's state is read from its latest attempt, and never stored on the event. `stats` counts `pending`, `claimed`, `held`, and `failed`, of which `tampered`, and `delivered` and `refused` in the last hour, with the age of the oldest pending, held, and failed. | `state_is_read_from_the_attempts`, `stats_count_every_outcome` |
+| OBX-25 | `Refuse(reason)` is final. The event is never claimed again, `release` refuses it, and it frees its key as `delivered` does. | `a_refusal_is_final`, `a_refusal_cannot_be_released`, `a_refusal_frees_its_key` |
+| OBX-26 | `Hold` writes no attempt, charges nothing, does not grow the backoff, and leaves the event to be decided again after `hold_interval`, for as long as the hold lasts. A held event holds back its own key, and no other. A hold has no limit and changes no state: `stats` gives the count and the age of the longest hold. | `a_hold_charges_nothing`, `a_hold_lasts_as_long_as_it_is_given`, `a_hold_holds_back_only_its_key` |
+| OBX-27 | `Outbox::run` takes a decision closure, run before the publisher in the claim's transaction, answering `Deliver`, `Refuse(reason)`, or `Hold`. It is required. A service with no rule passes `decide::deliver_all`, which says so in its own code. A refused event never reaches the publisher. A decision that fails leaves its event as it was, to be decided again after `hold_interval`. | `a_refused_event_never_reaches_the_publisher`, `a_failed_decision_leaves_the_event_as_it_was`, and the `compile_fail` example on `Outbox::run` |
+| OBX-28 | `Outbox::run` takes a record closure, run after each outcome is written, in that outcome's transaction, before it commits. It is required. A service with nothing to audit passes `record::nothing`. If it fails, the outcome rolls back, the event stays claimed to be recovered, and the rest of the batch goes back. Every outcome method of a service's own loop takes the caller's transaction, and there is no form that takes a pool. | `an_outcome_and_its_audit_commit_together`, `a_failed_record_rolls_back_the_outcome` |
+| OBX-29 | Every attempt names its relay and its claim, and an outcome must match the claim it ends, never an event's id alone. A relay given up on still cannot write a later outcome over the relay that took over (OBX-6). Its late success is kept as an attempt of its own, so a duplicate delivery is on record, not merged into another. | `each_attempt_names_its_relay_and_claim`, `a_late_success_is_kept_as_its_own_attempt`, `an_outcome_must_match_its_claim` |
+| OBX-30 | Nothing is swept, and there is no `retention_days`. A payload lives in `axa_outbox_payloads`, and one that must go is erased with `erase(tx, event_id, by, reason)`: it appends an `erased` attempt, then sets the payload to null in the caller's transaction. The trigger allows that one change, and only once the event has an `erased` attempt. An erased event is no longer owed, so it is never claimed, checked, or published. Its fingerprint stays, and is never read again. | `nothing_is_swept`, `an_erasure_blanks_only_the_payload_and_is_kept`, `nothing_else_can_blank_a_payload`, `an_erased_event_is_not_published_and_is_not_tampered` |
+| OBX-31 | A fingerprint, SHA-256 over the event's id, topic, kind, key, and stored payload, is made by the database at write and checked before the decision. An event that no longer matches is `failed: tampered`, never published, and counted in `stats`. | `a_changed_row_is_never_published`, `a_sealed_payload_moved_to_another_event_is_tampered` |
+| OBX-32 | A reason is at most 200 characters with no line breaks, because it is a code and not content. A longer one is kept as `reason_too_long`, and one with a line break as `reason_not_a_code`, logged without its text. The table refuses either. `release` and `erase` refuse a `by` or `reason` that is not a code. | `a_reason_is_a_short_code`, `a_long_reason_is_kept_as_a_code`, `a_failed_event_can_be_released_by_a_named_person` |
+| OBX-33 | A payload over `max_payload_bytes`, 64 KiB by default, is refused at write, so the caller's transaction fails rather than storing a large copy of personal data. | `a_large_payload_fails_the_write`, `a_large_payload_or_a_denied_field_is_refused_before_any_write` |
+| OBX-34 | With the `encryption` feature, a `Writer` given `Keys` seals each payload with XChaCha20-Poly1305 and a random nonce, and stores only the sealed form. The key comes from the service, is at least 32 bytes, and its `Debug` text leaves it out. A sealed payload names its key's id, so older keys still open it, and is bound to its event's id, so it does not open on another. A relay without the key leaves a sealed event as it was, charging and writing nothing. | `a_sealed_payload_is_stored_encrypted_and_published_plain`, `a_relay_without_the_key_leaves_sealed_events_alone`, `a_sealed_payload_moved_to_another_event_is_tampered`, `a_sealed_payload_opens_only_for_its_event_and_with_its_key`, `an_older_key_still_opens_what_it_sealed`, `each_seal_has_its_own_nonce`, `a_short_secret_is_refused`, `debug_text_leaves_out_the_key` |
+| OBX-35 | `WriteOptions::deny` names fields, empty by default, and a write refuses a payload with any of them as an object key at any depth, so the caller's transaction fails. | `a_denied_field_fails_the_write`, `a_denied_field_is_found_at_any_depth` |
+| OBX-36 | `inbox::seen(tx, event_id)` notes an event in the consumer's transaction and says whether it was noted before, so a consumer applies each event once. A note rolled back is not seen. `axa_inbox` is a record, and refuses every change. | `the_inbox_says_what_was_seen`, `a_rolled_back_note_is_not_seen`, `the_inbox_refuses_every_change` |
+| OBX-37 | A topic given `Order::None` in `topic_order` has no order per key, so one stuck event holds back nothing. Every other topic keeps OBX-8. | `a_topic_with_no_order_is_not_held_back`, `the_unordered_topics_are_those_given_none` |
+| OBX-38 | `IMPORT_STATEMENTS` copy each 0.1.0 `axa_outbox` row into the record with a fingerprint and one attempt for its state, keeping its order, its payload, and its count of attempts, and none of its error text. They are safe to run twice, and leave `axa_outbox` as it was. | `the_old_table_imports_with_its_states` |
+| OBX-39 | `axa_outbox_owed` changes only as the record does. Its guard, set to fire always, refuses `INSERT`, `DELETE`, and `TRUNCATE` except from within a trigger, as the record's own are, and an `UPDATE` from outside one unless it changes only a hold, `held_since` and `recheck_at`, to no later than a day ahead, so a hold set by hand delays an event by at most a day and shows in `stats`. `hold_interval` is at most a day. `axa_outbox_leases` refuses a lease heard from in the future, or moved to another claim or relay. A lease changed otherwise, or deleted, can at worst bring its claim's recovery early, which is a `lost` or `abandoned` attempt on record. One kept fresh by hand keeps a claim alive as its relay would, and the event shows in `stats` as claimed, with a rising `oldest`. `REBUILD_OWED_STATEMENTS` make `axa_outbox_owed` again from the record, without its holds. A role that can create a trigger can write through one, so a service's role is kept from creating triggers. | `the_owed_table_changes_only_with_the_record`, `a_changed_lease_can_only_bring_a_recovery_which_is_recorded`, `rebuilding_owed_restores_it_from_the_record`, `connect_makes_the_triggers`, `a_missing_trigger_stops_the_relay`, `options_that_cannot_work_are_refused` |
 
 ### 4.18 Worker pool, job status, and schedules
 
@@ -663,7 +693,19 @@ by hand. Publish only from a commit where everything above has passed.
 
 ## 6. Decided, not yet built
 
-None.
+P-7 to P-10 make these due. Each is its own later change, with its own spec edit and
+tests, and none ships with `axa-outbox` 0.2.0.
+
+- **`axa-idempotency`:** the `lease` defaults to one minute, so the same request can take
+  over a key whose first run wrote and then crashed or could not keep its answer, and run
+  the write a second time. Default the lease to the key's `ttl`, and make a shorter one
+  something a service passes, knowing what it allows (P-10).
+- **`axa-worker`:** a person's `cancel` and `retry`, and the release of `needs_review`,
+  change the job row in place. Keep job rows as state, and append each act to an
+  insert-only `axa_job_acts` naming who and why (P-7, P-8).
+- **`axa-offset-pagination`:** kept beside `axa-cursor-pagination`, though its own
+  documentation calls it insecure. Remove it in the next breaking release, with
+  `axa::pagination` and the `pagination` feature (P-10).
 
 ## 7. Open questions
 

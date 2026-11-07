@@ -55,7 +55,8 @@
 //! | `idempotency` | `Idempotency-Key` handling over Postgres, as `axa::idempotency` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `opentelemetry` | OTLP export of traces and request metrics, as `axa::opentelemetry` |
-//! | `outbox` | A transactional outbox and relay on Postgres, as `axa::outbox` |
+//! | `outbox` | A transactional outbox and relay on Postgres that keeps a record, as `axa::outbox` |
+//! | `outbox-encryption` | `outbox`, with payloads sealed at rest under the service's keys |
 //! | `cursor-pagination` | Signed cursor pages with no total, and `LIKE` escaping, as `axa::cursor_pagination` |
 //! | `offset-pagination` | Offset pages with a total, and `LIKE` escaping, as `axa::offset_pagination`. Insecure: prefer `cursor-pagination` |
 //! | `pagination` | The old name for `offset-pagination`, as `axa::pagination`. It will go |

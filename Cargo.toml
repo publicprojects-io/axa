@@ -51,6 +51,8 @@ openapi = ["dep:axa-openapi"]
 opentelemetry = ["dep:axa-opentelemetry"]
 # Needs `queue` for what it sits beside: sqlx errors as `axa::Error`, and `server::run`.
 outbox = ["dep:axa-outbox", "queue"]
+# Outbox payloads sealed at rest, as `axa::outbox::Writer::sealing`.
+outbox-encryption = ["outbox", "axa-outbox/encryption"]
 # Signed cursor pages with no total, as `axa::cursor_pagination`.
 cursor-pagination = ["dep:axa-cursor-pagination"]
 # Offset pages with a total, as `axa::offset_pagination`. Insecure: prefer cursors.
@@ -76,7 +78,7 @@ axa-diesel = { version = "0.2.0", path = "crates/axa-diesel", optional = true }
 axa-environment = { version = "0.1.1", path = "crates/axa-environment" }
 axa-idempotency = { version = "0.1.0", path = "crates/axa-idempotency", optional = true }
 axa-openapi = { version = "0.1.0", path = "crates/axa-openapi", optional = true }
-axa-outbox = { version = "0.1.0", path = "crates/axa-outbox", optional = true }
+axa-outbox = { version = "0.2.0", path = "crates/axa-outbox", optional = true }
 axa-cursor-pagination = { version = "0.1.0", path = "crates/axa-cursor-pagination", optional = true }
 axa-offset-pagination = { version = "0.1.0", path = "crates/axa-offset-pagination", optional = true }
 axa-keycloak = { version = "0.3.0", path = "crates/axa-keycloak", optional = true }

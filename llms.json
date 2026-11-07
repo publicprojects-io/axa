@@ -59,6 +59,10 @@
       "crate": "axa-outbox"
     },
     {
+      "name": "outbox-encryption",
+      "crate": "axa-outbox"
+    },
+    {
       "name": "cursor-pagination",
       "crate": "axa-cursor-pagination"
     },
@@ -235,8 +239,8 @@
     },
     {
       "name": "axa-outbox",
-      "version": "0.1.0",
-      "description": "A transactional outbox and relay on Postgres for Axum services.",
+      "version": "0.2.0",
+      "description": "A transactional outbox and relay on Postgres for Axum services, that keeps a record of what it delivered and refused.",
       "feature": "outbox",
       "readme": "crates/axa-outbox/README.md"
     },
