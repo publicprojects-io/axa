@@ -20,6 +20,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `Limiter::set_limit_for` and `clear_limit_for` change one key's limit from its next
     request, with no restart. At most `MAX_OVERRIDES` are held, and past that setting
     another is refused, never making room by dropping one.
+  - `by_client` warns once, without the address, when its first 100 requests all came
+    from one private or loopback address, as they do from a proxy `TRUSTED_PROXIES`
+    does not list. `axa-ratelimit` now depends on `tracing`, which `axa` already did.
 
 - **Conditional requests, in `axa::conditional`.** The standard stack now answers `304` to
   a `GET` or `HEAD` holding the `ETag` of its answer, whoever set the tag, with weak

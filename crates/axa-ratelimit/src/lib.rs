@@ -25,7 +25,9 @@
 //! after the authentication layer, so that they sit outside it and see its `401`s.
 //!
 //! Behind a proxy, `TRUSTED_PROXIES` has to list it. Without that every request seems
-//! to come from the proxy, and all clients share one limit.
+//! to come from the proxy, and all clients share one limit. [`by_client`] warns once,
+//! with the address left out, when the first [`SHARED_ALLOWANCE_SAMPLE`] requests it
+//! counts all came from one private or loopback address, which is how that looks.
 //!
 //! # The key
 //!
@@ -143,6 +145,10 @@ pub const MAX_KEYS: usize = 100_000;
 /// The most keys with a limit of their own held at once.
 pub const MAX_OVERRIDES: usize = 10_000;
 
+/// How many requests [`by_client`] looks at before it warns that every one came from
+/// one private or loopback address.
+pub const SHARED_ALLOWANCE_SAMPLE: u32 = 100;
+
 const LIMIT: HeaderName = HeaderName::from_static("ratelimit-limit");
 const REMAINING: HeaderName = HeaderName::from_static("ratelimit-remaining");
 const RESET: HeaderName = HeaderName::from_static("ratelimit-reset");
@@ -199,6 +205,21 @@ struct Table {
     next_sweep: Instant,
     /// Keys with a limit of their own.
     overrides: HashMap<u64, u32>,
+    /// Whether every client so far looks like one proxy.
+    shared: Shared,
+}
+
+/// What [`by_client`] has seen of where its requests come from. It holds the client
+/// only as a keyed hash.
+#[derive(Debug, Clone, Copy, Default)]
+enum Shared {
+    /// Every request so far came from this one private or loopback client.
+    Watching { client: u64, requests: u32 },
+    /// No request yet.
+    #[default]
+    Unseen,
+    /// Warned, or seen more than one client, or a public one. Nothing more to say.
+    Settled,
 }
 
 /// A limit on requests per key in a fixed window.
@@ -268,6 +289,7 @@ impl Limiter {
                 overflow: Slot::new(now),
                 next_sweep: now + window,
                 overrides: HashMap::new(),
+                shared: Shared::Unseen,
             })),
         }
     }
@@ -328,6 +350,35 @@ impl Limiter {
         self.lock().overrides.remove(&key).is_some()
     }
 
+    /// Note one request [`by_client`] counted, from `client` at `address`, and say
+    /// whether this is the moment to warn that all clients share one limit.
+    fn one_proxy(&self, client: u64, address: Option<IpAddr>) -> bool {
+        let private = address.is_some_and(|address| match address.to_canonical() {
+            IpAddr::V4(v4) => v4.is_private() || v4.is_loopback(),
+            IpAddr::V6(v6) => v6.is_loopback() || v6.is_unique_local(),
+        });
+        let mut table = self.lock();
+        let next = match table.shared {
+            Shared::Settled => return false,
+            _ if !private => Shared::Settled,
+            Shared::Unseen => Shared::Watching {
+                client,
+                requests: 1,
+            },
+            Shared::Watching {
+                client: seen,
+                requests,
+            } if seen == client => Shared::Watching {
+                client,
+                requests: requests + 1,
+            },
+            Shared::Watching { .. } => Shared::Settled,
+        };
+        let warn = matches!(next, Shared::Watching { requests, .. } if requests >= SHARED_ALLOWANCE_SAMPLE);
+        table.shared = if warn { Shared::Settled } else { next };
+        warn
+    }
+
     fn lock(&self) -> std::sync::MutexGuard<'_, Table> {
         // A poisoned lock holds counts, which are safe to go on using.
         self.table
@@ -348,6 +399,7 @@ impl Limiter {
             overflow,
             next_sweep,
             overrides,
+            ..
         } = &mut *table;
         if now >= *next_sweep {
             slots.retain(|_, slot| now.saturating_duration_since(slot.start) < window);
@@ -518,11 +570,24 @@ async fn limited(verdict: Verdict, request: Request, next: Next) -> Response {
 
 /// Limit each client. Every response gets the `RateLimit-*` headers and its
 /// [`Verdict`], apart from the probes in [`EXEMPT`], which are not counted.
+///
+/// Once per limiter, it warns if the first [`SHARED_ALLOWANCE_SAMPLE`] requests it
+/// counts all came from one private or loopback address, as they do from a proxy
+/// that `TRUSTED_PROXIES` does not list. The warning never holds the address.
 pub async fn by_client(State(limiter): State<Limiter>, request: Request, next: Next) -> Response {
     if EXEMPT.contains(&request.uri().path()) {
         return next.run(request).await;
     }
-    let verdict = limiter.check(client_key(request.extensions()));
+    let client = limiter.hasher.hash_one(client_key(request.extensions()));
+    let verdict = limiter.tally(client, Mode::Charge, Instant::now());
+    if limiter.one_proxy(client, request.extensions().get::<IpAddr>().copied()) {
+        // Never the address: the crate neither stores nor logs one.
+        tracing::warn!(
+            requests = SHARED_ALLOWANCE_SAMPLE,
+            "ratelimit_one_client: every request came from one private address. Behind a \
+             proxy, list it in TRUSTED_PROXIES, or all clients share one limit"
+        );
+    }
     limited(verdict, request, next).await
 }
 
@@ -1103,5 +1168,103 @@ mod tests {
         assert!(!format!("{limiter:?}").contains("integration-7"));
         let keyed = limiter.key(|_: &Request| Some("x"));
         assert!(!format!("{keyed:?}").contains("integration-7"));
+    }
+
+    // The warning about one proxy.
+
+    /// Every event logged, as `LEVEL field=value ...`, with no subscriber crate.
+    #[derive(Clone, Default)]
+    struct Captured(Arc<Mutex<Vec<String>>>);
+
+    impl tracing::Subscriber for Captured {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            struct Text(String);
+            impl tracing::field::Visit for Text {
+                fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn fmt::Debug) {
+                    use fmt::Write;
+                    let _ = write!(self.0, " {}={value:?}", field.name());
+                }
+            }
+            let mut text = Text(event.metadata().level().to_string());
+            event.record(&mut text);
+            self.0.lock().unwrap().push(text.0);
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    /// Send a request to `/` from each address in turn, and return what was logged.
+    async fn logged_for(addresses: impl IntoIterator<Item = &'static str>) -> Vec<String> {
+        let captured = Captured::default();
+        let _guard = tracing::dispatcher::set_default(&tracing::Dispatch::new(captured.clone()));
+        let app = limited(limiter(10_000, 60));
+        for address in addresses {
+            app.clone()
+                .oneshot(request("/", Some(address)))
+                .await
+                .unwrap();
+        }
+        captured.0.lock().unwrap().clone()
+    }
+
+    fn warnings(logged: &[String]) -> Vec<&String> {
+        logged
+            .iter()
+            .filter(|line| line.starts_with("WARN"))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn one_private_client_is_warned_about_once_and_never_named() {
+        let logged = logged_for(std::iter::repeat_n("10.0.0.7", 99)).await;
+        assert!(
+            warnings(&logged).is_empty(),
+            "not before the sample is full"
+        );
+
+        let logged = logged_for(std::iter::repeat_n("10.0.0.7", 250)).await;
+        let warned = warnings(&logged);
+        assert_eq!(warned.len(), 1, "{logged:?}");
+        assert!(warned[0].contains("TRUSTED_PROXIES"), "{}", warned[0]);
+        assert!(
+            !logged.iter().any(|line| line.contains("10.0.0")),
+            "{logged:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_loopback_client_is_warned_about_too() {
+        let logged = logged_for(std::iter::repeat_n("::1", 100)).await;
+        assert_eq!(warnings(&logged).len(), 1, "{logged:?}");
+        assert!(
+            !logged.iter().any(|line| line.contains("::1")),
+            "{logged:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mixed_clients_are_not_warned_about() {
+        let addresses = std::iter::repeat_n("10.0.0.7", 99)
+            .chain(["10.0.0.8"])
+            .chain(std::iter::repeat_n("10.0.0.7", 200));
+        assert_eq!(warnings(&logged_for(addresses).await).len(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_public_client_is_not_warned_about() {
+        let logged = logged_for(std::iter::repeat_n("203.0.113.9", 150)).await;
+        assert_eq!(warnings(&logged).len(), 0);
+        let addresses = ["203.0.113.9"]
+            .into_iter()
+            .chain(std::iter::repeat_n("10.0.0.7", 150));
+        assert_eq!(warnings(&logged_for(addresses).await).len(), 0);
     }
 }

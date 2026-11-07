@@ -13,6 +13,7 @@ license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
 axa-problem = { version = "0.1.0", path = "../axa-problem" }
 axum = "0.8"
 serde_json = "1"
+tracing = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
