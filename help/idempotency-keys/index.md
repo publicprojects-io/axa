@@ -119,11 +119,33 @@ A service whose role may change the schema can call `axa::idempotency::setup(&po
 boot instead. `Idempotency::new` takes a `PgPool`. On SeaORM that is
 `ctx.db.get_postgres_connection_pool().clone()`.
 
+## Requiring a key
+
+A key is optional by default. To refuse a write that has none, name the routes:
+
+```rust
+let keys = keys.required(|_, path| path == "/payments");
+```
+
+A request with no key then gets a `400` with the `code` `idempotency_key_required`.
+`required` only applies to what the layer covers, so it cannot ask a read for a key.
+
+## What a service publishes
+
+A client cannot find out how keys work here by trying them. The
+[Idempotency-Key draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/)
+says each service must publish this, so put it in your API documentation:
+
+- Which routes take a key, and which require one.
+- How long a key lives, 24 hours by default, and that it belongs to one caller.
+- That a key's answer is replayed only for a `2xx` or `3xx`, and that the same key with
+  a different request is a `422`.
+
 ## Sweeping
 
-Nothing runs by itself. An expired row is never replayed, but it stays on disk, with
-the copy of the answer it holds, until you delete it. Add the table to your retention
-list, and call `sweep` on a schedule:
+This is required. Nothing runs by itself: an expired row is never replayed, but it stays
+on disk, with the copy of the answer it holds, until you delete it. Without a schedule
+the answers are kept for ever. Call `sweep`:
 
 ```rust
 tokio::spawn(async move {
@@ -137,7 +159,22 @@ tokio::spawn(async move {
 });
 ```
 
-To erase a person, call `keys.forget_caller(subject)`.
+## Personal data
+
+A kept answer is a copy of what the handler sent, and is not encrypted, so an answer
+holding a person's record is a second copy of them, in the table and in every backup. A
+service must:
+
+1. Schedule `sweep`, as above.
+2. Add `axa_idempotency` to its record of personal data and its retention list.
+3. Say in its privacy notice that erasure can take up to the key's lifetime.
+
+The third is needed because `keys.forget_caller(subject)` erases by who made the
+request, not by whose data an answer holds. When staff create a patient record, the
+answer belongs to that staff member, so erasing the patient does not find it. It goes
+when the key expires and the sweep runs.
+
+A route that cannot accept this is left out with `only`, or kept shorter with `ttl`.
 
 ## After the answer
 

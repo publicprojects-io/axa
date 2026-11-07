@@ -852,6 +852,50 @@ async fn only_narrows_what_is_covered_and_cannot_widen_it() {
 
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn a_required_key_refuses_a_request_without_one() {
+    let pool = pool().await;
+    let runs = Runs::default();
+    let keys = keys(&pool).required(|_, path| path == "/things");
+    let app = app(keys, &runs);
+
+    let refused = send(&app, write("/things", "ana", None, "x")).await;
+    assert_problem(refused, StatusCode::BAD_REQUEST, "idempotency_key_required").await;
+    assert_eq!((runs.count(), rows(&pool).await), (0, 0));
+
+    // With a key it behaves as any other request.
+    for _ in 0..2 {
+        let answer = send(&app, write("/things", "ana", Some("k"), "x")).await;
+        assert!(answer.status().is_success());
+    }
+    assert_eq!(runs.count(), 1);
+    // A route it does not name keeps its key optional.
+    send(&app, write("/other", "ana", None, "x")).await;
+    assert_eq!(runs.count(), 2);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn a_required_key_cannot_widen_what_is_covered() {
+    let pool = pool().await;
+    let runs = Runs::default();
+    let keys = keys(&pool)
+        .only(|_, path| path == "/other")
+        .required(|_, _| true);
+    let app = app(keys, &runs);
+
+    // Left out by `only`, so nothing here is asked for a key.
+    send(&app, write("/things", "ana", None, "x")).await;
+    assert_eq!(runs.count(), 1);
+    // A read stays a read.
+    let read = send(&app, Request::get("/things").body(Body::empty()).unwrap()).await;
+    assert_eq!(read.status(), StatusCode::OK);
+    // What is covered is asked.
+    let refused = send(&app, write("/other", "ana", None, "x")).await;
+    assert_problem(refused, StatusCode::BAD_REQUEST, "idempotency_key_required").await;
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
 async fn forget_lets_a_retry_run_once_a_job_has_failed() {
     let pool = pool().await;
     let runs = Runs::default();

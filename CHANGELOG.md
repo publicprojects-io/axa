@@ -34,6 +34,7 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that lost its key cannot overwrite the next run's answer. Three services and the
   bulk jobs of four more had written their own. No service uses this yet.
   [Where the layer goes](help/idempotency-keys/index.md).
+  `Idempotency::required` refuses a write with no key on the routes it names.
 - With the `idempotency` feature, `Error` converts from `sqlx::Error`, so `?` works on
   `Idempotency::check` in a service on SeaORM.
 

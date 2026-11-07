@@ -37,6 +37,7 @@
 //! | The request | The answer |
 //! |---|---|
 //! | No key, or a method that changes nothing | Runs as if this layer were not there |
+//! | No key, where [`Idempotency::required`] asks for one | `400` `idempotency_key_required` |
 //! | First with this key | Runs, and a `2xx` or `3xx` answer is kept |
 //! | Same key, same request, finished | The first answer, with `Idempotent-Replayed: true` |
 //! | Same key, same request, still running | `409` `idempotency_in_progress`, with `Retry-After` |
@@ -102,10 +103,17 @@
 //! holds the caller, the key, and the answer, and of the request only a hash.
 //!
 //! An expired row is never replayed, but it stays on disk until someone deletes it, and
-//! nothing here runs by itself, so **a service calls [`Idempotency::sweep`] on a
-//! schedule**. To erase a person, call [`Idempotency::forget_caller`]. A route that
-//! answers with a secret, such as one that issues a token, should stay out of this layer,
-//! which [`Idempotency::only`] arranges.
+//! nothing here runs by itself, so **a service must call [`Idempotency::sweep`] on a
+//! schedule**, or the answers are kept for ever. A route that answers with a secret, such
+//! as one that issues a token, should stay out of this layer, which
+//! [`Idempotency::only`] arranges.
+//!
+//! [`Idempotency::forget_caller`] erases by who made the request, and not by whose data
+//! an answer holds. When staff create a patient, that answer belongs to the staff member,
+//! so erasing the patient does not reach it, and it stays until `ttl` ends and the sweep
+//! runs. A service must add `axa_idempotency` to its record of personal data, and its
+//! privacy notice must allow for erasure taking up to `ttl`. A route that cannot accept
+//! this is left out, or given a shorter `ttl`.
 //!
 //! Log lines hold no key, caller, or body.
 //!
@@ -256,6 +264,7 @@ pub struct Idempotency {
     pool: PgPool,
     caller: Arc<CallerOf>,
     only: Option<Arc<Covers>>,
+    required: Option<Arc<Covers>>,
     ttl: Duration,
     lease: Duration,
     max_request_bytes: usize,
@@ -287,6 +296,7 @@ impl Idempotency {
             pool,
             caller: Arc::new(caller),
             only: None,
+            required: None,
             ttl: Duration::from_hours(24),
             lease: Duration::from_mins(1),
             max_request_bytes: 1024 * 1024,
@@ -301,6 +311,19 @@ impl Idempotency {
     #[must_use]
     pub fn only(mut self, covers: impl Fn(&Method, &str) -> bool + Send + Sync + 'static) -> Self {
         self.only = Some(Arc::new(covers));
+        self
+    }
+
+    /// Refuse a request with no key when this says yes, given the method and path. By
+    /// default a key is optional everywhere. This applies only to what is covered, so it
+    /// cannot ask a read, or a route [`Idempotency::only`] left out, for a key. Say so in
+    /// the service's documentation, as a client cannot find out any other way.
+    #[must_use]
+    pub fn required(
+        mut self,
+        requires: impl Fn(&Method, &str) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.required = Some(Arc::new(requires));
         self
     }
 
@@ -389,6 +412,12 @@ impl Idempotency {
 
     fn covers(&self, method: &Method, path: &str) -> bool {
         !method.is_safe() && self.only.as_ref().is_none_or(|only| only(method, path))
+    }
+
+    fn requires(&self, method: &Method, path: &str) -> bool {
+        self.required
+            .as_ref()
+            .is_some_and(|required| required(method, path))
     }
 
     /// Take the key, or say what to answer instead.
@@ -541,9 +570,17 @@ fn log_settled(result: Result<sqlx::postgres::PgQueryResult, sqlx::Error>) {
 
 /// The layer. See the [crate documentation](crate), which says where it goes.
 pub async fn idempotent(State(keys): State<Idempotency>, request: Request, next: Next) -> Response {
-    if !request.headers().contains_key(HEADER)
-        || !keys.covers(request.method(), request.uri().path())
-    {
+    if !keys.covers(request.method(), request.uri().path()) {
+        return next.run(request).await;
+    }
+    if !request.headers().contains_key(HEADER) {
+        if keys.requires(request.method(), request.uri().path()) {
+            return refuse(
+                StatusCode::BAD_REQUEST,
+                "idempotency_key_required",
+                Some("this route needs an Idempotency-Key header"),
+            );
+        }
         return next.run(request).await;
     }
     let Some(key) = key_of(request.headers()) else {

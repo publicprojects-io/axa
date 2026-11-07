@@ -107,7 +107,8 @@ and the ack is published again, and that cannot be closed from this side.
 
 `id` rises with each event for a key, and survives restarts, unlike a per-process
 counter. Send it with the event if a consumer applies state, and refuse anything older
-than the last one applied. Order holds for one topic and key, unless a row ended as
+than the last one applied. A consumer cannot do this with a counter that restarts with
+the process, as everything after a restart would look old. Order holds for one topic and key, unless a row ended as
 `failed`, as the rows behind it then go ahead.
 
 ## Watching it

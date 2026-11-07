@@ -270,9 +270,13 @@ Get these right, because each fails quietly or later:
   the request. `None` refuses the request with a `401`. Returning one text for all
   anonymous callers makes them share answers.
 - **Run `SETUP_STATEMENTS` in a migration**, and call `check` at boot.
-- **Call `sweep` on a schedule.** Nothing runs by itself, and an expired answer stays on
-  disk until then. It can hold personal data, so add `axa_idempotency` to your retention
-  list, and call `forget_caller` to erase a person.
+- **Call `sweep` on a schedule. This is required.** Nothing runs by itself, and an expired
+  answer stays on disk until then. It can hold personal data, so add `axa_idempotency` to
+  your record of personal data and retention list.
+- **`forget_caller` erases by who asked**, not by whose data an answer holds. An answer to
+  staff about a patient stays until it expires, so a privacy notice must allow for
+  erasure taking up to `ttl`.
+- **`required` refuses a write with no key**, with a `400`. A key is optional otherwise.
 - **A `4xx` or `5xx` frees the key**, and a retry runs again. Any other answer that
   cannot be kept (a stream, an answer over 1 MiB, one a handler compressed) gets the
   retry a `409`, because the write ran. Only a `2xx` or `3xx` is replayed.
