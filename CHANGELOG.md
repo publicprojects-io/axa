@@ -11,8 +11,23 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   window, and a lockout that counts only `401`s, with the `429`, `Retry-After`, and
   `RateLimit-*` headers. It keys on the address `axa` resolved, so a forged
   `X-Forwarded-For` buys no fresh limit. Four projects had written their own.
+- `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, sets how long an idle connection is kept.
+  **Breaking:** `config::Server` gains `keep_alive_timeout_seconds`, so code building
+  one by hand must set it.
+- `axa::extract`, with `Json`, `Path`, and `Query` that reject with a problem saying what
+  was wrong and quoting nothing the caller sent. The prelude keeps Axum's, whose
+  rejections the standard stack makes problems with no `detail`, so a service opts in by
+  importing these.
+- `Task::development_only`, which refuses a task outside development and test, for a
+  task that loads fixtures. `task seed` could put made-up records into production.
+- In `axa-pagination` 0.1.1: `Page::bounds` and `Page::respond`. With the `pagination`
+  feature, an `OffsetTooLarge` converts to `Error::BadRequest`, so `?` works on
+  `resolve`.
 
 ### Changed
+
+- `Cli::parse` and `Cli::try_parse` now refuse `db down`, `db reset`, and `db truncate`
+  as `cli::parse` does, so a service cannot miss the guard.
 
 - **Breaking: errors are RFC 9457 problems.** Every error `axa` answers is
   `application/problem+json`, with `type`, `title`, `status`, and where there is more to
@@ -54,6 +69,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The README and spec said no service uses `axa-problem`, and several do.
 - The README now marks every subcrate no service uses, as the spec requires. Five were unmarked.
 - A panic's `500` gets the security and CORS headers. The panic was caught outside them.
+- An idle connection no longer closes at the header limit. `hyper` runs one timer
+  across both, so a load balancer that keeps connections for longer could reuse one as
+  it closed, and answer `502`. A `Tracker` in `server` now runs the two limits.
+- A violated unique or foreign key constraint now answers `409`, not `500`, and logs
+  as a client's mistake rather than an error.
+- A rejected JSON body now says what was wrong, in `detail`. It used to answer with only
+  a status and a reason.
 
 ## [0.5.0] - 2026-11-06
 

@@ -158,13 +158,14 @@ compression, refusal shaping, body limit, panic catching.
 | ERR-4 | A custom error keeps its status, `code`, `detail`, and `errors`. | `custom_errors_keep_their_status_and_body`, `a_status_with_no_standard_reason_is_still_a_problem` |
 | ERR-5 | `not_found`, `unauthorized`, and `bad_request` build the matching variants. | `helpers_build_the_matching_variants`, `statuses_match_their_variants` |
 | ERR-6 | The `IntoResponse` match has no wildcard arm, so a new variant must choose its status. | Enforced by the compiler |
-| ERR-8 | With the `sqlx` or `queue` feature, a sqlx error converts to `Error::Sqlx`, a generic `500`. | `a_sqlx_error_is_a_generic_500` |
+| ERR-8 | With the `sqlx`, `queue`, or `sea-orm` feature, a violated unique or foreign key constraint answers `409`, and logs as a client's mistake, with no text from the database. Any other database error is a generic `500`. | `a_sqlx_error_is_a_generic_500`, `a_violated_constraint_through_sqlx_is_a_conflict`, `a_violated_constraint_through_sea_orm_is_a_conflict`, `a_violated_constraint_logs_nothing_at_error` |
 | ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 | ERR-9 | Every error `axa` answers is an RFC 9457 problem with the media type `application/problem+json`: `type` is `about:blank`, `title` is the status's reason, `status` is the status, and `detail` is present only when there is something more to say. A success stays bare JSON. | `the_bodies_are_exactly_these`, `model_errors_answer_as_problems`, `a_panic_answers_like_any_other_internal_failure`, `json_serializes_with_a_json_content_type` |
 | ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header` |
 | ERR-11 | Field errors are the `errors` extension member. A model's validation failure is a `400` with the `code` `validation`. | `field_errors_are_an_extension_member`, `a_validation_failure_keeps_its_field_errors` |
-| ERR-12 | A rejected JSON body keeps the rejection's status, and the parser's text, which can quote the body, is not returned. | `a_rejected_json_body_keeps_its_status_and_hides_its_text` |
+| ERR-12 | A rejected JSON body keeps the rejection's status, and `detail` says what was wrong in fixed text. The parser's text, which can quote the body, is not returned. | `a_rejected_json_body_keeps_its_status_and_hides_its_text` |
 | ERR-13 | With the standard stack, an error with no `content-type`, or with `text/plain`, becomes a problem for its status with no `detail`. That covers an unmatched path, a wrong method, and an extractor's rejection. Its text is dropped, as a rejection's can quote the request, its headers stay, and any other media type is left alone. An unmatched path answers as `Error::NotFound` does. | `an_unmatched_path_answers_like_not_found`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_rejected_extractor_is_a_problem_that_quotes_nothing`, `a_handlers_plain_text_error_is_not_sent`, `a_bare_status_is_a_problem_and_keeps_its_headers`, `an_error_with_its_own_media_type_and_a_success_are_left_alone`, `only_a_missing_type_or_plain_text_is_bare`, `a_refusal_is_compressed_like_any_other_answer` |
+| ERR-14 | `axa::extract`'s `Json`, `Path`, and `Query` reject with a problem whose `detail` says what was wrong, keeping the rejection's status, and quote nothing the caller sent. The prelude keeps Axum's. | `every_rejection_is_a_problem_and_quotes_nothing`, `a_good_request_passes_through` |
 
 The body of a failed request, with a `detail` and with none:
 
@@ -215,9 +216,10 @@ a browser (TRA-3).
 | CLI-8 | `check` never prints a password or other secret. | `check_never_prints_a_password`, `every_setting_passes_through_redaction` |
 | CLI-9 | `check` refuses what a start would refuse, so the process exits non-zero. | `check_refuses_what_a_start_would_refuse`. The exit status was seen once by hand, and is **unverified** by a test |
 | CLI-11 | `cli::parse` answers `--help` and `--version` for the service. Nothing presents this crate as the service. | `help_and_version_speak_for_the_service`, `nothing_says_this_crate_is_the_service` |
-| CLI-12 | `cli::parse` refuses `db down`, `db reset`, and `db truncate`, exiting non-zero before a service runs anything, unless the process environment is development or test and `AXA_DESTROY_DATA` is `true`. `--environment` can add to that refusal and never lift it. `Cli::parse` does not refuse them. | `only_down_reset_and_truncate_destroy_data`, `a_destructive_command_is_refused_outside_development_and_test`, `a_destructive_command_needs_confirming`, `the_environment_flag_cannot_lift_the_refusal`, `other_commands_are_never_refused` |
+| CLI-12 | `cli::parse`, `Cli::parse`, and `Cli::try_parse` refuse `db down`, `db reset`, and `db truncate`, before a service runs anything, unless the process environment is development or test and `AXA_DESTROY_DATA` is `true`. `--environment` can add to that refusal and never lift it. `Cli::parse_from` and `Cli::try_parse_from` read no process arguments, are for tests, and refuse nothing. | `only_down_reset_and_truncate_destroy_data`, `a_destructive_command_is_refused_outside_development_and_test`, `a_destructive_command_needs_confirming`, `the_environment_flag_cannot_lift_the_refusal`, `other_commands_are_never_refused`, `the_written_out_parser_reads_what_the_derived_one_did`. The refusal through `Cli::parse` was seen by hand on a real binary |
 | TSK-1 | A registered task runs with its arguments. | `a_registered_task_runs_with_its_arguments` |
 | TSK-2 | An unknown task, or a missing argument, is an error. | `an_unknown_task_is_an_error`, `a_missing_argument_is_an_error` |
+| TSK-3 | A task marked `development_only` is refused outside development and test. Both the process environment and `--environment` must allow it. Other tasks run anywhere. | `a_task_runs_anywhere_unless_it_says_otherwise`, `a_development_task_needs_both_environments_to_allow_it`, `a_development_task_is_refused_in_production` |
 
 ### 4.9 Background jobs
 
@@ -269,8 +271,8 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 | SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
 | SRV-6 | Requests and jobs hear of shutdown at once and share one limit, and no job starts after that. | `requests_and_jobs_share_one_limit_and_no_job_starts_during_it` |
-| SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped, including one that sends nothing. `0` allows for ever. The server speaks HTTP/1 only, so that no step waits with no limit. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address`, `a_client_that_sends_nothing_is_dropped`, `an_http2_client_that_goes_silent_is_dropped` |
-| SRV-8 | At most `server::MAX_CONNECTIONS` connections are open at once. More wait to be accepted, and are not refused. | `connections_past_the_limit_wait_their_turn` |
+| SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped, from when it connects or sends the first byte of a later request, including one that sends nothing. `0` allows for ever. The server speaks HTTP/1 only, so that no step waits with no limit. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address`, `a_client_that_sends_nothing_is_dropped`, `an_http2_client_that_goes_silent_is_dropped`, `a_stall_in_a_second_requests_headers_is_dropped` |
+| SRV-8 | At most `MAX_CONNECTIONS` connections, by default `server::MAX_CONNECTIONS`, are open at once. More wait to be accepted, and are not refused. | `connections_past_the_limit_wait_their_turn`, `a_limit_of_zero_means_none` |
 | SRV-9 | A connection can still be upgraded, as a WebSocket is. | `a_connection_can_be_upgraded` |
 | SRV-10 | `MAX_CONNECTIONS` sets the limit, and `0` is invalid. | `the_connection_limit_is_a_setting_and_cannot_be_zero` |
 | SRV-11 | A real `SIGTERM` stops `server::run` cleanly: the process exits with success, and a request in flight and a job in progress finish first, whether the job runs in a worker or beside a server. | `sigterm_lets_a_request_in_flight_finish_and_exits_cleanly`, `sigterm_lets_a_job_in_progress_finish_in_a_worker`, `sigterm_lets_a_job_in_progress_finish_beside_a_server` |
@@ -280,6 +282,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | CLT-3 | An unreadable entry ends the walk at the last good address, and at most 32 entries are read. | `an_unreadable_entry_ends_the_walk`, `a_long_header_stops_at_the_limit` |
 | CLT-4 | The address reaches a handler through `ClientAddr`, and a layer as a plain `IpAddr` extension, and stays out of the request span. | `a_handler_gets_the_address_behind_a_trusted_proxy` |
 | CLT-5 | `TRUSTED_PROXIES` takes addresses and CIDR ranges. A bad list trusts none, and refuses to boot in production. | `ranges_read_and_match`, `a_bad_range_is_refused`, `trusted_proxies_are_read_and_a_bad_list_trusts_none` |
+| SRV-13 | An idle connection is kept for `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, a separate limit from SRV-7, so that it can outlast a load balancer's. `0` keeps it for ever. Neither limit cuts off a request being served, its response, or an upgraded connection. | `an_idle_connection_outlasts_the_header_limit`, `an_idle_connection_is_dropped_at_the_keep_alive_limit`, `neither_limit_cuts_off_a_slow_handler`, `neither_limit_cuts_off_a_slow_response_body`, `an_upgraded_connection_is_left_alone`, `a_limit_of_zero_means_none` |
 
 ### 4.12 SeaORM support
 
@@ -316,6 +319,8 @@ and stays so that a service naming it still builds.
 | PAG-2 | `axa-pagination` | Zero and unparsable values use the defaults. | `zero_and_unparsable_values_use_the_defaults` |
 | PAG-3 | `axa-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
 | PAG-4 | `axa-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
+| PAG-5 | `axa-pagination` | `Page::bounds` gives Postgres its signed `LIMIT` and `OFFSET`. | `bounds_are_what_postgres_takes` |
+| PAG-6 | `axa-pagination` | `Page::respond` answers a bare JSON array with the count headers. | `a_response_carries_the_count_headers_and_a_json_body` |
 | PST-1 | `axa-paseto` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
 | PST-8 | `axa-paseto` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | PST-2 | `axa-paseto` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
@@ -436,6 +441,7 @@ cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1

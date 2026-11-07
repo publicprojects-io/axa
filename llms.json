@@ -122,6 +122,10 @@
       "purpose": "The error type and its HTTP mapping"
     },
     {
+      "name": "extract",
+      "purpose": "Extractors that reject with a problem saying what was wrong"
+    },
+    {
       "name": "format",
       "purpose": "Response helpers"
     },
@@ -151,7 +155,7 @@
     },
     {
       "name": "server",
-      "purpose": "Serving and graceful shutdown"
+      "purpose": "Serving, connection limits, and graceful shutdown"
     },
     {
       "name": "store",

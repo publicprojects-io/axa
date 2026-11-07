@@ -100,8 +100,12 @@ is on, so a test that captures logs lives in its own file under `tests/`.
 by hand. Note it in the upgrade guide.
 
 **`axum::serve` is not used.** `server.rs` runs its own connection loop, because
-`axum::serve` cannot set a header-read timeout. A change to serving belongs there, and
-an axum upgrade should be checked against axum's own loop.
+`axum::serve` cannot limit a connection. A change to serving belongs there, and an axum
+upgrade should be checked against axum's own loop. `hyper`'s header timer stays off:
+it runs across a request's headers and the wait between requests, which need different
+limits, so `Tracker` does both. `hyper_util`'s `auto::Builder` must not come back,
+because its version detection has no limit and `http1_only` does nothing on its upgrade
+path.
 
 **`axa-keycloak` stands alone.** It depends on neither `authentication-verifier` nor any
 other axa crate, and states the source of each copy. A fix to the original does not

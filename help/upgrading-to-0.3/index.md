@@ -93,8 +93,7 @@ Everything above applies, and `axa-paseto` is now 0.3. On top of it:
 - **`cli::parse` refuses `db down`, `db reset`, and `db truncate`** outside development
   and test, and everywhere without `AXA_DESTROY_DATA=true`, so a script that runs one
   must set it. `--environment test` does not get round this on a production process.
-  `Cli::parse` does not refuse them, so a service that keeps it must call
-  `Environment::may_destroy_data` itself.
+  `Cli::parse` and `Cli::try_parse` refuse them too.
 
 ## Upgrading to 0.5
 
@@ -183,6 +182,19 @@ to it does change.
   those and return an `Error`. A layer of your own that rewrites Axum's refusals can go.
 - `axa-tera`'s failed render is `text/html`, where it was `text/plain`.
 - `axa::problem` no longer needs the `problem` feature, which adds nothing now.
+- `config::Server` has `keep_alive_timeout_seconds`. Set it where a service builds a
+  `Server` by hand.
+- An idle connection now lasts `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, rather than
+  `HEADER_READ_TIMEOUT_SECONDS`. A load balancer keeping idle connections for over 75
+  seconds needs a higher one.
+- A violated unique or foreign key constraint answers `409`, not `500`, so a client or a
+  test expecting the `500` must change. A handler that already maps these keeps working.
+- Mark a task that loads fixtures with `Task::development_only`, so that it cannot run
+  in production.
+- Import `axa::extract::{Json, Path, Query}` in place of Axum's in handlers whose clients
+  should be told what was wrong. Axum's rejections are problems with no `detail`.
+- A paging helper of your own can go: `Page::bounds`, `Page::respond`, and `?` on
+  `PageParams::resolve` replace it.
 
 ## Checking your work
 

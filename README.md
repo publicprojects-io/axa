@@ -260,7 +260,8 @@ place.
 | `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
 | `BODY_LIMIT_BYTES` | Largest accepted request body |
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
-| `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers. 30 by default, and `0` allows for ever |
+| `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers, once it connects or starts another request. 30 by default, and `0` allows for ever |
+| `KEEP_ALIVE_TIMEOUT_SECONDS` | How long an idle connection is kept for a next request. Keep it above any load balancer's idle timeout. 75 by default, and `0` keeps it for ever |
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
@@ -355,7 +356,7 @@ let cli = axa::cli::parse(
 `parse` refuses `db down`, `db reset`, and `db truncate`, because they destroy data.
 They run only in development or test, with `AXA_DESTROY_DATA=true`, and the process
 exits non-zero before your code runs. `--environment` cannot lift this: a production
-process stays refused whatever the flag says. `Cli::parse()` does not refuse them.
+process stays refused whatever the flag says. `Cli::parse()` refuses them too.
 
 `check` validates the configuration, prints the effective settings with passwords
 and other secrets redacted, and exits, non-zero if refused. It connects to nothing,

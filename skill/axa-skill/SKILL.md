@@ -186,11 +186,28 @@ Production fails closed, and these are the usual first-deploy surprises:
   `Environment::may_destroy_data` itself before carrying one out.
 - From 0.4.1, `cli::parse` refuses them before the service runs
   anything, unless the process is in development or test and `AXA_DESTROY_DATA=true`
-  is set. `--environment` cannot lift this. `Cli::parse` still does not refuse them, so
-  a service that keeps it must call the guard itself.
+  is set. `--environment` cannot lift this. `Cli::parse` refuses them too.
+- Mark a task that loads fixtures with `Task::development_only`, so it cannot run in
+  production.
 
 `Migrator::fresh` does not pass through any migration's `down`, so a guard written in
 a `down` does not protect `db reset`.
+
+## Errors a client sees
+
+- Use `axa::extract::{Json, Path, Query}` in handlers where a caller should be told what
+  was wrong. Axum's, which the prelude still exports, reject with a problem with no
+  `detail`.
+- A violated unique or foreign key constraint answers `409`, so a handler need not map
+  it unless it means something else.
+- `PageParams::resolve` works with `?`. `Page::bounds` gives `LIMIT` and `OFFSET`, and
+  `Page::respond` answers the rows with the count headers.
+
+## Connections
+
+The server speaks HTTP/1 alone, and expects TLS to end in front of it. Keep
+`KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, above any load balancer's idle timeout, and
+`MAX_CONNECTIONS`, 10,000 by default, under the process's open-file limit.
 
 ## Jobs
 

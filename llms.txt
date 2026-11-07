@@ -31,6 +31,7 @@
 - [context](src/context.rs): `AppContext`, plain Axum state
 - [db](src/db.rs): Database helpers for the context
 - [error](src/error.rs): The error type and its HTTP mapping
+- [extract](src/extract.rs): Extractors that reject with a problem saying what was wrong
 - [format](src/format.rs): Response helpers
 - [health](src/health.rs): Health routes
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`
@@ -38,7 +39,7 @@
 - [prelude](src/prelude.rs): Common imports
 - [queue](src/queue.rs): The Postgres job queue (feature `queue`)
 - [routes](src/routes.rs): Route tables that become an ordinary `Router`
-- [server](src/server.rs): Serving and graceful shutdown
+- [server](src/server.rs): Serving, connection limits, and graceful shutdown
 - [store](src/store.rs): Shared in-process store
 - [task](src/task.rs): Command-line tasks
 - [testing](src/testing.rs): Request-level test helpers (feature `testing`)
