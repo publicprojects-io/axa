@@ -10,7 +10,7 @@
 //! service check
 //! ```
 
-use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, error::ErrorKind};
 
 use crate::{
     Environment, Error, Result,
@@ -24,10 +24,11 @@ pub const DESTROY_DATA_VAR: &str = "AXA_DESTROY_DATA";
 /// Parsed command line.
 ///
 /// Read it with [`parse`], which gives `--help` and `--version` the service's
-/// own name and refuses a command that must not destroy data here.
-/// `Cli::parse()` works too, says nothing about the service, and does **not**
-/// refuse those commands.
-#[derive(Debug, Parser)]
+/// own name. `Cli::parse()` works too, and says nothing about the service. Both
+/// refuse a command that must not destroy data here, and so does
+/// `Cli::try_parse()`. `Cli::parse_from` and `Cli::try_parse_from` read no process
+/// arguments, are for tests, and refuse nothing.
+#[derive(Debug, Args)]
 #[command(about = None, long_about = None)]
 pub struct Cli {
     /// What to do.
@@ -123,6 +124,48 @@ fn refusal(cli: &Cli, process: &Environment, confirmed: Option<&str>) -> Option<
     })
 }
 
+/// [`refusal`] for this process.
+fn refused(cli: &Cli) -> Option<String> {
+    let confirmed = std::env::var(DESTROY_DATA_VAR).ok();
+    refusal(cli, &Environment::from_env(), confirmed.as_deref())
+}
+
+/// `cli`, unless it must not run here, which exits.
+fn allowed(cli: Cli) -> Cli {
+    if let Some(message) = refused(&cli) {
+        eprintln!("{message}");
+        std::process::exit(1);
+    }
+    cli
+}
+
+// Written out rather than derived, so that `Cli::parse()` cannot leave the guard out:
+// a service calling it is not told to read this.
+impl CommandFactory for Cli {
+    fn command() -> clap::Command {
+        Self::augment_args(clap::Command::new(env!("CARGO_PKG_NAME")))
+    }
+
+    fn command_for_update() -> clap::Command {
+        Self::augment_args_for_update(clap::Command::new(env!("CARGO_PKG_NAME")))
+    }
+}
+
+impl Parser for Cli {
+    fn parse() -> Self {
+        let matches = Self::command().get_matches();
+        allowed(Self::from_arg_matches(&matches).unwrap_or_else(|error| error.exit()))
+    }
+
+    fn try_parse() -> std::result::Result<Self, clap::Error> {
+        let cli = Self::from_arg_matches(&Self::command().try_get_matches()?)?;
+        match refused(&cli) {
+            Some(message) => Err(Self::command().error(ErrorKind::InvalidValue, message)),
+            None => Ok(cli),
+        }
+    }
+}
+
 /// The command line under a service's own name, version, and description.
 fn command(name: &'static str, version: &'static str, about: &'static str) -> clap::Command {
     Cli::command().name(name).version(version).about(about)
@@ -143,18 +186,11 @@ fn command(name: &'static str, version: &'static str, about: &'static str) -> cl
 /// Exits as `clap` does on a bad argument, on `--help`, and on `--version`.
 /// Exits non-zero, before the service runs anything, on a command that destroys
 /// data outside development and test, or without [`DESTROY_DATA_VAR`] set to
-/// `true`. So a service cannot leave the guard out, as long as it reads its
-/// arguments here.
+/// `true`. `Cli::parse()` refuses the same, so a service cannot leave the guard out.
 #[must_use]
 pub fn parse(name: &'static str, version: &'static str, about: &'static str) -> Cli {
     let matches = command(name, version, about).get_matches();
-    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
-    let confirmed = std::env::var(DESTROY_DATA_VAR).ok();
-    if let Some(message) = refusal(&cli, &Environment::from_env(), confirmed.as_deref()) {
-        eprintln!("{message}");
-        std::process::exit(1);
-    }
-    cli
+    allowed(Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit()))
 }
 
 /// Parse `key:value` task arguments.
@@ -462,5 +498,19 @@ mod tests {
         let help = Cli::command().render_long_help().to_string();
         assert!(!help.contains("Axum"), "{help}");
         assert!(Cli::try_parse_from(["svc", "--version"]).is_err());
+    }
+
+    #[test]
+    fn the_written_out_parser_reads_what_the_derived_one_did() {
+        let cli = parse(&["svc", "--environment", "test", "db", "reset"]);
+        assert_eq!(cli.environment.as_deref(), Some("test"));
+        assert!(matches!(
+            cli.command,
+            Command::Db {
+                command: DbCommand::Reset
+            }
+        ));
+        assert!(Cli::try_parse_from(["svc"]).is_err());
+        assert!(Cli::command().get_about().is_none());
     }
 }
