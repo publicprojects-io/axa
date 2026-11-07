@@ -17,7 +17,7 @@ to read the whole path from `main.rs` down. Reach for plain Axum whenever axa ha
 opinion, because everything axa returns is plain Axum.
 
 Check the version in the project's `Cargo.toml` before relying on a detail here. This
-skill describes 0.5, and says so where an earlier version differs.
+skill describes 0.6, and says so where an earlier version differs.
 
 ## Where the truth lives
 
@@ -37,12 +37,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.5", features = ["sqlx", "queue"] }
+axa = { version = "0.6", features = ["sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa = { version = "0.5", features = ["testing"] }
+axa = { version = "0.6", features = ["testing"] }
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must

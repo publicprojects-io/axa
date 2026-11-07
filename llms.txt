@@ -2,7 +2,7 @@
 
 > Small shared library for services built directly on Axum. A library, not a framework: `main.rs` stays ordinary Axum and
 > calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
-> the preferred way to reach a database. Version 0.5.0, Rust 1.97 or newer.
+> the preferred way to reach a database. Version 0.6.0, Rust 1.97 or newer.
 
 ## Docs
 

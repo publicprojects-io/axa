@@ -3,7 +3,13 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.6.0] - 2026-11-07
+
+This covers `axa` 0.6.0, `axa-keycloak` 0.3.0, `axa-pagination` 0.1.1, `axa-paseto` 0.5.0,
+`axa-ratelimit` 0.1.0, `axa-tera` 0.2.1, and `axa-versioning` 0.2.0. It breaks 0.5: every
+error's body changes, and `config::Server` has a new field. See
+[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what a
+service changes.
 
 ### Added
 

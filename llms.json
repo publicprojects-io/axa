@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Small shared library for services built directly on Axum.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -191,7 +191,7 @@
     },
     {
       "name": "axa-keycloak",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
       "readme": "crates/axa-keycloak/README.md"
@@ -212,14 +212,14 @@
     },
     {
       "name": "axa-pagination",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Offset pagination, count headers, and LIKE escaping for Axum services.",
       "feature": "pagination",
       "readme": "crates/axa-pagination/README.md"
     },
     {
       "name": "axa-paseto",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto/README.md"
@@ -268,7 +268,7 @@
     },
     {
       "name": "axa-tera",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Tera templates with safe escaping and generic errors for Axum services.",
       "feature": "tera",
       "readme": "crates/axa-tera/README.md"
@@ -289,7 +289,7 @@
     },
     {
       "name": "axa-versioning",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "description": "Header-based API version negotiation for Axum services.",
       "feature": "versioning",
       "readme": "crates/axa-versioning/README.md"
