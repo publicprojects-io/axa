@@ -286,32 +286,94 @@ fn json_rejection_text(status: StatusCode) -> &'static str {
     }
 }
 
-/// What to tell a caller whose write broke a unique or foreign key constraint. The
-/// request caused that, so it is not a fault here, and the database's own text goes
-/// nowhere because it names the row.
+/// A constraint the caller's write broke, which is the caller's doing and not a fault
+/// here: the status, the problem's `code`, and what the caller is told. The database's
+/// own text goes nowhere, because it names the row, the column, and the value.
+type Broken = (StatusCode, &'static str, &'static str);
+
 #[cfg(any(
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
     feature = "sea-orm"
 ))]
-fn conflict(error: &Error) -> Option<&'static str> {
-    const ALREADY_EXISTS: &str = "Resource already exists";
-    const REFERENCE: &str = "It refers to a resource that does not exist, or is referred to";
+const ALREADY_EXISTS: Broken = (StatusCode::CONFLICT, "conflict", "Resource already exists");
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm"
+))]
+const REFERENCE: Broken = (
+    StatusCode::CONFLICT,
+    "conflict",
+    "It refers to a resource that does not exist, or is referred to",
+);
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm"
+))]
+const OUT_OF_RANGE: Broken = (
+    StatusCode::UNPROCESSABLE_ENTITY,
+    "unprocessable_entity",
+    "A value is outside what this field allows",
+);
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm"
+))]
+const MISSING: Broken = (
+    StatusCode::UNPROCESSABLE_ENTITY,
+    "unprocessable_entity",
+    "A required value is missing",
+);
+
+/// The constraint a Postgres error code names, for an error that reaches `axa` with no
+/// kind of its own.
+#[cfg(feature = "sea-orm")]
+fn broken_by_code(code: &str) -> Option<Broken> {
+    match code {
+        "23505" => Some(ALREADY_EXISTS),
+        "23503" => Some(REFERENCE),
+        "23514" => Some(OUT_OF_RANGE),
+        "23502" => Some(MISSING),
+        _ => None,
+    }
+}
+
+/// What a write that broke a unique, foreign key, check, or not-null constraint
+/// answers. Any other database error is not the caller's, and gets `None`.
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm"
+))]
+fn broken(error: &Error) -> Option<Broken> {
     match error {
         #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
         Error::Sqlx(error) => match error.as_database_error()?.kind() {
             sqlx::error::ErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
             sqlx::error::ErrorKind::ForeignKeyViolation => Some(REFERENCE),
+            sqlx::error::ErrorKind::CheckViolation => Some(OUT_OF_RANGE),
+            sqlx::error::ErrorKind::NotNullViolation => Some(MISSING),
             _ => None,
         },
         #[cfg(feature = "sea-orm")]
         Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
-            match error.sql_err()? {
-                sea_orm::SqlErr::UniqueConstraintViolation(_) => Some(ALREADY_EXISTS),
-                sea_orm::SqlErr::ForeignKeyConstraintViolation(_) => Some(REFERENCE),
-                _ => None,
-            }
+            // SeaORM names only unique and foreign key violations, so the code is read
+            // from the driver's error, as SeaORM's own documentation advises.
+            use sea_orm::{DbErr, RuntimeErr};
+            let (DbErr::Exec(RuntimeErr::SqlxError(error))
+            | DbErr::Query(RuntimeErr::SqlxError(error))) = error
+            else {
+                return None;
+            };
+            broken_by_code(&error.as_database_error()?.code()?)
         }
         _ => None,
     }
@@ -324,7 +386,7 @@ fn conflict(error: &Error) -> Option<&'static str> {
     feature = "sqlx",
     feature = "sea-orm"
 )))]
-fn conflict(_error: &Error) -> Option<&'static str> {
+fn broken(_error: &Error) -> Option<Broken> {
     None
 }
 
@@ -342,7 +404,7 @@ impl Error {
                 | crate::model::ModelError::EntityAlreadyExists
                 | crate::model::ModelError::Validation(_),
             ) => true,
-            _ => conflict(self).is_some(),
+            _ => broken(self).is_some(),
         };
         if client_mistake {
             tracing::debug!("controller_client_error");
@@ -358,9 +420,8 @@ impl Error {
 impl IntoResponse for Error {
     fn into_response(self) -> Response {
         self.log();
-        if let Some(description) = conflict(&self) {
-            let detail = ErrorDetail::new("conflict", description);
-            return problem(StatusCode::CONFLICT, detail).into_response();
+        if let Some((status, code, description)) = broken(&self) {
+            return problem(status, ErrorDetail::new(code, description)).into_response();
         }
         let (status, detail) = match self {
             Self::NotFound => resource_not_found(),
