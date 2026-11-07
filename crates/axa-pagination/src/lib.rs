@@ -16,9 +16,16 @@
 //! let page = params.resolve(limits).unwrap();
 //! assert_eq!((page.limit, page.offset), (500, 50));
 //! ```
+//!
+//! [`Page::bounds`] gives the values for a Postgres `LIMIT` and `OFFSET`, and
+//! [`Page::respond`] answers with the rows and the count headers.
 
-use axum::http::{HeaderMap, HeaderName, HeaderValue};
-use serde::Deserialize;
+use axum::{
+    Json,
+    http::{HeaderMap, HeaderName, HeaderValue},
+    response::{IntoResponse, Response},
+};
+use serde::{Deserialize, Serialize};
 
 /// Header carrying the rows matching the query, ignoring the page.
 pub const X_TOTAL_COUNT: HeaderName = HeaderName::from_static("x-total-count");
@@ -111,6 +118,24 @@ impl Page {
         headers.insert(X_OFFSET, HeaderValue::from(self.offset));
         headers
     }
+
+    /// `LIMIT` and `OFFSET` as Postgres takes them, which is as signed numbers.
+    #[must_use]
+    pub fn bounds(self) -> (i64, i64) {
+        (
+            i64::try_from(self.limit).unwrap_or(i64::MAX),
+            i64::try_from(self.offset).unwrap_or(i64::MAX),
+        )
+    }
+
+    /// `rows` as a bare JSON array, with the count headers for a query matching
+    /// `total` rows. `total` is signed because that is what `COUNT(*)` gives, and a
+    /// negative one counts as none.
+    #[must_use]
+    pub fn respond(self, total: i64, rows: impl Serialize) -> Response {
+        let total = u64::try_from(total).unwrap_or(0);
+        (self.headers(total), Json(rows)).into_response()
+    }
 }
 
 /// Escape `%`, `_`, and `\` so user text matches literally in a `LIKE`
@@ -192,6 +217,35 @@ mod tests {
         assert_eq!(headers[X_TOTAL_COUNT], "431");
         assert_eq!(headers[X_LIMIT], "25");
         assert_eq!(headers[X_OFFSET], "50");
+    }
+
+    #[test]
+    fn bounds_are_what_postgres_takes() {
+        let page = Page {
+            limit: 25,
+            offset: 50,
+        };
+        assert_eq!(page.bounds(), (25, 50));
+        let huge = Page {
+            limit: u64::MAX,
+            offset: u64::MAX,
+        };
+        assert_eq!(huge.bounds(), (i64::MAX, i64::MAX));
+    }
+
+    #[test]
+    fn a_response_carries_the_count_headers_and_a_json_body() {
+        let page = Page {
+            limit: 2,
+            offset: 4,
+        };
+        let response = page.respond(9, ["a", "b"]);
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.headers()[X_TOTAL_COUNT], "9");
+        assert_eq!(response.headers()[X_LIMIT], "2");
+        assert_eq!(response.headers()[X_OFFSET], "4");
+        assert_eq!(response.headers()["content-type"], "application/json");
+        assert_eq!(page.respond(-1, ["a"]).headers()[X_TOTAL_COUNT], "0");
     }
 
     #[test]
