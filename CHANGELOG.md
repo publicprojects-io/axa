@@ -5,6 +5,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-08
+
+This covers `axa` 0.9.1 and `axa-idempotency` 0.2.1. Nothing breaks, and a service has
+nothing to change. A client polling a run still going is told to wait longer.
+
 ### Changed
 
 - `axa-idempotency`: a duplicate of a run still going is told to wait as long as the
