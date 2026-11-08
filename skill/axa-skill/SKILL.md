@@ -319,7 +319,8 @@ Get these right, because each fails quietly or later:
   retry a `409`, because the write ran. Only a `2xx` or `3xx` is replayed.
 - **A lost run holds its key for the whole `ttl`**, 24 hours by default. A crash, a
   hang-up, a panic, or a timeout may have done the work, so a retry gets a `409`
-  `idempotency_in_progress` until then, and never runs the write twice. Tell clients to
+  `idempotency_in_progress` until then, and never runs the write twice. Its
+  `Retry-After` grows with how long the first has run, up to the end of its lease. Tell clients to
   use a new key once they have checked the write did not happen.
 - **`rerun_abandoned_after(lease)` lets the write run again** once a run has not
   reported in for `lease`. Pass it only for a handler that is safe to run twice. It

@@ -465,6 +465,46 @@ async fn abandoned_claim(pool: &PgPool, caller: &str, key: &str, fingerprint: &s
     .unwrap();
 }
 
+/// A claim whose run took it `ran` seconds ago, and whose lease ends in `left`.
+async fn running_claim(pool: &PgPool, key: &str, fingerprint: &str, ran: f64, left: f64) {
+    sqlx::query(
+        "INSERT INTO axa_idempotency
+             (caller, key, fingerprint, claim, lease_until, expires_at, created_at)
+         VALUES ('ana', $1, $2, gen_random_uuid(), now() + make_interval(secs => $4),
+                 now() + interval '1 day', now() - make_interval(secs => $3))",
+    )
+    .bind(key)
+    .bind(fingerprint)
+    .bind(ran)
+    .bind(left)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn a_duplicate_of_a_long_run_is_told_to_wait_longer_and_never_past_its_lease() {
+    let pool = pool().await;
+    let runs = Runs::default();
+    let app = app(keys(&pool), &runs);
+    let print = {
+        let first = send(&app, write("/things", "ana", Some("probe"), "x")).await;
+        assert_eq!(first.status(), StatusCode::CREATED);
+        fingerprint_of(&pool, "probe").await
+    };
+
+    running_claim(&pool, "hour", &print, 3_599.5, 82_800.0).await;
+    let waiting = send(&app, write("/things", "ana", Some("hour"), "x")).await;
+    assert_eq!(waiting.headers()[header::RETRY_AFTER], "3600");
+    assert_problem(waiting, StatusCode::CONFLICT, "idempotency_in_progress").await;
+
+    running_claim(&pool, "nearly", &print, 72_000.0, 599.5).await;
+    let waiting = send(&app, write("/things", "ana", Some("nearly"), "x")).await;
+    assert_eq!(waiting.headers()[header::RETRY_AFTER], "600");
+    assert_eq!(runs.count(), 1);
+}
+
 /// The fingerprint a request left, read back so that a test crashes the real request.
 async fn fingerprint_of(pool: &PgPool, key: &str) -> String {
     sqlx::query_scalar("SELECT fingerprint FROM axa_idempotency WHERE key = $1")

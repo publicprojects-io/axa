@@ -213,7 +213,9 @@ const CLAIM: &str = "INSERT INTO axa_idempotency
                AND axa_idempotency.fingerprint = EXCLUDED.fingerprint))
     RETURNING claim";
 const LOOKUP: &str = "SELECT fingerprint, state, status, headers::text AS headers, body,
-        expires_at <= now() AS expired
+        expires_at <= now() AS expired,
+        EXTRACT(EPOCH FROM now() - created_at)::float8 AS running_for,
+        EXTRACT(EPOCH FROM lease_until - now())::float8 AS lease_left
     FROM axa_idempotency WHERE caller = $1 AND key = $2";
 /// `claim` identifies this run, so a run that lost the key finds no row in any of these
 /// and changes nothing.
@@ -499,7 +501,12 @@ impl Idempotency {
             match decide(row.as_ref(), &id.fingerprint) {
                 Decision::Claim => {}
                 Decision::Reused => return Ok(Claimed::Answer(reused())),
-                Decision::Running => return Ok(Claimed::Answer(in_progress())),
+                Decision::Running => {
+                    let wait = row
+                        .as_ref()
+                        .map_or(1, |row| wait(row.running_for, row.lease_left));
+                    return Ok(Claimed::Answer(in_progress(wait)));
+                }
                 Decision::NotKept => return Ok(Claimed::Answer(not_kept())),
                 Decision::Replay => {
                     return Ok(Claimed::Answer(
@@ -511,7 +518,7 @@ impl Idempotency {
             }
         }
         // The row keeps changing under this request: another is at work on this key.
-        Ok(Claimed::Answer(in_progress()))
+        Ok(Claimed::Answer(in_progress(1)))
     }
 
     /// Run `work`, reporting in as it goes. The heartbeat is polled beside the work and
@@ -704,7 +711,7 @@ enum Claimed {
 }
 
 /// What is held under a key.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 struct Stored {
     fingerprint: String,
     state: String,
@@ -712,6 +719,10 @@ struct Stored {
     headers: Option<String>,
     body: Option<Vec<u8>>,
     expired: bool,
+    /// Seconds since this claim was taken.
+    running_for: f64,
+    /// Seconds until the claim can be taken over, if its run stops reporting in.
+    lease_left: f64,
 }
 
 impl Stored {
@@ -723,6 +734,8 @@ impl Stored {
             headers: row.try_get("headers")?,
             body: row.try_get("body")?,
             expired: row.try_get("expired")?,
+            running_for: row.try_get("running_for")?,
+            lease_left: row.try_get("lease_left")?,
         })
     }
 
@@ -867,7 +880,28 @@ fn reused() -> Response {
     )
 }
 
-fn in_progress() -> Response {
+/// How many seconds a duplicate is told to wait: as long as the first has run so far,
+/// from 1 second up to when its claim could be taken over.
+///
+/// Most runs finish in under a second, so most duplicates wait one. A client that obeys
+/// waits about twice as long each time, so a run lost under a 24-hour lease is asked
+/// about some 17 times rather than once a second, and never told to wait past the moment
+/// its key could come free.
+fn wait(running_for: f64, lease_left: f64) -> u64 {
+    let ceil = |seconds: f64| {
+        if seconds.is_finite() && seconds > 1.0 {
+            // A lease is at most a `ttl`, which fits in a `u64` of seconds.
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let seconds = seconds.ceil() as u64;
+            seconds
+        } else {
+            1
+        }
+    };
+    ceil(running_for).min(ceil(lease_left))
+}
+
+fn in_progress(wait: u64) -> Response {
     let mut response = refuse(
         StatusCode::CONFLICT,
         "idempotency_in_progress",
@@ -875,7 +909,7 @@ fn in_progress() -> Response {
     );
     response
         .headers_mut()
-        .insert(header::RETRY_AFTER, HeaderValue::from_static("1"));
+        .insert(header::RETRY_AFTER, HeaderValue::from(wait));
     response
 }
 
@@ -914,7 +948,37 @@ mod tests {
             headers: Some(r#"[["content-type","application/json"]]"#.to_string()),
             body: Some(b"{}".to_vec()),
             expired: false,
+            running_for: 0.0,
+            lease_left: 60.0,
         }
+    }
+
+    #[test]
+    fn a_duplicate_waits_as_long_as_the_first_has_run_and_no_longer_than_its_lease() {
+        // A run under a second, or a clock that reads a little behind: one second.
+        assert_eq!(wait(0.0, 86_400.0), 1);
+        assert_eq!(wait(0.2, 86_400.0), 1);
+        assert_eq!(wait(-3.0, 86_400.0), 1);
+        // Rounded up, so a duplicate never asks again before it said it would.
+        assert_eq!(wait(1.2, 86_400.0), 2);
+        assert_eq!(wait(3_600.0, 86_400.0), 3_600);
+        // Never past the moment the claim could be taken over.
+        assert_eq!(wait(72_000.0, 600.0), 600);
+        assert_eq!(wait(72_000.0, 0.5), 1);
+        assert_eq!(wait(72_000.0, -1.0), 1);
+        assert_eq!(wait(f64::NAN, f64::INFINITY), 1);
+    }
+
+    #[test]
+    fn obeying_the_wait_asks_about_a_lost_run_a_handful_of_times_a_day() {
+        let (lease, mut at, mut asked) = (86_400.0, 0.0, 0);
+        while at < lease {
+            #[allow(clippy::cast_precision_loss)]
+            let waited = wait(at, lease - at) as f64;
+            at += waited;
+            asked += 1;
+        }
+        assert!(asked <= 18, "asked {asked} times");
     }
 
     fn headers_with(values: &[&[u8]]) -> HeaderMap {

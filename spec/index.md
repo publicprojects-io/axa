@@ -378,7 +378,7 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | KCK-10 | `axa-keycloak` | Only an access token passes: one with no audience, a `typ` other than `Bearer`, or an `nbf` or `iat` in the future is a `401`. | `only_a_current_access_token_for_this_audience_passes` |
 | KCK-11 | `axa-keycloak` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
 | KCK-12 | `axa-keycloak` | `KeycloakVerifier::ready` fails until the realm's keys have been fetched. | `ready_says_whether_tokens_can_be_verified` |
-| RDS-7 | `axa-redis` | A log line holds neither a key, which can name a person, nor a stored value. | Read in `decode` and `get_or_load`, and **unverified** by a test |
+| RDS-7 | `axa-redis` | A log line holds neither a key, which can name a person, nor a stored value. | `an_unreadable_entry_is_logged_without_its_key_or_value`, `a_failed_cache_write_is_logged_without_its_key_or_value`. A failed Redis read logs only the Redis error, which is given no key, and is **unverified** by a test |
 | RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
 | RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
@@ -518,7 +518,7 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 | IDM-1 | A request with no key that `required` does not name, or a `GET`, `HEAD`, `OPTIONS`, or `TRACE`, runs as if the layer were not there, reaches no store, and leaves no row. | `with_no_key_nothing_is_kept_and_every_request_runs`, `a_method_that_changes_nothing_ignores_its_key`, `the_store_being_down_stops_the_request_before_it_runs` |
 | IDM-2 | The same key and request after a finished `2xx` or `3xx` gets the first status, body, and the headers in `KEPT_HEADERS`, with `Idempotent-Replayed: true`, and runs nothing. A `set-cookie` is not kept. | `a_retry_gets_the_first_answer_and_runs_nothing`, `a_redirect_is_kept_as_the_write_it_answers`, `an_empty_answer_replays_as_an_empty_answer`, `a_replay_hands_out_no_cookie`, `only_the_listed_headers_are_kept`, `a_replay_is_the_first_answer_and_says_so`, `an_empty_answer_has_a_known_size_and_is_kept` |
 | IDM-3 | The same key with a different method, path, query, or body is a `422` with the `code` `idempotency_key_reused`, whether the first finished or not, and runs nothing. The request is compared by a SHA-256 hash that also marks where each part ends. | `the_same_key_on_a_different_request_is_refused`, `a_duplicate_while_the_first_runs_is_told_to_wait`, `the_fingerprint_sees_every_part_and_where_each_ends`, `what_a_key_holds_decides_the_answer` |
-| IDM-4 | Of any number of requests with one key, on any number of replicas, exactly one runs. A duplicate while it runs is a `409` with the `code` `idempotency_in_progress` and `Retry-After: 1`. | `of_many_requests_at_once_on_two_replicas_exactly_one_runs`, `a_duplicate_while_the_first_runs_is_told_to_wait` |
+| IDM-4 | Of any number of requests with one key, on any number of replicas, exactly one runs. A duplicate while it runs is a `409` with the `code` `idempotency_in_progress`, and its `Retry-After` is the seconds the first has run so far, rounded up, at least 1 and at most the seconds left on its lease. | `of_many_requests_at_once_on_two_replicas_exactly_one_runs`, `a_duplicate_while_the_first_runs_is_told_to_wait`, `a_duplicate_of_a_long_run_is_told_to_wait_longer_and_never_past_its_lease`, `a_duplicate_waits_as_long_as_the_first_has_run_and_no_longer_than_its_lease`, `obeying_the_wait_asks_about_a_lost_run_a_handful_of_times_a_day` |
 | IDM-5 | A key belongs to one caller. Two callers with one key run separately, and neither can read the other's answer. | `one_key_is_two_keys_for_two_callers` |
 | IDM-6 | A keyed request with no caller, or an empty one, is a `401` with the `code` `idempotency_no_caller`, runs nothing, and leaves no row. | `with_no_caller_a_keyed_request_is_refused_and_does_not_run` |
 | IDM-7 | Mounted as stated, a guard refuses a caller before a replay can answer it. | `a_guard_outside_the_layer_refuses_before_a_replay_can_answer` |
@@ -657,6 +657,9 @@ CI runs all of this on every push, in `.github/workflows/ci.yml`:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --all-targets --features queue,testing -- -D warnings
+cargo clippy --all-targets --features sqlx -- -D warnings
+cargo clippy -p axa-outbox --all-targets --features encryption -- -D warnings
+cargo clippy -p axa-outbox --all-targets --features sea-orm -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace

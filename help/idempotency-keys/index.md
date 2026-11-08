@@ -61,7 +61,9 @@ It also means that the layer can read what the guards learned. The closure given
 answer for this layer to see. So does a crash, or a caller hanging up. The run may have
 done its work, so the key stays claimed for its whole `ttl`, 24 hours by default, and a
 retry of it gets a `409` `idempotency_in_progress` until then. That is the safe answer:
-the write never runs twice under one key. A client that has checked the write did not
+the write never runs twice under one key. Its `Retry-After` is as long as the first
+request has run so far, from 1 second up to the end of its lease, so a client that obeys
+asks about a lost run some 17 times in a day, not once a second. A client that has checked the write did not
 happen can send it again under a new key.
 
 A run reports in while it works, every third of its lease, so a long handler is never

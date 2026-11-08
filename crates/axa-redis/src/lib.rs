@@ -555,4 +555,97 @@ mod tests {
     fn an_unreadable_value_is_a_miss() {
         assert_eq!(decode::<u32>(Some("not json")), None);
     }
+
+    /// Every event logged while it is the default, as its message and fields.
+    #[derive(Clone, Default)]
+    struct Logged(Arc<Mutex<Vec<String>>>);
+
+    impl Logged {
+        fn lines(&self) -> Vec<String> {
+            self.0.lock().unwrap().clone()
+        }
+    }
+
+    struct Line<'a>(&'a mut String);
+
+    impl tracing::field::Visit for Line<'_> {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            use std::fmt::Write;
+            let _ = write!(self.0, " {}={value:?}", field.name());
+        }
+    }
+
+    impl tracing::Subscriber for Logged {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut line = String::new();
+            event.record(&mut Line(&mut line));
+            self.0.lock().unwrap().push(line);
+        }
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+    }
+
+    /// A key that names a person, and a value that only its owner should see.
+    const PERSON: &str = "person:ana@example.com";
+    const SECRET: &str = "s3cret-diagnosis";
+
+    fn assert_named_neither(lines: &[String]) {
+        assert!(!lines.is_empty(), "nothing was logged");
+        for line in lines {
+            assert!(
+                !line.contains("ana@example.com"),
+                "a key was logged: {line}"
+            );
+            assert!(!line.contains(SECRET), "a value was logged: {line}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_entry_is_logged_without_its_key_or_value() {
+        let logged = Logged::default();
+        let _default = tracing::subscriber::set_default(logged.clone());
+        let cache = memory();
+        let Backend::Memory(held) = &cache.backend else {
+            unreachable!("a memory cache")
+        };
+        let now = Instant::now();
+        Backend::with_memory(held, |held| {
+            held.insert(
+                &cache.key(PERSON),
+                format!("{{\"note\": \"{SECRET}\" unterminated"),
+                now + LIVE,
+                now,
+            );
+        });
+
+        assert_eq!(cache.get::<serde_json::Value>(PERSON).await.unwrap(), None);
+        let loaded: Result<u32, ()> = cache.get_or_load(PERSON, || async { Ok(1) }).await;
+        assert_eq!(loaded, Ok(1));
+        assert_named_neither(&logged.lines());
+    }
+
+    #[tokio::test]
+    async fn a_failed_cache_write_is_logged_without_its_key_or_value() {
+        let logged = Logged::default();
+        let _default = tracing::subscriber::set_default(logged.clone());
+        // JSON has no key that is not text, so this cannot be stored.
+        let unstorable = || async {
+            Ok::<_, ()>(std::collections::HashMap::from([(
+                (1_u8, 2_u8),
+                SECRET.to_string(),
+            )]))
+        };
+
+        let loaded = memory().get_or_load(PERSON, unstorable).await.unwrap();
+        assert_eq!(loaded[&(1, 2)], SECRET);
+        assert_named_neither(&logged.lines());
+    }
 }

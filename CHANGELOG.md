@@ -5,6 +5,18 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `axa-idempotency`: a duplicate of a run still going is told to wait as long as the
+  first has run so far, rounded up, from 1 second to the end of its lease. It was
+  always told 1 second, so a client that obeyed asked about a lost run once a second
+  for up to 24 hours. Now it asks some 17 times.
+
+### Fixed
+
+- `axa-redis`: tests now prove that a log line names neither a key nor a stored value,
+  for an unreadable entry and for a failed cache write (spec RDS-7).
+
 ## [0.9.0] - 2026-11-08
 
 This covers `axa` 0.9.0, `axa-idempotency` 0.2.0, and `axa-worker` 0.2.0. All three

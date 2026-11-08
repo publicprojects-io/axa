@@ -59,6 +59,12 @@ jobs:
         run: cargo clippy --all-targets --features queue,testing -- -D warnings
       - name: Clippy, sqlx
         run: cargo clippy --all-targets --features sqlx -- -D warnings
+      # Each outbox feature alone, as a service turns it on: code behind one
+      # feature can lint clean only beside the other.
+      - name: Clippy, outbox features one at a time
+        run: |
+          cargo clippy -p axa-outbox --all-targets --features encryption -- -D warnings
+          cargo clippy -p axa-outbox --all-targets --features sea-orm -- -D warnings
       - name: Clippy, all features
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
