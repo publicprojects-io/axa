@@ -556,15 +556,31 @@ mod tests {
         assert_eq!(decode::<u32>(Some("not json")), None);
     }
 
-    /// Every event logged while it is the default, as its message and fields.
-    #[derive(Clone, Default)]
-    struct Logged(Arc<Mutex<Vec<String>>>);
-
-    impl Logged {
-        fn lines(&self) -> Vec<String> {
-            self.0.lock().unwrap().clone()
-        }
+    thread_local! {
+        /// What this thread has logged, as each event's message and fields.
+        static LOGGED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
     }
+
+    /// Record every event from here on into its thread's [`LOGGED`], and forget what
+    /// this thread logged before. The recorder is the global default: one set only for
+    /// a thread can miss an event, as `tracing` caches whether a call site is wanted
+    /// for all threads at once, and another test can ask first.
+    fn record_logs() {
+        static SET: std::sync::Once = std::sync::Once::new();
+        SET.call_once(|| {
+            tracing::subscriber::set_global_default(Recorder).expect("no other recorder");
+        });
+        // A call site first reached before the recorder was set may still be cached as
+        // wanted by no one.
+        tracing::callsite::rebuild_interest_cache();
+        LOGGED.with(|logged| logged.borrow_mut().clear());
+    }
+
+    fn logged() -> Vec<String> {
+        LOGGED.with(|logged| logged.borrow().clone())
+    }
+
+    struct Recorder;
 
     struct Line<'a>(&'a mut String);
 
@@ -575,7 +591,7 @@ mod tests {
         }
     }
 
-    impl tracing::Subscriber for Logged {
+    impl tracing::Subscriber for Recorder {
         fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
             true
         }
@@ -587,7 +603,7 @@ mod tests {
         fn event(&self, event: &tracing::Event<'_>) {
             let mut line = String::new();
             event.record(&mut Line(&mut line));
-            self.0.lock().unwrap().push(line);
+            LOGGED.with(|logged| logged.borrow_mut().push(line));
         }
         fn enter(&self, _: &tracing::span::Id) {}
         fn exit(&self, _: &tracing::span::Id) {}
@@ -610,8 +626,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_unreadable_entry_is_logged_without_its_key_or_value() {
-        let logged = Logged::default();
-        let _default = tracing::subscriber::set_default(logged.clone());
+        record_logs();
         let cache = memory();
         let Backend::Memory(held) = &cache.backend else {
             unreachable!("a memory cache")
@@ -629,13 +644,12 @@ mod tests {
         assert_eq!(cache.get::<serde_json::Value>(PERSON).await.unwrap(), None);
         let loaded: Result<u32, ()> = cache.get_or_load(PERSON, || async { Ok(1) }).await;
         assert_eq!(loaded, Ok(1));
-        assert_named_neither(&logged.lines());
+        assert_named_neither(&logged());
     }
 
     #[tokio::test]
     async fn a_failed_cache_write_is_logged_without_its_key_or_value() {
-        let logged = Logged::default();
-        let _default = tracing::subscriber::set_default(logged.clone());
+        record_logs();
         // JSON has no key that is not text, so this cannot be stored.
         let unstorable = || async {
             Ok::<_, ()>(std::collections::HashMap::from([(
@@ -646,6 +660,6 @@ mod tests {
 
         let loaded = memory().get_or_load(PERSON, unstorable).await.unwrap();
         assert_eq!(loaded[&(1, 2)], SECRET);
-        assert_named_neither(&logged.lines());
+        assert_named_neither(&logged());
     }
 }
