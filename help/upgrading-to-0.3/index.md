@@ -310,6 +310,80 @@ To move the rows, in a migration, with every relay stopped:
 Rows 0.1.0 already swept after `retention_days` cannot be recovered, and the record
 starts with what was left.
 
+## Upgrading to 0.9
+
+### Offset paging is gone
+
+`axa` 0.9 removes the `offset-pagination` and `pagination` features, and with them
+`axa::offset_pagination`, `axa::pagination`, and `axa-offset-pagination`. A service that
+names either feature no longer builds.
+
+- Page with `cursor-pagination`: build one `CursorKey` at boot from a secret of 32 bytes
+  or more, and in each list handler call `CursorPage::new(&key, limits, &uri)?`, bind
+  `page.bounds()` as `LIMIT` and `OFFSET`, and answer `page.respond(rows)`.
+- Callers change too. A list takes `?limit=` and an opaque `?cursor=`, follows the
+  `Link: rel="next"` header, and gets no `X-Total-Count`. A bad limit or cursor is a
+  `422`, and a limit above the maximum is refused, not clamped.
+- `escape_like` is in `axa::cursor_pagination`.
+- A service that cannot move its callers yet stays on axa 0.8 until it can.
+
+### axa-idempotency 0.2
+
+A run lost to a crash, a hang-up, a panic, or a timeout may have done its work. Its
+claim used to lapse after a minute, and the same request could then run the write a
+second time. Now the claim holds its key for the key's whole `ttl`, 24 hours by default,
+and running the write again is something a service passes, not a default.
+
+What will not compile:
+
+| Change | What to do |
+|---|---|
+| `Idempotency::lease` is gone | Drop the call, to keep the key for its `ttl`. Only for a handler that is safe to run twice, call `rerun_abandoned_after` with the same lease |
+
+What changes with no compile error:
+
+- **A retry of a lost run gets a `409` until the key expires**, not for a minute. The
+  `409` has the `code` `idempotency_in_progress`, as before. Tell clients, in your API
+  documentation, to use a new key once they have checked the write did not happen.
+- **A store that fails after the work, or fails to free a key after a `4xx` or `5xx`,
+  holds the key for its `ttl`** too, unless a shorter lease was chosen.
+- **A `ttl` under 60 ms panics at boot**, and so does a `rerun_abandoned_after` under
+  60 ms or longer than the `ttl`, in whichever order the two are set.
+- **A run reports in every third of its lease**, so every 8 hours under the default
+  `ttl`. The table is the same, and needs no migration.
+
+### axa-worker 0.2
+
+`axa-worker` 0.2.0 keeps what a person does to a job as a record. A job row is still
+state, and retention still deletes it. A cancel, a retry, and the release of a job in
+`needs_review` are each appended to `axa_job_acts`, naming who and why, in the caller's
+transaction. The calls that took a pool are gone, and nothing keeps them as an option.
+See [Background jobs and schedules](../background-jobs/index.md#a-persons-acts).
+
+What will not compile:
+
+| Change | What to do |
+|---|---|
+| `Queue::cancel(&id)` is `queue::cancel(&mut tx, &id, by, reason)` | Begin a transaction, pass it with who did it and why, write your audit row in it, and commit |
+| `Queue::retry(&id)` is `queue::retry(&mut tx, &id, by, reason)` | The same. A retry of a job in review is kept as `released` |
+| In `axa-worker` alone, `Queue::cancel(id)` and `Queue::retry(id)` are `axa_worker::cancel(&mut tx, id, by, reason)` and `axa_worker::retry(...)` | The same |
+| `axa_worker::Error` has `NotACode` | A `match` on it needs an arm. `axa` turns it into `Error::BadRequest` |
+| `SETUP_STATEMENTS` is `[&str; 14]` | Code that names the type says so |
+
+What changes with no compile error:
+
+- **Run the new `queue::SETUP_STATEMENTS` in a migration** if the service uses
+  `Queue::connect_existing`. They make `axa_job_acts`, its index, and its triggers.
+  `connect_existing` refuses to start without them, or with a trigger turned off. They
+  need Postgres 14 or later.
+- `by` and `reason` must be 1 to 200 characters with no line breaks. Pass an id for the
+  person and a short code for the reason. Anything else is refused before anything is
+  written.
+- Tests that emptied the queue's tables with `DELETE` or `TRUNCATE` still can for
+  `axa_queue`, but `axa_job_acts` refuses both. Drop it instead, or give each test its
+  own database.
+- `Queue::acts(&id)` reads a job's acts, oldest first, after its row is swept too.
+
 ## Checking your work
 
 ```sh

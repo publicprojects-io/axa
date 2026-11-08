@@ -5,6 +5,46 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **Offset paging, with `axa-offset-pagination`, breaking (P-10).** `axa` has no
+  `offset-pagination` or `pagination` feature, and no `axa::offset_pagination` or
+  `axa::pagination`. Its total could count rows a record policy hides. Page with
+  `cursor-pagination`. The crate stays on crates.io for axa 0.8 and earlier, and is not
+  published again. See
+  [Upgrading to 0.9](help/upgrading-to-0.3/index.md#upgrading-to-09).
+
+### Changed
+
+- **`axa-idempotency` 0.2.0 holds a lost run's key for its whole `ttl`, and breaks.** A
+  run lost to a crash, a hang-up, a panic, or a timeout may have done its work. Its
+  claim used to lapse after a minute, and a retry of the same request then ran the
+  write again. Now the lease is the key's `ttl` by default, so a retry gets the `409`
+  `idempotency_in_progress` until the key expires, and the write never runs twice under
+  one key (P-10).
+  - `lease` is gone. `rerun_abandoned_after(lease)` sets a shorter lease, and says in
+    its name that it lets the write run a second time.
+  - `rerun_abandoned_after` panics at boot under 60 ms or over the `ttl`, and `ttl`
+    panics under 60 ms or under a lease already set.
+  - A run reports in every third of its lease, so every 8 hours under the default
+    24-hour `ttl`.
+- **`axa-worker` 0.2.0 keeps a person's acts on jobs as a record, and breaks.** Job rows
+  stay state. `cancel` and `retry`, and the release of a job in `needs_review`, now take
+  the caller's transaction, a `by`, and a `reason`, and append the act to a new
+  insert-only `axa_job_acts` in the same statement as the change, so a service's audit
+  row commits with both. Its triggers refuse `UPDATE`, `DELETE`, and `TRUNCATE` from any
+  role, and `connect_existing` refuses to start without them. Acts outlive the job's
+  row, and `Queue::acts` reads them. The forms that took a pool are gone. See
+  [Upgrading axa-worker to 0.2](help/upgrading-to-0.3/index.md#axa-worker-02).
+
+### Fixed
+
+- Two `axa-worker` schedule tests failed on a busy machine. Six replicas finishing every
+  job at once could deadlock each other, so each now finishes only rows no other holds.
+  The test of due times allowed a job half an interval to be queued, and a slow poller
+  took longer. It now allows a whole interval, and the due times are still checked
+  exactly.
+
 ## [0.8.0] - 2026-11-08
 
 This covers `axa` 0.8.0, `axa-outbox` 0.2.0, and `axa-cursor-pagination` 0.1.1.

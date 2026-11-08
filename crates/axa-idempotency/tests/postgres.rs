@@ -555,7 +555,10 @@ async fn a_run_that_reports_in_outlives_its_lease() {
         )
     };
     let lease = Duration::from_millis(300);
-    let app = routes.layer(from_fn_with_state(keys(&pool).lease(lease), idempotent));
+    let app = routes.layer(from_fn_with_state(
+        keys(&pool).rerun_abandoned_after(lease),
+        idempotent,
+    ));
 
     let first = tokio::spawn({
         let app = app.clone();
@@ -593,7 +596,10 @@ async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
         )
     };
     let lease = Duration::from_millis(200);
-    let app = routes.layer(from_fn_with_state(keys(&pool).lease(lease), idempotent));
+    let app = routes.layer(from_fn_with_state(
+        keys(&pool).rerun_abandoned_after(lease),
+        idempotent,
+    ));
 
     let hung_up = tokio::time::timeout(
         Duration::from_millis(100),
@@ -606,6 +612,53 @@ async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
 
     tokio::time::sleep(lease * 2).await;
     let retry = send(&app, write("/hangs", "ana", Some("k"), "x")).await;
+    assert_eq!(retry.status(), StatusCode::OK);
+    assert_eq!(runs.count(), 2);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn by_default_a_lost_run_holds_its_key_for_the_whole_ttl() {
+    let pool = pool().await;
+    let runs = Runs::default();
+    let routes = {
+        let runs = runs.clone();
+        Router::new().route(
+            "/hangs",
+            post(move || async move {
+                if runs.add() == 1 {
+                    std::future::pending::<()>().await;
+                }
+                "ran"
+            }),
+        )
+    };
+    let ttl = Duration::from_millis(600);
+    let app = routes.layer(from_fn_with_state(keys(&pool).ttl(ttl), idempotent));
+
+    let claimed = tokio::time::Instant::now();
+    let hung_up = tokio::time::timeout(
+        Duration::from_millis(100),
+        send(&app, write("/hangs", "ana", Some("k"), "x")),
+    )
+    .await;
+    assert!(hung_up.is_err());
+
+    // Every retry is told to wait until the ttl ends, and then the key is free.
+    let deadline = claimed + Duration::from_secs(10);
+    let retry = loop {
+        let retry = send(&app, write("/hangs", "ana", Some("k"), "x")).await;
+        if retry.status() != StatusCode::CONFLICT {
+            break retry;
+        }
+        assert_problem(retry, StatusCode::CONFLICT, "idempotency_in_progress").await;
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the key was held past its ttl"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    assert!(claimed.elapsed() >= ttl, "the key came free before its ttl");
     assert_eq!(retry.status(), StatusCode::OK);
     assert_eq!(runs.count(), 2);
 }
@@ -630,11 +683,8 @@ async fn a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer() {
             }),
         )
     };
-    // A lease long enough that only this test takes the first run's claim away.
-    let app = routes.layer(from_fn_with_state(
-        keys(&pool).lease(Duration::from_mins(1)),
-        idempotent,
-    ));
+    // The default lease is the ttl, so only this test takes the first run's claim away.
+    let app = routes.layer(from_fn_with_state(keys(&pool), idempotent));
 
     let first = tokio::spawn({
         let app = app.clone();
@@ -661,10 +711,10 @@ async fn a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer() {
 async fn an_expired_answer_is_not_replayed_and_the_key_runs_afresh() {
     let pool = pool().await;
     let runs = Runs::default();
-    let app = app(keys(&pool).ttl(Duration::from_millis(50)), &runs);
+    let app = app(keys(&pool).ttl(Duration::from_millis(100)), &runs);
 
     send(&app, write("/things", "ana", Some("k"), "x")).await;
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Not swept: the row is there, and it is still not an answer. Nor does its old
     // request hold the key against a new one.

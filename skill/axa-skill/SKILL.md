@@ -64,7 +64,6 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | HTML templates | `tera` |
 | Redis cache with mandatory expiry | `redis` |
 | Signed cursor pages, no total, and `LIKE` escaping | `cursor-pagination` |
-| Offset pages with a total (insecure, prefer cursors) | `offset-pagination`, or the old `pagination` |
 | OpenAPI documents and Swagger UI | `openapi` |
 | Redaction, request tracking, async diagnostics | `tracing` |
 | OTLP traces and request metrics | `opentelemetry` |
@@ -191,8 +190,8 @@ let cli = axa::cli::parse(
 - Order every list by something ending in a unique column, such as
   `ORDER BY created_at, id`.
 - Pass user text for `LIKE` through `escape_like` and bind it with `ESCAPE '\'`.
-- `offset-pagination` sends `X-Total-Count` and takes `?offset=`. It is insecure, and
-  new code does not use it.
+- There is no offset paging. axa 0.9 removed `offset-pagination`, because its total
+  counts rows a record policy hides.
 
 ## Configuration
 
@@ -264,11 +263,17 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
   holds one job type below that, per process, not across replicas.
 - A job has **no time limit unless its worker sets `timeout`**. Delay with `perform_in`,
   or build a job with `queue::job::<W, _>(&args)?` and `run_at`, `priority`, `timeout`.
-- Keep the id `perform_later` returns to call `queue.job`, `cancel`, or `retry`. Expose
-  them only behind the service's own authorisation, and never send a job's error text
-  to a client.
+- Keep the id `perform_later` returns to call `queue.job`, `queue::cancel`, or
+  `queue::retry`. Expose them only behind the service's own authorisation, and never
+  send a job's error text to a client.
+- **A person's act is a record.** `queue::cancel(&mut tx, &id, by, reason)` and
+  `queue::retry(&mut tx, &id, by, reason)` take the caller's transaction, and append the
+  act to the insert-only `axa_job_acts`. Write the service's audit row on the same
+  transaction. `by` and `reason` are codes of at most 200 characters with no line
+  breaks. `queue.acts(&id)` reads them, after the job's row is gone too.
 - A job in **`needs_review`** lost its claim and was stopped, so it may have run in part
-  or twice. Nothing retries it: check what it did, then call `queue.retry`.
+  or twice. Nothing retries it: check what it did, then call `queue::retry`, which is
+  kept as `released`.
 - **Schedules** are `queue.every::<_, W>("name", interval, &args)?` in code, never config.
   Each due time is queued once across replicas, missed times come to one job, and a time
   is skipped while the last job runs. Schedule the `axa-idempotency` sweep this way. A
@@ -312,9 +317,17 @@ Get these right, because each fails quietly or later:
 - **A `4xx` or `5xx` frees the key**, and a retry runs again. Any other answer that
   cannot be kept (a stream, an answer over 1 MiB, one a handler compressed) gets the
   retry a `409`, because the write ran. Only a `2xx` or `3xx` is replayed.
-- **A crash after the handler commits repeats it**, as the answer is stored separately. A
-  handler that must never repeat also needs a unique constraint. A `202` for a job
-  replays even after the job fails, unless the service calls `forget`.
+- **A lost run holds its key for the whole `ttl`**, 24 hours by default. A crash, a
+  hang-up, a panic, or a timeout may have done the work, so a retry gets a `409`
+  `idempotency_in_progress` until then, and never runs the write twice. Tell clients to
+  use a new key once they have checked the write did not happen.
+- **`rerun_abandoned_after(lease)` lets the write run again** once a run has not
+  reported in for `lease`. Pass it only for a handler that is safe to run twice. It
+  panics at boot under 60 ms or over the `ttl`. `lease` is gone, so a service that set
+  it must choose again.
+- **A crash after the handler commits leaves no answer**, as the answer is stored
+  separately. A handler that must never repeat also needs a unique constraint. A `202`
+  for a job replays even after the job fails, unless the service calls `forget`.
 
 [Where the idempotency layer goes](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md)
 has the whole of this.

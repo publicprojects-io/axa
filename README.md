@@ -67,8 +67,6 @@ axa = "0.8"
 | `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Turns on `queue`. No service uses this yet |
 | `outbox-encryption` | `outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies |
 | `cursor-pagination` | [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping. No service uses this yet |
-| `offset-pagination` | [`axa-offset-pagination`](crates/axa-offset-pagination): offset pages, count headers, and `LIKE` escaping. **Insecure:** a total can count rows a record policy hides. Prefer `cursor-pagination` |
-| `pagination` | The old name for `offset-pagination`, as `axa::pagination`. It will go |
 | `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
 | `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
 | `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`, so this feature adds nothing |
@@ -525,9 +523,11 @@ the record it is about commit together. `Queue::enqueue` uses its own connection
 
 A process runs `workers` jobs at once, 2 by default, and `Queue::limit` holds one job
 type below that. A job may be delayed, given a priority, or given a time limit, and has
-none unless it is given one. `Queue::job`, `cancel`, `retry`, and `counts` say and
-change where a job is. A run that lost its claim is stopped, and its job waits in
-`needs_review` for a person. `Queue::every` queues a job each interval, once per due
+none unless it is given one. `Queue::job` and `counts` say where a job is.
+`queue::cancel` and `queue::retry` change it, as an act of a named person for a
+reason, kept in the insert-only `axa_job_acts` in the caller's transaction, and
+`Queue::acts` reads them back. A run that lost its claim is stopped, and its job waits
+in `needs_review` for a person. `Queue::every` queues a job each interval, once per due
 time across replicas, with no drift, one job for times missed, and no stacking, and a
 schedule removed from code is archived, not deleted. See
 [Background jobs and schedules](help/background-jobs/index.md).

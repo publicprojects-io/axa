@@ -58,8 +58,24 @@ It also means that the layer can read what the guards learned. The closure given
 `Idempotency::new` runs after them, so it reads who is calling from an extension.
 
 **Inside the timeout and the panic catcher.** Each of these ends a run without an
-answer for this layer to see. The key stays claimed until its lease ends, and then a
-retry of the same request may run. A retry before then gets a `409` with `Retry-After`.
+answer for this layer to see. So does a crash, or a caller hanging up. The run may have
+done its work, so the key stays claimed for its whole `ttl`, 24 hours by default, and a
+retry of it gets a `409` `idempotency_in_progress` until then. That is the safe answer:
+the write never runs twice under one key. A client that has checked the write did not
+happen can send it again under a new key.
+
+A run reports in while it works, every third of its lease, so a long handler is never
+taken for lost. The lease is the `ttl` unless you choose a shorter one, and choosing one
+lets the write run a second time:
+
+```rust
+// Only for a handler that is safe to run twice, such as one with a unique constraint.
+let keys = keys.rerun_abandoned_after(std::time::Duration::from_mins(1));
+```
+
+Once a run has not reported in for that long, a retry of the same request takes the key
+over and runs again. A different request under that key is still refused. A lease under
+60 ms, or longer than the `ttl`, stops the boot with a panic.
 
 ## Naming the caller
 
@@ -138,13 +154,16 @@ says each service must publish this, so put it in your API documentation:
 
 - Which routes take a key, and which require one.
 - How long a key lives, 24 hours by default, and that it belongs to one caller.
+- That a write whose run was lost holds its key for that long, so a retry gets a `409`
+  and should use a new key once it has checked the write did not happen.
 - That a key's answer is replayed only for a `2xx` or `3xx`, and that the same key with
   a different request is a `422`.
 
 ## Sweeping
 
 This is required. Nothing runs by itself: an expired row is never replayed, but it stays
-on disk, with the copy of the answer it holds, until you delete it. Without a schedule
+on disk, with the copy of the answer it holds, until you delete it. A claim whose run
+was lost is deleted too, once its lease ends. Without a schedule
 the answers are kept for ever. Call `sweep`:
 
 ```rust

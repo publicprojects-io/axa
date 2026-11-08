@@ -264,6 +264,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | QUE-14 | A run that was given up on cannot overwrite the job's later state. It is marked `needs_review` instead (WRK-12). | `a_job_given_up_on_cannot_overwrite_its_replacement` |
 | QUE-15 | A job queued on a transaction commits or rolls back with it. | `a_job_queued_in_a_transaction_rolls_back_with_it` |
 | QUE-16 | `Queue::connect_existing` changes no schema, and fails at connect when the table is missing or out of date. | `connecting_to_an_existing_table_changes_no_schema` |
+| QUE-17 | `queue::cancel` and `queue::retry` take the caller's transaction, a `by`, and a `reason`, and keep the act (WRK-24). An id that is not one matches no job. A `by` or `reason` that is not a code is `Error::BadRequest`. `Queue::acts` reads a job's acts. | `a_persons_act_through_axa_is_kept_with_who_and_why` |
 
 ### 4.11 Store, logging, and server
 
@@ -317,14 +318,13 @@ stated here and proved by their own tests. There are two exceptions.
 always exists, as `axa::Error` answers with it. The `problem` feature adds nothing,
 and stays so that a service naming it still builds.
 
-Paging comes in two crates. `axa-cursor-pagination` is the one to use. It is
-`cursor-pagination`, as `axa::cursor_pagination`. `axa-offset-pagination` is
-insecure, since its total can count rows a record policy hides, an offset is a scan,
-and the position is the caller's. It stays for services that already page that way,
-and gains no features. It is `offset-pagination`, as `axa::offset_pagination`. The
-`pagination` feature and the `axa::pagination` path are its old names, kept so that a
-service using them still builds, and they will go. Both crates were one crate,
-`axa-pagination`, whose ids PAG-1 to PAG-6 the offset crate keeps.
+Paging is `axa-cursor-pagination`, the `cursor-pagination` feature, as
+`axa::cursor_pagination`. Offset paging is gone (P-10): its total could count rows a
+record policy hides, an offset is a scan, and the position was the caller's.
+`axa-offset-pagination`, and `axa-pagination` before it, stay on crates.io for services
+still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
+`offset-pagination` or `pagination` feature, and no `axa::offset_pagination` or
+`axa::pagination`. PAG-1, PAG-2, PAG-3, PAG-5, and PAG-6 went with them.
 
 | Id | Crate | Requirement | Test |
 |---|---|---|---|
@@ -336,12 +336,7 @@ service using them still builds, and they will go. Both crates were one crate,
 | SQX-6 | `axa-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
 | SQX-7 | `axa-sqlx` | `Db` lets one function take the pool or an open transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
 | ENV-D | `axa-environment` | A command that destroys data may run only in development or test, and only when confirmed. | `data_is_destroyed_only_in_development_or_test_and_only_when_confirmed` |
-| PAG-1 | `axa-offset-pagination` | A large limit is clamped, not rejected. | `a_large_limit_is_clamped_not_rejected` |
-| PAG-2 | `axa-offset-pagination` | Zero and unparsable values use the defaults. | `zero_and_unparsable_values_use_the_defaults` |
-| PAG-3 | `axa-offset-pagination` | An offset past the maximum is refused. | `an_offset_past_the_maximum_is_refused` |
-| PAG-4 | `axa-offset-pagination`, `axa-cursor-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first`, in each crate |
-| PAG-5 | `axa-offset-pagination` | `Page::bounds` gives Postgres its signed `LIMIT` and `OFFSET`. | `bounds_are_what_postgres_takes` |
-| PAG-6 | `axa-offset-pagination` | `Page::respond` answers a bare JSON array with the count headers. | `a_response_carries_the_count_headers_and_a_json_body` |
+| PAG-4 | `axa-cursor-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
 | PAG-7 | `axa-cursor-pagination` | A collection read MUST NOT take `?offset=`, and MUST NOT send `X-Total-Count`. | `there_is_no_offset_parameter`, `a_response_carries_no_total` |
 | PAG-8 | `axa-cursor-pagination` | A page is chosen by an opaque `?cursor=`. The response MUST carry the next page as a `Link` header with `rel="next"`, and the last page MUST carry none. The body is a bare JSON array. | `the_next_page_is_a_link_and_the_last_page_has_none`, `a_cursor_round_trips_to_the_next_page`, `a_body_is_a_bare_json_array_of_the_page` |
 | PAG-9 | `axa-cursor-pagination` | A limit that is zero, not a number, given twice, or above the endpoint's maximum MUST be refused with `422`, never clamped or replaced by the default. Only a missing limit uses the default. | `a_bad_limit_is_refused_not_clamped`, `a_missing_limit_uses_the_default_and_the_first_page_starts_at_zero` |
@@ -505,9 +500,16 @@ says why. The crate holds no trait for a service to implement: a closure given t
 The table is `axa_idempotency`. The crate does not own a service's schema, so a service
 runs `SETUP_STATEMENTS` in a migration, and `check` tells it at boot if that was missed.
 
+A run that ends without an answer, by a crash, a hang-up, a panic, or a timeout, may
+have done its work, so by default its claim holds the key for the key's whole `ttl`
+(P-10). A service that would rather run the write again after a crash says so with
+`rerun_abandoned_after`, which names what it allows.
+
 The guarantee has one known gap: the answer is stored after the handler commits, in a
-separate transaction, so a crash between the two runs the handler again on the retry.
-A handler that must not repeat needs a unique constraint of its own.
+separate transaction, so a crash between the two leaves the key held and no answer to
+replay. A retry is told to wait until the claim's lease ends, and with
+`rerun_abandoned_after` it then runs the handler again. A handler that must not repeat
+needs a unique constraint of its own.
 
 The Postgres tests need `AXA_TEST_DATABASE_URL`.
 
@@ -521,9 +523,9 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 | IDM-6 | A keyed request with no caller, or an empty one, is a `401` with the `code` `idempotency_no_caller`, runs nothing, and leaves no row. | `with_no_caller_a_keyed_request_is_refused_and_does_not_run` |
 | IDM-7 | Mounted as stated, a guard refuses a caller before a replay can answer it. | `a_guard_outside_the_layer_refuses_before_a_replay_can_answer` |
 | IDM-8 | A `4xx` or `5xx` frees the key, so a retry under it runs, and a refusal from the standard stack does too. | `a_failure_releases_the_key_so_a_retry_runs`, `a_failure_is_released_and_a_success_or_redirect_is_kept`, `the_service_body_limit_still_applies_and_its_refusal_frees_the_key` |
-| IDM-9 | A claim whose run stopped reporting in, by a crash, a hang-up, a panic, or the stack's timeout, can be taken over by the same request once its lease ends, and by exactly one such request. | `a_claim_abandoned_by_a_crash_is_taken_over_by_the_same_request`, `of_many_retries_of_an_abandoned_claim_exactly_one_takes_it`, `a_cancelled_run_stops_reporting_in_and_its_key_comes_free`, `a_panic_is_answered_and_its_key_comes_free_after_the_lease`, `a_request_the_stack_cuts_off_frees_its_key_after_the_lease` |
+| IDM-9 | Where a service chose a lease with `rerun_abandoned_after`, a claim whose run stopped reporting in, by a crash, a hang-up, a panic, or the stack's timeout, can be taken over by the same request once that lease ends, and by exactly one such request. | `a_claim_abandoned_by_a_crash_is_taken_over_by_the_same_request`, `of_many_retries_of_an_abandoned_claim_exactly_one_takes_it`, `a_cancelled_run_stops_reporting_in_and_its_key_comes_free`, `a_panic_is_answered_and_its_key_comes_free_after_the_lease`, `a_request_the_stack_cuts_off_frees_its_key_after_the_lease` |
 | IDM-10 | A different request cannot take over an abandoned claim, as the lost run may have done its work. | `a_different_request_cannot_take_over_an_abandoned_claim` |
-| IDM-11 | A run reports in every third of its lease, so that it can run for as long as it needs without being taken for lost. | `a_run_that_reports_in_outlives_its_lease` |
+| IDM-11 | A run reports in every third of its lease, so that it can run for as long as it needs without being taken for lost. The lease is the `ttl` unless a service chose a shorter one. | `a_run_that_reports_in_outlives_its_lease` |
 | IDM-12 | A run that lost its claim cannot overwrite the answer of the run that took over. | `a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer` |
 | IDM-13 | Mounted as stated, the plain body is stored, and each replay is compressed or not as its caller asked. | `inside_compression_the_plain_body_is_stored_and_each_caller_gets_what_it_asked_for` |
 | IDM-14 | An answer with a `content-encoding` is never stored, wherever the layer sits. The caller gets it, and a retry is a `409` with the `code` `idempotency_answer_not_kept`. | `outside_compression_a_compressed_answer_is_never_stored_or_replayed`, `an_answer_a_handler_compressed_is_sent_and_not_kept`, `what_cannot_be_replayed_is_not_kept` |
@@ -531,7 +533,7 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 | IDM-16 | A keyed request over `max_request_bytes`, 1 MiB by default, is a `413` with the `code` `idempotency_body_too_large`, and runs nothing. The limit does not apply to a request with no key. | `a_body_over_the_limit_is_refused_before_it_runs` |
 | IDM-17 | A key must be one header value of 1 to 255 visible ASCII characters. Anything else is a `400` with the `code` `idempotency_key_invalid`, and runs nothing. A key is never trimmed or cut. | `a_key_that_is_not_one_clean_value_is_refused`, `a_key_is_one_value_of_visible_ascii_within_the_limit`, `a_key_is_never_cut_so_two_keys_cannot_become_one` |
 | IDM-18 | A store that cannot be reached is a `503` with the `code` `idempotency_unavailable` and no `detail`, and the request does not run. | `the_store_being_down_stops_the_request_before_it_runs` |
-| IDM-19 | A store that fails after the work still gives the caller its answer, and logs an error. The lease then frees the key, so a retry runs. | `the_store_failing_after_the_work_still_answers_the_caller` |
+| IDM-19 | A store that fails after the work still gives the caller its answer, and logs an error. The claim is then left to its lease, as in IDM-31. | `the_store_failing_after_the_work_still_answers_the_caller` |
 | IDM-20 | A key lives for `ttl`, 24 hours by default, from when its run finished. Past that an answer is never replayed, swept or not, and any request may use the key. | `an_expired_answer_is_not_replayed_and_the_key_runs_afresh`, `an_expired_answer_is_never_replayed` |
 | IDM-21 | `sweep` deletes what has expired, and leaves a live key and a run still reporting in. | `a_sweep_deletes_what_has_expired_and_nothing_else` |
 | IDM-22 | `forget` frees one finished key of one caller, for a job that failed after its `202`, and leaves a run in progress alone. | `forget_lets_a_retry_run_once_a_job_has_failed`, `forget_leaves_a_run_in_progress_alone` |
@@ -543,6 +545,8 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 | IDM-28 | `only` narrows what is covered, and cannot widen it to a method that changes nothing. | `only_narrows_what_is_covered_and_cannot_widen_it` |
 | IDM-29 | A row that cannot be read as an answer is not guessed at. It is the `503` of IDM-18, and the request does not run. | `a_row_that_cannot_be_read_is_not_guessed_at` |
 | IDM-30 | `required` refuses a covered request with no key with a `400` and the `code` `idempotency_key_required`, runs nothing, and leaves no row. A key stays optional by default, and `required` cannot widen what is covered. | `a_required_key_refuses_a_request_without_one`, `a_required_key_cannot_widen_what_is_covered` |
+| IDM-31 | By default a claim's lease is the key's `ttl`, so a run that stopped reporting in holds its key for a whole `ttl` from when it last did, and the write never runs twice under one key. Until then a retry is the `409` of IDM-4. After it the key is free, as an expired key is. | `the_lease_is_the_ttl_unless_a_shorter_one_is_chosen`, `by_default_a_lost_run_holds_its_key_for_the_whole_ttl`, `by_default_a_panic_holds_its_key_and_a_retry_is_told_to_wait` |
+| IDM-32 | A shorter lease is only ever passed, as `rerun_abandoned_after`. One under 60 ms, which the heartbeat cannot keep, or longer than the `ttl`, is refused at boot with a panic, in whichever order the two are set, and so is a `ttl` under 60 ms. | `a_lease_longer_than_the_ttl_is_refused`, `a_ttl_shorter_than_its_lease_is_refused`, `a_lease_the_heartbeat_cannot_keep_is_refused`, `a_ttl_the_heartbeat_cannot_keep_is_refused` |
 
 ### 4.17 Outbox
 
@@ -608,7 +612,11 @@ These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/`.
 
 `axa-worker` holds the queue's engine: its tables and SQL, the job loops, and what is
 below. It does not depend on `axa`, so its handlers are closures over JSON, its error is
-its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`.
+its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`, except
+where the name is in `src/`.
+
+`axa_queue` and `axa_schedule` are working state, and change as jobs run. `axa_job_acts`
+is a record (P-7) of what a person did to a job, and is only ever inserted into.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -619,13 +627,13 @@ its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`.
 | WRK-5 | A job delayed by `run_in` or `run_at` is not claimed before its time, on the database's clock. | `a_delayed_job_is_not_claimed_before_its_time` |
 | WRK-6 | A ready job with a higher priority is claimed first, and equal priorities oldest first. | `a_higher_priority_runs_first` |
 | WRK-7 | `job` gives a job's state, attempts, priority, time limit, times, and last error, never its arguments, and `None` for no such job. A kept error is at most 1024 bytes. | `a_job_status_follows_it_and_leaves_out_its_arguments`, `a_long_error_is_cut_on_a_character_boundary` |
-| WRK-8 | `cancel` stops only a job still queued, once, and a cancelled job never runs. Cancelling while loops claim either cancels a job or lets it run, never both. | `a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled`, `cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both` |
-| WRK-9 | `retry` queues a failed job, or one in review, for one more try, and a run given up on still cannot write over it. | `a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_it` |
+| WRK-8 | `cancel(tx, id, by, reason)` stops only a job still queued, once, and a cancelled job never runs. Cancelling while loops claim either cancels a job or lets it run, never both. | `a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled`, `cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both` |
+| WRK-9 | `retry(tx, id, by, reason)` queues a failed job, or one in review, for one more try, and a run given up on still cannot write over it. | `a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_it` |
 | WRK-10 | `enqueue_all` queues a batch whole or not at all, and `enqueue_all_on` rolls back with its transaction. | `a_batch_is_queued_whole_or_not_at_all` |
 | WRK-11 | A job has no time limit unless it is given one. Past its limit a run is stopped and fails with `timed out after` and the limit. | `a_job_has_no_time_limit_unless_it_is_given_one` |
-| WRK-12 | A run whose claim is taken, or that cannot report in for `stale_minutes`, is stopped, and its job is marked `needs_review` with the reason. So is one that finishes and finds its claim gone. Stale recovery, retention, and attempts never touch it, and only `retry` releases it. | `a_run_that_loses_its_claim_is_stopped_and_waits_for_review`, `a_run_that_finishes_after_losing_its_claim_waits_for_review` |
+| WRK-12 | A run whose claim is taken, or that cannot report in for `stale_minutes`, is stopped, and its job is marked `needs_review` with the reason. So is one that finishes and finds its claim gone. Stale recovery, retention, and attempts never touch it, and only `retry` releases it, kept as a `released` act (P-8). | `a_run_that_loses_its_claim_is_stopped_and_waits_for_review`, `a_run_that_finishes_after_losing_its_claim_waits_for_review` |
 | WRK-13 | `counts` says how many jobs are in each state, and how long the oldest ready one has waited. | `a_delayed_job_is_not_claimed_before_its_time`, `a_run_that_loses_its_claim_is_stopped_and_waits_for_review` |
-| WRK-14 | `connect_existing` fails on tables without the `priority` and `timeout_ms` columns or the `axa_schedule` table, and changes no schema. | `connecting_to_tables_without_the_new_columns_fails_and_changes_nothing` |
+| WRK-14 | `connect_existing` fails on tables without the `priority` and `timeout_ms` columns, the `axa_schedule` table, or the `axa_job_acts` table and its triggers, set to fire always, and changes no schema. `connect` makes them all. There is no option to run without the triggers. | `connecting_to_tables_without_the_new_columns_fails_and_changes_nothing`, `a_missing_or_turned_off_acts_trigger_stops_the_queue` |
 | WRK-15 | Across any number of processes ticking at once, each due time of a schedule is queued once, as an ordinary job. | `replicas_ticking_together_queue_each_due_time_once`, `a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks` |
 | WRK-16 | Times missed while every process was down queue one job, and the schedule keeps its place on the grid of its first time. | `missed_times_queue_one_job_and_the_schedule_keeps_its_place` |
 | WRK-17 | A due time is skipped while the schedule's last job is queued or running, and is not skipped after it completed, failed, was cancelled, or went to review. | `a_due_time_is_skipped_while_the_last_job_has_not_finished` |
@@ -635,6 +643,11 @@ its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`.
 | WRK-21 | A schedule no live process has seen for `stale_minutes` is archived, once, never deleted, and queues nothing. Its queued job still runs, `schedules` lists it, and a schedule of that name in code restores the same row, keeping its place. | `a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns` |
 | WRK-22 | A schedule with no name, a name over 200 characters, a name used twice, or an interval under a second panics at boot, and a delay on a schedule's job is ignored. | `a_schedule_under_a_second_is_refused_at_boot`, `a_schedule_with_no_name_is_refused_at_boot`, `a_schedule_added_twice_is_refused_at_boot`, `a_schedule_ignores_a_delay_on_its_job` |
 | WRK-23 | The `Debug` text of `NewJob` and `Schedule` leaves out a job's arguments. | `the_debug_text_leaves_out_arguments` |
+| WRK-24 | A person's `cancel`, `retry` of a failed job, and `retry` of a job in review each append one act to `axa_job_acts`: `cancelled`, `retried`, or `released`, with the job's id, name, and attempts, `by`, `reason`, and the time. An act that does not apply answers `false`, changes nothing, and keeps no act. `Queue::acts` gives a job's acts, oldest first. | `each_act_is_kept_with_who_and_why_and_a_refused_one_is_not`, `a_run_that_loses_its_claim_is_stopped_and_waits_for_review` |
+| WRK-25 | An act and its change to the job are one statement, in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). `cancel` and `retry` take a transaction and not a pool, and there is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
+| WRK-26 | `by` and `reason` are codes: 1 to 200 characters with no line breaks. Anything else is refused with `Error::NotACode` before anything is written, and the table refuses it too. | `an_act_needs_a_short_code_for_who_and_why`, `a_by_or_reason_that_is_not_a_code_is_refused` |
+| WRK-27 | Acts are only ever inserted. `UPDATE`, `DELETE`, and `TRUNCATE` on `axa_job_acts` are refused by the database, whoever sends them and with `session_replication_role` set to `replica`. | `the_acts_table_refuses_every_change` |
+| WRK-28 | An act names its job by id, with no foreign key, so retention deletes the job's row and keeps its acts, and `Queue::acts` still reads them. | `acts_are_kept_when_their_job_is_swept` |
 
 ## 5. Verification
 
@@ -693,19 +706,7 @@ by hand. Publish only from a commit where everything above has passed.
 
 ## 6. Decided, not yet built
 
-P-7 to P-10 make these due. Each is its own later change, with its own spec edit and
-tests, and none ships with `axa-outbox` 0.2.0.
-
-- **`axa-idempotency`:** the `lease` defaults to one minute, so the same request can take
-  over a key whose first run wrote and then crashed or could not keep its answer, and run
-  the write a second time. Default the lease to the key's `ttl`, and make a shorter one
-  something a service passes, knowing what it allows (P-10).
-- **`axa-worker`:** a person's `cancel` and `retry`, and the release of `needs_review`,
-  change the job row in place. Keep job rows as state, and append each act to an
-  insert-only `axa_job_acts` naming who and why (P-7, P-8).
-- **`axa-offset-pagination`:** kept beside `axa-cursor-pagination`, though its own
-  documentation calls it insecure. Remove it in the next breaking release, with
-  `axa::pagination` and the `pagination` feature (P-10).
+None.
 
 ## 7. Open questions
 

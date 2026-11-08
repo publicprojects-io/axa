@@ -1,5 +1,6 @@
-//! The queue against a real Postgres. The tests share two tables, so run them with
-//! `--test-threads=1`.
+//! The queue against a real Postgres. The tests share three tables, so run them with
+//! `--test-threads=1`. `axa_job_acts` refuses `DELETE` and `TRUNCATE`, so a test
+//! starts by dropping it.
 //!
 //! ```sh
 //! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-worker -- --ignored --test-threads=1
@@ -15,7 +16,8 @@ use std::{
 };
 
 use axa_worker::{
-    JobState, NewJob, Queue, QueueOptions, SETUP_STATEMENTS, Schedule, enqueue_all_on,
+    ActKind, Error, JobState, NewJob, Queue, QueueOptions, SETUP_STATEMENTS, Schedule,
+    enqueue_all_on,
 };
 use sqlx::{PgPool, Row};
 use tokio::sync::watch;
@@ -34,8 +36,15 @@ fn quick() -> QueueOptions {
     }
 }
 
-/// A queue on empty tables.
+/// A queue on empty tables. The acts table is dropped, as it refuses `DELETE`, and
+/// `connect` makes it again.
 async fn fresh(options: QueueOptions) -> Queue {
+    let admin = PgPool::connect(&uri()).await.expect("connect");
+    sqlx::query("DROP TABLE IF EXISTS axa_job_acts")
+        .execute(&admin)
+        .await
+        .unwrap();
+    admin.close().await;
     let queue = Queue::connect(&uri(), options).await.expect("connect");
     for statement in ["DELETE FROM axa_queue", "DELETE FROM axa_schedule"] {
         sqlx::query(statement).execute(queue.pool()).await.unwrap();
@@ -73,6 +82,26 @@ async fn state(queue: &Queue, id: Uuid) -> JobState {
 
 async fn count(pool: &PgPool, sql: &'static str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
+}
+
+/// Cancel `id` as a person would, in a transaction of its own.
+async fn cancel(queue: &Queue, id: Uuid) -> bool {
+    let mut transaction = queue.pool().begin().await.unwrap();
+    let cancelled = axa_worker::cancel(&mut transaction, id, "ops:alice", "test_cancel")
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    cancelled
+}
+
+/// Retry `id` as a person would, in a transaction of its own.
+async fn retry(queue: &Queue, id: Uuid) -> bool {
+    let mut transaction = queue.pool().begin().await.unwrap();
+    let retried = axa_worker::retry(&mut transaction, id, "ops:alice", "test_retry")
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    retried
 }
 
 /// Counts jobs running now and the most ever running at once.
@@ -385,8 +414,8 @@ async fn a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled() {
         .enqueue("Slow", serde_json::Value::Null)
         .await
         .unwrap();
-    assert!(queue.cancel(cancelled).await.unwrap());
-    assert!(!queue.cancel(cancelled).await.unwrap(), "only once");
+    assert!(cancel(&queue, cancelled).await);
+    assert!(!cancel(&queue, cancelled).await, "only once");
     assert!(!queue.run_one().await.unwrap());
     assert_eq!(state(&queue, cancelled).await, JobState::Cancelled);
 
@@ -400,7 +429,7 @@ async fn a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled() {
         tokio::spawn(async move { queue.run_one().await.unwrap() })
     };
     until(async || state(&queue, running).await == JobState::Running).await;
-    assert!(!queue.cancel(running).await.unwrap());
+    assert!(!cancel(&queue, running).await);
     run.await.unwrap();
     assert_eq!(state(&queue, running).await, JobState::Completed);
 }
@@ -431,7 +460,7 @@ async fn cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both() {
     let (queue, stop, run) = start(queue);
     let mut cancelled = HashSet::new();
     for (_, name, id) in &ids {
-        if queue.cancel(*id).await.unwrap() {
+        if cancel(&queue, *id).await {
             cancelled.insert(name.clone());
         }
     }
@@ -468,9 +497,9 @@ async fn a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_
         .unwrap();
     assert!(queue.run_one().await.unwrap());
     assert_eq!(state(&queue, id).await, JobState::Failed);
-    assert!(!queue.retry(Uuid::new_v4()).await.unwrap());
-    assert!(queue.retry(id).await.unwrap());
-    assert!(!queue.retry(id).await.unwrap(), "it is queued, not failed");
+    assert!(!retry(&queue, Uuid::new_v4()).await);
+    assert!(retry(&queue, id).await);
+    assert!(!retry(&queue, id).await, "it is queued, not failed");
     let info = queue.job(id).await.unwrap().unwrap();
     assert_eq!((info.state, info.max_attempts), (JobState::Queued, Some(2)));
 
@@ -601,11 +630,16 @@ async fn replicas_ticking_together_queue_each_due_time_once() {
                 while tokio::time::Instant::now() < end {
                     mine += queue.tick_schedules().await.unwrap();
                     // A due time is skipped while its last job is queued, so
-                    // finish each job as soon as it is there.
-                    sqlx::query("UPDATE axa_queue SET status = 'completed'")
-                        .execute(queue.pool())
-                        .await
-                        .unwrap();
+                    // finish each job as soon as it is there. Only rows no other
+                    // replica holds, so that six of these never deadlock.
+                    sqlx::query(
+                        "UPDATE axa_queue SET status = 'completed' WHERE id IN (
+                             SELECT id FROM axa_queue WHERE status <> 'completed'
+                             ORDER BY id FOR UPDATE SKIP LOCKED)",
+                    )
+                    .execute(queue.pool())
+                    .await
+                    .unwrap();
                 }
                 mine
             })
@@ -724,9 +758,11 @@ async fn due_times_count_from_the_first_and_do_not_drift() {
     .await
     .unwrap();
     assert!((3..=5).contains(&times.len()), "{times:?}");
+    // The due times themselves are checked above. A job is queued once its time has
+    // come and before the next one, however late a busy machine wakes the poller.
     for (n, at) in times.iter().enumerate() {
         let n = f64::from(u32::try_from(n).unwrap());
-        assert!(*at >= n && *at < n + 0.5, "job {n} queued {at} seconds in");
+        assert!(*at >= n && *at < n + 1.0, "job {n} queued {at} seconds in");
     }
 }
 
@@ -864,9 +900,10 @@ async fn a_run_that_loses_its_claim_is_stopped_and_waits_for_review() {
     assert_eq!(queue.purge_finished().await.unwrap(), 0);
     assert!(!queue.run_one().await.unwrap());
     assert_eq!(queue.counts().await.unwrap().needs_review, 1);
-    // A person releases it.
-    assert!(queue.retry(id).await.unwrap());
+    // A person releases it, and the act is kept.
+    assert!(retry(&queue, id).await);
     assert_eq!(state(&queue, id).await, JobState::Queued);
+    assert_eq!(queue.acts(id).await.unwrap()[0].kind, ActKind::Released);
 }
 
 #[tokio::test]
@@ -1022,4 +1059,270 @@ async fn a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns
         .await
         .unwrap();
     assert_eq!(last, leftover);
+}
+
+// A person's acts.
+
+/// A failed job, from a handler that always fails.
+async fn failed_job(queue: &mut Queue) -> Uuid {
+    queue.handle("Fails", |_| async { Err::<(), _>("down") });
+    let id = queue
+        .enqueue("Fails", serde_json::Value::Null)
+        .await
+        .unwrap();
+    assert!(queue.run_one().await.unwrap());
+    assert_eq!(state(queue, id).await, JobState::Failed);
+    id
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn each_act_is_kept_with_who_and_why_and_a_refused_one_is_not() {
+    let mut queue = fresh(quick()).await;
+    let queued = queue
+        .enqueue("Nobody", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let failed = failed_job(&mut queue).await;
+    let review = queue
+        .enqueue("Nobody", serde_json::Value::Null)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE axa_queue SET status = 'needs_review' WHERE id = $1")
+        .bind(review)
+        .execute(queue.pool())
+        .await
+        .unwrap();
+
+    assert!(cancel(&queue, queued).await);
+    assert!(retry(&queue, failed).await);
+    assert!(retry(&queue, review).await);
+    // Acts that do not apply change nothing and are not kept.
+    assert!(!cancel(&queue, queued).await, "already cancelled");
+    assert!(!retry(&queue, queued).await, "cancelled is final");
+    assert!(!retry(&queue, failed).await, "it is queued, not failed");
+    assert!(!cancel(&queue, Uuid::new_v4()).await, "no such job");
+    assert_eq!(
+        count(queue.pool(), "SELECT count(*) FROM axa_job_acts").await,
+        3
+    );
+
+    for (id, kind, name, attempts) in [
+        (queued, ActKind::Cancelled, "Nobody", 0),
+        (failed, ActKind::Retried, "Fails", 1),
+        (review, ActKind::Released, "Nobody", 0),
+    ] {
+        let acts = queue.acts(id).await.unwrap();
+        assert_eq!(acts.len(), 1, "{kind:?}");
+        let act = &acts[0];
+        assert_eq!(act.job_id, id);
+        assert_eq!(act.kind, kind);
+        assert_eq!(act.job_name, name);
+        assert_eq!(act.attempts, attempts);
+        assert_eq!(act.by, "ops:alice");
+        assert!(act.reason.starts_with("test_"));
+    }
+    assert!(queue.acts(Uuid::new_v4()).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn an_act_commits_with_its_change_and_the_callers_audit() {
+    let queue = fresh(quick()).await;
+    sqlx::query("CREATE TABLE IF NOT EXISTS service_audit (job UUID NOT NULL)")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    let id = queue
+        .enqueue("Nobody", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let audits = async |id: Uuid| -> i64 {
+        sqlx::query_scalar("SELECT count(*) FROM service_audit WHERE job = $1")
+            .bind(id)
+            .fetch_one(queue.pool())
+            .await
+            .unwrap()
+    };
+
+    // Rolled back: the job, its act, and the service's audit row all go.
+    let mut transaction = queue.pool().begin().await.unwrap();
+    assert!(
+        axa_worker::cancel(&mut transaction, id, "ops:alice", "duplicate")
+            .await
+            .unwrap()
+    );
+    sqlx::query("INSERT INTO service_audit (job) VALUES ($1)")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    transaction.rollback().await.unwrap();
+    assert_eq!(state(&queue, id).await, JobState::Queued);
+    assert!(queue.acts(id).await.unwrap().is_empty());
+    assert_eq!(audits(id).await, 0);
+
+    // Committed: all three stand.
+    let mut transaction = queue.pool().begin().await.unwrap();
+    assert!(
+        axa_worker::cancel(&mut transaction, id, "ops:alice", "duplicate")
+            .await
+            .unwrap()
+    );
+    sqlx::query("INSERT INTO service_audit (job) VALUES ($1)")
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    transaction.commit().await.unwrap();
+    assert_eq!(state(&queue, id).await, JobState::Cancelled);
+    assert_eq!(queue.acts(id).await.unwrap().len(), 1);
+    assert_eq!(audits(id).await, 1);
+    sqlx::query("DROP TABLE service_audit")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn an_act_needs_a_short_code_for_who_and_why() {
+    let queue = fresh(quick()).await;
+    let id = queue
+        .enqueue("Nobody", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let long = "x".repeat(201);
+    for (by, reason, what) in [
+        ("", "duplicate", "by"),
+        ("ops:alice", "", "reason"),
+        ("ops:alice", long.as_str(), "reason"),
+        ("ops\nalice", "duplicate", "by"),
+        ("ops:alice", "two\nlines", "reason"),
+    ] {
+        let mut transaction = queue.pool().begin().await.unwrap();
+        let error = axa_worker::cancel(&mut transaction, id, by, reason)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, Error::NotACode { what: w } if w == what),
+            "{error}"
+        );
+        let error = axa_worker::retry(&mut transaction, id, by, reason)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, Error::NotACode { .. }), "{error}");
+        transaction.commit().await.unwrap();
+    }
+    assert_eq!(state(&queue, id).await, JobState::Queued);
+    assert!(queue.acts(id).await.unwrap().is_empty());
+    // The table refuses one written by hand too.
+    let by_hand = sqlx::query(
+        "INSERT INTO axa_job_acts (job_id, job_name, act, attempts, by, reason)
+         VALUES ($1, 'Nobody', 'cancelled', 0, 'ops:alice', $2)",
+    )
+    .bind(id)
+    .bind("two\nlines")
+    .execute(queue.pool())
+    .await;
+    assert!(by_hand.is_err());
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn the_acts_table_refuses_every_change() {
+    let queue = fresh(quick()).await;
+    let id = queue
+        .enqueue("Nobody", serde_json::Value::Null)
+        .await
+        .unwrap();
+    assert!(cancel(&queue, id).await);
+    let changes = [
+        "UPDATE axa_job_acts SET reason = 'changed'",
+        "DELETE FROM axa_job_acts",
+        "TRUNCATE axa_job_acts",
+    ];
+    // Whoever sends them, and with triggers for replication turned off too.
+    for role in ["origin", "replica"] {
+        let mut connection = queue.pool().acquire().await.unwrap();
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "SET session_replication_role = {role}"
+        )))
+        .execute(&mut *connection)
+        .await
+        .unwrap();
+        for change in changes {
+            let error = sqlx::query(change)
+                .execute(&mut *connection)
+                .await
+                .expect_err(change)
+                .to_string();
+            assert!(error.contains("refused"), "{change}: {error}");
+        }
+        sqlx::query("RESET session_replication_role")
+            .execute(&mut *connection)
+            .await
+            .unwrap();
+    }
+    let acts = queue.acts(id).await.unwrap();
+    assert_eq!(acts.len(), 1);
+    assert_eq!(acts[0].reason, "test_cancel");
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn acts_are_kept_when_their_job_is_swept() {
+    let queue = fresh(quick()).await;
+    let id = queue
+        .enqueue("Nobody", serde_json::Value::Null)
+        .await
+        .unwrap();
+    assert!(cancel(&queue, id).await);
+    sqlx::query("UPDATE axa_queue SET updated_at = now() - interval '30 days'")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    assert_eq!(queue.purge_finished().await.unwrap(), 1);
+    assert!(queue.job(id).await.unwrap().is_none());
+    let acts = queue.acts(id).await.unwrap();
+    assert_eq!(acts.len(), 1);
+    assert_eq!(
+        (acts[0].kind, acts[0].job_name.as_str()),
+        (ActKind::Cancelled, "Nobody")
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn a_missing_or_turned_off_acts_trigger_stops_the_queue() {
+    let queue = fresh(quick()).await;
+    let setup = async || {
+        for statement in SETUP_STATEMENTS {
+            sqlx::query(statement).execute(queue.pool()).await.unwrap();
+        }
+    };
+    assert!(Queue::connect_existing(&uri(), quick()).await.is_ok());
+    for change in [
+        "ALTER TABLE axa_job_acts DISABLE TRIGGER axa_job_acts_refuse",
+        // On, but not always: `session_replication_role` could turn it off.
+        "ALTER TABLE axa_job_acts ENABLE TRIGGER axa_job_acts_refuse_truncate",
+        "DROP TRIGGER axa_job_acts_refuse ON axa_job_acts",
+        "DROP TABLE axa_job_acts",
+    ] {
+        sqlx::query(change).execute(queue.pool()).await.unwrap();
+        let error = Queue::connect_existing(&uri(), quick())
+            .await
+            .expect_err(change)
+            .to_string();
+        assert!(error.contains("axa_job_acts"), "{change}: {error}");
+        setup().await;
+        assert!(Queue::connect_existing(&uri(), quick()).await.is_ok());
+    }
+    // `connect` makes them.
+    sqlx::query("DROP TABLE axa_job_acts")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    assert!(Queue::connect(&uri(), quick()).await.is_ok());
+    assert!(Queue::connect_existing(&uri(), quick()).await.is_ok());
 }

@@ -68,8 +68,9 @@ attempts left. There is no default limit, and none is taken from a schedule's in
 | Call | What it does |
 |---|---|
 | `queue.job(&id)` | The job's state, attempts, priority, time limit, times, and last error. Never its arguments |
-| `queue.cancel(&id)` | Cancels a job that is still queued. A running job runs on |
-| `queue.retry(&id)` | Queues a failed job, or one waiting for review, for one more try |
+| `queue::cancel(&mut tx, &id, by, reason)` | Cancels a job that is still queued, as an act of `by`. A running job runs on |
+| `queue::retry(&mut tx, &id, by, reason)` | Queues a failed job, or releases one waiting for review, for one more try, as an act of `by` |
+| `queue.acts(&id)` | Every act a person did to the job, oldest first, with who, why, and when |
 | `queue.counts()` | How many are ready, waiting, running, finished, failed, cancelled, or waiting for review, and how long the oldest ready job has waited |
 
 These are library calls. A service that shows them to users exposes them through its
@@ -78,6 +79,38 @@ said, so it is for operators, and never goes to a client as it is.
 
 Export `counts` as metrics. A rising `oldest_ready_seconds` means jobs are not being
 run, and anything in `needs_review` needs a person.
+
+## A person's acts
+
+A job row is state. It changes as the job runs, and retention deletes it after
+`retention_days`. What a person does to a job is a record, so it is kept apart, in
+`axa_job_acts`.
+
+`cancel` and `retry` take the caller's transaction, who did it, and why. Each changes
+the job and appends the act in one statement. Write your own audit row on the same
+transaction, and all three commit together or not at all:
+
+```rust
+let mut transaction = pool.begin().await?;
+if queue::cancel(&mut transaction, &id, &user.id, "customer_asked").await? {
+    // ... write the service's own audit row ...
+}
+transaction.commit().await?;
+```
+
+There is no form that takes a pool. An act that does not apply, such as cancelling a
+job already running, answers `false`, changes nothing, and keeps no act. A `retry` of a
+failed job is kept as `retried`, and of one in review as `released`.
+
+`by` and `reason` are short codes, not free text: 1 to 200 characters, with no line
+breaks. Anything else is refused with `Error::BadRequest`, before anything is written.
+Name the person by an id your service keeps, and give a reason such as `duplicate`,
+not a sentence about the customer.
+
+`axa_job_acts` is only ever inserted into. Its triggers refuse `UPDATE`, `DELETE`, and
+`TRUNCATE` from any role, even with `session_replication_role` set to `replica`. An act
+names its job by id, with no foreign key, and keeps the job's name and attempts, so it
+outlives the job's row. `queue.acts(&id)` reads them for your own review screens.
 
 ## A run that lost its claim
 
@@ -89,7 +122,8 @@ reason, because it may have done part of its work, or may now be running twice.
 
 A job in `needs_review` is never tried again by itself: not by stale recovery, not by
 retention, and not by its attempts. A person checks what it did, and calls
-`queue.retry(&id)` to let it run again. A run that finishes but finds its claim gone
+`queue::retry(&mut tx, &id, by, reason)` to let it run again, which is kept as a
+`released` act. A run that finishes but finds its claim gone
 when it writes its result is marked the same way.
 
 ## Schedules
@@ -158,8 +192,10 @@ it was archived come to one job, or none if its last job has not finished.
 ## Upgrading
 
 Run `queue::SETUP_STATEMENTS` again in a migration. They add the `priority` and
-`timeout_ms` columns and the `axa_schedule` table, and `Queue::connect_existing` refuses
-to start without them. `Queue::connect` adds them by itself.
+`timeout_ms` columns, the `axa_schedule` table, and the `axa_job_acts` table and its
+triggers, and `Queue::connect_existing` refuses to start without them, or with a
+trigger turned off. `Queue::connect` adds them by itself. They need Postgres 14 or
+later.
 
 Stop old workers before new ones take over, or drain the queue first. An old worker
 does not know `needs_review` or `cancelled`, but it never claims them either, as it

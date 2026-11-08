@@ -51,8 +51,8 @@ Subcrates publish before `axa`, because it depends on them by version. `axa-work
 one of them, as the `queue` feature needs it. `axa-problem` goes before `axa-idempotency`, `axa-paseto`, `axa-ratelimit`, and `axa-versioning`, which
 depend on it. No other subcrate depends on another, so the rest can go in any order.
 
-`axa-pagination` is retired. `axa-offset-pagination` supersedes it, so never publish
-it again.
+`axa-pagination` and `axa-offset-pagination` are retired, as axa 0.9 removed offset
+paging. Never publish either again.
 
 **crates.io limits new crates.** After a small burst, each new name waits about ten
 minutes, and the 429 names the time to retry. Existing crates are not held back. A

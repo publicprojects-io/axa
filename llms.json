@@ -67,14 +67,6 @@
       "crate": "axa-cursor-pagination"
     },
     {
-      "name": "offset-pagination",
-      "crate": "axa-offset-pagination"
-    },
-    {
-      "name": "pagination",
-      "crate": "axa-offset-pagination"
-    },
-    {
       "name": "paseto",
       "crate": "axa-paseto"
     },
@@ -246,7 +238,7 @@
     },
     {
       "name": "axa-worker",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
       "readme": "crates/axa-worker/README.md"
@@ -257,13 +249,6 @@
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
       "feature": "cursor-pagination",
       "readme": "crates/axa-cursor-pagination/README.md"
-    },
-    {
-      "name": "axa-offset-pagination",
-      "version": "0.1.0",
-      "description": "Insecure offset pagination with count headers, and LIKE escaping, for Axum services. Prefer axa-cursor-pagination.",
-      "feature": "offset-pagination",
-      "readme": "crates/axa-offset-pagination/README.md"
     },
     {
       "name": "axa-paseto",

@@ -40,6 +40,34 @@
 //! A job moves from `queued` to `running` to `completed` or `failed`, with the
 //! failure text kept on the row. A queued job can be `cancelled`.
 //!
+//! # A person's acts
+//!
+//! A job row is state: it changes as the job runs, and retention deletes it. What a
+//! person does to a job is a record. [`cancel()`] stops a queued job, and [`retry()`]
+//! queues a failed one again or releases one from review. Each takes the caller's
+//! transaction and a `by` and `reason`, and appends the act to `axa_job_acts` in the
+//! same statement as the change, so the act, the change, and the service's own audit
+//! row commit together or not at all. There is no form that takes a pool. An act that
+//! does not apply, such as cancelling a running job, changes nothing and writes no
+//! act.
+//!
+//! ```no_run
+//! # async fn example(queue: &axa_worker::Queue, id: uuid::Uuid) -> axa_worker::Result<()> {
+//! let mut transaction = queue.pool().begin().await?;
+//! let cancelled = axa_worker::cancel(&mut transaction, id, "ops:alice", "customer_asked").await?;
+//! // ... write the service's own audit row on the same transaction ...
+//! transaction.commit().await?;
+//! # let _ = cancelled;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! `by` and `reason` are codes, not content: at most [`MAX_REASON_CHARS`] characters
+//! with no line breaks, and the table refuses anything else. `axa_job_acts` is only
+//! ever inserted into, and its triggers refuse `UPDATE`, `DELETE`, and `TRUNCATE`,
+//! whoever sends them. An act names its job by id, with no foreign key, so it outlives
+//! the job's row. [`Queue::acts`] reads a job's acts.
+//!
 //! # Attempts
 //!
 //! A job gets [`QueueOptions::max_attempts`] tries, unless it was queued with its
@@ -106,7 +134,8 @@
 //! [`QueueOptions::retention_days`], so a job table does not become a second copy
 //! of the data. Prefer an id to a snapshot, and never put a secret in arguments.
 //! [`JobInfo`] leaves the arguments out. Its error text is whatever the job's
-//! error said, so it is for operators, and is not to be sent to a client.
+//! error said, so it is for operators, and is not to be sent to a client. An act
+//! keeps no arguments either, and nothing logs its `by` or `reason`.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -117,7 +146,7 @@ use std::{
     time::Duration,
 };
 
-use sqlx::{PgConnection, PgExecutor, PgPool, Row, postgres::PgPoolOptions};
+use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use uuid::Uuid;
 
@@ -136,6 +165,12 @@ pub enum Error {
     Encode(serde_json::Error),
     /// A job failed, or the queue met something it cannot read.
     Job(String),
+    /// Who or why, given for a person's act, is empty, longer than
+    /// [`MAX_REASON_CHARS`], or has a line break.
+    NotACode {
+        /// Which it was: `by` or `reason`.
+        what: &'static str,
+    },
 }
 
 impl fmt::Display for Error {
@@ -144,6 +179,10 @@ impl fmt::Display for Error {
             Self::Database(error) => error.fmt(f),
             Self::Encode(error) => error.fmt(f),
             Self::Job(text) => write!(f, "worker error: {text}"),
+            Self::NotACode { what } => write!(
+                f,
+                "`{what}` must be 1 to {MAX_REASON_CHARS} characters with no line breaks"
+            ),
         }
     }
 }
@@ -153,7 +192,7 @@ impl std::error::Error for Error {
         match self {
             Self::Database(error) => Some(error),
             Self::Encode(error) => Some(error),
-            Self::Job(_) => None,
+            Self::Job(_) | Self::NotACode { .. } => None,
         }
     }
 }
@@ -209,6 +248,49 @@ const SETUP_SCHEDULE: &str = "CREATE TABLE IF NOT EXISTS axa_schedule (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )";
+/// A person's acts on jobs. This table is a record (P-7): it is only ever inserted
+/// into, and its triggers refuse every change. A job row is state, and retention
+/// deletes it, so an act names its job by id with no foreign key, and keeps the job's
+/// name and attempts as they were when the act was done.
+const SETUP_ACTS: &str = "CREATE TABLE IF NOT EXISTS axa_job_acts (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_id UUID NOT NULL,
+    job_name TEXT NOT NULL,
+    act TEXT NOT NULL CHECK (act IN ('cancelled', 'retried', 'released')),
+    attempts INTEGER NOT NULL,
+    by TEXT NOT NULL CHECK (length(by) BETWEEN 1 AND 200 AND by !~ '[[:cntrl:]]'),
+    reason TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 200 AND reason !~ '[[:cntrl:]]'),
+    at TIMESTAMPTZ NOT NULL DEFAULT now()
+)";
+const SETUP_ACTS_INDEX: &str =
+    "CREATE INDEX IF NOT EXISTS axa_job_acts_job ON axa_job_acts (job_id, id)";
+/// Refuses whatever fired it, whoever sent it.
+const SETUP_ACTS_REFUSE: &str = "CREATE OR REPLACE FUNCTION axa_job_acts_refuse() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION '% on % is refused: acts on jobs are only ever added to',
+        TG_OP, TG_TABLE_NAME;
+END
+$$";
+const SETUP_ACTS_ROWS: &str = "CREATE OR REPLACE TRIGGER axa_job_acts_refuse
+    BEFORE UPDATE OR DELETE ON axa_job_acts
+    FOR EACH ROW EXECUTE FUNCTION axa_job_acts_refuse()";
+const SETUP_ACTS_TRUNCATE: &str = "CREATE OR REPLACE TRIGGER axa_job_acts_refuse_truncate
+    BEFORE TRUNCATE ON axa_job_acts
+    FOR EACH STATEMENT EXECUTE FUNCTION axa_job_acts_refuse()";
+/// `ENABLE ALWAYS` keeps the refusals on when `session_replication_role` is
+/// `replica`, which otherwise turns triggers off.
+const SETUP_ACTS_ALWAYS: &str = "ALTER TABLE axa_job_acts
+    ENABLE ALWAYS TRIGGER axa_job_acts_refuse,
+    ENABLE ALWAYS TRIGGER axa_job_acts_refuse_truncate";
+/// The refusing triggers [`Queue::check`] requires, each set to fire always.
+const ACTS_TRIGGERS: [&str; 2] = ["axa_job_acts_refuse", "axa_job_acts_refuse_truncate"];
+const MISSING_TRIGGERS: &str = "SELECT want FROM unnest($1::text[]) AS want
+    WHERE NOT EXISTS (
+        SELECT 1 FROM pg_trigger t
+        WHERE t.tgrelid = to_regclass('axa_job_acts') AND t.tgname = want
+          AND t.tgenabled::text = 'A'
+    )";
 /// Advisory lock key for table setup: `axa_q` as bytes.
 const SETUP_LOCK: i64 = 0x0061_7861_5F71;
 
@@ -254,14 +336,36 @@ const STATUS: &str = "SELECT id, name, status, attempts, max_attempts, priority,
 const MARK_LOST: &str =
     "UPDATE axa_queue SET status = 'needs_review', error = $2, updated_at = now()
     WHERE id = $1 AND status IN ('queued', 'running', 'failed')";
-const CANCEL: &str = "UPDATE axa_queue SET status = 'cancelled', updated_at = now()
-    WHERE id = $1 AND status = 'queued'";
+/// Cancel a queued job and keep the act, in one statement. A job in any other state
+/// changes nothing and writes no act.
+const CANCEL: &str = "WITH changed AS (
+        UPDATE axa_queue SET status = 'cancelled', updated_at = now()
+        WHERE id = $1 AND status = 'queued'
+        RETURNING id, name, attempts
+    )
+    INSERT INTO axa_job_acts (job_id, job_name, act, attempts, by, reason)
+    SELECT id, name, 'cancelled', attempts, $2, $3 FROM changed";
 /// A retried job gets one more try. `attempts` keeps rising, as it identifies
-/// each run, so a run given up on still cannot write over the new one.
-const RETRY_FAILED: &str = "UPDATE axa_queue
-    SET status = 'queued', run_at = now(), started_at = NULL, updated_at = now(),
-        max_attempts = attempts + 1
-    WHERE id = $1 AND status IN ('failed', 'needs_review')";
+/// each run, so a run given up on still cannot write over the new one. The act is
+/// `released` for a job in review and `retried` for a failed one, and is kept in the
+/// same statement.
+const RETRY_FAILED: &str = "WITH target AS (
+        SELECT id, status FROM axa_queue
+        WHERE id = $1 AND status IN ('failed', 'needs_review')
+        FOR UPDATE
+    ), changed AS (
+        UPDATE axa_queue q
+        SET status = 'queued', run_at = now(), started_at = NULL, updated_at = now(),
+            max_attempts = q.attempts + 1
+        FROM target WHERE q.id = target.id
+        RETURNING q.id, q.name, q.attempts, target.status AS was
+    )
+    INSERT INTO axa_job_acts (job_id, job_name, act, attempts, by, reason)
+    SELECT id, name, CASE was WHEN 'needs_review' THEN 'released' ELSE 'retried' END,
+        attempts, $2, $3
+    FROM changed";
+const ACTS: &str = "SELECT id, job_id, job_name, act, attempts, by, reason, at
+    FROM axa_job_acts WHERE job_id = $1 ORDER BY id";
 const COUNTS: &str = "SELECT
     count(*) FILTER (WHERE status = 'queued' AND run_at <= now()) AS ready,
     count(*) FILTER (WHERE status = 'queued' AND run_at > now()) AS waiting,
@@ -305,8 +409,8 @@ const SCHEDULE_ADVANCE: &str = "UPDATE axa_schedule
 
 /// The statements that make the queue's tables, in order, each safe to repeat. A
 /// service whose role may not change the schema runs these in a migration, and calls
-/// [`Queue::connect_existing`].
-pub const SETUP_STATEMENTS: [&str; 8] = [
+/// [`Queue::connect_existing`]. They need Postgres 14 or later.
+pub const SETUP_STATEMENTS: [&str; 14] = [
     SETUP,
     SETUP_ATTEMPTS,
     SETUP_MAX_ATTEMPTS,
@@ -315,7 +419,16 @@ pub const SETUP_STATEMENTS: [&str; 8] = [
     SETUP_TIMEOUT,
     SETUP_CLAIM_INDEX,
     SETUP_SCHEDULE,
+    SETUP_ACTS,
+    SETUP_ACTS_INDEX,
+    SETUP_ACTS_REFUSE,
+    SETUP_ACTS_ROWS,
+    SETUP_ACTS_TRUNCATE,
+    SETUP_ACTS_ALWAYS,
 ];
+
+/// The longest `by` or `reason` kept on an act, in characters.
+pub const MAX_REASON_CHARS: usize = 200;
 
 /// The shortest gap between heartbeats, so a zero setting cannot spin.
 const MIN_HEARTBEAT: Duration = Duration::from_millis(20);
@@ -485,6 +598,127 @@ pub async fn enqueue_all_on(connection: &mut PgConnection, jobs: &[NewJob]) -> R
     Ok(ids)
 }
 
+/// Refuse who or why for a person's act unless it is a code.
+fn check_code(text: &str, what: &'static str) -> Result<()> {
+    if text.is_empty()
+        || text.chars().count() > MAX_REASON_CHARS
+        || text.chars().any(char::is_control)
+    {
+        Err(Error::NotACode { what })
+    } else {
+        Ok(())
+    }
+}
+
+/// Cancel the job `id` if it is still queued, as an act of `by`, for `reason`, kept in
+/// `axa_job_acts` in the caller's transaction, so that the caller's own audit row
+/// commits with it. Answers whether it was cancelled. A job already claimed runs on:
+/// cancelling cannot stop work in progress. A job in any other state, or no such job,
+/// changes nothing and writes no act.
+///
+/// The job's row stays locked until the transaction ends, so keep it short.
+///
+/// # Errors
+///
+/// Fails on a database error, and with [`Error::NotACode`] when `by` or `reason` is
+/// empty, longer than [`MAX_REASON_CHARS`], or has a line break, before anything is
+/// written.
+pub async fn cancel(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    by: &str,
+    reason: &str,
+) -> Result<bool> {
+    act(transaction, CANCEL, id, by, reason).await
+}
+
+/// Queue the job `id` again, now, for one more try, if it failed or waits for review,
+/// as an act of `by`, for `reason`, kept in `axa_job_acts` in the caller's
+/// transaction. The act is [`ActKind::Retried`] for a failed job and
+/// [`ActKind::Released`] for one in review. Answers whether it was queued again. A job
+/// in any other state, or no such job, changes nothing and writes no act. Its last
+/// error stays until it next runs.
+///
+/// # Errors
+///
+/// Fails on a database error, and with [`Error::NotACode`] when `by` or `reason` is
+/// empty, longer than [`MAX_REASON_CHARS`], or has a line break, before anything is
+/// written.
+pub async fn retry(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: Uuid,
+    by: &str,
+    reason: &str,
+) -> Result<bool> {
+    act(transaction, RETRY_FAILED, id, by, reason).await
+}
+
+/// Run one act's statement, which changes the job and keeps the act together.
+async fn act(
+    transaction: &mut Transaction<'_, Postgres>,
+    statement: &'static str,
+    id: Uuid,
+    by: &str,
+    reason: &str,
+) -> Result<bool> {
+    check_code(by, "by")?;
+    check_code(reason, "reason")?;
+    let kept = sqlx::query(statement)
+        .bind(id)
+        .bind(by)
+        .bind(reason)
+        .execute(&mut **transaction)
+        .await?
+        .rows_affected();
+    Ok(kept == 1)
+}
+
+/// What a person did to a job.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ActKind {
+    /// Cancelled it while it was queued.
+    Cancelled,
+    /// Queued it again after it failed.
+    Retried,
+    /// Released it from review, to run again.
+    Released,
+}
+
+impl ActKind {
+    fn parse(text: &str) -> Result<Self> {
+        match text {
+            "cancelled" => Ok(Self::Cancelled),
+            "retried" => Ok(Self::Retried),
+            "released" => Ok(Self::Released),
+            _ => Err(Error::Job("an act with an unknown kind".to_string())),
+        }
+    }
+}
+
+/// One act of a person on a job, as `axa_job_acts` keeps it. It outlives the job's
+/// row, which retention deletes.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct Act {
+    /// The act's row. It rises with each act.
+    pub id: i64,
+    /// The job it was done to.
+    pub job_id: Uuid,
+    /// The handler that job is for.
+    pub job_name: String,
+    /// What was done.
+    pub kind: ActKind,
+    /// The job's runs so far when it was done.
+    pub attempts: i32,
+    /// Who did it, as the service named them.
+    pub by: String,
+    /// Why, as a short code.
+    pub reason: String,
+    /// When, on the database's clock.
+    pub at: DateTime<Utc>,
+}
+
 /// Where a job is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobState {
@@ -500,7 +734,7 @@ pub enum JobState {
     Cancelled,
     /// Its run lost its claim and was stopped, so it may have run in part or
     /// twice. It is never retried by itself: a person looks, and calls
-    /// [`Queue::retry`] to release it.
+    /// [`retry()`] to release it.
     NeedsReview,
 }
 
@@ -769,8 +1003,10 @@ impl Queue {
     ///
     /// # Errors
     ///
-    /// Fails when the database cannot be reached, or a table is missing or out of
-    /// date, so a service finds out at boot rather than at its first job.
+    /// Fails when the database cannot be reached, a table is missing or out of date,
+    /// or a trigger of `axa_job_acts` is missing or not set to fire always, so a
+    /// service finds out at boot rather than at its first job. There is no way to run
+    /// without the triggers.
     pub async fn connect_existing(uri: &str, options: QueueOptions) -> Result<Self> {
         let queue = Self::open(uri, options).await?;
         queue.check().await?;
@@ -801,12 +1037,13 @@ impl Queue {
         Ok(queue)
     }
 
-    /// Check that the tables exist and are up to date.
+    /// Check that the tables exist and are up to date, and that the triggers of
+    /// `axa_job_acts` are there and set to fire always.
     ///
     /// # Errors
     ///
-    /// Fails when the database cannot be reached, or a table is missing or out of
-    /// date.
+    /// Fails when the database cannot be reached, a table is missing or out of date,
+    /// or a trigger is missing or turned off.
     pub async fn check(&self) -> Result<()> {
         sqlx::query("SELECT attempts, max_attempts, priority, timeout_ms FROM axa_queue LIMIT 0")
             .execute(&self.pool)
@@ -816,7 +1053,26 @@ impl Queue {
         )
             .execute(&self.pool)
             .await?;
-        Ok(())
+        sqlx::query(
+            "SELECT id, job_id, job_name, act, attempts, by, reason, at FROM axa_job_acts LIMIT 0",
+        )
+        .execute(&self.pool)
+        .await?;
+        let missing: Vec<String> = sqlx::query_scalar(MISSING_TRIGGERS)
+            .bind(ACTS_TRIGGERS.to_vec())
+            .fetch_all(&self.pool)
+            .await?;
+        if missing.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::Database(sqlx::Error::Configuration(
+                format!(
+                    "the job queue is missing, or has turned off, {}: run SETUP_STATEMENTS",
+                    missing.join(", ")
+                )
+                .into(),
+            )))
+        }
     }
 
     /// The pool, for a service's own queries or [`enqueue_on`] outside a
@@ -949,29 +1205,29 @@ impl Queue {
         }))
     }
 
-    /// Cancel the job `id` if it is still queued, returning whether it was. A job
-    /// already claimed runs on: cancelling cannot stop work in progress.
+    /// Every act a person did to the job `id`, oldest first, for a service's own
+    /// review screens. Acts are kept after retention deletes the job's row. A person
+    /// acts with [`cancel()`] and [`retry()`], in the caller's transaction.
     ///
     /// # Errors
     ///
     /// Fails on a database error.
-    pub async fn cancel(&self, id: Uuid) -> Result<bool> {
-        let result = sqlx::query(CANCEL).bind(id).execute(&self.pool).await?;
-        Ok(result.rows_affected() == 1)
-    }
-
-    /// Queue the job `id` again, now, for one more try, if it failed or waits for
-    /// review, returning whether it did. Its last error stays until it next runs.
-    ///
-    /// # Errors
-    ///
-    /// Fails on a database error.
-    pub async fn retry(&self, id: Uuid) -> Result<bool> {
-        let result = sqlx::query(RETRY_FAILED)
-            .bind(id)
-            .execute(&self.pool)
-            .await?;
-        Ok(result.rows_affected() == 1)
+    pub async fn acts(&self, id: Uuid) -> Result<Vec<Act>> {
+        let rows = sqlx::query(ACTS).bind(id).fetch_all(&self.pool).await?;
+        rows.iter()
+            .map(|row| {
+                Ok(Act {
+                    id: row.try_get("id")?,
+                    job_id: row.try_get("job_id")?,
+                    job_name: row.try_get("job_name")?,
+                    kind: ActKind::parse(row.try_get::<&str, _>("act")?)?,
+                    attempts: row.try_get("attempts")?,
+                    by: row.try_get("by")?,
+                    reason: row.try_get("reason")?,
+                    at: row.try_get("at")?,
+                })
+            })
+            .collect()
     }
 
     /// How many jobs are in each state.
@@ -1467,6 +1723,22 @@ mod tests {
         for text in [format!("{job:?}"), format!("{schedule:?}")] {
             assert!(text.contains("Report"), "{text}");
             assert!(!text.contains("943"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_by_or_reason_that_is_not_a_code_is_refused() {
+        assert!(check_code("ops:alice", "by").is_ok());
+        assert!(check_code(&"é".repeat(MAX_REASON_CHARS), "reason").is_ok());
+        for bad in [
+            String::new(),
+            "é".repeat(MAX_REASON_CHARS + 1),
+            "two\nlines".to_string(),
+            "a\ttab".to_string(),
+        ] {
+            let error = check_code(&bad, "reason").unwrap_err();
+            assert!(matches!(error, Error::NotACode { what: "reason" }));
+            assert!(!error.to_string().contains("lines"), "the text is left out");
         }
     }
 

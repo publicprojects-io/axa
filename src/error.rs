@@ -171,14 +171,6 @@ impl From<QueryRejection> for Error {
     }
 }
 
-/// An offset past a list's maximum, which is the caller's to fix.
-#[cfg(feature = "offset-pagination")]
-impl From<axa_offset_pagination::OffsetTooLarge> for Error {
-    fn from(error: axa_offset_pagination::OffsetTooLarge) -> Self {
-        Self::BadRequest(error.to_string())
-    }
-}
-
 /// A bad limit or cursor, which is the caller's to fix: a `422` whose `detail`
 /// quotes nothing the caller sent.
 #[cfg(feature = "cursor-pagination")]
@@ -721,18 +713,6 @@ mod tests {
     #[test]
     fn empty_description_is_omitted() {
         assert_eq!(ErrorDetail::new("x", "").detail, None);
-    }
-
-    #[cfg(feature = "offset-pagination")]
-    #[tokio::test]
-    async fn an_offset_too_large_is_a_bad_request() {
-        let error = axa_offset_pagination::OffsetTooLarge {
-            requested: 11,
-            max_offset: 10,
-        };
-        let response = Error::from(error).into_response();
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-        assert!(body_text(response).await.contains("exceeds the maximum"));
     }
 
     #[cfg(feature = "cursor-pagination")]

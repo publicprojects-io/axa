@@ -16,13 +16,13 @@
 use std::{sync::Arc, time::Duration};
 
 use serde::{Serialize, de::DeserializeOwned};
-use sqlx::{PgConnection, PgExecutor, PgPool};
+use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, Transaction};
 use tokio::sync::watch;
 use uuid::Uuid;
 
 pub use axa_worker::{
-    Counts, DateTime, JobInfo, JobState, NewJob, QueueOptions, SETUP_STATEMENTS, Schedule,
-    ScheduleInfo, Utc,
+    Act, ActKind, Counts, DateTime, JobInfo, JobState, MAX_REASON_CHARS, NewJob, QueueOptions,
+    SETUP_STATEMENTS, Schedule, ScheduleInfo, Utc,
 };
 
 use crate::{AppContext, Error, Result, worker::BackgroundWorker};
@@ -33,6 +33,7 @@ impl From<axa_worker::Error> for Error {
             axa_worker::Error::Database(error) => Self::Sqlx(error),
             axa_worker::Error::Encode(error) => Self::JSON(error),
             axa_worker::Error::Job(text) => Self::Worker(text),
+            error @ axa_worker::Error::NotACode { .. } => Self::BadRequest(error.to_string()),
             other => Self::Worker(other.to_string()),
         }
     }
@@ -122,6 +123,47 @@ pub async fn enqueue_job_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) ->
 pub async fn enqueue_all_on(connection: &mut PgConnection, jobs: &[NewJob]) -> Result<Vec<String>> {
     let ids = axa_worker::enqueue_all_on(connection, jobs).await?;
     Ok(ids.iter().map(Uuid::to_string).collect())
+}
+
+/// An id that is not one matches no job, and `by` and `reason` are still checked.
+fn job_id(id: &str) -> Uuid {
+    Uuid::parse_str(id).unwrap_or_else(|_| Uuid::nil())
+}
+
+/// Cancel the job `id` if it is still queued, as an act of `by`, for `reason`, kept in
+/// the caller's transaction with the service's own audit row. Answers whether it was
+/// cancelled. A job in any other state, or no such job, writes no act. See
+/// [`axa_worker::cancel`].
+///
+/// # Errors
+///
+/// Fails on a database error, and with [`Error::BadRequest`] when `by` or `reason` is
+/// empty, longer than [`MAX_REASON_CHARS`], or has a line break.
+pub async fn cancel(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: &str,
+    by: &str,
+    reason: &str,
+) -> Result<bool> {
+    Ok(axa_worker::cancel(transaction, job_id(id), by, reason).await?)
+}
+
+/// Queue the job `id` again for one more try, if it failed or waits for review, as an
+/// act of `by`, for `reason`, kept in the caller's transaction with the service's own
+/// audit row. Answers whether it was queued again. A job in any other state, or no
+/// such job, writes no act. See [`axa_worker::retry`].
+///
+/// # Errors
+///
+/// Fails on a database error, and with [`Error::BadRequest`] when `by` or `reason` is
+/// empty, longer than [`MAX_REASON_CHARS`], or has a line break.
+pub async fn retry(
+    transaction: &mut Transaction<'_, Postgres>,
+    id: &str,
+    by: &str,
+    reason: &str,
+) -> Result<bool> {
+    Ok(axa_worker::retry(transaction, job_id(id), by, reason).await?)
 }
 
 /// A Postgres-backed job queue whose jobs are [`BackgroundWorker`]s.
@@ -295,29 +337,17 @@ impl Queue {
         Ok(self.engine.job(id).await?)
     }
 
-    /// Cancel the job `id` if it is still queued, returning whether it was.
+    /// Every act a person did to the job `id`, oldest first, kept after retention
+    /// deletes the job's row. None when `id` is not one.
     ///
     /// # Errors
     ///
     /// Fails on a database error.
-    pub async fn cancel(&self, id: &str) -> Result<bool> {
+    pub async fn acts(&self, id: &str) -> Result<Vec<Act>> {
         let Ok(id) = Uuid::parse_str(id) else {
-            return Ok(false);
+            return Ok(Vec::new());
         };
-        Ok(self.engine.cancel(id).await?)
-    }
-
-    /// Queue the failed job `id` again, now, for one more try, returning whether it
-    /// had failed.
-    ///
-    /// # Errors
-    ///
-    /// Fails on a database error.
-    pub async fn retry(&self, id: &str) -> Result<bool> {
-        let Ok(id) = Uuid::parse_str(id) else {
-            return Ok(false);
-        };
-        Ok(self.engine.retry(id).await?)
+        Ok(self.engine.acts(id).await?)
     }
 
     /// How many jobs are in each state, for metrics.
@@ -596,6 +626,60 @@ mod tests {
         assert!(worker.await.unwrap());
         // It cannot write its result, and stops for a person to look.
         assert_eq!(status_of(&queue, &id).await.0, "needs_review");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    async fn a_persons_act_through_axa_is_kept_with_who_and_why() {
+        let _table = TABLE.lock().await;
+        let queue = queue().await;
+        let queued = queue
+            .enqueue("OtherWorker", serde_json::json!({ "fail": false }))
+            .await
+            .unwrap();
+        let failed = queue
+            .enqueue("CountWorker", serde_json::json!({ "fail": true }))
+            .await
+            .unwrap();
+        assert!(queue.run_one().await.unwrap());
+        assert_eq!(status_of(&queue, &failed).await.0, "failed");
+
+        let mut transaction = queue.pool().begin().await.unwrap();
+        let refused = cancel(&mut transaction, &queued, "ops:alice", "two\nlines").await;
+        assert!(matches!(refused, Err(Error::BadRequest(_))), "{refused:?}");
+        assert!(
+            cancel(&mut transaction, &queued, "ops:alice", "duplicate")
+                .await
+                .unwrap()
+        );
+        assert!(
+            retry(&mut transaction, &failed, "ops:alice", "fixed_upstream")
+                .await
+                .unwrap()
+        );
+        assert!(
+            !cancel(&mut transaction, "not-an-id", "ops:alice", "duplicate")
+                .await
+                .unwrap()
+        );
+        transaction.commit().await.unwrap();
+
+        assert_eq!(status_of(&queue, &queued).await.0, "cancelled");
+        assert_eq!(status_of(&queue, &failed).await.0, "queued");
+        let cancelled = queue.acts(&queued).await.unwrap();
+        assert_eq!(cancelled.len(), 1);
+        assert_eq!(cancelled[0].kind, ActKind::Cancelled);
+        let retried = queue.acts(&failed).await.unwrap();
+        assert_eq!(retried.len(), 1);
+        assert_eq!(
+            (
+                retried[0].kind,
+                retried[0].by.as_str(),
+                retried[0].reason.as_str()
+            ),
+            (ActKind::Retried, "ops:alice", "fixed_upstream")
+        );
+        assert!(queue.acts("not-an-id").await.unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -974,10 +1058,12 @@ mod tests {
         let admin = PgPoolOptions::new().connect(&uri).await.unwrap();
         // Setup only races when the table is really missing.
         for _ in 0..5 {
-            sqlx::query("DROP TABLE IF EXISTS axa_queue")
-                .execute(&admin)
-                .await
-                .unwrap();
+            for table in ["axa_queue", "axa_job_acts"] {
+                sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+                    .execute(&admin)
+                    .await
+                    .unwrap();
+            }
             let boots: Vec<_> = (0..8)
                 .map(|_| {
                     let uri = uri.clone();

@@ -62,17 +62,27 @@
 //!
 //! # A crash, a hang-up, and a panic
 //!
-//! Each of these ends the run with the key still claimed. A run reports in every third
-//! of [`Idempotency::lease`], so a claim not renewed for that long was abandoned, and the
-//! same request may then take it over. A handler can run for as long as it needs. A
-//! different request under that key is still refused, as the lost run may have done its
-//! work. Until the lease ends a retry gets `409`, and the default lease is a minute.
+//! Each of these ends the run with the key still claimed, and the lost run may have done
+//! its work. So by default the claim holds the key for a whole [`Idempotency::ttl`]
+//! from when its run last reported in, and a retry gets `409` `idempotency_in_progress`
+//! until then. That is the safe answer:
+//! the write never runs twice under one key. Once the `ttl` ends the key is free, as any
+//! expired key is, and [`Idempotency::sweep`] deletes it. A client that has checked the
+//! write did not happen can send it sooner under a new key.
+//!
+//! A run reports in every third of its lease, so a handler can run for as long as it
+//! needs. The lease is the `ttl` unless a service chooses a shorter one with
+//! [`Idempotency::rerun_abandoned_after`]. The same request may then take over a claim
+//! not renewed for that long, and run the write a second time. Only a handler that is
+//! safe to run twice should allow that. A different request under that key is always
+//! refused.
 //!
 //! Each claim has its own identifier, so a run that lost its claim cannot overwrite the
 //! answer of the run that took over.
 //!
 //! This crate stores an answer after the handler has committed, in a separate
-//! transaction. A crash between the two runs the handler again on the retry. A handler
+//! transaction. A crash between the two leaves the key held with no answer to give, and
+//! a retry under [`Idempotency::rerun_abandoned_after`] runs the handler again. A handler
 //! that must never repeat, such as one that takes a payment, also needs a unique
 //! constraint of its own.
 //!
@@ -227,8 +237,9 @@ const SWEEP: &str =
 /// these in a migration, and calls [`Idempotency::check`] at boot.
 pub const SETUP_STATEMENTS: [&str; 2] = [SETUP, SETUP_INDEX];
 
-/// The shortest gap between heartbeats, so a tiny lease cannot spin.
-const MIN_HEARTBEAT: Duration = Duration::from_millis(20);
+/// The shortest lease, and so the shortest `ttl`. A run reports in every third of its
+/// lease, so this keeps the heartbeat to at most one in 20 ms.
+const MIN_LEASE: Duration = Duration::from_millis(60);
 
 /// How many times a key is tried when the row it conflicted with goes away.
 const CLAIM_TRIES: usize = 3;
@@ -266,7 +277,7 @@ pub struct Idempotency {
     only: Option<Arc<Covers>>,
     required: Option<Arc<Covers>>,
     ttl: Duration,
-    lease: Duration,
+    rerun_abandoned_after: Option<Duration>,
     max_request_bytes: usize,
     max_response_bytes: usize,
 }
@@ -275,7 +286,7 @@ impl std::fmt::Debug for Idempotency {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Idempotency")
             .field("ttl", &self.ttl)
-            .field("lease", &self.lease)
+            .field("rerun_abandoned_after", &self.rerun_abandoned_after)
             .field("max_request_bytes", &self.max_request_bytes)
             .field("max_response_bytes", &self.max_response_bytes)
             .finish_non_exhaustive()
@@ -298,7 +309,7 @@ impl Idempotency {
             only: None,
             required: None,
             ttl: Duration::from_hours(24),
-            lease: Duration::from_mins(1),
+            rerun_abandoned_after: None,
             max_request_bytes: 1024 * 1024,
             max_response_bytes: 1024 * 1024,
         }
@@ -327,18 +338,55 @@ impl Idempotency {
         self
     }
 
-    /// How long a key and its answer are kept. 24 hours by default.
+    /// How long a key and its answer are kept. 24 hours by default. A run that ends
+    /// without an answer, by a crash, a hang-up, or a panic, holds its key this long too,
+    /// unless [`Idempotency::rerun_abandoned_after`] says otherwise.
+    ///
+    /// # Panics
+    ///
+    /// When `ttl` is under 60 milliseconds, or shorter than the lease given to
+    /// [`Idempotency::rerun_abandoned_after`]. These are mistakes in code, found at boot.
     #[must_use]
     pub const fn ttl(mut self, ttl: Duration) -> Self {
+        assert!(
+            ttl.as_nanos() >= MIN_LEASE.as_nanos(),
+            "an idempotency ttl must be at least 60 milliseconds"
+        );
+        if let Some(lease) = self.rerun_abandoned_after {
+            assert!(
+                lease.as_nanos() <= ttl.as_nanos(),
+                "an idempotency ttl cannot be shorter than rerun_abandoned_after"
+            );
+        }
         self.ttl = ttl;
         self
     }
 
-    /// How long a run may go without reporting in before its key can be taken over. One
-    /// minute by default. A run reports in every third of this, for as long as it runs.
+    /// Let the same request run the write a second time once its first run has not
+    /// reported in for `lease`, as after a crash. Without this, a claim not finished holds
+    /// its key for the whole [`Idempotency::ttl`], and the write never runs twice.
+    ///
+    /// Use it only for a handler that is safe to run twice, such as one that keeps a
+    /// unique constraint of its own. The first run may have done its work before it was
+    /// lost, and this runs it again. A run reports in every third of `lease`, so a live
+    /// run is not taken over however long it takes.
+    ///
+    /// # Panics
+    ///
+    /// When `lease` is under 60 milliseconds, which the heartbeat cannot keep, or longer
+    /// than the `ttl`, which would hold a key past its life. These are mistakes in code,
+    /// found at boot.
     #[must_use]
-    pub const fn lease(mut self, lease: Duration) -> Self {
-        self.lease = lease;
+    pub const fn rerun_abandoned_after(mut self, lease: Duration) -> Self {
+        assert!(
+            lease.as_nanos() >= MIN_LEASE.as_nanos(),
+            "rerun_abandoned_after must be at least 60 milliseconds"
+        );
+        assert!(
+            lease.as_nanos() <= self.ttl.as_nanos(),
+            "rerun_abandoned_after cannot be longer than the idempotency ttl"
+        );
+        self.rerun_abandoned_after = Some(lease);
         self
     }
 
@@ -410,6 +458,12 @@ impl Idempotency {
         Ok(result.rows_affected())
     }
 
+    /// How long a claim lasts without reporting in: the `ttl`, unless a service chose
+    /// a shorter one.
+    fn lease(&self) -> Duration {
+        self.rerun_abandoned_after.unwrap_or(self.ttl)
+    }
+
     fn covers(&self, method: &Method, path: &str) -> bool {
         !method.is_safe() && self.only.as_ref().is_none_or(|only| only(method, path))
     }
@@ -429,7 +483,7 @@ impl Idempotency {
                 .bind(&id.key)
                 .bind(&id.fingerprint)
                 .bind(claim)
-                .bind(self.lease.as_secs_f64())
+                .bind(self.lease().as_secs_f64())
                 .bind(self.ttl.as_secs_f64())
                 .fetch_optional(&self.pool)
                 .await?;
@@ -465,7 +519,9 @@ impl Idempotency {
     async fn hold(&self, run: &Run, work: impl Future<Output = Response>) -> Response {
         let heartbeat = async {
             loop {
-                tokio::time::sleep((self.lease / 3).max(MIN_HEARTBEAT)).await;
+                // At least 20 ms, as no lease is under `MIN_LEASE`. A 24-hour `ttl`
+                // reports in every 8 hours.
+                tokio::time::sleep(self.lease() / 3).await;
                 self.renew(run).await;
             }
         };
@@ -480,7 +536,7 @@ impl Idempotency {
             .bind(&run.id.caller)
             .bind(&run.id.key)
             .bind(run.claim)
-            .bind(self.lease.as_secs_f64())
+            .bind(self.lease().as_secs_f64())
             .execute(&self.pool)
             .await;
         match renewed {
@@ -550,7 +606,8 @@ impl Idempotency {
             .bind(run.claim)
             .execute(&self.pool)
             .await;
-        // The caller gets its answer regardless, and the lease frees the key in time.
+        // The caller gets its answer regardless, and the key comes free when its lease
+        // ends.
         if let Err(error) = released {
             tracing::error!(%error, "idempotency_release_failed");
         }
@@ -558,8 +615,8 @@ impl Idempotency {
 }
 
 /// Say what became of a finished run. The caller gets its answer whatever happens here.
-/// When the store fails, the lease frees the key and a retry runs the work again, which
-/// nothing here can prevent.
+/// When the store fails, the claim holds the key until its lease ends, which is the `ttl`
+/// unless a service chose to allow a second run.
 fn log_settled(result: Result<sqlx::postgres::PgQueryResult, sqlx::Error>) {
     match result {
         Ok(result) if result.rows_affected() == 0 => tracing::error!("idempotency_claim_lost"),
@@ -1031,6 +1088,58 @@ mod tests {
         for row in broken {
             assert!(row.replay().is_none(), "{row:?}");
         }
+    }
+
+    fn keys() -> Idempotency {
+        let pool = PgPool::connect_lazy("postgres://localhost/none").unwrap();
+        Idempotency::new(pool, |_| None)
+    }
+
+    #[tokio::test]
+    async fn the_lease_is_the_ttl_unless_a_shorter_one_is_chosen() {
+        assert_eq!(keys().lease(), Duration::from_hours(24));
+        let hour = Duration::from_hours(1);
+        assert_eq!(keys().ttl(hour).lease(), hour);
+        let minute = Duration::from_mins(1);
+        assert_eq!(keys().rerun_abandoned_after(minute).lease(), minute);
+        assert_eq!(
+            keys().ttl(hour).rerun_abandoned_after(minute).lease(),
+            minute
+        );
+        // Set either way round, the shorter lease is kept.
+        assert_eq!(
+            keys().rerun_abandoned_after(minute).ttl(hour).lease(),
+            minute
+        );
+        assert_eq!(keys().rerun_abandoned_after(hour).ttl(hour).lease(), hour);
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "cannot be longer than the idempotency ttl")]
+    async fn a_lease_longer_than_the_ttl_is_refused() {
+        let _ = keys()
+            .ttl(Duration::from_mins(1))
+            .rerun_abandoned_after(Duration::from_mins(2));
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "cannot be shorter than rerun_abandoned_after")]
+    async fn a_ttl_shorter_than_its_lease_is_refused() {
+        let _ = keys()
+            .rerun_abandoned_after(Duration::from_mins(2))
+            .ttl(Duration::from_mins(1));
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "rerun_abandoned_after must be at least 60 milliseconds")]
+    async fn a_lease_the_heartbeat_cannot_keep_is_refused() {
+        let _ = keys().rerun_abandoned_after(Duration::from_millis(59));
+    }
+
+    #[tokio::test]
+    #[should_panic(expected = "ttl must be at least 60 milliseconds")]
+    async fn a_ttl_the_heartbeat_cannot_keep_is_refused() {
+        let _ = keys().ttl(Duration::ZERO);
     }
 
     #[tokio::test]

@@ -266,7 +266,7 @@ fn write_body(body: &'static str) -> Request {
 }
 
 /// Routes whose first run never answers: it panics, or waits to be cut off.
-fn routes_ending_badly(pool: &PgPool, lease: Duration, http: &Http, panics: bool) -> Router {
+fn routes_ending_badly(keys: Idempotency, http: &Http, panics: bool) -> Router {
     let runs = Arc::new(AtomicUsize::new(0));
     let routes = Router::new().route(
         "/things",
@@ -279,7 +279,7 @@ fn routes_ending_badly(pool: &PgPool, lease: Duration, http: &Http, panics: bool
         }),
     );
     let routes = routes
-        .layer(from_fn_with_state(keys(pool).lease(lease), idempotent))
+        .layer(from_fn_with_state(keys, idempotent))
         .layer(from_fn(guard));
     middleware::apply(routes, http).unwrap()
 }
@@ -289,7 +289,7 @@ fn routes_ending_badly(pool: &PgPool, lease: Duration, http: &Http, panics: bool
 async fn a_panic_is_answered_and_its_key_comes_free_after_the_lease() {
     let pool = pool().await;
     let lease = Duration::from_millis(200);
-    let app = routes_ending_badly(&pool, lease, &http(), true);
+    let app = routes_ending_badly(keys(&pool).rerun_abandoned_after(lease), &http(), true);
 
     let panicked = send(&app, write("ana", None)).await;
     assert_eq!(panicked.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -302,6 +302,29 @@ async fn a_panic_is_answered_and_its_key_comes_free_after_the_lease() {
 
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DATABASE_URL"]
+async fn by_default_a_panic_holds_its_key_and_a_retry_is_told_to_wait() {
+    let pool = pool().await;
+    let app = routes_ending_badly(keys(&pool), &http(), true);
+
+    let panicked = send(&app, write("ana", None)).await;
+    assert_eq!(panicked.status(), StatusCode::INTERNAL_SERVER_ERROR);
+
+    // The run may have done its work, so the key is held for its ttl, not run again.
+    let retry = send(&app, write("ana", None)).await;
+    assert_eq!(retry.status(), StatusCode::CONFLICT);
+    let problem: Value = serde_json::from_slice(&bytes(retry).await).unwrap();
+    assert_eq!(problem["code"], "idempotency_in_progress");
+    let held: bool = sqlx::query_scalar(
+        "SELECT lease_until >= now() + interval '23 hours' FROM axa_idempotency",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(held, "the claim does not last the key's ttl");
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DATABASE_URL"]
 async fn a_request_the_stack_cuts_off_frees_its_key_after_the_lease() {
     let pool = pool().await;
     let lease = Duration::from_millis(200);
@@ -309,7 +332,7 @@ async fn a_request_the_stack_cuts_off_frees_its_key_after_the_lease() {
         timeout_seconds: 1,
         ..http()
     };
-    let app = routes_ending_badly(&pool, lease, &timed, false);
+    let app = routes_ending_badly(keys(&pool).rerun_abandoned_after(lease), &timed, false);
 
     let cut_off = send(&app, write("ana", None)).await;
     assert_eq!(cut_off.status(), StatusCode::REQUEST_TIMEOUT);

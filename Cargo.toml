@@ -55,11 +55,6 @@ outbox = ["dep:axa-outbox", "queue"]
 outbox-encryption = ["outbox", "axa-outbox/encryption"]
 # Signed cursor pages with no total, as `axa::cursor_pagination`.
 cursor-pagination = ["dep:axa-cursor-pagination"]
-# Offset pages with a total, as `axa::offset_pagination`. Insecure: prefer cursors.
-offset-pagination = ["dep:axa-offset-pagination"]
-# The old name for `offset-pagination`, kept so that a service naming it still builds,
-# with `axa::pagination` as the old path. It will go.
-pagination = ["offset-pagination"]
 paseto = ["dep:axa-paseto"]
 # `axa::error` answers with `axa-problem`, so this adds nothing, and stays so that a
 # service naming it still builds.
@@ -76,11 +71,10 @@ versioning = ["dep:axa-versioning"]
 [dependencies]
 axa-diesel = { version = "0.2.0", path = "crates/axa-diesel", optional = true }
 axa-environment = { version = "0.1.1", path = "crates/axa-environment" }
-axa-idempotency = { version = "0.1.0", path = "crates/axa-idempotency", optional = true }
+axa-idempotency = { version = "0.2.0", path = "crates/axa-idempotency", optional = true }
 axa-openapi = { version = "0.1.0", path = "crates/axa-openapi", optional = true }
 axa-outbox = { version = "0.2.0", path = "crates/axa-outbox", optional = true }
 axa-cursor-pagination = { version = "0.1.1", path = "crates/axa-cursor-pagination", optional = true }
-axa-offset-pagination = { version = "0.1.0", path = "crates/axa-offset-pagination", optional = true }
 axa-keycloak = { version = "0.3.0", path = "crates/axa-keycloak", optional = true }
 axa-paseto = { version = "0.5.0", path = "crates/axa-paseto", optional = true }
 axa-problem = { version = "0.1.0", path = "crates/axa-problem" }
@@ -94,7 +88,7 @@ axa-tera = { version = "0.2.1", path = "crates/axa-tera", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-versioning = { version = "0.2.0", path = "crates/axa-versioning", optional = true }
-axa-worker = { version = "0.1.0", path = "crates/axa-worker", optional = true }
+axa-worker = { version = "0.2.0", path = "crates/axa-worker", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }

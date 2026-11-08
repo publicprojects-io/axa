@@ -495,7 +495,6 @@ dependencies = [
  "axa-environment",
  "axa-idempotency",
  "axa-keycloak",
- "axa-offset-pagination",
  "axa-openapi",
  "axa-opentelemetry",
  "axa-outbox",
@@ -562,7 +561,7 @@ version = "0.1.1"
 
 [[package]]
 name = "axa-idempotency"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axa-problem",
  "axum",
@@ -592,15 +591,6 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "axa-offset-pagination"
-version = "0.1.0"
-dependencies = [
- "axum",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -787,7 +777,7 @@ dependencies = [
 
 [[package]]
 name = "axa-worker"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "sqlx",
