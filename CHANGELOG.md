@@ -5,6 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-08
+
+This covers `axa` 0.9.0, `axa-idempotency` 0.2.0, and `axa-worker` 0.2.0. All three
+break; see [Upgrading to 0.9](help/upgrading-to-0.3/index.md#upgrading-to-09).
+`axa-offset-pagination` leaves the workspace, and is not published again.
+
 ### Removed
 
 - **Offset paging, with `axa-offset-pagination`, breaking (P-10).** `axa` has no
