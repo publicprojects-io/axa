@@ -17,6 +17,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa-redis`: a Redis test now proves a failed read, from a lost connection or a
   stalled Redis, is logged without its key (spec RDS-7). No spec row is left
   unverified.
+- `axa-idempotency`: two Postgres tests that lose a run no longer drop its request
+  after a set 100 ms. On a slow machine the run had not started, so the retry became
+  the run that hangs, and CI hung for three hours. They now drop it once it has
+  started. CI's `check` job stops after 30 minutes.
 
 ## [0.9.1] - 2026-11-08
 

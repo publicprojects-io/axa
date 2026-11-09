@@ -618,35 +618,50 @@ async fn a_run_that_reports_in_outlives_its_lease() {
     assert_eq!(first.await.unwrap().status(), StatusCode::OK);
 }
 
+/// Routes whose first run hangs, as one does on a replica that is lost. `started` is
+/// told once that run is under way.
+fn first_run_hangs(runs: &Runs, started: &Arc<Notify>) -> Router {
+    let (runs, started) = (runs.clone(), started.clone());
+    Router::new().route(
+        "/hangs",
+        post(move || async move {
+            if runs.add() == 1 {
+                started.notify_one();
+                std::future::pending::<()>().await;
+            }
+            "ran"
+        }),
+    )
+}
+
+/// Send a request whose run hangs, and drop it once the run is under way, as a client
+/// gives up on a lost replica. Dropping it after a set time instead can be too soon on
+/// a slow machine: its run has not started, so the next request is the run that hangs,
+/// and the test never ends.
+async fn lose_a_run(app: &Router, started: &Notify) {
+    let sent = tokio::spawn({
+        let app = app.clone();
+        async move { send(&app, write("/hangs", "ana", Some("k"), "x")).await }
+    });
+    tokio::time::timeout(Duration::from_secs(10), started.notified())
+        .await
+        .expect("the first run never started");
+    sent.abort();
+    assert!(sent.await.unwrap_err().is_cancelled());
+}
+
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DATABASE_URL"]
 async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
     let pool = pool().await;
-    let runs = Runs::default();
-    let routes = {
-        let runs = runs.clone();
-        Router::new().route(
-            "/hangs",
-            post(move || async move {
-                if runs.add() == 1 {
-                    std::future::pending::<()>().await;
-                }
-                "ran"
-            }),
-        )
-    };
+    let (runs, started) = (Runs::default(), Arc::new(Notify::new()));
     let lease = Duration::from_millis(200);
-    let app = routes.layer(from_fn_with_state(
+    let app = first_run_hangs(&runs, &started).layer(from_fn_with_state(
         keys(&pool).rerun_abandoned_after(lease),
         idempotent,
     ));
 
-    let hung_up = tokio::time::timeout(
-        Duration::from_millis(100),
-        send(&app, write("/hangs", "ana", Some("k"), "x")),
-    )
-    .await;
-    assert!(hung_up.is_err());
+    lose_a_run(&app, &started).await;
     let waiting = send(&app, write("/hangs", "ana", Some("k"), "x")).await;
     assert_eq!(waiting.status(), StatusCode::CONFLICT);
 
@@ -660,29 +675,14 @@ async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
 #[ignore = "needs AXA_TEST_DATABASE_URL"]
 async fn by_default_a_lost_run_holds_its_key_for_the_whole_ttl() {
     let pool = pool().await;
-    let runs = Runs::default();
-    let routes = {
-        let runs = runs.clone();
-        Router::new().route(
-            "/hangs",
-            post(move || async move {
-                if runs.add() == 1 {
-                    std::future::pending::<()>().await;
-                }
-                "ran"
-            }),
-        )
-    };
+    let (runs, started) = (Runs::default(), Arc::new(Notify::new()));
     let ttl = Duration::from_millis(600);
-    let app = routes.layer(from_fn_with_state(keys(&pool).ttl(ttl), idempotent));
+    let app = first_run_hangs(&runs, &started)
+        .layer(from_fn_with_state(keys(&pool).ttl(ttl), idempotent));
 
+    // The key is claimed after this, so it must still be held a whole ttl past it.
     let claimed = tokio::time::Instant::now();
-    let hung_up = tokio::time::timeout(
-        Duration::from_millis(100),
-        send(&app, write("/hangs", "ana", Some("k"), "x")),
-    )
-    .await;
-    assert!(hung_up.is_err());
+    lose_a_run(&app, &started).await;
 
     // Every retry is told to wait until the ttl ends, and then the key is free.
     let deadline = claimed + Duration::from_secs(10);

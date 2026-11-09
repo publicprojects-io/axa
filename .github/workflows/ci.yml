@@ -11,6 +11,8 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    # A green run takes about 8 minutes. A hung test fails here, not after six hours.
+    timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
       RUSTDOCFLAGS: -D warnings
