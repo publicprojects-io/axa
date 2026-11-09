@@ -41,7 +41,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.9"
+axa = "0.10"
 ```
 
 - [`axa-postgres-job-queue`](crates/axa-postgres-job-queue): the Postgres job queue, worker pool, and schedules

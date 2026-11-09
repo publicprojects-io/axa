@@ -5,6 +5,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-09
+
+This covers `axa` 0.10.0 and fourteen crates new to crates.io, thirteen renamed and one new:
+`axa-accepts-version-negotiation` 0.2.0, `axa-problem-details-for-http-apis` 0.1.0,
+`axa-request-rate-limit` 0.2.0, `axa-idempotency-key` 0.2.1, `axa-postgres-job-queue`
+0.2.0, `axa-transactional-outbox` 0.2.0, `axa-redis-cache` 0.1.1, `axa-web-session`
+0.1.0, `axa-tera-templates` 0.2.1, `axa-prometheus-metrics` 0.1.0, `axa-openapi-docs`
+0.1.0, `axa-keycloak-auth` 0.3.0, `axa-paseto-auth` 0.5.0, and the new `axa-test`
+0.1.0. Each renamed crate is the code of the old crate's last version under its new
+name. It breaks 0.9 in one place: the `testing` feature is now `axa-test`.
+
 ### Added
 
 - `axa-test`, a new crate: the request-level test helpers, built on `axum-test`, as

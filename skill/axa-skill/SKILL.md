@@ -38,7 +38,7 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.9", features = ["sqlx", "queue"] }
+axa = { version = "0.10", features = ["sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 

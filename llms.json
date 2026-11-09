@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Small shared library for services built directly on Axum.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -237,7 +237,7 @@
     },
     {
       "name": "axa-cursor-pagination",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
       "feature": "cursor-pagination",
       "readme": "crates/axa-cursor-pagination/README.md"
@@ -314,7 +314,7 @@
     },
     {
       "name": "axa-idempotency-key",
-      "version": "0.1.0",
+      "version": "0.2.1",
       "description": "Idempotency-Key handling over Postgres for Axum services.",
       "feature": "idempotency",
       "readme": "crates/axa-idempotency-key/README.md"
