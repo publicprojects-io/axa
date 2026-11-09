@@ -667,6 +667,8 @@ cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo test --release -p axa-environment
 cargo test --features queue
+cargo test --features sqlx
+cargo test --doc --features idempotency,paseto
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-diesel --all-features -e normal   # must show no C database library

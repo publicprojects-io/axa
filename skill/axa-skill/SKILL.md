@@ -123,7 +123,7 @@ panic or timeout protection.
 With the `sqlx` feature, pass a pool where this passes `()`. Then `/_readiness` asks it
 as `database`, so do not add it again as a named check:
 
-```rust
+```rust,ignore
 let pool = axa::db::connect(&config.database).await?;
 let ctx = AppContext::new(environment, pool, config);
 ```
@@ -132,11 +132,14 @@ Parse the command line with `axa::cli::parse`, not `Cli::parse`, so that `--help
 `--version` describe the service:
 
 ```rust
+# fn example() {
 let cli = axa::cli::parse(
     env!("CARGO_PKG_NAME"),
     env!("CARGO_PKG_VERSION"),
     env!("CARGO_PKG_DESCRIPTION"),
 );
+# let _ = cli;
+# }
 ```
 
 ## Writing handlers
@@ -281,10 +284,18 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
 ## Idempotency keys
 
 With the `idempotency` feature, a retried write gets its first answer back instead of
-running twice, once a service mounts the layer. It is unreleased: check that the
-service's version has it.
+running twice, once a service mounts the layer.
 
 ```rust
+# use std::sync::Arc;
+# use axa::{idempotency::{Idempotency, idempotent}, paseto::{self, Allowed}};
+# use axum::middleware::from_fn_with_state;
+# async fn example(
+#     pool: sqlx::PgPool,
+#     ctx: axa::AppContext,
+#     routes: axa::routes::AppRoutes,
+#     guard: Arc<paseto::Guard>,
+# ) -> axa::Result<axum::Router> {
 let keys = Idempotency::new(pool, |request| {
     request.extensions().get::<Allowed>().map(|allowed| allowed.claims.sub.clone())
 });
@@ -295,6 +306,8 @@ let router = routes
     .layer(from_fn_with_state(keys, idempotent))
     .layer(from_fn_with_state(guard, paseto::middleware));
 let app = axa::middleware::apply(router, &ctx.config.http)?;
+# Ok(app)
+# }
 ```
 
 Get these right, because each fails quietly or later:
@@ -401,7 +414,7 @@ know, so refuse to start on it, because a typo read as off could turn enforcemen
 With `axa-test` as a dev-dependency, implement `TestApp` to say how a service boots for tests. It
 is the one trait axa asks a service to implement, and it exists only for tests.
 
-```rust
+```rust,ignore
 use axa_test::prelude::*;
 
 #[tokio::test]

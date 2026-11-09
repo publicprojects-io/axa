@@ -83,6 +83,8 @@ jobs:
         run: cargo test --features queue
       - name: Test, sqlx
         run: cargo test --features sqlx
+      - name: Doctests, idempotency and paseto
+        run: cargo test --doc --features idempotency,paseto
       - name: Test, all features
         run: cargo test --workspace --all-features
 

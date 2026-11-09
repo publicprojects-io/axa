@@ -10,21 +10,46 @@ A job type is a `BackgroundWorker`. Register each one on the queue, and queue a 
 with `perform_later`, which follows `WORKER_MODE`:
 
 ```rust
+# use std::{sync::Arc, time::Duration};
+# use axa::{AppContext, Result, queue::{Queue, QueueOptions}, worker::BackgroundWorker};
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Args { id: u64 }
+# struct ReportWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<Args> for ReportWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, _: Args) -> Result<()> { Ok(()) }
+# }
+# async fn example(mut ctx: AppContext, uri: String, id: u64) -> Result<()> {
 let mut queue = Queue::connect(&uri, QueueOptions::default()).await?;
 queue.register(ReportWorker::build(&ctx));
 ctx.queue_provider = Some(Arc::new(queue));
 
 ReportWorker::perform_later(&ctx, Args { id }).await?;
 ReportWorker::perform_in(&ctx, Args { id }, Duration::from_mins(10)).await?;
+# Ok(())
+# }
 ```
 
 To queue a job with the record it is about, use the caller's transaction:
 
 ```rust
+# use axa::{AppContext, Result, queue, worker::BackgroundWorker};
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Args { id: u64 }
+# struct ReportWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<Args> for ReportWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, _: Args) -> Result<()> { Ok(()) }
+# }
+# async fn example(pool: sqlx::PgPool, id: u64) -> Result<()> {
 let mut transaction = pool.begin().await?;
 // ... write the record ...
 queue::enqueue_on::<ReportWorker, _, _>(&mut *transaction, &Args { id }).await?;
 transaction.commit().await?;
+# Ok(())
+# }
 ```
 
 `queue::job::<W, _>(&args)?` builds a job you can delay with `run_in` or `run_at`, put
@@ -39,7 +64,18 @@ at once. It is 2 by default. To keep one job type below that, so that a slow rep
 cannot take every loop:
 
 ```rust
+# use axa::{AppContext, Result, queue::Queue, worker::BackgroundWorker};
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Args { id: u64 }
+# struct ReportWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<Args> for ReportWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, _: Args) -> Result<()> { Ok(()) }
+# }
+# fn example(queue: &mut Queue) {
 queue.limit::<_, ReportWorker>(1);
+# }
 ```
 
 A limit counts jobs in this process. Three worker processes with a limit of one may run
@@ -53,9 +89,19 @@ of its jobs past it is stopped and counted as failed, with `timed out after` and
 limit as its error:
 
 ```rust
+# use std::time::Duration;
+# use axa::{AppContext, Result, worker::BackgroundWorker};
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Args { id: u64 }
+# struct ReportWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<Args> for ReportWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, _: Args) -> Result<()> { Ok(()) }
 fn timeout() -> Option<Duration> {
     Some(Duration::from_mins(5))
 }
+# }
 ```
 
 A timed-out job follows the same rule as any failure: it is tried again only if it has
@@ -91,11 +137,16 @@ the job and appends the act in one statement. Write your own audit row on the sa
 transaction, and all three commit together or not at all:
 
 ```rust
+# use axa::{Result, queue};
+# struct User { id: String }
+# async fn example(pool: sqlx::PgPool, id: String, user: User) -> Result<()> {
 let mut transaction = pool.begin().await?;
 if queue::cancel(&mut transaction, &id, &user.id, "customer_asked").await? {
     // ... write the service's own audit row ...
 }
 transaction.commit().await?;
+# Ok(())
+# }
 ```
 
 There is no form that takes a pool. An act that does not apply, such as cancelling a
@@ -132,8 +183,19 @@ A schedule queues an ordinary job every interval. It is built in code, beside th
 worker registrations:
 
 ```rust
+# use std::time::Duration;
+# use axa::{AppContext, Result, queue::Queue, worker::BackgroundWorker};
+# struct SweepWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<()> for SweepWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, (): ()) -> Result<()> { Ok(()) }
+# }
+# fn example(queue: &mut Queue, ctx: &AppContext) -> Result<()> {
 queue.register(SweepWorker::build(&ctx));
 queue.every::<_, SweepWorker>("idempotency-sweep", Duration::from_hours(1), &())?;
+# Ok(())
+# }
 ```
 
 Two jobs that every service with these crates should schedule:
@@ -156,8 +218,12 @@ schedule's row is locked while its job is queued, in the same transaction.
 - **The first time** is as soon as the schedule's row is made, unless you give one:
 
 ```rust
-let first = /* the next 02:00 UTC */;
+# use std::time::Duration;
+# use axa::queue::{DateTime, NewJob, Queue, Schedule, Utc};
+# fn example(queue: &mut Queue, job: NewJob, next_two_am_utc: DateTime<Utc>) {
+let first = next_two_am_utc;
 queue.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_at(first));
+# }
 ```
 
 The first time is used only when the row is made, so a schedule every 24 hours first

@@ -5,6 +5,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The Rust examples in the background jobs and idempotency keys guides, and in the
+  `axa` skill, are now compiled as doctests, so they cannot drift from the API. CI
+  gains a step, `cargo test --doc --features idempotency,paseto`, for the ones that
+  need those features. Two examples stay unchecked, as they need `axa-test` or a
+  database feature. The skill no longer calls idempotency keys unreleased.
+
 ## [0.10.0] - 2026-11-09
 
 This covers `axa` 0.10.0 and fourteen crates new to crates.io, thirteen renamed and one new:
