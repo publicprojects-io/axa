@@ -21,6 +21,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   after a set 100 ms. On a slow machine the run had not started, so the retry became
   the run that hangs, and CI hung for three hours. They now drop it once it has
   started. CI's `check` job stops after 30 minutes.
+- CI's `cargo audit` ignores RUSTSEC-2026-0459 (C SQLite in `libsqlite3-sys` 0.37)
+  until sqlx releases the raised cap on it. Nothing in `axa` builds SQLite, and
+  `cargo deny` still checks what is built.
 
 ## [0.9.1] - 2026-11-08
 
