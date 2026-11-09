@@ -280,3 +280,83 @@ async fn a_frozen_redis_does_not_hold_a_request_up() {
     let read = cache.get::<u32>("outage").await;
     assert!(read.is_err(), "{read:?}");
 }
+
+thread_local! {
+    /// What this thread has logged, as each event's message and fields.
+    static LOGGED: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Record every event from here on into its thread's [`LOGGED`]. The recorder is the
+/// global default, as one set only for a thread can miss an event that `tracing` has
+/// already cached as wanted by no one.
+fn record_logs() {
+    static SET: std::sync::Once = std::sync::Once::new();
+    SET.call_once(|| {
+        tracing::subscriber::set_global_default(Recorder).expect("no other recorder");
+    });
+    tracing::callsite::rebuild_interest_cache();
+    LOGGED.with(|logged| logged.borrow_mut().clear());
+}
+
+fn logged() -> Vec<String> {
+    LOGGED.with(|logged| logged.borrow().clone())
+}
+
+struct Recorder;
+
+struct Line<'a>(&'a mut String);
+
+impl tracing::field::Visit for Line<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        use std::fmt::Write;
+        let _ = write!(self.0, " {}={value:?}", field.name());
+    }
+}
+
+impl tracing::Subscriber for Recorder {
+    fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+        true
+    }
+    fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+        tracing::span::Id::from_u64(1)
+    }
+    fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+    fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+    fn event(&self, event: &tracing::Event<'_>) {
+        let mut line = String::new();
+        event.record(&mut Line(&mut line));
+        LOGGED.with(|logged| logged.borrow_mut().push(line));
+    }
+    fn enter(&self, _: &tracing::span::Id) {}
+    fn exit(&self, _: &tracing::span::Id) {}
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_REDIS_URL"]
+async fn a_failed_read_is_logged_without_its_key() {
+    // A key that names a person.
+    const PERSON: &str = "person:ana@example.com";
+    // Both ways a read fails: the connection lost, and Redis answering nothing.
+    for fail in [Proxy::cut, Proxy::stall] {
+        let proxy = Proxy::start().await;
+        let config = CacheConfig::new(proxy.url(), prefix("read-log"), MINUTE);
+        let cache = Cache::connect(&config).await.unwrap();
+        cache.ping().await.unwrap();
+        fail(&proxy);
+        record_logs();
+        let loaded = cache.get_or_load(PERSON, || async { Ok::<_, ()>(7) });
+        let loaded = tokio::time::timeout(OUTAGE_LIMIT, loaded).await;
+        assert_eq!(loaded.expect("the cache held the request up"), Ok(7));
+        let lines = logged();
+        assert!(
+            lines.iter().any(|line| line.contains("cache read failed")),
+            "the failed read was not logged: {lines:?}"
+        );
+        for line in &lines {
+            assert!(
+                !line.contains("ana@example.com"),
+                "a key was logged: {line}"
+            );
+        }
+    }
+}

@@ -14,6 +14,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   binary given no name is production (spec ENV-4).
 - Spec CLI-9 now says what `axa` owns: `check` returns the refusal, and a `main` that
   hands it on exits non-zero.
+- `axa-redis`: a Redis test now proves a failed read, from a lost connection or a
+  stalled Redis, is logged without its key (spec RDS-7). No spec row is left
+  unverified.
 
 ## [0.9.1] - 2026-11-08
 
