@@ -75,6 +75,27 @@
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
+/// Compiles the Rust examples in the guides, so they cannot go stale.
+#[cfg(all(doctest, feature = "queue"))]
+#[doc = include_str!("../help/background-jobs/index.md")]
+struct GuideBackgroundJobs;
+
+/// Compiles the Rust examples in the idempotency keys guide.
+#[cfg(all(doctest, feature = "idempotency", feature = "paseto"))]
+#[doc = include_str!("../help/idempotency-keys/index.md")]
+struct GuideIdempotencyKeys;
+
+/// Compiles the Rust examples in the skill. Its first example passes `()` as the
+/// database, so it builds only with no database feature, as the README's do.
+#[cfg(all(
+    doctest,
+    feature = "idempotency",
+    feature = "paseto",
+    not(any(feature = "sea-orm", feature = "sqlx"))
+))]
+#[doc = include_str!("../skill/axa-skill/SKILL.md")]
+struct SkillDoctests;
+
 pub mod boot;
 pub mod cli;
 pub mod client;
