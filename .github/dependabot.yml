@@ -7,7 +7,7 @@ updates:
     cooldown:
       default-days: 7
     ignore:
-      # Follows axum-keycloak-auth, which depends on 9. See crates/axa-keycloak/Cargo.toml.
+      # Follows axum-keycloak-auth, which depends on 9. See crates/axa-keycloak-auth/Cargo.toml.
       - dependency-name: "jsonwebtoken"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: "github-actions"

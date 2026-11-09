@@ -42,8 +42,8 @@ fixed once and an auditor reads it once.
 - Broker clients, topics, and event envelopes. `axa` depends on no broker, and a
   service passes its publisher in.
 - Verifying tokens and evaluating policy. These stay in `authentication-verifier`,
-  and a service's own rules stay in the service. `axa-paseto` is only the Axum layer
-  that calls them. `axa-keycloak` is the exception: it carries its own copy of what
+  and a service's own rules stay in the service. `axa-paseto-auth` is only the Axum layer
+  that calls them. `axa-keycloak-auth` is the exception: it carries its own copy of what
   it needs, so that it can be run and audited alone.
 
 ### Must not be added
@@ -186,7 +186,7 @@ The body of a failed request, with a `detail` and with none:
 Axum writes some refusals itself, as plain text or with no body, and the standard
 stack makes those problems too (ERR-13). A handler that takes
 `Result<Json<T>, JsonRejection>` and returns the rejection as an `Error` gets a
-problem with a `detail`. `axa-tera` answers a failed render in HTML, as its reader is
+problem with a `detail`. `axa-tera-templates` answers a failed render in HTML, as its reader is
 a browser (TRA-3).
 
 ### 4.6 Responses
@@ -241,7 +241,7 @@ a browser (TRA-3).
 
 ### 4.10 Queue
 
-The engine is `axa-worker` (section 4.18), and `axa::queue` puts `BackgroundWorker`
+The engine is `axa-postgres-job-queue` (section 4.18), and `axa::queue` puts `BackgroundWorker`
 over it. These rows are proved through `axa::queue`. A job gets one attempt by default, because a retry repeats its work. Raising
 `max_attempts` makes delivery at least once, so that job's work must be safe to
 repeat. These tests need `AXA_TEST_DATABASE_URL`.
@@ -314,7 +314,7 @@ move.
 Each subcrate is optional, is enabled by a feature of `axa`, and is re-exported
 under that feature's name. Each can also be used alone. Their requirements are
 stated here and proved by their own tests. There are two exceptions.
-`axa-environment` (ENV-6) and `axa-problem` are always included, and `axa::problem`
+`axa-environment` (ENV-6) and `axa-problem-details-for-http-apis` are always included, and `axa::problem`
 always exists, as `axa::Error` answers with it. The `problem` feature adds nothing,
 and stays so that a service naming it still builds.
 
@@ -345,90 +345,90 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | PAG-12 | `axa-cursor-pagination` | A key is at least 32 bytes, and its `Debug` never shows it. | `a_short_key_is_refused_and_a_key_is_never_shown` |
 | PAG-13 | `axa-cursor-pagination` | `CursorPage::bounds` asks for one row more than the page, so that `split` can tell whether more follow, and saturates for Postgres. | `bounds_fetch_one_more_row_and_saturate` |
 | PAG-14 | `axa-cursor-pagination` | A refusal quotes nothing the caller sent, and as `axa::Error` it is a `422` problem with the `code` `unprocessable_entity`. | `an_error_quotes_nothing_the_caller_sent`, `a_bad_page_is_a_422_problem_that_quotes_nothing` |
-| PST-1 | `axa-paseto` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
-| PST-8 | `axa-paseto` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
-| PST-2 | `axa-paseto` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
-| PST-3 | `axa-paseto` | A missing, forged, or expired token is a `401`. | `a_missing_token_is_a_401`, `a_token_signed_by_another_key_is_a_401`, `an_expired_token_is_a_401` |
-| PST-4 | `axa-paseto` | Under the default policy any valid token reads, and every mutation needs an explicit allow. | `any_valid_token_may_read`, `no_attributes_means_no_mutation`, `write_access_writes_but_cannot_delete_or_merge`, `admin_access_may_delete_and_merge` |
-| PST-5 | `axa-paseto` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
-| PST-6 | `axa-paseto` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
-| PST-7 | `axa-paseto` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
-| PST-9 | `axa-paseto` | A refused caller learns nothing about why. A refusal is a problem. A `401`'s `detail` is always `invalid token` and a `403`'s is always `forbidden`, its `code` says no more than its status, and the reason goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_rejection_answers_with_the_problem_media_type` |
-| PST-10 | `axa-paseto` | `parse_bool` does not read an unknown word as off. | `on_off_settings_parse` |
-| PST-11 | `axa-paseto` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
+| PST-1 | `axa-paseto-auth` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
+| PST-8 | `axa-paseto-auth` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
+| PST-2 | `axa-paseto-auth` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |
+| PST-3 | `axa-paseto-auth` | A missing, forged, or expired token is a `401`. | `a_missing_token_is_a_401`, `a_token_signed_by_another_key_is_a_401`, `an_expired_token_is_a_401` |
+| PST-4 | `axa-paseto-auth` | Under the default policy any valid token reads, and every mutation needs an explicit allow. | `any_valid_token_may_read`, `no_attributes_means_no_mutation`, `write_access_writes_but_cannot_delete_or_merge`, `admin_access_may_delete_and_merge` |
+| PST-5 | `axa-paseto-auth` | A trailing slash cannot downgrade a destructive action. | `a_trailing_slash_cannot_downgrade_a_destructive_post`, `a_trailing_slash_does_not_reach_a_destructive_route_with_write_access` |
+| PST-6 | `axa-paseto-auth` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `auth_user_verifies_even_with_enforcement_off`, `auth_user_fails_closed_without_the_middleware` |
+| PST-7 | `axa-paseto-auth` | An edited policy applies to the next request. | `an_edited_policy_applies_to_the_next_request` |
+| PST-9 | `axa-paseto-auth` | A refused caller learns nothing about why. A refusal is a problem. A `401`'s `detail` is always `invalid token` and a `403`'s is always `forbidden`, its `code` says no more than its status, and the reason goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_rejection_answers_with_the_problem_media_type` |
+| PST-10 | `axa-paseto-auth` | `parse_bool` does not read an unknown word as off. | `on_off_settings_parse` |
+| PST-11 | `axa-paseto-auth` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
 | DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
 | DSL-5 | `axa-diesel` | A pool that is all in use answers with an error within `wait_timeout`, rather than waiting for ever. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
 | DSL-4 | `axa-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
-| TRA-1 | `axa-tera` | HTML templates escape values unless a template says `safe`. | `html_templates_escape_values`, `safe_turns_escaping_off` |
-| TRA-2 | `axa-tera` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
-| TRA-3 | `axa-tera` | A failed render is HTML, and shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
-| TRA-4 | `axa-tera` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
-| TRA-5 | `axa-tera` | A page sends its own `content-security-policy`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy` |
-| KCK-1 | `axa-keycloak` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |
-| KCK-2 | `axa-keycloak` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
-| KCK-3 | `axa-keycloak` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
-| KCK-4 | `axa-keycloak` | A refused caller learns nothing about why. A refusal is a problem, written here because of KCK-9. A `403` does not name the rule, which goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_forbidden_caller_is_not_told_which_rule_refused_them`, `a_rejection_answers_with_the_problem_media_type` |
-| KCK-5 | `axa-keycloak` | An unreachable realm refuses every token, and a request waits about five seconds at most for the realm's keys. | `an_unreachable_realm_refuses_every_token` |
-| KCK-6 | `axa-keycloak` | A PASETO is accepted only through a verifier the service supplies, and then under the same policy. | `a_paseto_is_refused_unless_the_guard_accepts_them`, `with_paseto_both_kinds_of_token_work_under_one_policy` |
-| KCK-7 | `axa-keycloak` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
-| KCK-8 | `axa-keycloak` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |
-| KCK-9 | `axa-keycloak` | It depends on neither `authentication-verifier` nor any other `axa` crate, and states the source of each copy. | `no_dependency_on_what_this_crate_was_copied_from` |
-| KCK-10 | `axa-keycloak` | Only an access token passes: one with no audience, a `typ` other than `Bearer`, or an `nbf` or `iat` in the future is a `401`. | `only_a_current_access_token_for_this_audience_passes` |
-| KCK-11 | `axa-keycloak` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
-| KCK-12 | `axa-keycloak` | `KeycloakVerifier::ready` fails until the realm's keys have been fetched. | `ready_says_whether_tokens_can_be_verified` |
-| RDS-7 | `axa-redis` | A log line holds neither a key, which can name a person, nor a stored value. | `an_unreadable_entry_is_logged_without_its_key_or_value`, `a_failed_cache_write_is_logged_without_its_key_or_value`, `a_failed_read_is_logged_without_its_key` (Redis tests, the connection cut and Redis stalled) |
-| RDS-1 | `axa-redis` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
-| RDS-2 | `axa-redis` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
-| RDS-3 | `axa-redis` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
-| RDS-4 | `axa-redis` | `get_or_load` loads once, and a failed load stores nothing. | `get_or_load_loads_once`, `a_failed_load_stores_nothing` |
-| RDS-5 | `axa-redis` | Neither an outage nor a frozen Redis fails `get_or_load`. Every call has a time limit, and an outage costs a request one limit, not the client's own retries. | `an_outage_does_not_fail_get_or_load`, `a_frozen_redis_does_not_hold_a_request_up`, `every_call_is_bounded_while_the_client_reconnects` |
-| RDS-6 | `axa-redis` | `Cache::memory` behaves like Redis in one process, and holds at most 32 MB. | `the_memory_cache_stores_like_redis`, `clones_of_a_memory_cache_share_it`, `the_memory_cache_refuses_a_zero_ttl`, `the_memory_cache_loads_on_a_miss_only`, `an_expired_entry_is_gone_and_its_bytes_are_returned`, `replacing_an_entry_counts_only_the_new_one`, `the_memory_cache_never_holds_more_than_its_limit`, `stale_entries_go_before_live_ones` |
-| OAP-1 | `axa-openapi` | The document and the page are served at their paths. | `the_document_is_served_as_json`, `the_page_is_served_as_html` |
-| OAP-2 | `axa-openapi` | Swagger UI is one exact version, and every remote file carries an integrity hash. | `the_page_pins_an_exact_version_with_integrity_hashes` |
-| OAP-3 | `axa-openapi` | A title or URL cannot inject markup. | `the_title_cannot_inject_markup`, `the_spec_url_cannot_break_out_of_the_script` |
-| OAP-4 | `axa-openapi` | Bearer authentication is declared and required, keeping other components. | `bearer_auth_is_declared_and_required`, `bearer_auth_keeps_other_components` |
-| OAP-5 | `axa-openapi` | Parameter names do not distinguish routes. | `parameter_names_do_not_change_a_shape`, `agreement_is_empty_whatever_the_parameters_are_called` |
-| OAP-6 | `axa-openapi` | `drift` reports a mounted route the document lacks, and a documented operation with no route. | `a_mounted_route_missing_from_the_document_is_reported`, `a_documented_operation_with_no_route_is_reported`, `a_document_with_no_paths_reports_every_route` |
-| OAP-7 | `axa-openapi` | A path kept out on purpose, and a path item's other members, are not reported. | `a_path_kept_out_on_purpose_is_not_reported`, `a_path_items_other_members_are_not_operations` |
-| OAP-8 | `axa-openapi` | `dangling_refs` reports a local `$ref` to nothing, and leaves references to other files alone. | `a_reference_that_resolves_is_not_reported`, `a_reference_to_nothing_is_reported_wherever_it_is`, `a_reference_to_another_file_is_left_alone` |
-| OAP-9 | `axa-openapi` | The Swagger UI page sets its own `content-security-policy`, so the production default does not blank it. | `the_page_sets_a_policy_that_lets_it_load` |
+| TRA-1 | `axa-tera-templates` | HTML templates escape values unless a template says `safe`. | `html_templates_escape_values`, `safe_turns_escaping_off` |
+| TRA-2 | `axa-tera-templates` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
+| TRA-3 | `axa-tera-templates` | A failed render is HTML, and shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
+| TRA-4 | `axa-tera-templates` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
+| TRA-5 | `axa-tera-templates` | A page sends its own `content-security-policy`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy` |
+| KCK-1 | `axa-keycloak-auth` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |
+| KCK-2 | `axa-keycloak-auth` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
+| KCK-3 | `axa-keycloak-auth` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
+| KCK-4 | `axa-keycloak-auth` | A refused caller learns nothing about why. A refusal is a problem, written here because of KCK-9. A `403` does not name the rule, which goes to the log. | `a_refusal_tells_the_caller_nothing_about_why`, `a_forbidden_caller_is_not_told_which_rule_refused_them`, `a_rejection_answers_with_the_problem_media_type` |
+| KCK-5 | `axa-keycloak-auth` | An unreachable realm refuses every token, and a request waits about five seconds at most for the realm's keys. | `an_unreachable_realm_refuses_every_token` |
+| KCK-6 | `axa-keycloak-auth` | A PASETO is accepted only through a verifier the service supplies, and then under the same policy. | `a_paseto_is_refused_unless_the_guard_accepts_them`, `with_paseto_both_kinds_of_token_work_under_one_policy` |
+| KCK-7 | `axa-keycloak-auth` | A half-finished configuration is an error, never Keycloak silently off. | `a_half_configuration_is_an_error_rather_than_off`, `no_url_means_keycloak_is_off` |
+| KCK-8 | `axa-keycloak-auth` | `AuthUser` verifies even with enforcement off, and fails closed without the middleware. | `with_enforcement_off_no_token_is_needed_except_by_auth_user`, `auth_user_fails_closed_without_the_middleware` |
+| KCK-9 | `axa-keycloak-auth` | It depends on neither `authentication-verifier` nor any other `axa` crate, and states the source of each copy. | `no_dependency_on_what_this_crate_was_copied_from` |
+| KCK-10 | `axa-keycloak-auth` | Only an access token passes: one with no audience, a `typ` other than `Bearer`, or an `nbf` or `iat` in the future is a `401`. | `only_a_current_access_token_for_this_audience_passes` |
+| KCK-11 | `axa-keycloak-auth` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
+| KCK-12 | `axa-keycloak-auth` | `KeycloakVerifier::ready` fails until the realm's keys have been fetched. | `ready_says_whether_tokens_can_be_verified` |
+| RDS-7 | `axa-redis-cache` | A log line holds neither a key, which can name a person, nor a stored value. | `an_unreadable_entry_is_logged_without_its_key_or_value`, `a_failed_cache_write_is_logged_without_its_key_or_value`, `a_failed_read_is_logged_without_its_key` (Redis tests, the connection cut and Redis stalled) |
+| RDS-1 | `axa-redis-cache` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
+| RDS-2 | `axa-redis-cache` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
+| RDS-3 | `axa-redis-cache` | An unreadable entry is a miss, not a failure. | `an_unreadable_value_is_a_miss`, `a_changed_type_reads_as_a_miss` |
+| RDS-4 | `axa-redis-cache` | `get_or_load` loads once, and a failed load stores nothing. | `get_or_load_loads_once`, `a_failed_load_stores_nothing` |
+| RDS-5 | `axa-redis-cache` | Neither an outage nor a frozen Redis fails `get_or_load`. Every call has a time limit, and an outage costs a request one limit, not the client's own retries. | `an_outage_does_not_fail_get_or_load`, `a_frozen_redis_does_not_hold_a_request_up`, `every_call_is_bounded_while_the_client_reconnects` |
+| RDS-6 | `axa-redis-cache` | `Cache::memory` behaves like Redis in one process, and holds at most 32 MB. | `the_memory_cache_stores_like_redis`, `clones_of_a_memory_cache_share_it`, `the_memory_cache_refuses_a_zero_ttl`, `the_memory_cache_loads_on_a_miss_only`, `an_expired_entry_is_gone_and_its_bytes_are_returned`, `replacing_an_entry_counts_only_the_new_one`, `the_memory_cache_never_holds_more_than_its_limit`, `stale_entries_go_before_live_ones` |
+| OAP-1 | `axa-openapi-docs` | The document and the page are served at their paths. | `the_document_is_served_as_json`, `the_page_is_served_as_html` |
+| OAP-2 | `axa-openapi-docs` | Swagger UI is one exact version, and every remote file carries an integrity hash. | `the_page_pins_an_exact_version_with_integrity_hashes` |
+| OAP-3 | `axa-openapi-docs` | A title or URL cannot inject markup. | `the_title_cannot_inject_markup`, `the_spec_url_cannot_break_out_of_the_script` |
+| OAP-4 | `axa-openapi-docs` | Bearer authentication is declared and required, keeping other components. | `bearer_auth_is_declared_and_required`, `bearer_auth_keeps_other_components` |
+| OAP-5 | `axa-openapi-docs` | Parameter names do not distinguish routes. | `parameter_names_do_not_change_a_shape`, `agreement_is_empty_whatever_the_parameters_are_called` |
+| OAP-6 | `axa-openapi-docs` | `drift` reports a mounted route the document lacks, and a documented operation with no route. | `a_mounted_route_missing_from_the_document_is_reported`, `a_documented_operation_with_no_route_is_reported`, `a_document_with_no_paths_reports_every_route` |
+| OAP-7 | `axa-openapi-docs` | A path kept out on purpose, and a path item's other members, are not reported. | `a_path_kept_out_on_purpose_is_not_reported`, `a_path_items_other_members_are_not_operations` |
+| OAP-8 | `axa-openapi-docs` | `dangling_refs` reports a local `$ref` to nothing, and leaves references to other files alone. | `a_reference_that_resolves_is_not_reported`, `a_reference_to_nothing_is_reported_wherever_it_is`, `a_reference_to_another_file_is_left_alone` |
+| OAP-9 | `axa-openapi-docs` | The Swagger UI page sets its own `content-security-policy`, so the production default does not blank it. | `the_page_sets_a_policy_that_lets_it_load` |
 | SOR-1 | `axa-seaorm` | Pool settings reach `SeaORM`. | `pool_settings_reach_the_options` |
 | SOR-2 | `axa-seaorm` | `query::condition()` builds the same conditions as Loco's, all of which must hold. | `eq_and_ne_compare_values`, `several_conditions_must_all_hold` |
 | SOR-3 | `axa-seaorm` | Validation failures keep Loco's compact JSON text, so snapshots do not change. | `the_database_error_is_compact_json` |
-| SES-1 | `axa-session` | `production` refuses a key under 64 bytes, rather than letting the session crate panic on it, and refuses two identical keys. | `a_short_key_is_refused_not_a_panic`, `the_two_keys_must_differ` |
-| SES-2 | `axa-session` | Production cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, and signed. Only `development` is unsigned. | `a_production_cookie_is_secure_and_signed`, `a_development_cookie_is_neither_secure_nor_signed` |
-| SES-3 | `axa-session` | A live session's identifier without its signature, or with a changed one, reads nothing. | `a_real_id_with_no_signature_reads_nothing`, `a_changed_signature_reads_nothing`, `an_unsigned_cookie_can_be_forged_in_development` |
-| SES-4 | `axa-session` | A session survives between requests, `renew` changes its identifier and keeps its data, and `sign_out` ends it. | `a_session_survives_between_requests`, `renew_changes_the_id_and_keeps_the_data`, `destroy_ends_the_session` |
-| SES-5 | `axa-session` | Keys are never printed. | `debug_output_hides_the_keys` |
-| SES-6 | `axa-session` | A session is not tied to the client's IP, so a phone changing networks keeps it. | `a_session_survives_a_new_ip_address` |
-| SES-7 | `axa-session` | An anonymous visitor keeps no cookie, as they are sent only a deletion, and has no stored data and no row, unless a service asks for every visitor to be stored. | `an_anonymous_visitor_keeps_no_cookie_and_nothing_is_stored`, `anonymous_visitors_add_no_rows`, `every_visitor_can_be_stored_when_a_service_asks` |
-| SES-8 | `axa-session` | In Postgres, session data is encrypted at rest and survives a restart of the store. | `postgres_sessions_are_encrypted_and_survive_a_restart` |
-| SES-9 | `axa-session` | `sign_in` makes an identifier from before it worthless, keeps the session stored, and replaces the form token. | `sign_in_makes_an_identifier_from_before_it_worthless`, `sign_in_replaces_the_form_token` |
-| SES-10 | `axa-session` | A form token is stable within a session, passes only for that session, and a session with none refuses every post. | `a_form_token_is_stable_and_only_it_passes`, `a_form_token_belongs_to_one_session`, `a_session_with_no_token_refuses_every_post`, `only_the_same_text_is_the_same` |
-| PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
-| PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
-| PRM-1 | `axa-prometheus` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
-| VER-1 | `axa-versioning` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
-| VER-2 | `axa-versioning` | An unsupported version on an `/api` path is a `406` problem, with the `code` `unsupported_api_version` and the `requested` and `supported` extension members. | `an_unsupported_version_is_a_406` |
-| VER-4 | `axa-versioning` | A service can state its own versions, and a current version it does not support is a mistake found at boot. | `a_service_can_serve_its_own_versions`, `a_current_version_that_is_not_supported_is_a_mistake` |
-| VER-3 | `axa-versioning` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
-| RAT-1 | `axa-ratelimit` | A key gets exactly its limit in a window, and a refusal is not counted. | `the_limit_is_exact_and_a_refusal_is_not_counted` |
-| RAT-2 | `axa-ratelimit` | A refusal is a `429` problem with `Retry-After`, rounded up, and every response counted carries the `RateLimit-*` headers. | `a_refusal_says_how_long_to_wait`, `the_wait_is_rounded_up_and_never_too_short` |
-| RAT-3 | `axa-ratelimit` | The health probes are neither refused nor counted. | `the_probes_are_never_refused_or_counted` |
-| RAT-4 | `axa-ratelimit` | The client is the address `axa` resolved, so a forged `X-Forwarded-For` buys no fresh limit, and clients behind a trusted proxy are counted apart. | `a_forged_header_does_not_buy_a_fresh_limit`, `a_header_from_an_untrusted_peer_is_ignored`, `clients_behind_one_proxy_get_a_limit_each` |
-| RAT-5 | `axa-ratelimit` | An IPv6 client counts by its `/64`, and an IPv4 client counts the same in either form. | `one_ipv6_subscriber_counts_once`, `an_ipv4_client_counts_the_same_however_it_arrives` |
-| RAT-6 | `axa-ratelimit` | Memory is bounded, at `MAX_KEYS` plus the keys with a limit of their own. Past `MAX_KEYS`, under the default `WhenFull::Share`, new keys share one limit, a held key keeps its own, and a full table is scanned at most once a window. | `a_full_table_shares_one_limit_and_never_grows`, `a_table_full_of_live_keys_is_not_scanned_for_each_new_key` |
-| RAT-7 | `axa-ratelimit` | A key is held only as a keyed hash, and the first request after two windows drops it. | `a_key_is_held_only_as_a_hash`, `old_keys_are_dropped_within_two_windows` |
-| RAT-8 | `axa-ratelimit` | `lock_out_failures` counts only `401`s, per client, and locks out only that client. | `failures_lock_a_client_out_and_only_that_client`, `success_never_counts_towards_a_lockout` |
-| RAT-9 | `axa-ratelimit` | A refusal from inside the stack gets the standard headers. | `a_refusal_gets_the_standard_headers` |
-| RAT-10 | `axa-ratelimit` | `by_key` counts by the key a service's function takes from the request. A request with no key is not counted and gets no `RateLimit-*` headers, and the probes are neither refused nor counted. | `a_keyed_limit_counts_by_the_key_it_takes`, `a_request_with_no_key_is_not_counted`, `keyed_probes_are_never_refused_or_counted` |
-| RAT-11 | `axa-ratelimit` | With the table full, `WhenFull` decides for a key not held: `Share`, the default, `Allow`, or `Refuse`. `Verdict::overflowed` says so, a held key keeps its own limit, and the table never grows. | `a_full_table_shares_by_default_and_says_so`, `a_full_table_can_let_new_keys_through`, `a_full_table_can_refuse_new_keys` |
-| RAT-12 | `axa-ratelimit` | `Verdict::first_refusal` is true once per key per window, and again in the next window. A peek never takes it, a lockout's refusal does, and keys that overflowed share one. | `the_first_refusal_in_a_window_is_marked_once`, `a_window_that_ends_between_sweeps_clears_the_refusal`, `a_peek_never_takes_the_first_refusal`, `overflowed_keys_share_one_first_refusal`, `a_lockout_marks_its_first_refusal_and_carries_its_verdict` |
-| RAT-13 | `axa-ratelimit` | Every response from `by_client`, `by_key`, and `lock_out_failures` carries its `Verdict` as a response extension, refused or not. The crate drives no hook. | `every_response_carries_its_verdict`, `a_lockout_marks_its_first_refusal_and_carries_its_verdict` |
-| RAT-14 | `axa-ratelimit` | `set_limit_for` gives one key its own limit from its next request, with no restart, and `clear_limit_for` takes it back. Such a key is always held, at most `MAX_OVERRIDES` are, past that a new one is refused and none dropped, and each is held only as a keyed hash. | `a_key_can_have_a_limit_of_its_own_with_no_restart`, `a_key_with_its_own_limit_is_held_when_the_table_is_full`, `too_many_own_limits_are_refused_and_none_is_dropped`, `an_own_limit_is_held_only_as_a_hash` |
-| RAT-15 | `axa-ratelimit` | Once per limiter, `by_client` warns when the first `SHARED_ALLOWANCE_SAMPLE` (100) requests it counts all came from one private or loopback address, saying `TRUSTED_PROXIES` must list a proxy. It does not warn for mixed or public clients, and the warning never holds the address. | `one_private_client_is_warned_about_once_and_never_named`, `a_loopback_client_is_warned_about_too`, `mixed_clients_are_not_warned_about`, `a_public_client_is_not_warned_about` |
+| SES-1 | `axa-web-session` | `production` refuses a key under 64 bytes, rather than letting the session crate panic on it, and refuses two identical keys. | `a_short_key_is_refused_not_a_panic`, `the_two_keys_must_differ` |
+| SES-2 | `axa-web-session` | Production cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, and signed. Only `development` is unsigned. | `a_production_cookie_is_secure_and_signed`, `a_development_cookie_is_neither_secure_nor_signed` |
+| SES-3 | `axa-web-session` | A live session's identifier without its signature, or with a changed one, reads nothing. | `a_real_id_with_no_signature_reads_nothing`, `a_changed_signature_reads_nothing`, `an_unsigned_cookie_can_be_forged_in_development` |
+| SES-4 | `axa-web-session` | A session survives between requests, `renew` changes its identifier and keeps its data, and `sign_out` ends it. | `a_session_survives_between_requests`, `renew_changes_the_id_and_keeps_the_data`, `destroy_ends_the_session` |
+| SES-5 | `axa-web-session` | Keys are never printed. | `debug_output_hides_the_keys` |
+| SES-6 | `axa-web-session` | A session is not tied to the client's IP, so a phone changing networks keeps it. | `a_session_survives_a_new_ip_address` |
+| SES-7 | `axa-web-session` | An anonymous visitor keeps no cookie, as they are sent only a deletion, and has no stored data and no row, unless a service asks for every visitor to be stored. | `an_anonymous_visitor_keeps_no_cookie_and_nothing_is_stored`, `anonymous_visitors_add_no_rows`, `every_visitor_can_be_stored_when_a_service_asks` |
+| SES-8 | `axa-web-session` | In Postgres, session data is encrypted at rest and survives a restart of the store. | `postgres_sessions_are_encrypted_and_survive_a_restart` |
+| SES-9 | `axa-web-session` | `sign_in` makes an identifier from before it worthless, keeps the session stored, and replaces the form token. | `sign_in_makes_an_identifier_from_before_it_worthless`, `sign_in_replaces_the_form_token` |
+| SES-10 | `axa-web-session` | A form token is stable within a session, passes only for that session, and a session with none refuses every post. | `a_form_token_is_stable_and_only_it_passes`, `a_form_token_belongs_to_one_session`, `a_session_with_no_token_refuses_every_post`, `only_the_same_text_is_the_same` |
+| PRB-1 | `axa-problem-details-for-http-apis` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
+| PRB-2 | `axa-problem-details-for-http-apis` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
+| PRM-1 | `axa-prometheus-metrics` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
+| VER-1 | `axa-accepts-version-negotiation` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
+| VER-2 | `axa-accepts-version-negotiation` | An unsupported version on an `/api` path is a `406` problem, with the `code` `unsupported_api_version` and the `requested` and `supported` extension members. | `an_unsupported_version_is_a_406` |
+| VER-4 | `axa-accepts-version-negotiation` | A service can state its own versions, and a current version it does not support is a mistake found at boot. | `a_service_can_serve_its_own_versions`, `a_current_version_that_is_not_supported_is_a_mistake` |
+| VER-3 | `axa-accepts-version-negotiation` | Paths outside `/api` ignore the header. | `paths_outside_api_ignore_the_header` |
+| RAT-1 | `axa-request-rate-limit` | A key gets exactly its limit in a window, and a refusal is not counted. | `the_limit_is_exact_and_a_refusal_is_not_counted` |
+| RAT-2 | `axa-request-rate-limit` | A refusal is a `429` problem with `Retry-After`, rounded up, and every response counted carries the `RateLimit-*` headers. | `a_refusal_says_how_long_to_wait`, `the_wait_is_rounded_up_and_never_too_short` |
+| RAT-3 | `axa-request-rate-limit` | The health probes are neither refused nor counted. | `the_probes_are_never_refused_or_counted` |
+| RAT-4 | `axa-request-rate-limit` | The client is the address `axa` resolved, so a forged `X-Forwarded-For` buys no fresh limit, and clients behind a trusted proxy are counted apart. | `a_forged_header_does_not_buy_a_fresh_limit`, `a_header_from_an_untrusted_peer_is_ignored`, `clients_behind_one_proxy_get_a_limit_each` |
+| RAT-5 | `axa-request-rate-limit` | An IPv6 client counts by its `/64`, and an IPv4 client counts the same in either form. | `one_ipv6_subscriber_counts_once`, `an_ipv4_client_counts_the_same_however_it_arrives` |
+| RAT-6 | `axa-request-rate-limit` | Memory is bounded, at `MAX_KEYS` plus the keys with a limit of their own. Past `MAX_KEYS`, under the default `WhenFull::Share`, new keys share one limit, a held key keeps its own, and a full table is scanned at most once a window. | `a_full_table_shares_one_limit_and_never_grows`, `a_table_full_of_live_keys_is_not_scanned_for_each_new_key` |
+| RAT-7 | `axa-request-rate-limit` | A key is held only as a keyed hash, and the first request after two windows drops it. | `a_key_is_held_only_as_a_hash`, `old_keys_are_dropped_within_two_windows` |
+| RAT-8 | `axa-request-rate-limit` | `lock_out_failures` counts only `401`s, per client, and locks out only that client. | `failures_lock_a_client_out_and_only_that_client`, `success_never_counts_towards_a_lockout` |
+| RAT-9 | `axa-request-rate-limit` | A refusal from inside the stack gets the standard headers. | `a_refusal_gets_the_standard_headers` |
+| RAT-10 | `axa-request-rate-limit` | `by_key` counts by the key a service's function takes from the request. A request with no key is not counted and gets no `RateLimit-*` headers, and the probes are neither refused nor counted. | `a_keyed_limit_counts_by_the_key_it_takes`, `a_request_with_no_key_is_not_counted`, `keyed_probes_are_never_refused_or_counted` |
+| RAT-11 | `axa-request-rate-limit` | With the table full, `WhenFull` decides for a key not held: `Share`, the default, `Allow`, or `Refuse`. `Verdict::overflowed` says so, a held key keeps its own limit, and the table never grows. | `a_full_table_shares_by_default_and_says_so`, `a_full_table_can_let_new_keys_through`, `a_full_table_can_refuse_new_keys` |
+| RAT-12 | `axa-request-rate-limit` | `Verdict::first_refusal` is true once per key per window, and again in the next window. A peek never takes it, a lockout's refusal does, and keys that overflowed share one. | `the_first_refusal_in_a_window_is_marked_once`, `a_window_that_ends_between_sweeps_clears_the_refusal`, `a_peek_never_takes_the_first_refusal`, `overflowed_keys_share_one_first_refusal`, `a_lockout_marks_its_first_refusal_and_carries_its_verdict` |
+| RAT-13 | `axa-request-rate-limit` | Every response from `by_client`, `by_key`, and `lock_out_failures` carries its `Verdict` as a response extension, refused or not. The crate drives no hook. | `every_response_carries_its_verdict`, `a_lockout_marks_its_first_refusal_and_carries_its_verdict` |
+| RAT-14 | `axa-request-rate-limit` | `set_limit_for` gives one key its own limit from its next request, with no restart, and `clear_limit_for` takes it back. Such a key is always held, at most `MAX_OVERRIDES` are, past that a new one is refused and none dropped, and each is held only as a keyed hash. | `a_key_can_have_a_limit_of_its_own_with_no_restart`, `a_key_with_its_own_limit_is_held_when_the_table_is_full`, `too_many_own_limits_are_refused_and_none_is_dropped`, `an_own_limit_is_held_only_as_a_hash` |
+| RAT-15 | `axa-request-rate-limit` | Once per limiter, `by_client` warns when the first `SHARED_ALLOWANCE_SAMPLE` (100) requests it counts all came from one private or loopback address, saying `TRUSTED_PROXIES` must list a proxy. It does not warn for mixed or public clients, and the warning never holds the address. | `one_private_client_is_warned_about_once_and_never_named`, `a_loopback_client_is_warned_about_too`, `mixed_clients_are_not_warned_about`, `a_public_client_is_not_warned_about` |
 | OTL-1 | `axa-opentelemetry` | Export is off until an endpoint is set, and off leaves requests working with no header. | `export_is_off_until_an_endpoint_is_set`, `off_means_no_layers_no_header_and_the_request_still_works` |
 | OTL-2 | `axa-opentelemetry` | A span and the request metric reach a real collector, with the service's name and version. | `a_request_reaches_the_collector_as_a_span_and_a_metric` |
 | OTL-3 | `axa-opentelemetry` | Plain `http` is for loopback, unless a clear yes allows it. An invalid endpoint is refused, and an error never quotes the endpoint. | `plain_http_is_for_loopback`, `plain_http_to_another_host_is_refused`, `plain_http_to_another_host_can_be_allowed`, `anything_but_a_clear_yes_keeps_insecure_refused`, `a_bad_endpoint_is_refused`, `an_error_never_quotes_the_endpoint`, `start_refuses_cleartext_to_another_host` |
@@ -438,8 +438,8 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | OTL-7 | `axa-opentelemetry` | The middleware adds to the request span `axa` opens, and puts its `traceparent` on the response. A server error marks the span. | `the_middleware_joins_the_request_span_axa_opens`, `a_server_error_marks_the_span` |
 | OTL-9 | `axa-opentelemetry` | A panic and a cancelled request are counted, with `error.type` saying which. | `a_panic_and_a_cancelled_request_are_still_counted` |
 | OTL-8 | `axa-opentelemetry` | `DIAGNOSTIC_DIRECTIVES` are valid filter directives. | `the_diagnostic_directives_are_valid` |
-| AUD-1 | `axa-paseto`, `axa-keycloak` | A refused request writes one `auth_refused` line at `warn`, with status, action, and the client's address when known, inside the request's span. An allowed request writes none. | `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
-| AUD-2 | `axa-paseto`, `axa-keycloak` | The line never holds the token or email. A policy refusal names the subject's id and the reason. | `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
+| AUD-1 | `axa-paseto-auth`, `axa-keycloak-auth` | A refused request writes one `auth_refused` line at `warn`, with status, action, and the client's address when known, inside the request's span. An allowed request writes none. | `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
+| AUD-2 | `axa-paseto-auth`, `axa-keycloak-auth` | The line never holds the token or email. A policy refusal names the subject's id and the reason. | `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | TRC-1 | `axa-tracing` | `Redacted` hides its value in `Display` and `Debug`, and so in a log line. | `redacted_hides_its_value_in_a_log_line` |
 | TRC-2 | `axa-tracing` | `SlowSpans` reports a span at or past its threshold, inside that span so that it carries its fields, and tells busy time from idle time. A quick span is not reported. | `a_slow_span_is_reported_with_its_fields`, `a_quick_span_is_not_reported`, `busy_and_idle_time_are_told_apart` |
 | TRC-3 | `axa-tracing` | `track` makes the request id readable anywhere the request runs, cleaned by `axa`'s rule, or minted when nothing usable remains. Outside a request there is none. | `a_handler_can_read_the_request_id`, `a_callers_id_is_cleaned_as_axa_cleans_it`, `an_id_is_minted_when_nothing_usable_remains`, `there_is_no_request_id_outside_a_request` |
@@ -448,6 +448,8 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | TRC-6 | `axa-tracing` | `Watch::watch` tells a future that blocked a runtime thread from one that only waited. | `a_blocking_future_is_reported`, `a_future_that_only_waits_is_slow_but_not_blocking`, `a_quick_future_is_not_reported` |
 | TRC-7 | `axa-tracing` | A task that wakes late is reported with a snapshot of the runtime, and none of this needs `tokio_unstable`. | `a_stalled_runtime_is_reported`, `a_snapshot_describes_the_runtime` |
 | TRC-8 | `axa-tracing` | `log_panics` logs where a panic happened, and never its text. | `a_panic_is_logged_without_its_text` |
+| TST-1 | `axa-test` | `boot_test` hands back a service's failure to boot for tests. | `a_failed_boot_is_handed_back` |
+| TST-2 | `axa-test` | A request test on a service that cannot boot fails, and its body never runs. | `a_request_test_on_a_service_that_cannot_boot_fails` |
 
 ### 4.14 Databases
 
@@ -489,7 +491,7 @@ checking before the work, in the handler.
 
 ### 4.16 Idempotency keys
 
-`axa-idempotency` runs a write once per caller and `Idempotency-Key`. A retry gets the
+`axa-idempotency-key` runs a write once per caller and `Idempotency-Key`. A retry gets the
 first answer. It is one layer, and a service adds it after `into_router`, before its
 guards, and before `axa::middleware::apply`, so that the layer sits inside compression
 and inside whatever refuses a caller. [Where the layer goes](../help/idempotency-keys/index.md)
@@ -550,7 +552,7 @@ The Postgres tests need `AXA_TEST_DATABASE_URL`.
 
 ### 4.17 Outbox
 
-`axa-outbox` keeps each event as a record, written in the caller's transaction, and a
+`axa-transactional-outbox` keeps each event as a record, written in the caller's transaction, and a
 relay decides whether it may go, publishes it, and records what happened. A decision, a
 publisher, and a record are closures passed to `Outbox::run`, or a service runs its own
 loop on `claim` and `delivered`, so there is no trait to implement and no broker client
@@ -610,7 +612,7 @@ These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/`.
 
 ### 4.18 Worker pool, job status, and schedules
 
-`axa-worker` holds the queue's engine: its tables and SQL, the job loops, and what is
+`axa-postgres-job-queue` holds the queue's engine: its tables and SQL, the job loops, and what is
 below. It does not depend on `axa`, so its handlers are closures over JSON, its error is
 its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`, except
 where the name is in `src/`.
@@ -656,30 +658,30 @@ CI runs all of this on every push, in `.github/workflows/ci.yml`:
 ```sh
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo clippy --all-targets --features queue,testing -- -D warnings
+cargo clippy --all-targets --features queue -- -D warnings
 cargo clippy --all-targets --features sqlx -- -D warnings
-cargo clippy -p axa-outbox --all-targets --features encryption -- -D warnings
-cargo clippy -p axa-outbox --all-targets --features sea-orm -- -D warnings
+cargo clippy -p axa-transactional-outbox --all-targets --features encryption -- -D warnings
+cargo clippy -p axa-transactional-outbox --all-targets --features sea-orm -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo test --release -p axa-environment
-cargo test --features queue,testing
+cargo test --features queue
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue -- --ignored
 AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-outbox --all-features -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-worker -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-session --all-features -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
 AXA_TEST_DATABASE_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
-AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis -- --ignored
+AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored
 ```
 
 Separate jobs check what the code is built from. Actions are pinned to a commit
@@ -694,9 +696,10 @@ gitleaks detect --source . --redact --no-banner
 
 
 Subcrates publish before `axa`, because it depends on them by version.
-`axa-environment` has no dependencies, so it can go first. `axa-worker` goes before
-`axa`, which its `queue` feature needs. `axa-problem` goes before
-`axa-idempotency`, `axa-paseto`, `axa-ratelimit`, and `axa-versioning`, which depend on it.
+`axa-environment` has no dependencies, so it can go first. `axa-postgres-job-queue` goes before
+`axa`, which its `queue` feature needs. `axa-problem-details-for-http-apis` goes before
+`axa-idempotency-key`, `axa-paseto-auth`, `axa-request-rate-limit`, and `axa-accepts-version-negotiation`, which depend on it.
+`axa-test` depends on `axa`, so it goes after it.
 
 All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile

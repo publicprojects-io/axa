@@ -16,8 +16,6 @@ pub use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 
-#[cfg(feature = "testing")]
-pub use crate::testing::prelude::*;
 pub use crate::{
     AppContext, Error, Result,
     error::{ErrorDetail, bad_request, not_found, unauthorized},

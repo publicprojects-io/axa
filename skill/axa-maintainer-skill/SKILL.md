@@ -90,9 +90,9 @@ so these suites run with `--test-threads=1`, and in parallel they fail intermitt
 that drops a column must put it back.
 
 **Outbox tests share tables too.** They hold the `TABLE` lock in
-`crates/axa-outbox/tests/postgres.rs`, and CI runs them with `--test-threads=1`, which
-also keeps `logging.rs` off those tables. They run only with `-p axa-outbox --all-features
--- --ignored`, and a plain `--features queue,testing` run does not reach them. The record
+`crates/axa-transactional-outbox/tests/postgres.rs`, and CI runs them with `--test-threads=1`, which
+also keeps `logging.rs` off those tables. They run only with `-p axa-transactional-outbox --all-features
+-- --ignored`, and a plain `--features queue` run does not reach them. The record
 tables refuse `DELETE` and `TRUNCATE`, so a test starts by dropping them, and one that
 must change a row turns a trigger off and back on with `ENABLE ALWAYS`. The claim's
 `FOR UPDATE ... SKIP LOCKED` on `axa_outbox_owed` is the only thing stopping two relays
@@ -131,9 +131,9 @@ limits, so `Tracker` does both. `hyper_util`'s `auto::Builder` must not come bac
 because its version detection has no limit and `http1_only` does nothing on its upgrade
 path.
 
-**`axa-keycloak` stands alone.** It depends on neither `authentication-verifier` nor any
+**`axa-keycloak-auth` stands alone.** It depends on neither `authentication-verifier` nor any
 other axa crate, and states the source of each copy. A fix to the original does not
-reach a copy, so check both ways, including `axa-paseto`, which shares its shape.
+reach a copy, so check both ways, including `axa-paseto-auth`, which shares its shape.
 
 ## Dependencies
 

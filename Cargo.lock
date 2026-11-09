@@ -529,28 +529,27 @@ name = "axa"
 version = "0.9.1"
 dependencies = [
  "async-trait",
+ "axa-accepts-version-negotiation",
  "axa-cursor-pagination",
  "axa-diesel",
  "axa-environment",
- "axa-idempotency",
- "axa-keycloak",
- "axa-openapi",
+ "axa-idempotency-key",
+ "axa-keycloak-auth",
+ "axa-openapi-docs",
  "axa-opentelemetry",
- "axa-outbox",
- "axa-paseto",
- "axa-problem",
- "axa-prometheus",
- "axa-ratelimit",
- "axa-redis",
+ "axa-paseto-auth",
+ "axa-postgres-job-queue",
+ "axa-problem-details-for-http-apis",
+ "axa-prometheus-metrics",
+ "axa-redis-cache",
+ "axa-request-rate-limit",
  "axa-seaorm",
- "axa-session",
  "axa-sqlx",
- "axa-tera",
+ "axa-tera-templates",
  "axa-tracing",
- "axa-versioning",
- "axa-worker",
+ "axa-transactional-outbox",
+ "axa-web-session",
  "axum",
- "axum-test",
  "clap",
  "hyper",
  "hyper-util",
@@ -565,6 +564,17 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "axa-accepts-version-negotiation"
+version = "0.2.0"
+dependencies = [
+ "axa-problem-details-for-http-apis",
+ "axum",
+ "serde_json",
+ "tokio",
+ "tower",
 ]
 
 [[package]]
@@ -599,10 +609,10 @@ name = "axa-environment"
 version = "0.1.1"
 
 [[package]]
-name = "axa-idempotency"
+name = "axa-idempotency-key"
 version = "0.2.1"
 dependencies = [
- "axa-problem",
+ "axa-problem-details-for-http-apis",
  "axum",
  "serde_json",
  "sha2 0.11.1",
@@ -615,7 +625,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-keycloak"
+name = "axa-keycloak-auth"
 version = "0.3.0"
 dependencies = [
  "axum",
@@ -633,7 +643,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-openapi"
+name = "axa-openapi-docs"
 version = "0.1.0"
 dependencies = [
  "axum",
@@ -664,27 +674,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-outbox"
-version = "0.2.0"
-dependencies = [
- "chacha20poly1305",
- "sea-orm",
- "serde_json",
- "sha2 0.11.1",
- "sqlx",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "zeroize",
-]
-
-[[package]]
-name = "axa-paseto"
+name = "axa-paseto-auth"
 version = "0.5.0"
 dependencies = [
  "authentication-verifier",
- "axa-problem",
+ "axa-problem-details-for-http-apis",
  "axum",
  "base64 0.23.1",
  "ed25519-dalek 3.0.0",
@@ -698,7 +692,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-problem"
+name = "axa-postgres-job-queue"
+version = "0.2.0"
+dependencies = [
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "axa-problem-details-for-http-apis"
 version = "0.1.0"
 dependencies = [
  "axum",
@@ -708,7 +713,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-prometheus"
+name = "axa-prometheus-metrics"
 version = "0.1.0"
 dependencies = [
  "axum",
@@ -718,19 +723,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-ratelimit"
-version = "0.2.0"
-dependencies = [
- "axa-problem",
- "axum",
- "serde_json",
- "tokio",
- "tower",
- "tracing",
-]
-
-[[package]]
-name = "axa-redis"
+name = "axa-redis-cache"
 version = "0.1.1"
 dependencies = [
  "redis",
@@ -738,6 +731,18 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "axa-request-rate-limit"
+version = "0.2.0"
+dependencies = [
+ "axa-problem-details-for-http-apis",
+ "axum",
+ "serde_json",
+ "tokio",
+ "tower",
  "tracing",
 ]
 
@@ -757,22 +762,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-session"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum_session",
- "axum_session_sqlx",
- "serde_json",
- "sqlx",
- "thiserror 2.0.21",
- "time",
- "tokio",
- "tower",
- "uuid",
-]
-
-[[package]]
 name = "axa-sqlx"
 version = "0.1.2"
 dependencies = [
@@ -781,7 +770,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-tera"
+name = "axa-tera-templates"
 version = "0.2.1"
 dependencies = [
  "axum",
@@ -790,6 +779,15 @@ dependencies = [
  "tera",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "axa-test"
+version = "0.1.0"
+dependencies = [
+ "axa",
+ "axum-test",
+ "tokio",
 ]
 
 [[package]]
@@ -805,24 +803,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-versioning"
+name = "axa-transactional-outbox"
 version = "0.2.0"
 dependencies = [
- "axa-problem",
- "axum",
+ "chacha20poly1305",
+ "sea-orm",
  "serde_json",
- "tokio",
- "tower",
-]
-
-[[package]]
-name = "axa-worker"
-version = "0.2.0"
-dependencies = [
- "serde_json",
+ "sha2 0.11.1",
  "sqlx",
  "tokio",
  "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "axa-web-session"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum_session",
+ "axum_session_sqlx",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
+ "time",
+ "tokio",
+ "tower",
  "uuid",
 ]
 

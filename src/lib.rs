@@ -44,7 +44,6 @@
 //! | Feature | Adds |
 //! |---|---|
 //! | `queue` | The Postgres job queue in [`queue`] |
-//! | `testing` | Request-level test helpers in [`testing`] |
 //! | `sea-orm` | A SeaORM-backed [`AppContext`], with `axa-seaorm` as `axa::seaorm` |
 //! | `redis` | A Redis cache with mandatory expiry, as `axa::redis` |
 //! | `diesel` | Diesel pooling, migrations, and test resets in pure Rust, as `axa::diesel` |
@@ -96,50 +95,46 @@ pub mod routes;
 pub mod server;
 pub mod store;
 pub mod task;
-#[cfg(feature = "testing")]
-pub mod testing;
 pub mod worker;
 
+#[cfg(feature = "versioning")]
+pub use axa_accepts_version_negotiation as versioning;
 #[cfg(feature = "cursor-pagination")]
 pub use axa_cursor_pagination as cursor_pagination;
 #[cfg(feature = "diesel")]
 pub use axa_diesel as diesel;
 pub use axa_environment as environment;
 #[cfg(feature = "idempotency")]
-pub use axa_idempotency as idempotency;
+pub use axa_idempotency_key as idempotency;
 #[cfg(feature = "keycloak")]
-pub use axa_keycloak as keycloak;
+pub use axa_keycloak_auth as keycloak;
 #[cfg(feature = "openapi")]
-pub use axa_openapi as openapi;
+pub use axa_openapi_docs as openapi;
 #[cfg(feature = "opentelemetry")]
 pub use axa_opentelemetry as opentelemetry;
-#[cfg(feature = "outbox")]
-pub use axa_outbox as outbox;
 #[cfg(feature = "paseto")]
-pub use axa_paseto as paseto;
-pub use axa_problem as problem;
+pub use axa_paseto_auth as paseto;
+pub use axa_problem_details_for_http_apis as problem;
 #[cfg(feature = "prometheus")]
-pub use axa_prometheus as prometheus;
-#[cfg(feature = "ratelimit")]
-pub use axa_ratelimit as ratelimit;
+pub use axa_prometheus_metrics as prometheus;
 #[cfg(feature = "redis")]
-pub use axa_redis as redis;
+pub use axa_redis_cache as redis;
+#[cfg(feature = "ratelimit")]
+pub use axa_request_rate_limit as ratelimit;
 #[cfg(feature = "sea-orm")]
 pub use axa_seaorm as seaorm;
 #[cfg(feature = "sea-orm")]
 pub use axa_seaorm::{model, query, schema, validation};
-#[cfg(feature = "session")]
-pub use axa_session as session;
 #[cfg(feature = "sqlx")]
 pub use axa_sqlx as sqlx;
 #[cfg(feature = "tera")]
-pub use axa_tera as tera;
+pub use axa_tera_templates as tera;
 #[cfg(feature = "tracing")]
 pub use axa_tracing as tracing;
-#[cfg(feature = "versioning")]
-pub use axa_versioning as versioning;
+#[cfg(feature = "outbox")]
+pub use axa_transactional_outbox as outbox;
+#[cfg(feature = "session")]
+pub use axa_web_session as session;
 pub use context::AppContext;
 pub use environment::Environment;
 pub use error::{Error, Result};
-#[cfg(feature = "testing")]
-pub use testing::TestServer;

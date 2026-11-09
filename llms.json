@@ -35,20 +35,16 @@
       "crate": null
     },
     {
-      "name": "testing",
-      "crate": null
-    },
-    {
       "name": "diesel",
       "crate": "axa-diesel"
     },
     {
       "name": "keycloak",
-      "crate": "axa-keycloak"
+      "crate": "axa-keycloak-auth"
     },
     {
       "name": "openapi",
-      "crate": "axa-openapi"
+      "crate": "axa-openapi-docs"
     },
     {
       "name": "opentelemetry",
@@ -56,11 +52,11 @@
     },
     {
       "name": "outbox",
-      "crate": "axa-outbox"
+      "crate": "axa-transactional-outbox"
     },
     {
       "name": "outbox-encryption",
-      "crate": "axa-outbox"
+      "crate": "axa-transactional-outbox"
     },
     {
       "name": "cursor-pagination",
@@ -68,23 +64,23 @@
     },
     {
       "name": "paseto",
-      "crate": "axa-paseto"
+      "crate": "axa-paseto-auth"
     },
     {
       "name": "problem",
-      "crate": "axa-problem"
+      "crate": "axa-problem-details-for-http-apis"
     },
     {
       "name": "prometheus",
-      "crate": "axa-prometheus"
+      "crate": "axa-prometheus-metrics"
     },
     {
       "name": "redis",
-      "crate": "axa-redis"
+      "crate": "axa-redis-cache"
     },
     {
       "name": "session",
-      "crate": "axa-session"
+      "crate": "axa-web-session"
     },
     {
       "name": "sqlx",
@@ -92,7 +88,7 @@
     },
     {
       "name": "tera",
-      "crate": "axa-tera"
+      "crate": "axa-tera-templates"
     },
     {
       "name": "tracing",
@@ -100,15 +96,15 @@
     },
     {
       "name": "idempotency",
-      "crate": "axa-idempotency"
+      "crate": "axa-idempotency-key"
     },
     {
       "name": "ratelimit",
-      "crate": "axa-ratelimit"
+      "crate": "axa-request-rate-limit"
     },
     {
       "name": "versioning",
-      "crate": "axa-versioning"
+      "crate": "axa-accepts-version-negotiation"
     }
   ],
   "modules": [
@@ -185,10 +181,6 @@
       "purpose": "Command-line tasks"
     },
     {
-      "name": "testing",
-      "purpose": "Request-level test helpers (feature `testing`)"
-    },
-    {
       "name": "worker",
       "purpose": "Background jobs"
     }
@@ -209,18 +201,18 @@
       "readme": "crates/axa-environment/README.md"
     },
     {
-      "name": "axa-keycloak",
+      "name": "axa-keycloak-auth",
       "version": "0.3.0",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
-      "readme": "crates/axa-keycloak/README.md"
+      "readme": "crates/axa-keycloak-auth/README.md"
     },
     {
-      "name": "axa-openapi",
+      "name": "axa-openapi-docs",
       "version": "0.1.0",
       "description": "Serve OpenAPI documents and a pinned Swagger UI from Axum services.",
       "feature": "openapi",
-      "readme": "crates/axa-openapi/README.md"
+      "readme": "crates/axa-openapi-docs/README.md"
     },
     {
       "name": "axa-opentelemetry",
@@ -230,18 +222,18 @@
       "readme": "crates/axa-opentelemetry/README.md"
     },
     {
-      "name": "axa-outbox",
+      "name": "axa-transactional-outbox",
       "version": "0.2.0",
       "description": "A transactional outbox and relay on Postgres for Axum services, that keeps a record of what it delivered and refused.",
       "feature": "outbox",
-      "readme": "crates/axa-outbox/README.md"
+      "readme": "crates/axa-transactional-outbox/README.md"
     },
     {
-      "name": "axa-worker",
+      "name": "axa-postgres-job-queue",
       "version": "0.2.0",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
-      "readme": "crates/axa-worker/README.md"
+      "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
       "name": "axa-cursor-pagination",
@@ -251,32 +243,32 @@
       "readme": "crates/axa-cursor-pagination/README.md"
     },
     {
-      "name": "axa-paseto",
+      "name": "axa-paseto-auth",
       "version": "0.5.0",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
-      "readme": "crates/axa-paseto/README.md"
+      "readme": "crates/axa-paseto-auth/README.md"
     },
     {
-      "name": "axa-problem",
+      "name": "axa-problem-details-for-http-apis",
       "version": "0.1.0",
       "description": "RFC 9457 problem details responses for Axum services.",
       "feature": null,
-      "readme": "crates/axa-problem/README.md"
+      "readme": "crates/axa-problem-details-for-http-apis/README.md"
     },
     {
-      "name": "axa-prometheus",
+      "name": "axa-prometheus-metrics",
       "version": "0.1.0",
       "description": "Prometheus text exposition for Axum services.",
       "feature": "prometheus",
-      "readme": "crates/axa-prometheus/README.md"
+      "readme": "crates/axa-prometheus-metrics/README.md"
     },
     {
-      "name": "axa-redis",
+      "name": "axa-redis-cache",
       "version": "0.1.1",
       "description": "A Redis cache with mandatory expiry for Axum services.",
       "feature": "redis",
-      "readme": "crates/axa-redis/README.md"
+      "readme": "crates/axa-redis-cache/README.md"
     },
     {
       "name": "axa-seaorm",
@@ -286,11 +278,11 @@
       "readme": "crates/axa-seaorm/README.md"
     },
     {
-      "name": "axa-session",
+      "name": "axa-web-session",
       "version": "0.1.0",
       "description": "Web sessions for Axum services over axum_session, with safe defaults.",
       "feature": "session",
-      "readme": "crates/axa-session/README.md"
+      "readme": "crates/axa-web-session/README.md"
     },
     {
       "name": "axa-sqlx",
@@ -300,11 +292,18 @@
       "readme": "crates/axa-sqlx/README.md"
     },
     {
-      "name": "axa-tera",
+      "name": "axa-test",
+      "version": "0.1.0",
+      "description": "Request-level test helpers for axa services, built on axum-test.",
+      "feature": null,
+      "readme": "crates/axa-test/README.md"
+    },
+    {
+      "name": "axa-tera-templates",
       "version": "0.2.1",
       "description": "Tera templates with safe escaping and generic errors for Axum services.",
       "feature": "tera",
-      "readme": "crates/axa-tera/README.md"
+      "readme": "crates/axa-tera-templates/README.md"
     },
     {
       "name": "axa-tracing",
@@ -314,25 +313,25 @@
       "readme": "crates/axa-tracing/README.md"
     },
     {
-      "name": "axa-idempotency",
+      "name": "axa-idempotency-key",
       "version": "0.1.0",
       "description": "Idempotency-Key handling over Postgres for Axum services.",
       "feature": "idempotency",
-      "readme": "crates/axa-idempotency/README.md"
+      "readme": "crates/axa-idempotency-key/README.md"
     },
     {
-      "name": "axa-ratelimit",
+      "name": "axa-request-rate-limit",
       "version": "0.2.0",
       "description": "In-process request limits, per client or per key, and failed-login lockout for Axum services.",
       "feature": "ratelimit",
-      "readme": "crates/axa-ratelimit/README.md"
+      "readme": "crates/axa-request-rate-limit/README.md"
     },
     {
-      "name": "axa-versioning",
+      "name": "axa-accepts-version-negotiation",
       "version": "0.2.0",
       "description": "Header-based API version negotiation for Axum services.",
       "feature": "versioning",
-      "readme": "crates/axa-versioning/README.md"
+      "readme": "crates/axa-accepts-version-negotiation/README.md"
     }
   ]
 }

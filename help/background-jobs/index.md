@@ -1,6 +1,6 @@
 # Background jobs and schedules
 
-`axa-worker` is the Postgres job queue behind the `queue` feature. It runs jobs in a
+`axa-postgres-job-queue` is the Postgres job queue behind the `queue` feature. It runs jobs in a
 pool of loops, delays and orders them, says where each job is, and queues jobs on a
 schedule. This guide says how a service uses each part, and what it must decide.
 
@@ -138,9 +138,9 @@ queue.every::<_, SweepWorker>("idempotency-sweep", Duration::from_hours(1), &())
 
 Two jobs that every service with these crates should schedule:
 
-- **`axa-idempotency`'s sweep.** Expired answers stay on disk until it runs. A
+- **`axa-idempotency-key`'s sweep.** Expired answers stay on disk until it runs. A
   `SweepWorker` whose `perform` calls `keys.sweep().await` every hour does it.
-- **Retention of a service's own tables**, the way `axa-outbox` sweeps sent rows after
+- **Retention of a service's own tables**, the way `axa-transactional-outbox` sweeps sent rows after
   `retention_days`: a worker that runs one `DELETE ... WHERE created_at < now() - ...`.
 
 Each due time becomes one job, so its retries, status, time limit, and recovery are the

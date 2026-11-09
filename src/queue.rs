@@ -1,6 +1,6 @@
-//! The Postgres job queue, from [`axa_worker`], with [`BackgroundWorker`] jobs.
+//! The Postgres job queue, from [`axa_postgres_job_queue`], with [`BackgroundWorker`] jobs.
 //!
-//! The engine is `axa-worker`: the `axa_queue` table, claims with `FOR UPDATE SKIP
+//! The engine is `axa-postgres-job-queue`: the `axa_queue` table, claims with `FOR UPDATE SKIP
 //! LOCKED`, retries, stale recovery, retention, the pool of job loops, delayed jobs,
 //! priorities, job status, and recurring schedules. Its crate documentation says how
 //! each behaves. This module puts the [`BackgroundWorker`] trait over it, so a job
@@ -20,20 +20,22 @@ use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, Transaction};
 use tokio::sync::watch;
 use uuid::Uuid;
 
-pub use axa_worker::{
+pub use axa_postgres_job_queue::{
     Act, ActKind, Counts, DateTime, JobInfo, JobState, MAX_REASON_CHARS, NewJob, QueueOptions,
     SETUP_STATEMENTS, Schedule, ScheduleInfo, Utc,
 };
 
 use crate::{AppContext, Error, Result, worker::BackgroundWorker};
 
-impl From<axa_worker::Error> for Error {
-    fn from(error: axa_worker::Error) -> Self {
+impl From<axa_postgres_job_queue::Error> for Error {
+    fn from(error: axa_postgres_job_queue::Error) -> Self {
         match error {
-            axa_worker::Error::Database(error) => Self::Sqlx(error),
-            axa_worker::Error::Encode(error) => Self::JSON(error),
-            axa_worker::Error::Job(text) => Self::Worker(text),
-            error @ axa_worker::Error::NotACode { .. } => Self::BadRequest(error.to_string()),
+            axa_postgres_job_queue::Error::Database(error) => Self::Sqlx(error),
+            axa_postgres_job_queue::Error::Encode(error) => Self::JSON(error),
+            axa_postgres_job_queue::Error::Job(text) => Self::Worker(text),
+            error @ axa_postgres_job_queue::Error::NotACode { .. } => {
+                Self::BadRequest(error.to_string())
+            }
             other => Self::Worker(other.to_string()),
         }
     }
@@ -111,7 +113,9 @@ where
 ///
 /// Fails on a database error.
 pub async fn enqueue_job_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Result<String> {
-    Ok(axa_worker::enqueue_on(executor, job).await?.to_string())
+    Ok(axa_postgres_job_queue::enqueue_on(executor, job)
+        .await?
+        .to_string())
 }
 
 /// Add every job in `jobs` on `connection`, returning their ids in order. On a
@@ -121,7 +125,7 @@ pub async fn enqueue_job_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) ->
 ///
 /// Fails on a database error.
 pub async fn enqueue_all_on(connection: &mut PgConnection, jobs: &[NewJob]) -> Result<Vec<String>> {
-    let ids = axa_worker::enqueue_all_on(connection, jobs).await?;
+    let ids = axa_postgres_job_queue::enqueue_all_on(connection, jobs).await?;
     Ok(ids.iter().map(Uuid::to_string).collect())
 }
 
@@ -133,7 +137,7 @@ fn job_id(id: &str) -> Uuid {
 /// Cancel the job `id` if it is still queued, as an act of `by`, for `reason`, kept in
 /// the caller's transaction with the service's own audit row. Answers whether it was
 /// cancelled. A job in any other state, or no such job, writes no act. See
-/// [`axa_worker::cancel`].
+/// [`axa_postgres_job_queue::cancel`].
 ///
 /// # Errors
 ///
@@ -145,13 +149,13 @@ pub async fn cancel(
     by: &str,
     reason: &str,
 ) -> Result<bool> {
-    Ok(axa_worker::cancel(transaction, job_id(id), by, reason).await?)
+    Ok(axa_postgres_job_queue::cancel(transaction, job_id(id), by, reason).await?)
 }
 
 /// Queue the job `id` again for one more try, if it failed or waits for review, as an
 /// act of `by`, for `reason`, kept in the caller's transaction with the service's own
 /// audit row. Answers whether it was queued again. A job in any other state, or no
-/// such job, writes no act. See [`axa_worker::retry`].
+/// such job, writes no act. See [`axa_postgres_job_queue::retry`].
 ///
 /// # Errors
 ///
@@ -163,7 +167,7 @@ pub async fn retry(
     by: &str,
     reason: &str,
 ) -> Result<bool> {
-    Ok(axa_worker::retry(transaction, job_id(id), by, reason).await?)
+    Ok(axa_postgres_job_queue::retry(transaction, job_id(id), by, reason).await?)
 }
 
 /// A Postgres-backed job queue whose jobs are [`BackgroundWorker`]s.
@@ -171,17 +175,17 @@ pub async fn retry(
 pub struct Queue {
     /// Shared only once [`Queue::run`] starts, which takes the queue whole, so
     /// registering through `&mut self` always has it alone.
-    engine: Arc<axa_worker::Queue>,
+    engine: Arc<axa_postgres_job_queue::Queue>,
 }
 
 impl Queue {
-    fn wrap(engine: axa_worker::Queue) -> Self {
+    fn wrap(engine: axa_postgres_job_queue::Queue) -> Self {
         Self {
             engine: Arc::new(engine),
         }
     }
 
-    fn engine_mut(&mut self) -> &mut axa_worker::Queue {
+    fn engine_mut(&mut self) -> &mut axa_postgres_job_queue::Queue {
         Arc::get_mut(&mut self.engine).expect("a queue is shared only once it runs")
     }
 
@@ -194,7 +198,7 @@ impl Queue {
     /// date, so a service finds out at boot rather than at its first job.
     pub async fn connect_existing(uri: &str, options: QueueOptions) -> Result<Self> {
         Ok(Self::wrap(
-            axa_worker::Queue::connect_existing(uri, options).await?,
+            axa_postgres_job_queue::Queue::connect_existing(uri, options).await?,
         ))
     }
 
@@ -205,12 +209,14 @@ impl Queue {
     ///
     /// Fails when the database cannot be reached or the tables not created.
     pub async fn connect(uri: &str, options: QueueOptions) -> Result<Self> {
-        Ok(Self::wrap(axa_worker::Queue::connect(uri, options).await?))
+        Ok(Self::wrap(
+            axa_postgres_job_queue::Queue::connect(uri, options).await?,
+        ))
     }
 
     /// The engine, for what this module does not wrap.
     #[must_use]
-    pub fn engine(&self) -> &axa_worker::Queue {
+    pub fn engine(&self) -> &axa_postgres_job_queue::Queue {
         &self.engine
     }
 
@@ -366,7 +372,10 @@ impl Queue {
             .acquire_timeout(Duration::from_millis(50))
             .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
             .unwrap();
-        Self::wrap(axa_worker::Queue::from_pool(pool, QueueOptions::default()))
+        Self::wrap(axa_postgres_job_queue::Queue::from_pool(
+            pool,
+            QueueOptions::default(),
+        ))
     }
 
     /// Check the database connection.
@@ -1079,7 +1088,7 @@ mod tests {
     #[test]
     fn each_retry_waits_twice_as_long_up_to_a_limit() {
         let base = Duration::from_secs(30);
-        let backoff = axa_worker::backoff;
+        let backoff = axa_postgres_job_queue::backoff;
         assert_eq!(backoff(base, 1), base);
         assert_eq!(backoff(base, 2), base * 2);
         assert_eq!(backoff(base, 3), base * 4);

@@ -1,6 +1,6 @@
 # Where the idempotency layer goes
 
-`axa-idempotency` answers a retried write with its first answer. It is one layer, and
+`axa-idempotency-key` answers a retried write with its first answer. It is one layer, and
 it only behaves if it sits in the right place. This guide says where that is and why.
 
 ## The order
@@ -84,7 +84,7 @@ over and runs again. A different request under that key is still refused. A leas
 A key belongs to a caller, and the closure says who that is. When it returns `None`, a
 request with a key is refused with a `401` and does not run. Three things follow.
 
-With `Allowed` from `axa-paseto` or `axa-keycloak`, there is none on a public path or
+With `Allowed` from `axa-paseto-auth` or `axa-keycloak-auth`, there is none on a public path or
 with enforcement off. If those routes take keys, name the caller some other way.
 
 If finding the caller needs an `await`, write a small layer of your own that does it

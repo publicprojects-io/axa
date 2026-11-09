@@ -1,6 +1,6 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak`, `axa-paseto`, `axa-idempotency`, `Idempotency-Key`, the outbox, `axa-worker`, scheduled jobs, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak-auth`, `axa-paseto-auth`, `axa-idempotency-key`, `Idempotency-Key`, the outbox, `axa-postgres-job-queue`, scheduled jobs, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
 ---
 
 # Using axa in your Axum service
@@ -43,7 +43,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa = { version = "0.9", features = ["testing"] }
+axa-test = "0.1"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must
@@ -57,7 +57,6 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | The outbox, with payloads sealed at rest | `outbox-encryption` |
 | Keep SeaORM | `sea-orm` |
 | Diesel, with no `libpq` | `diesel` |
-| Request-level tests | `testing` |
 | Keycloak bearer tokens and ABAC | `keycloak` |
 | PASETO bearer tokens and ABAC | `paseto` |
 | Browser sessions | `session` |
@@ -276,7 +275,7 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
   kept as `released`.
 - **Schedules** are `queue.every::<_, W>("name", interval, &args)?` in code, never config.
   Each due time is queued once across replicas, missed times come to one job, and a time
-  is skipped while the last job runs. Schedule the `axa-idempotency` sweep this way. A
+  is skipped while the last job runs. Schedule the `axa-idempotency-key` sweep this way. A
   schedule removed from code is archived, and returns if put back.
 
 ## Idempotency keys
@@ -336,7 +335,7 @@ has the whole of this.
 ## Outbox
 
 Use the outbox, not a broker call after the commit, whenever an event must not be lost.
-The [guide](../../help/transactional-outbox/index.md) has the whole of it. `axa-outbox`
+The [guide](../../help/transactional-outbox/index.md) has the whole of it. `axa-transactional-outbox`
 0.2 keeps a record: events and attempts are only ever inserted, and triggers refuse
 every change.
 
@@ -371,7 +370,7 @@ every change.
 
 ## Authentication
 
-`axa-keycloak` and `axa-paseto` both give a `Guard`, a `middleware`, and an `AuthUser`
+`axa-keycloak-auth` and `axa-paseto-auth` both give a `Guard`, a `middleware`, and an `AuthUser`
 extractor over ABAC policy. Every path is protected unless it is listed as public, and
 enforcement is on unless a service turns it off. Refused callers learn nothing about
 why: a `401` says `invalid token` and a `403` says `forbidden`, with the reason in the
@@ -384,7 +383,7 @@ Both refuse a decision with an obligation the service has not declared, so a rul
 asks for `"audit"` is a `403` until the service declares it with `Guard::honouring`.
 The `Allowed` extractor gives a handler the decision.
 
-With `axa-keycloak`:
+With `axa-keycloak-auth`:
 
 - Every token must carry a configured audience. Keycloak adds a client to `aud` only
   through an audience mapper, so a client without one gets a `401`.
@@ -394,16 +393,16 @@ With `axa-keycloak`:
 - Until discovery succeeds every token is refused, and the service still boots. Use
   `KeycloakVerifier::ready` for `/_readiness`.
 
-With `axa-paseto` 0.3 and later, `parse_bool` returns `Option<bool>`. `None` is a word it does not
+With `axa-paseto-auth` 0.3 and later, `parse_bool` returns `Option<bool>`. `None` is a word it does not
 know, so refuse to start on it, because a typo read as off could turn enforcement off.
 
 ## Testing
 
-With the `testing` feature, implement `TestApp` to say how a service boots for tests. It
+With `axa-test` as a dev-dependency, implement `TestApp` to say how a service boots for tests. It
 is the one trait axa asks a service to implement, and it exists only for tests.
 
 ```rust
-use axa::testing::prelude::*;
+use axa_test::prelude::*;
 
 #[tokio::test]
 async fn health_answers() {

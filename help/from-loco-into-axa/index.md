@@ -39,12 +39,12 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 | `BackgroundWorker`, `Task` | The same traits. `Queue::register` is now synchronous |
 | `pg_loco_queue` | `axa_queue` |
 | `loco_rs::schema` | `axa::schema` |
-| `request::<App, _, _>` | The same, from `axa::testing::prelude` |
+| `request::<App, _, _>` | The same, from `axa_test::prelude` |
 | `cargo loco start` | `cargo run -- start` |
 | `cargo loco doctor` | `cargo run -- check`, which reads the settings and connects to nothing |
 | `start --server-and-worker` | `start --all`. The old spelling is still accepted |
 | `app_routes().collect()` | `app_routes().mounted()`, which lists each `(method, path)`. `axa::openapi::drift` replaces a hand-written coverage test |
-| `ctx.cache` | Nothing in `AppContext`. Use `axa-redis`, and keep its handle in `ctx.shared_store` |
+| `ctx.cache` | Nothing in `AppContext`. Use `axa-redis-cache`, and keep its handle in `ctx.shared_store` |
 | `Mailer` | Use [`lettre`](https://docs.rs/lettre) directly |
 | `hash::hash_password` | Use [`argon2`](https://docs.rs/argon2) directly |
 | `model::query::condition()` | The same, as `axa::query::condition()` |
@@ -64,7 +64,7 @@ axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>", feat
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
-axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>", features = ["sea-orm", "testing"] }
+axa-test = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>" }
 axum-test = "21"
 ```
 
@@ -93,7 +93,7 @@ Most of this is a search and replace:
 | Replace | With |
 |---|---|
 | `loco_rs::prelude` | `axa::prelude` |
-| `loco_rs::testing::prelude` | `axa::testing::prelude` |
+| `loco_rs::testing::prelude` | `axa_test::prelude` |
 | `loco_rs::controller::Routes` | `axa::routes::Routes` |
 | `loco_rs::controller::ErrorDetail` | `axa::error::ErrorDetail` |
 | `loco_rs::controller::AppRoutes` | `axa::routes::AppRoutes` |
@@ -349,7 +349,7 @@ count mismatches.
 drops every table, so do not leave that variable pointing at a real database.
 
 Change a `loco_rs::{TestServer, app::AppContext}` import to
-`axa::{AppContext, TestServer}`.
+`axa::AppContext` and `axa_test::TestServer`.
 
 Tests that read `routes.prefix` or `routes.handlers` keep working, because those
 fields stay public, with `prefix` still an `Option<String>`. But `.actions` on a

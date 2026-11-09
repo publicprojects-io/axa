@@ -1,4 +1,4 @@
-//! `axa-tera` pages under the production stack.
+//! `axa-tera-templates` pages under the production stack.
 #![cfg(feature = "tera")]
 
 use axa::{

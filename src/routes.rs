@@ -508,7 +508,7 @@ mod tests {
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(
             response.headers()[axum::http::header::CONTENT_TYPE],
-            axa_problem::PROBLEM_JSON
+            axa_problem_details_for_http_apis::PROBLEM_JSON
         );
     }
 

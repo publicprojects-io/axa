@@ -5,7 +5,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `axa-test`, a new crate: the request-level test helpers, built on `axum-test`, as
+  a dev-dependency of their own (spec TST-1, TST-2).
+
 ### Changed
+
+- **Breaking: the `testing` feature is gone.** Its helpers are now the `axa-test`
+  crate. A service drops `"testing"` from `axa`'s features, adds `axa-test = "0.1"`
+  under `[dev-dependencies]`, and changes `axa::testing::prelude` to
+  `axa_test::prelude` and `axa::TestServer` to `axa_test::TestServer`. The prelude
+  holds the same names, `request`, `boot_test`, `TestApp`, `BootResult`, and
+  `TestServer`, and `axa::prelude` no longer brings them in.
 
 - The README no longer says which features no service uses yet, and spec P-2 and
   `AGENTS.md` no longer ask for that mark. P-2 itself stands: two consumers, or one
@@ -14,6 +26,30 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   provides.
 - The README's Installing section lists the crates as bullets, each led by its
   crate name, in place of the feature table.
+- **Renamed crates**, so each name says what it does:
+
+  | Old | New |
+  |---|---|
+  | `axa-versioning` | `axa-accepts-version-negotiation` |
+  | `axa-problem` | `axa-problem-details-for-http-apis` |
+  | `axa-ratelimit` | `axa-request-rate-limit` |
+  | `axa-idempotency` | `axa-idempotency-key` |
+  | `axa-worker` | `axa-postgres-job-queue` |
+  | `axa-outbox` | `axa-transactional-outbox` |
+  | `axa-redis` | `axa-redis-cache` |
+  | `axa-session` | `axa-web-session` |
+  | `axa-tera` | `axa-tera-templates` |
+  | `axa-prometheus` | `axa-prometheus-metrics` |
+  | `axa-openapi` | `axa-openapi-docs` |
+  | `axa-keycloak` | `axa-keycloak-auth` |
+  | `axa-paseto` | `axa-paseto-auth` |
+
+  A service that depends on `axa` changes nothing for these: every feature and
+  every `axa::` module keeps its name, and so does every table, such as
+  `axa_queue`, `axa_outbox`, and `axa_idempotency`, so no migration is needed. A
+  service that depends on one of these crates directly changes the name in its
+  `Cargo.toml` and its `use` paths. The old names stay on crates.io at their last
+  versions.
 
 ### Fixed
 

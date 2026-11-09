@@ -1,7 +1,7 @@
 # The transactional outbox
 
 A service that commits a change and then tells a broker can crash in between, and the
-event is gone. With `axa-outbox` the event is a row, written in the same transaction as
+event is gone. With `axa-transactional-outbox` the event is a row, written in the same transaction as
 the change, and a relay publishes it afterwards. This guide is what a service writes.
 The crate documentation has the rules, and section 4.17 of the
 [spec](../../spec/index.md#417-outbox) has what is proved.
@@ -12,9 +12,9 @@ axa = { version = "0.9", features = ["outbox"] }
 axa = { version = "0.9", features = ["outbox-encryption"] }
 ```
 
-`axa-outbox` 0.2 keeps a **record**. What a service delivered, what it refused, and what
+`axa-transactional-outbox` 0.2 keeps a **record**. What a service delivered, what it refused, and what
 failed are evidence it may have to answer for, so they are only ever added to. Coming
-from 0.1, read [Upgrading axa-outbox to 0.2](../upgrading-to-0.3/index.md#upgrading-axa-outbox-to-02).
+from 0.1, read [Upgrading axa-transactional-outbox to 0.2](../upgrading-to-0.3/index.md#upgrading-axa-outbox-to-02).
 
 ## Make the tables
 

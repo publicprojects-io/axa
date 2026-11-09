@@ -44,27 +44,27 @@ Add it from crates.io:
 axa = "0.9"
 ```
 
-- [`axa-worker`](crates/axa-worker): the Postgres job queue, worker pool, and schedules
-- `axa`: request-level test helpers, built on `axum-test`
+- [`axa-postgres-job-queue`](crates/axa-postgres-job-queue): the Postgres job queue, worker pool, and schedules
+- [`axa-test`](crates/axa-test): request-level test helpers, built on `axum-test`. Add it as a dev-dependency
 - [`axa-seaorm`](crates/axa-seaorm): a SeaORM-backed `AppContext`, connections, migration helpers, and model errors, with an easy path from Loco
 - [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`
-- [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors
+- [`axa-tera-templates`](crates/axa-tera-templates): Tera templates with safe escaping and generic errors
 - [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code
-- [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry
-- [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks
+- [`axa-redis-cache`](crates/axa-redis-cache): a Redis cache with mandatory expiry
+- [`axa-openapi-docs`](crates/axa-openapi-docs): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks
 - [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set
-- [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
+- [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
 - [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
-- [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-worker`
-- [`axa-outbox-encryption`](crates/axa-outbox): `axa-outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies
+- [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
+- [`axa-transactional-outbox-encryption`](crates/axa-transactional-outbox): `axa-transactional-outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
-- [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
-- [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
-- [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`
-- [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition
-- [`axa-ratelimit`](crates/axa-ratelimit): request limits per client or per key, and failed-login lockout, counted in one process
-- [`axa-idempotency`](crates/axa-idempotency): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
-- [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation
+- [`axa-keycloak-auth`](crates/axa-keycloak-auth): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
+- [`axa-paseto-auth`](crates/axa-paseto-auth): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
+- [`axa-problem-details-for-http-apis`](crates/axa-problem-details-for-http-apis): RFC 9457 problem details. Always included, as `axa::problem`
+- [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition
+- [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process
+- [`axa-idempotency-key`](crates/axa-idempotency-key): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
+- [`axa-accepts-version-negotiation`](crates/axa-accepts-version-negotiation): `Accepts-version` negotiation
 
 `Environment` lives in [`axa-environment`](crates/axa-environment), which has no
 dependencies and is always included, so a migration crate can read the environment
@@ -556,12 +556,12 @@ most 64 KiB by default, may be checked against a list of denied fields, and with
 
 ### Testing
 
-With the `testing` feature, a service implements `TestApp` to say how it boots
+With [`axa-test`](crates/axa-test) as a dev-dependency, a service implements `TestApp` to say how it boots
 for tests. That is the one trait axa asks a service to implement, and it exists
 only for tests.
 
 ```rust,ignore
-use axa::testing::prelude::*;
+use axa_test::prelude::*;
 
 #[tokio::test]
 async fn health_answers() {
@@ -581,11 +581,11 @@ async fn health_answers() {
 
 ```sh
 cargo test --workspace --all-features
-cargo test --features queue,testing
+cargo test --features queue
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue,testing -- --ignored
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-worker -- --ignored --test-threads=1
+AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue -- --ignored
+AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
 ```
 
 The last command runs the queue tests against a real Postgres. Those tests have
