@@ -73,6 +73,10 @@ jobs:
 
       - name: Test, default features
         run: cargo test --workspace
+      # A release build reads no name as production. The crate has no
+      # dependencies, so its release build is quick.
+      - name: Test, release build, environment
+        run: cargo test --release -p axa-environment
       - name: Test, queue and testing
         run: cargo test --features queue,testing
       - name: Test, sqlx

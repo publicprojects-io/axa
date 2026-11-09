@@ -80,7 +80,7 @@ fixed once and an auditor reads it once.
 | ENV-1 | `APP_ENV` names the environment, then `LOCO_ENV`. A blank value counts as unset. | `app_env_is_read_before_loco_env`, `a_blank_name_counts_as_unset` |
 | ENV-2 | `dev` and `prod` are accepted as short forms, in any case. | `parses_names_and_short_forms` |
 | ENV-3 | Any name other than development and test is production-like. | `unknown_environment_is_production_like` |
-| ENV-4 | With no name, a debug build is development and a release build is production, so a release binary started with no variables fails closed. The build is read from `cfg!(debug_assertions)`. | `a_debug_build_with_no_name_is_development`, `a_release_build_with_no_name_is_production`, `parsing_a_blank_name_follows_the_build`. The whole binary is **unverified** in CI: this was seen once by hand |
+| ENV-4 | With no name, a debug build is development and a release build is production, so a release binary started with no variables fails closed. The build is read from `cfg!(debug_assertions)`. | `a_debug_build_with_no_name_is_development`, `a_release_build_with_no_name_is_production`, `parsing_a_blank_name_follows_the_build`, and `with_no_name_this_build_decides`, which CI runs in a debug build and a release build |
 | ENV-5 | A name means the same in every build. | `a_name_means_the_same_in_every_build` |
 | ENV-6 | The lookup lives in `axa-environment`, which has no dependencies, and `axa` re-exports it, so a migration's guard cannot read the environment in a different order from its service. It is not optional. | `this_crate_has_no_dependencies`, `axa_reads_the_environment_through_the_lighter_crate` |
 
@@ -223,7 +223,7 @@ a browser (TRA-3).
 | CLI-6 | `--environment` works after the subcommand. | `the_environment_flag_works_after_the_subcommand` |
 | CLI-7 | `check` takes no arguments, and prints the effective settings, then any warnings. It connects to nothing. A service's own settings are its to check. | `check_takes_no_arguments`, `check_prints_the_effective_settings`, `check_shows_warnings_outside_production` |
 | CLI-8 | `check` never prints a password or other secret. | `check_never_prints_a_password`, `every_setting_passes_through_redaction` |
-| CLI-9 | `check` refuses what a start would refuse, so the process exits non-zero. | `check_refuses_what_a_start_would_refuse`. The exit status was seen once by hand, and is **unverified** by a test |
+| CLI-9 | `check` refuses what a start would refuse, and returns the refusal as an error, so a `main` that hands it on with `?` exits non-zero. The exit status is the service's `main`'s to give, not this crate's. | `check_refuses_what_a_start_would_refuse` |
 | CLI-11 | `cli::parse` answers `--help` and `--version` for the service. Nothing presents this crate as the service. | `help_and_version_speak_for_the_service`, `nothing_says_this_crate_is_the_service` |
 | CLI-12 | `cli::parse`, `Cli::parse`, and `Cli::try_parse` refuse `db down`, `db reset`, and `db truncate`, before a service runs anything, unless the process environment is development or test and `AXA_DESTROY_DATA` is `true`. `--environment` can add to that refusal and never lift it. `Cli::parse_from` and `Cli::try_parse_from` read no process arguments, are for tests, and refuse nothing. | `only_down_reset_and_truncate_destroy_data`, `a_destructive_command_is_refused_outside_development_and_test`, `a_destructive_command_needs_confirming`, `the_environment_flag_cannot_lift_the_refusal`, `other_commands_are_never_refused`, `the_written_out_parser_reads_what_the_derived_one_did`. The refusal through `Cli::parse` was seen by hand on a real binary |
 | TSK-1 | A registered task runs with its arguments. | `a_registered_task_runs_with_its_arguments` |
@@ -432,7 +432,7 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | OTL-1 | `axa-opentelemetry` | Export is off until an endpoint is set, and off leaves requests working with no header. | `export_is_off_until_an_endpoint_is_set`, `off_means_no_layers_no_header_and_the_request_still_works` |
 | OTL-2 | `axa-opentelemetry` | A span and the request metric reach a real collector, with the service's name and version. | `a_request_reaches_the_collector_as_a_span_and_a_metric` |
 | OTL-3 | `axa-opentelemetry` | Plain `http` is for loopback, unless a clear yes allows it. An invalid endpoint is refused, and an error never quotes the endpoint. | `plain_http_is_for_loopback`, `plain_http_to_another_host_is_refused`, `plain_http_to_another_host_can_be_allowed`, `anything_but_a_clear_yes_keeps_insecure_refused`, `a_bad_endpoint_is_refused`, `an_error_never_quotes_the_endpoint`, `start_refuses_cleartext_to_another_host` |
-| OTL-4 | `axa-opentelemetry` | An `https` endpoint trusts the system's roots. | `an_https_endpoint_builds_with_roots_to_trust`. The handshake itself is **unverified** by a test |
+| OTL-4 | `axa-opentelemetry` | An `https` endpoint trusts the system's roots. | `an_https_endpoint_builds_with_roots_to_trust`, `an_https_endpoint_completes_a_handshake_with_a_root_the_system_trusts` |
 | OTL-5 | `axa-opentelemetry` | A collector that is down never holds up a request. | `a_collector_that_is_down_stops_nothing` |
 | OTL-6 | `axa-opentelemetry` | A metric's attributes are the method, status, and route template. An unknown method is `_OTHER`, and a path's value never appears. | `an_unknown_method_cannot_create_a_series`, `a_request_reaches_the_collector_as_a_span_and_a_metric` |
 | OTL-7 | `axa-opentelemetry` | The middleware adds to the request span `axa` opens, and puts its `traceparent` on the response. A server error marks the span. | `the_middleware_joins_the_request_span_axa_opens`, `a_server_error_marks_the_span` |
@@ -663,6 +663,7 @@ cargo clippy -p axa-outbox --all-targets --features sea-orm -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
+cargo test --release -p axa-environment
 cargo test --features queue,testing
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features

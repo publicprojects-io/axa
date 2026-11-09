@@ -37,7 +37,9 @@ opentelemetry-proto = { version = "0.33", default-features = false, features = [
 ] }
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "time"] }
 tokio-stream = { version = "0.1", features = ["net"] }
-tonic = "0.14"
+# `tls-ring` and `rcgen` for a collector on `https`, whose root a test makes (OTL-4).
+rcgen = { version = "0.14", default-features = false, features = ["pem", "ring"] }
+tonic = { version = "0.14", features = ["tls-ring"] }
 tower = { version = "0.5", features = ["util"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry", "std"] }
 

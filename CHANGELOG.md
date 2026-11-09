@@ -5,6 +5,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `axa-opentelemetry`: a test now completes a TLS handshake with a collector whose
+  root the system trusts, and is refused by one whose root it does not (spec OTL-4).
+  It makes its roots with `rcgen`, a new dev-dependency, which ships in nothing.
+- `axa-environment`: CI runs its tests in a release build too, proving a release
+  binary given no name is production (spec ENV-4).
+- Spec CLI-9 now says what `axa` owns: `check` returns the refusal, and a `main` that
+  hands it on exits non-zero.
+
 ## [0.9.1] - 2026-11-08
 
 This covers `axa` 0.9.1 and `axa-idempotency` 0.2.1. Nothing breaks, and a service has

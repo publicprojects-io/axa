@@ -236,6 +236,20 @@ mod tests {
         }
     }
 
+    /// CI runs this in a release build as well, where it is the one test that proves
+    /// the build is read: a release binary given no name is production.
+    #[test]
+    fn with_no_name_this_build_decides() {
+        let expected = if cfg!(debug_assertions) {
+            Environment::Development
+        } else {
+            Environment::Production
+        };
+        assert_eq!(Environment::parse(""), expected);
+        assert_eq!(Environment::parse("  "), expected);
+        assert_eq!(Environment::resolve(None, cfg!(debug_assertions)), expected);
+    }
+
     #[test]
     fn parsing_a_blank_name_follows_the_build() {
         assert_eq!(
