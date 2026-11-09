@@ -56,7 +56,6 @@ axa = "0.9"
 - [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
 - [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
-- [`axa-transactional-outbox-encryption`](crates/axa-transactional-outbox): `axa-transactional-outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
 - [`axa-keycloak-auth`](crates/axa-keycloak-auth): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
 - [`axa-paseto-auth`](crates/axa-paseto-auth): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
