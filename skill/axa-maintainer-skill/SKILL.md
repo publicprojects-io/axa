@@ -60,8 +60,8 @@ These come from the principles in section 3 of the spec, and each is a reason to
 - A hook, route macro, code generator, dependency-injection container, plugin system,
   configuration language, or database abstraction does not belong here. Section 2 lists
   these, because each puts indirection between a reader and the behaviour.
-- Code goes in once two services need it. Otherwise the README marks it as having no
-  service yet.
+- Code goes in once two services need it, or once one service needs it to keep a
+  control that a hazard log, a regulator, or a security review holds it to.
 - A new dependency is raised with the user first, even one already in the tree as a
   transitive dependency, because it is a cost every consumer pays.
 - Never copy Loco source. Loco is Apache-2.0 only and this crate offers five licences,

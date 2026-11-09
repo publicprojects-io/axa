@@ -5,6 +5,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The README no longer says which features no service uses yet, and spec P-2 and
+  `AGENTS.md` no longer ask for that mark. P-2 itself stands: two consumers, or one
+  with a safety case.
+- The README, which crates.io shows, opens with one sentence saying what `axa`
+  provides.
+- The README's Installing section lists the crates as bullets, each led by its
+  crate name, in place of the feature table.
+
 ### Fixed
 
 - `axa-opentelemetry`: a test now completes a TLS handshake with a collector whose

@@ -1,16 +1,9 @@
 # axa
 
-**axa** is a small shared library for web services built directly on
-[Axum](https://docs.rs/axum), with [sqlx](https://docs.rs/sqlx) the preferred way to
-reach a database.
-
-It holds the plumbing every service needs and none of them should write twice:
-route tables, a standard middleware stack, health checks, error responses,
-configuration, logging, graceful shutdown, a command line, background jobs, and
-a Postgres job queue.
-
-The specification is [`spec/index.md`](spec/index.md). It is the single source
-of truth, and every requirement in it names the test that proves it.
+**axa** is a shared library for web services built with [Axum](https://docs.rs/axum),
+that provides a middleware stack, health checks, error responses, configuration
+helpers, route tables, logging capabilities, background jobs, database queues, and
+graceful shutdown.
 
 ## Why it exists
 
@@ -51,29 +44,27 @@ Add it from crates.io:
 axa = "0.9"
 ```
 
-| Feature | Adds |
-|---|---|
-| `queue` | The Postgres job queue, worker pool, and schedules, from [`axa-worker`](crates/axa-worker). No service uses the pool limits, job status, or schedules yet |
-| `testing` | Request-level test helpers, built on `axum-test` |
-| `sea-orm` | A SeaORM-backed `AppContext`, plus [`axa-seaorm`](crates/axa-seaorm): connections, migration helpers, and model errors, with an easy path from Loco |
-| `diesel` | [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`. No service uses this yet |
-| `tera` | [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors. No service uses this yet |
-| `tracing` | [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code. No service uses this yet |
-| `redis` | [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry |
-| `openapi` | [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks |
-| `opentelemetry` | [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set. No service uses this yet |
-| `session` | [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in. No service uses this yet |
-| `sqlx` | [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool` |
-| `outbox` | [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Turns on `queue`. No service uses this yet |
-| `outbox-encryption` | `outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies |
-| `cursor-pagination` | [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping. No service uses this yet |
-| `keycloak` | [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone. No service uses this yet |
-| `paseto` | [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. No service uses this yet. Enforcement is on unless turned off |
-| `problem` | [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`, so this feature adds nothing |
-| `prometheus` | [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition. No service uses this yet |
-| `ratelimit` | [`axa-ratelimit`](crates/axa-ratelimit): request limits per client or per key, and failed-login lockout, counted in one process. No service uses this yet |
-| `idempotency` | [`axa-idempotency`](crates/axa-idempotency): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md). No service uses this yet |
-| `versioning` | [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation. No service uses this yet |
+- [`axa-worker`](crates/axa-worker): the Postgres job queue, worker pool, and schedules
+- `axa`: request-level test helpers, built on `axum-test`
+- [`axa-seaorm`](crates/axa-seaorm): a SeaORM-backed `AppContext`, connections, migration helpers, and model errors, with an easy path from Loco
+- [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`
+- [`axa-tera`](crates/axa-tera): Tera templates with safe escaping and generic errors
+- [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code
+- [`axa-redis`](crates/axa-redis): a Redis cache with mandatory expiry
+- [`axa-openapi`](crates/axa-openapi): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks
+- [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set
+- [`axa-session`](crates/axa-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
+- [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
+- [`axa-outbox`](crates/axa-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-worker`
+- [`axa-outbox-encryption`](crates/axa-outbox): `axa-outbox`, with payloads sealed at rest with XChaCha20-Poly1305 under keys the service supplies
+- [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
+- [`axa-keycloak`](crates/axa-keycloak): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
+- [`axa-paseto`](crates/axa-paseto): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
+- [`axa-problem`](crates/axa-problem): RFC 9457 problem details. Always included, as `axa::problem`
+- [`axa-prometheus`](crates/axa-prometheus): Prometheus text exposition
+- [`axa-ratelimit`](crates/axa-ratelimit): request limits per client or per key, and failed-login lockout, counted in one process
+- [`axa-idempotency`](crates/axa-idempotency): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
+- [`axa-versioning`](crates/axa-versioning): `Accepts-version` negotiation
 
 `Environment` lives in [`axa-environment`](crates/axa-environment), which has no
 dependencies and is always included, so a migration crate can read the environment
@@ -258,7 +249,7 @@ that has an `ETag` or says `no-store`, and a `HEAD`, whose body Axum has already
 It is opt-in because a body with a timestamp in it gains nothing, and because hashing
 what is marked `no-store` would put a hash of personal data on an answer nobody can
 revalidate. Put it outside what shapes the body, such as paging, and outside what sets
-`Cache-Control`. No service uses this layer yet.
+`Cache-Control`.
 
 To refuse a stale write, read the record, then ask, once the caller is authorised:
 

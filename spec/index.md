@@ -61,7 +61,7 @@ fixed once and an auditor reads it once.
 | Id | Principle |
 |---|---|
 | P-1 | **Library, not framework.** A service's `main.rs` stays ordinary Axum and calls in. The control flow is readable from the service's own code. |
-| P-2 | **Two consumers first, or one with a safety case.** Code is added only once two services need it, or once one service needs it to keep a control that a hazard log, a regulator, or a security review holds it to. A subcrate built ahead of that is marked in the README as having no service yet, and that mark comes off with its first service. |
+| P-2 | **Two consumers first, or one with a safety case.** Code is added only once two services need it, or once one service needs it to keep a control that a hazard log, a regulator, or a security review holds it to. |
 | P-3 | **Fail closed.** A missing or unsafe production setting stops boot. It never falls back to a development value. |
 | P-4 | **Generic errors.** Internal failure text is logged and never sent to a client. |
 | P-5 | **Written afresh.** Loco is Apache-2.0 only and this crate offers five licences, so its source is not copied. |
