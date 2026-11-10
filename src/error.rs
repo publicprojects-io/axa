@@ -115,37 +115,109 @@ pub enum Error {
     #[cfg(feature = "model")]
     #[error(transparent)]
     Model(#[from] crate::model::ModelError),
-    /// A database failure. Becomes `409` for a violated unique or foreign key
-    /// constraint, and otherwise a generic `500`.
-    #[cfg(feature = "sea-orm")]
+    /// A `SeaORM` failure, from any database. Becomes `409` or `422` for a violated
+    /// constraint, `503` when the database cannot serve for now, and otherwise `500`.
+    #[cfg(has_seaorm)]
     #[error(transparent)]
     DB(#[from] sea_orm::DbErr),
-    /// A sqlx database failure. Becomes `409` for a violated unique or foreign key
-    /// constraint, and otherwise a generic `500`. A service that means something
-    /// else by one maps it first, as with `axa_sqlx::is_unique_violation`.
-    #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+    /// A sqlx failure, from any database. Becomes `409` or `422` for a violated
+    /// constraint, `503` when the database cannot serve for now, and otherwise `500`. A
+    /// service that means something else by one maps it first, as with
+    /// `axa_postgres_sqlx::is_unique_violation`.
+    #[cfg(has_sqlx)]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
-    /// A Diesel failure. Becomes `409` for a violated unique or foreign key
-    /// constraint, and otherwise a generic `500`.
-    #[cfg(feature = "diesel")]
+    /// A Diesel failure, from any database's Diesel crate. Becomes `409` or `422` for a
+    /// violated constraint, `503` when the database cannot serve for now, and otherwise
+    /// `500`.
+    #[cfg(has_diesel)]
     #[error(transparent)]
-    Diesel(#[from] axa_diesel::Error),
-    /// A Toasty failure. Becomes `409` for a violated unique or foreign key
-    /// constraint, and otherwise a generic `500`.
-    #[cfg(feature = "toasty")]
+    Diesel(#[from] DieselError),
+    /// A Toasty failure, from any database. Becomes `409` or `422` for a violated
+    /// constraint, `503` when the database cannot serve for now, and otherwise `500`.
+    #[cfg(has_toasty)]
     #[error(transparent)]
-    Toasty(#[from] axa_toasty::Error),
+    Toasty(#[from] toasty_crate::Error),
     /// Any other error.
     #[error(transparent)]
     Any(#[from] Box<dyn std::error::Error + Send + Sync>),
 }
 
+/// The `diesel` and `diesel_async` crates, from whichever Diesel crate is on. They are the
+/// same crates for every database.
+#[cfg(has_diesel)]
+pub(crate) mod diesel_crates {
+    #[cfg(all(feature = "mysql-diesel", not(feature = "postgres-diesel")))]
+    pub use axa_mysql_diesel::{diesel, diesel_async};
+    #[cfg(feature = "postgres-diesel")]
+    pub use axa_postgres_diesel::{diesel, diesel_async};
+    #[cfg(all(
+        feature = "sqlite-diesel",
+        not(any(feature = "postgres-diesel", feature = "mysql-diesel"))
+    ))]
+    pub use axa_sqlite_diesel::{diesel, diesel_async};
+}
+
+#[cfg(all(feature = "mysql-toasty", not(feature = "postgres-toasty")))]
+pub(crate) use axa_mysql_toasty::toasty as toasty_crate;
+/// The `toasty` crate, from whichever Toasty crate is on. It is the same crate for every
+/// database.
+#[cfg(feature = "postgres-toasty")]
+pub(crate) use axa_postgres_toasty::toasty as toasty_crate;
+
+/// A failure from Diesel or from one of axa's Diesel crates, whichever database it is
+/// for, kept as what `axa` needs to answer it.
+#[cfg(has_diesel)]
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum DieselError {
+    /// A query failed.
+    #[error(transparent)]
+    Query(#[from] diesel_crates::diesel::result::Error),
+    /// No connection could be had.
+    #[error(transparent)]
+    Pool(#[from] diesel_crates::diesel_async::pooled_connection::deadpool::PoolError),
+    /// Anything else, such as a pool that could not be built or a migration that
+    /// failed.
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error + Send + Sync>),
+}
+
+/// One `From` for each Diesel crate's error, into [`DieselError`].
+#[cfg(has_diesel)]
+macro_rules! from_diesel_crate {
+    ($($feature:literal => $krate:ident),*) => {$(
+        #[cfg(feature = $feature)]
+        impl From<$krate::Error> for DieselError {
+            fn from(error: $krate::Error) -> Self {
+                match error {
+                    $krate::Error::Query(error) => Self::Query(error),
+                    $krate::Error::Pool(error) => Self::Pool(error),
+                    other => Self::Other(Box::new(other)),
+                }
+            }
+        }
+
+        #[cfg(feature = $feature)]
+        impl From<$krate::Error> for Error {
+            fn from(error: $krate::Error) -> Self {
+                Self::Diesel(error.into())
+            }
+        }
+    )*};
+}
+#[cfg(has_diesel)]
+from_diesel_crate!(
+    "postgres-diesel" => axa_postgres_diesel,
+    "mysql-diesel" => axa_mysql_diesel,
+    "sqlite-diesel" => axa_sqlite_diesel
+);
+
 /// A Diesel query's own error, as Diesel's functions return it.
-#[cfg(feature = "diesel")]
-impl From<axa_diesel::diesel::result::Error> for Error {
-    fn from(error: axa_diesel::diesel::result::Error) -> Self {
-        Self::Diesel(axa_diesel::Error::Query(error))
+#[cfg(has_diesel)]
+impl From<diesel_crates::diesel::result::Error> for Error {
+    fn from(error: diesel_crates::diesel::result::Error) -> Self {
+        Self::Diesel(DieselError::Query(error))
     }
 }
 
@@ -301,49 +373,21 @@ fn json_rejection_text(status: StatusCode) -> &'static str {
 /// own text goes nowhere, because it names the row, the column, and the value.
 type Broken = (StatusCode, &'static str, &'static str);
 
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
 const ALREADY_EXISTS: Broken = (StatusCode::CONFLICT, "conflict", "Resource already exists");
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
 const REFERENCE: Broken = (
     StatusCode::CONFLICT,
     "conflict",
     "It refers to a resource that does not exist, or is referred to",
 );
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
 const OUT_OF_RANGE: Broken = (
     StatusCode::UNPROCESSABLE_ENTITY,
     "unprocessable_entity",
     "A value is outside what this field allows",
 );
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
 const MISSING: Broken = (
     StatusCode::UNPROCESSABLE_ENTITY,
     "unprocessable_entity",
@@ -352,13 +396,26 @@ const MISSING: Broken = (
 
 /// The constraint a Postgres error code names, for an error that reaches `axa` with no
 /// kind of its own.
-#[cfg(any(feature = "sea-orm", feature = "toasty"))]
-fn broken_by_code(code: &str) -> Option<Broken> {
+#[cfg(feature = "postgres-toasty")]
+fn broken_by_postgres_code(code: &str) -> Option<Broken> {
     match code {
         "23505" => Some(ALREADY_EXISTS),
         "23503" => Some(REFERENCE),
         "23514" => Some(OUT_OF_RANGE),
         "23502" => Some(MISSING),
+        _ => None,
+    }
+}
+
+/// The constraint a MySQL error number names, for an error that reaches `axa` with no
+/// kind of its own.
+#[cfg(feature = "mysql-toasty")]
+fn broken_by_mysql_number(number: u16) -> Option<Broken> {
+    match number {
+        1062 | 1586 => Some(ALREADY_EXISTS),
+        1216 | 1217 | 1451 | 1452 => Some(REFERENCE),
+        3819 => Some(OUT_OF_RANGE),
+        1048 | 1364 => Some(MISSING),
         _ => None,
     }
 }
@@ -370,102 +427,65 @@ pub const RETRY_AFTER_SECONDS: u64 = 5;
 /// The Postgres codes for a database that cannot serve for now, rather than one that
 /// refused this request: a read-only transaction, a lost connection, a server shutting
 /// down or not yet up, or too many connections.
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "toasty"
-))]
-fn unavailable_by_code(code: &str) -> bool {
+#[cfg(any(has_sqlx_postgres, feature = "postgres-toasty"))]
+fn postgres_unavailable(code: &str) -> bool {
     code == "25006" || code == "53300" || code.starts_with("08") || code.starts_with("57P")
 }
 
-/// Whether a sqlx error is a database that cannot serve for now: a pool with no free
-/// connection or one closed, a connection lost, or a code from [`unavailable_by_code`].
-#[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+/// The MySQL error numbers for a database that cannot serve for now: too many
+/// connections, a server shutting down, a read-only server or transaction, or a
+/// connection lost.
+#[cfg(any(has_sqlx_mysql, feature = "mysql-toasty"))]
+fn mysql_unavailable(number: u16) -> bool {
+    matches!(
+        number,
+        1040 | 1053 | 1290 | 1792 | 1836 | 2002 | 2003 | 2006 | 2013
+    )
+}
+
+/// The SQLite result codes for a database that cannot serve for now: busy, locked,
+/// read-only, or full. Extended codes keep the primary code in their low byte.
+#[cfg(has_sqlx_sqlite)]
+fn sqlite_unavailable(code: &str) -> bool {
+    code.parse::<i32>()
+        .is_ok_and(|code| matches!(code & 0xff, 5 | 6 | 8 | 13))
+}
+
+/// Whether a sqlx error, from any database, is one that cannot serve for now: a pool
+/// with no free connection or one closed, a connection lost, or the database's own
+/// code for it.
+#[cfg(has_sqlx)]
 fn sqlx_unavailable(error: &sqlx::Error) -> bool {
     match error {
         sqlx::Error::PoolTimedOut
         | sqlx::Error::PoolClosed
         | sqlx::Error::Io(_)
         | sqlx::Error::WorkerCrashed => true,
-        sqlx::Error::Database(error) => error.code().is_some_and(|code| unavailable_by_code(&code)),
-        _ => false,
-    }
-}
-
-/// Whether `error` is the database unable to serve for now, which is the service's
-/// trouble, and passes, so it answers `503` with `Retry-After`.
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-))]
-fn unavailable(error: &Error) -> bool {
-    match error {
-        #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
-        Error::Sqlx(error) => sqlx_unavailable(error),
-        #[cfg(feature = "sqlx")]
-        Error::Model(crate::model::ModelError::Sqlx(error)) => sqlx_unavailable(error),
-        #[cfg(feature = "sea-orm")]
-        Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
-            use sea_orm::{DbErr, RuntimeErr, sqlx::Error as Driver};
-            match error {
-                DbErr::ConnectionAcquire(_) | DbErr::Conn(_) => true,
-                DbErr::Exec(RuntimeErr::SqlxError(error))
-                | DbErr::Query(RuntimeErr::SqlxError(error)) => match error.as_ref() {
-                    Driver::PoolTimedOut | Driver::PoolClosed | Driver::Io(_) => true,
-                    Driver::Database(error) => {
-                        error.code().is_some_and(|code| unavailable_by_code(&code))
-                    }
-                    _ => false,
-                },
-                _ => false,
+        sqlx::Error::Database(error) => {
+            #[cfg(has_sqlx_postgres)]
+            if let Some(error) = error.try_downcast_ref::<sqlx::postgres::PgDatabaseError>() {
+                return postgres_unavailable(error.code());
             }
-        }
-        #[cfg(feature = "diesel")]
-        Error::Diesel(error) | Error::Model(crate::model::ModelError::Diesel(error)) => {
-            use axa_diesel::diesel::result::{DatabaseErrorKind, Error as QueryError};
-            matches!(
-                error,
-                axa_diesel::Error::Pool(_)
-                    | axa_diesel::Error::Query(QueryError::DatabaseError(
-                        DatabaseErrorKind::ReadOnlyTransaction
-                            | DatabaseErrorKind::ClosedConnection,
-                        _
-                    ))
-            )
-        }
-        #[cfg(feature = "toasty")]
-        Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
-            error.is_connection_pool()
-                || error.is_connection_lost()
-                || error.is_read_only_transaction()
-                || axa_toasty::sql_state(error).is_some_and(unavailable_by_code)
+            #[cfg(has_sqlx_mysql)]
+            if let Some(error) = error.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>() {
+                return mysql_unavailable(error.number());
+            }
+            #[cfg(has_sqlx_sqlite)]
+            if error
+                .try_downcast_ref::<sqlx::sqlite::SqliteError>()
+                .is_some()
+            {
+                return error.code().is_some_and(|code| sqlite_unavailable(&code));
+            }
+            false
         }
         _ => false,
     }
 }
 
-/// With no database, nothing can be unavailable.
-#[cfg(not(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-)))]
-fn unavailable(_error: &Error) -> bool {
-    false
-}
-
-/// What a sqlx error that broke a constraint answers.
-#[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+/// What a sqlx error, from any database, that broke a constraint answers. sqlx reads
+/// each database's own codes into these kinds.
+#[cfg(has_sqlx)]
 fn broken_sqlx(error: &sqlx::Error) -> Option<Broken> {
     match error.as_database_error()?.kind() {
         sqlx::error::ErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
@@ -476,65 +496,150 @@ fn broken_sqlx(error: &sqlx::Error) -> Option<Broken> {
     }
 }
 
+/// The sqlx error under a `SeaORM` error, when there is one.
+#[cfg(has_seaorm)]
+fn seaorm_sqlx(error: &sea_orm::DbErr) -> Option<&sqlx::Error> {
+    use sea_orm::{DbErr, RuntimeErr};
+    match error {
+        DbErr::Exec(RuntimeErr::SqlxError(error)) | DbErr::Query(RuntimeErr::SqlxError(error)) => {
+            Some(error.as_ref())
+        }
+        _ => None,
+    }
+}
+
+/// Whether a `SeaORM` error is a database that cannot serve for now.
+#[cfg(has_seaorm)]
+fn seaorm_unavailable(error: &sea_orm::DbErr) -> bool {
+    matches!(
+        error,
+        sea_orm::DbErr::ConnectionAcquire(_) | sea_orm::DbErr::Conn(_)
+    ) || seaorm_sqlx(error).is_some_and(sqlx_unavailable)
+}
+
+/// Whether a Diesel error is a database that cannot serve for now.
+#[cfg(has_diesel)]
+fn diesel_unavailable(error: &DieselError) -> bool {
+    use diesel_crates::diesel::result::{DatabaseErrorKind, Error as QueryError};
+    matches!(
+        error,
+        DieselError::Pool(_)
+            | DieselError::Query(QueryError::DatabaseError(
+                DatabaseErrorKind::ReadOnlyTransaction | DatabaseErrorKind::ClosedConnection,
+                _
+            ))
+    )
+}
+
+/// What a Diesel error that broke a constraint answers. Diesel reads each database's own
+/// codes into these kinds.
+#[cfg(has_diesel)]
+fn broken_diesel(error: &DieselError) -> Option<Broken> {
+    use diesel_crates::diesel::result::{DatabaseErrorKind, Error as QueryError};
+    let DieselError::Query(QueryError::DatabaseError(kind, _)) = error else {
+        return None;
+    };
+    match kind {
+        DatabaseErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
+        DatabaseErrorKind::ForeignKeyViolation => Some(REFERENCE),
+        DatabaseErrorKind::CheckViolation => Some(OUT_OF_RANGE),
+        DatabaseErrorKind::NotNullViolation => Some(MISSING),
+        _ => None,
+    }
+}
+
+/// Whether a Toasty error is a database that cannot serve for now, from Toasty's own
+/// kinds or the database's code.
+#[cfg(has_toasty)]
+fn toasty_unavailable(error: &toasty_crate::Error) -> bool {
+    if error.is_connection_pool() || error.is_connection_lost() || error.is_read_only_transaction()
+    {
+        return true;
+    }
+    #[cfg(feature = "postgres-toasty")]
+    if axa_postgres_toasty::sql_state(error).is_some_and(postgres_unavailable) {
+        return true;
+    }
+    #[cfg(feature = "mysql-toasty")]
+    if axa_mysql_toasty::error_number(error).is_some_and(mysql_unavailable) {
+        return true;
+    }
+    false
+}
+
+/// What a Toasty error that broke a constraint answers, from the database's code.
+#[cfg(has_toasty)]
+fn broken_toasty(error: &toasty_crate::Error) -> Option<Broken> {
+    #[cfg(feature = "postgres-toasty")]
+    if let Some(broken) = axa_postgres_toasty::sql_state(error).and_then(broken_by_postgres_code) {
+        return Some(broken);
+    }
+    #[cfg(feature = "mysql-toasty")]
+    if let Some(broken) = axa_mysql_toasty::error_number(error).and_then(broken_by_mysql_number) {
+        return Some(broken);
+    }
+    let _ = error;
+    None
+}
+
+/// Whether `error` is the database unable to serve for now, which is the service's
+/// trouble, and passes, so it answers `503` with `Retry-After`.
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+fn unavailable(error: &Error) -> bool {
+    match error {
+        #[cfg(has_sqlx)]
+        Error::Sqlx(error) => sqlx_unavailable(error),
+        #[cfg(all(feature = "model", has_sqlx))]
+        Error::Model(crate::model::ModelError::Sqlx(error)) => sqlx_unavailable(error),
+        #[cfg(has_seaorm)]
+        Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
+            seaorm_unavailable(error)
+        }
+        #[cfg(has_diesel)]
+        Error::Diesel(error) | Error::Model(crate::model::ModelError::Diesel(error)) => {
+            diesel_unavailable(error)
+        }
+        #[cfg(has_toasty)]
+        Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
+            toasty_unavailable(error)
+        }
+        _ => false,
+    }
+}
+
+/// With no database, nothing can be unavailable.
+#[cfg(not(any(has_sqlx, has_seaorm, has_diesel, has_toasty)))]
+fn unavailable(_error: &Error) -> bool {
+    false
+}
+
 /// What a write that broke a unique, foreign key, check, or not-null constraint
 /// answers. Any other database error is not the caller's, and gets `None`.
-#[cfg(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
 fn broken(error: &Error) -> Option<Broken> {
     match error {
-        #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+        #[cfg(has_sqlx)]
         Error::Sqlx(error) => broken_sqlx(error),
-        #[cfg(feature = "sqlx")]
+        #[cfg(all(feature = "model", has_sqlx))]
         Error::Model(crate::model::ModelError::Sqlx(error)) => broken_sqlx(error),
-        #[cfg(feature = "diesel")]
-        Error::Diesel(error) | Error::Model(crate::model::ModelError::Diesel(error)) => {
-            use axa_diesel::diesel::result::{DatabaseErrorKind, Error as QueryError};
-            match error {
-                axa_diesel::Error::Query(QueryError::DatabaseError(kind, _)) => match kind {
-                    DatabaseErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
-                    DatabaseErrorKind::ForeignKeyViolation => Some(REFERENCE),
-                    DatabaseErrorKind::CheckViolation => Some(OUT_OF_RANGE),
-                    DatabaseErrorKind::NotNullViolation => Some(MISSING),
-                    _ => None,
-                },
-                _ => None,
-            }
-        }
-        #[cfg(feature = "toasty")]
-        Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
-            broken_by_code(axa_toasty::sql_state(error)?)
-        }
-        #[cfg(feature = "sea-orm")]
+        #[cfg(has_seaorm)]
         Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
-            // SeaORM names only unique and foreign key violations, so the code is read
-            // from the driver's error, as SeaORM's own documentation advises.
-            use sea_orm::{DbErr, RuntimeErr};
-            let (DbErr::Exec(RuntimeErr::SqlxError(error))
-            | DbErr::Query(RuntimeErr::SqlxError(error))) = error
-            else {
-                return None;
-            };
-            broken_by_code(&error.as_database_error()?.code()?)
+            broken_sqlx(seaorm_sqlx(error)?)
+        }
+        #[cfg(has_diesel)]
+        Error::Diesel(error) | Error::Model(crate::model::ModelError::Diesel(error)) => {
+            broken_diesel(error)
+        }
+        #[cfg(has_toasty)]
+        Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
+            broken_toasty(error)
         }
         _ => None,
     }
 }
 
 /// With no database, nothing can break a constraint.
-#[cfg(not(any(
-    feature = "idempotency",
-    feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
-)))]
+#[cfg(not(any(has_sqlx, has_seaorm, has_diesel, has_toasty)))]
 fn broken(_error: &Error) -> Option<Broken> {
     None
 }
@@ -633,13 +738,13 @@ impl IntoResponse for Error {
             | Self::Any(_) => internal(),
             #[cfg(feature = "model")]
             Self::Model(_) => internal(),
-            #[cfg(feature = "sea-orm")]
+            #[cfg(has_seaorm)]
             Self::DB(_) => internal(),
-            #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+            #[cfg(has_sqlx)]
             Self::Sqlx(_) => internal(),
-            #[cfg(feature = "diesel")]
+            #[cfg(has_diesel)]
             Self::Diesel(_) => internal(),
-            #[cfg(feature = "toasty")]
+            #[cfg(has_toasty)]
             Self::Toasty(_) => internal(),
         };
         problem(status, detail).into_response()
@@ -702,14 +807,7 @@ mod tests {
         (status, body)
     }
 
-    #[cfg(any(
-        feature = "idempotency",
-        feature = "queue",
-        feature = "sqlx",
-        feature = "sea-orm",
-        feature = "diesel",
-        feature = "toasty"
-    ))]
+    #[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
     /// The answer to a database that cannot serve for now: a `503` problem with the
     /// `code` `unavailable` and a `retry-after`, quoting none of the driver's text.
     async fn assert_unavailable(error: Error) {
@@ -724,14 +822,7 @@ mod tests {
         assert!(!body.to_string().contains("secret"), "{body}");
     }
 
-    #[cfg(any(
-        feature = "idempotency",
-        feature = "queue",
-        feature = "sqlx",
-        feature = "sea-orm",
-        feature = "diesel",
-        feature = "toasty"
-    ))]
+    #[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
     async fn problem_of_response(response: Response) -> (StatusCode, Value) {
         let status = response.status();
         assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
@@ -739,7 +830,7 @@ mod tests {
         (status, body)
     }
 
-    #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+    #[cfg(has_sqlx)]
     #[tokio::test]
     async fn a_sqlx_pool_with_no_connection_is_unavailable() {
         for error in [
@@ -757,17 +848,17 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sea-orm")]
+    #[cfg(has_seaorm)]
     #[tokio::test]
     async fn a_sea_orm_pool_with_no_connection_is_unavailable() {
         let error = sea_orm::DbErr::ConnectionAcquire(sea_orm::error::ConnAcquireErr::Timeout);
         assert_unavailable(error.into()).await;
     }
 
-    #[cfg(feature = "diesel")]
+    #[cfg(has_diesel)]
     #[tokio::test]
     async fn a_read_only_diesel_database_is_unavailable() {
-        use axa_diesel::diesel::result::{DatabaseErrorKind, Error as QueryError};
+        use super::diesel_crates::diesel::result::{DatabaseErrorKind, Error as QueryError};
         for kind in [
             DatabaseErrorKind::ReadOnlyTransaction,
             DatabaseErrorKind::ClosedConnection,
@@ -777,10 +868,36 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "toasty")]
+    #[cfg(has_toasty)]
     #[tokio::test]
     async fn a_read_only_toasty_database_is_unavailable() {
-        assert_unavailable(axa_toasty::Error::read_only_transaction("secret").into()).await;
+        assert_unavailable(toasty_crate::Error::read_only_transaction("secret").into()).await;
+    }
+
+    #[cfg(has_sqlx_sqlite)]
+    #[test]
+    fn sqlite_busy_locked_read_only_and_full_are_unavailable() {
+        // SQLITE_BUSY, SQLITE_LOCKED, SQLITE_READONLY, SQLITE_FULL, and two extended
+        // codes: SQLITE_BUSY_SNAPSHOT and SQLITE_READONLY_DBMOVED.
+        for code in ["5", "6", "8", "13", "517", "1032"] {
+            assert!(sqlite_unavailable(code), "{code}");
+        }
+        // SQLITE_CONSTRAINT and SQLITE_ERROR are not.
+        for code in ["19", "1", "2067", "not a number"] {
+            assert!(!sqlite_unavailable(code), "{code}");
+        }
+    }
+
+    #[cfg(any(has_sqlx_mysql, feature = "mysql-toasty"))]
+    #[test]
+    fn mysql_read_only_and_lost_connections_are_unavailable() {
+        for number in [1040, 1053, 1290, 1792, 1836, 2006, 2013] {
+            assert!(mysql_unavailable(number), "{number}");
+        }
+        // A duplicate and a syntax error are not.
+        for number in [1062, 1064] {
+            assert!(!mysql_unavailable(number), "{number}");
+        }
     }
 
     #[tokio::test]
@@ -945,7 +1062,7 @@ mod tests {
         assert_eq!(error.to_string(), "disk full");
     }
 
-    #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+    #[cfg(has_sqlx)]
     #[tokio::test]
     async fn a_sqlx_error_is_a_generic_500() {
         let error: Error = sqlx::Error::Protocol("secret detail".to_string()).into();

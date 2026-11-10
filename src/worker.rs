@@ -140,7 +140,13 @@ fn no_queue() -> Result<String> {
 
 #[cfg(all(
     test,
-    not(any(axa_db = "seaorm", axa_db = "toasty")),
+    not(any(
+        axa_db = "postgres_seaorm",
+        axa_db = "mysql_seaorm",
+        axa_db = "sqlite_seaorm",
+        axa_db = "postgres_toasty",
+        axa_db = "mysql_toasty"
+    )),
     not(feature = "queue")
 ))]
 mod tests {

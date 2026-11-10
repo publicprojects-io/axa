@@ -18,22 +18,22 @@ pub enum ModelError {
     /// The model failed validation. Becomes `400`.
     #[error(transparent)]
     Validation(#[from] crate::validation::ModelValidationErrors),
-    /// A `SeaORM` failure.
-    #[cfg(feature = "sea-orm")]
+    /// A `SeaORM` failure, from any database.
+    #[cfg(has_seaorm)]
     #[error(transparent)]
     DbErr(#[from] sea_orm::DbErr),
-    /// A `sqlx` failure.
-    #[cfg(feature = "sqlx")]
+    /// A `sqlx` failure, from any database.
+    #[cfg(has_sqlx)]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
-    /// A Diesel failure.
-    #[cfg(feature = "diesel")]
+    /// A Diesel failure, from any database's Diesel crate.
+    #[cfg(has_diesel)]
     #[error(transparent)]
-    Diesel(#[from] axa_diesel::Error),
-    /// A Toasty failure.
-    #[cfg(feature = "toasty")]
+    Diesel(#[from] crate::error::DieselError),
+    /// A Toasty failure, from any database.
+    #[cfg(has_toasty)]
     #[error(transparent)]
-    Toasty(#[from] axa_toasty::Error),
+    Toasty(#[from] crate::error::toasty_crate::Error),
     /// Any other failure.
     #[error(transparent)]
     Any(#[from] Box<dyn std::error::Error + Send + Sync>),
@@ -43,12 +43,29 @@ pub enum ModelError {
 }
 
 /// A Diesel query's own error, as Diesel's functions return it.
-#[cfg(feature = "diesel")]
-impl From<axa_diesel::diesel::result::Error> for ModelError {
-    fn from(error: axa_diesel::diesel::result::Error) -> Self {
-        Self::Diesel(axa_diesel::Error::Query(error))
+#[cfg(has_diesel)]
+impl From<crate::error::diesel_crates::diesel::result::Error> for ModelError {
+    fn from(error: crate::error::diesel_crates::diesel::result::Error) -> Self {
+        Self::Diesel(crate::error::DieselError::Query(error))
     }
 }
+
+/// One `From` for each Diesel crate's error.
+macro_rules! model_from_diesel_crate {
+    ($($feature:literal => $krate:ident),*) => {$(
+        #[cfg(feature = $feature)]
+        impl From<$krate::Error> for ModelError {
+            fn from(error: $krate::Error) -> Self {
+                Self::Diesel(error.into())
+            }
+        }
+    )*};
+}
+model_from_diesel_crate!(
+    "postgres-diesel" => axa_postgres_diesel,
+    "mysql-diesel" => axa_mysql_diesel,
+    "sqlite-diesel" => axa_sqlite_diesel
+);
 
 /// Result alias using [`ModelError`].
 pub type ModelResult<T, E = ModelError> = std::result::Result<T, E>;

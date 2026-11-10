@@ -344,7 +344,7 @@ async fn a_request_the_stack_cuts_off_frees_its_key_after_the_lease() {
 }
 
 /// A service on `SeaORM` reaches the store through the pool under its connection.
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "postgres-seaorm")]
 #[test]
 fn a_sea_orm_connection_gives_a_pool_this_takes() {
     fn pool(connection: &sea_orm::DatabaseConnection) -> PgPool {

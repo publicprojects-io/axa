@@ -5,7 +5,7 @@ Instructions for any AI coding agent working in this repository. See
 
 ## What this crate is
 
-`axa` is a small shared library for services built directly on Axum.
+`axa` is an accessories library for Axum websites, databases, microservices, and more.
 It is a library, not a framework: a service's `main.rs` stays ordinary Axum
 and calls into this crate.
 

@@ -371,7 +371,7 @@ async fn a_repeated_event_id_fails_the_write() {
     assert!(write(&mut transaction, &event).await.is_err());
 }
 
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "seaorm")]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_seaorm_transaction_carries_an_event_too() {

@@ -43,7 +43,7 @@ another extractor trait, another middleware model, and futures that must be `Sen
 | `Condition` | `Option<Layer>` | Tower implements `Layer` for `Option` |
 | `ConnectionInfo::realip_remote_addr` | `axa::client::ClientAddr` | Believes `X-Forwarded-For` only from `TRUSTED_PROXIES` |
 | `actix-settings` | `axa::config::Config::from_env`, with `Defaults` in code | No configuration files |
-| Database | `sqlx`, `sea-orm`, `diesel`, or `toasty` feature | Actix leaves this to you. With axa, `AppContext::db` is the pool and readiness checks it |
+| Database | `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` feature | Actix leaves this to you. With axa, `AppContext::db` is the pool and readiness checks it |
 | Background jobs | `BackgroundWorker` and the `queue` feature | A Postgres queue with workers and schedules. MySQL and SQLite queues are crates of their own |
 | Templates | `axa-tera-templates` (`tera` feature) | Escapes by default, shows nothing of a failed render, and sends a page-friendly CSP |
 | `actix_web::test`, `actix-test` | `axa-test`, over `axum-test` | Real requests through the full stack, with no port |

@@ -1,6 +1,6 @@
 //! # axa
 //!
-//! Small shared library for services built directly on Axum.
+//! Accessories library for Axum websites, databases, microservices, and more.
 //!
 //! This is a library, not a framework. A service's `main.rs` stays ordinary
 //! Axum and calls into this crate: there are no lifecycle hooks or macros, and
@@ -44,13 +44,14 @@
 //! | Feature | Adds |
 //! |---|---|
 //! | `queue` | The Postgres job queue in [`queue`] |
-//! | `sea-orm` | A SeaORM-backed [`AppContext`], with `axa-seaorm` as `axa::seaorm` |
+//! | `postgres-seaorm` | A SeaORM-backed [`AppContext`] on Postgres, with `axa-postgres-seaorm` as `axa::postgres_seaorm` |
 //! | `redis` | A Redis cache with mandatory expiry, as `axa::redis` |
-//! | `diesel` | Diesel pooling, migrations, and test resets in pure Rust, as `axa::diesel` |
+//! | `postgres-diesel` | Diesel on Postgres in pure Rust, as `axa::postgres_diesel` |
+//! | `postgres-toasty` | Toasty on Postgres, as `axa::postgres_toasty` |
 //! | `tera` | Tera templates with safe escaping, as `axa::tera` |
 //! | `tracing` | Redaction, request tracking, and asynchronous diagnostics, as `axa::tracing` |
 //! | `session` | Web sessions with safe defaults, as `axa::session` |
-//! | `sqlx` | Pooling, migrations, and test resets, as `axa::sqlx` |
+//! | `postgres-sqlx` | sqlx on Postgres: pooling, migrations, and test resets, as `axa::postgres_sqlx` |
 //! | `idempotency` | `Idempotency-Key` handling over Postgres, as `axa::idempotency` |
 //! | `openapi` | `OpenAPI` documents, a pinned Swagger UI, and drift checks, as `axa::openapi` |
 //! | `opentelemetry` | OTLP export of traces and request metrics, as `axa::opentelemetry` |
@@ -87,12 +88,7 @@ struct GuideIdempotencyKeys;
 
 /// Compiles the Rust examples in the skill. Its first example passes `()` as the
 /// database, so it builds only with no database feature, as the README's do.
-#[cfg(all(
-    doctest,
-    feature = "idempotency",
-    feature = "paseto",
-    not(any(feature = "sea-orm", feature = "sqlx"))
-))]
+#[cfg(all(doctest, feature = "idempotency", feature = "paseto", axa_db = "none"))]
 #[doc = include_str!("../skill/axa-skill/SKILL.md")]
 struct SkillDoctests;
 
@@ -126,19 +122,37 @@ pub mod worker;
 pub use axa_accepts_version_negotiation as versioning;
 #[cfg(feature = "cursor-pagination")]
 pub use axa_cursor_pagination as cursor_pagination;
-#[cfg(feature = "diesel")]
-pub use axa_diesel as diesel;
 pub use axa_environment as environment;
 #[cfg(feature = "idempotency")]
 pub use axa_idempotency_key as idempotency;
 #[cfg(feature = "keycloak")]
 pub use axa_keycloak_auth as keycloak;
+#[cfg(feature = "mysql-diesel")]
+pub use axa_mysql_diesel as mysql_diesel;
+#[cfg(feature = "mysql-seaorm")]
+pub use axa_mysql_seaorm as mysql_seaorm;
+#[cfg(all(feature = "mysql-seaorm", not(feature = "postgres-seaorm")))]
+pub use axa_mysql_seaorm::{query, schema};
+#[cfg(feature = "mysql-sqlx")]
+pub use axa_mysql_sqlx as mysql_sqlx;
+#[cfg(feature = "mysql-toasty")]
+pub use axa_mysql_toasty as mysql_toasty;
 #[cfg(feature = "openapi")]
 pub use axa_openapi_docs as openapi;
 #[cfg(feature = "opentelemetry")]
 pub use axa_opentelemetry as opentelemetry;
 #[cfg(feature = "paseto")]
 pub use axa_paseto_auth as paseto;
+#[cfg(feature = "postgres-diesel")]
+pub use axa_postgres_diesel as postgres_diesel;
+#[cfg(feature = "postgres-seaorm")]
+pub use axa_postgres_seaorm as postgres_seaorm;
+#[cfg(feature = "postgres-seaorm")]
+pub use axa_postgres_seaorm::{query, schema};
+#[cfg(feature = "postgres-sqlx")]
+pub use axa_postgres_sqlx as postgres_sqlx;
+#[cfg(feature = "postgres-toasty")]
+pub use axa_postgres_toasty as postgres_toasty;
 pub use axa_problem as problem;
 #[cfg(feature = "prometheus")]
 pub use axa_prometheus_metrics as prometheus;
@@ -146,16 +160,19 @@ pub use axa_prometheus_metrics as prometheus;
 pub use axa_redis_cache as redis;
 #[cfg(feature = "ratelimit")]
 pub use axa_request_rate_limit as ratelimit;
-#[cfg(feature = "sea-orm")]
-pub use axa_seaorm as seaorm;
-#[cfg(feature = "sea-orm")]
-pub use axa_seaorm::{query, schema};
-#[cfg(feature = "sqlx")]
-pub use axa_sqlx as sqlx;
+#[cfg(feature = "sqlite-diesel")]
+pub use axa_sqlite_diesel as sqlite_diesel;
+#[cfg(feature = "sqlite-seaorm")]
+pub use axa_sqlite_seaorm as sqlite_seaorm;
+#[cfg(all(
+    feature = "sqlite-seaorm",
+    not(any(feature = "postgres-seaorm", feature = "mysql-seaorm"))
+))]
+pub use axa_sqlite_seaorm::{query, schema};
+#[cfg(feature = "sqlite-sqlx")]
+pub use axa_sqlite_sqlx as sqlite_sqlx;
 #[cfg(feature = "tera")]
 pub use axa_tera_templates as tera;
-#[cfg(feature = "toasty")]
-pub use axa_toasty as toasty;
 #[cfg(feature = "tracing")]
 pub use axa_tracing as tracing;
 #[cfg(feature = "outbox")]

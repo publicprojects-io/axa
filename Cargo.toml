@@ -15,7 +15,7 @@ version = "0.11.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
-description = "Small shared library for services built directly on Axum."
+description = "Accessories library for Axum websites, databases, microservices, and more."
 readme = "README.md"
 repository = "https://github.com/publicprojects-io/axa/"
 license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
@@ -38,19 +38,32 @@ include = [
 
 [features]
 default = []
-# Each database feature re-exports its crate, adds `axa::model` and `axa::validation`,
-# and makes `AppContext::db` its handle. With more than one on, `sqlx` wins, then
-# `sea-orm`, `diesel`, and `toasty`.
-sea-orm = ["dep:sea-orm", "dep:axa-seaorm", "axa-transactional-outbox?/sea-orm", "model"]
-sqlx = ["dep:axa-sqlx", "dep:sqlx", "model"]
-diesel = ["dep:axa-diesel", "model"]
-toasty = ["dep:axa-toasty", "model"]
+# Each database feature, named for its database and library, re-exports its crate under
+# the same name, adds `axa::model` and `axa::validation`, and makes `AppContext::db` its
+# handle. With more than one on, Postgres wins, then MySQL, then SQLite, and for each,
+# sqlx, then SeaORM, Diesel, and Toasty.
+#
+# A SeaORM feature turns on sqlx as well, which SeaORM builds anyway, so that its
+# errors are read as sqlx's are.
+postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:sqlx", "sqlx/postgres", "model"]
+postgres-seaorm = ["dep:sea-orm", "sea-orm/sqlx-postgres", "dep:axa-postgres-seaorm", "axa-transactional-outbox?/seaorm", "dep:sqlx", "sqlx/postgres", "model"]
+postgres-diesel = ["dep:axa-postgres-diesel", "model"]
+postgres-toasty = ["dep:axa-postgres-toasty", "model"]
+mysql-sqlx = ["dep:axa-mysql-sqlx", "dep:sqlx", "sqlx/mysql", "model"]
+mysql-seaorm = ["dep:sea-orm", "sea-orm/sqlx-mysql", "dep:axa-mysql-seaorm", "dep:sqlx", "sqlx/mysql", "model"]
+mysql-diesel = ["dep:axa-mysql-diesel", "model"]
+mysql-toasty = ["dep:axa-mysql-toasty", "model"]
+# The SQLite features build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459, so
+# their crates are not published until sqlx raises its cap on it.
+sqlite-sqlx = ["dep:axa-sqlite-sqlx", "dep:sqlx", "sqlx/sqlite", "model"]
+sqlite-seaorm = ["dep:sea-orm", "sea-orm/sqlx-sqlite", "dep:axa-sqlite-seaorm", "dep:sqlx", "sqlx/sqlite", "model"]
+sqlite-diesel = ["dep:axa-sqlite-diesel", "model"]
 # Model errors and validation, for every database. Each database feature turns it on.
 model = ["dep:validator"]
 # The Postgres job queue, worker pool, and schedules, from `axa-postgres-job-queue`.
-queue = ["dep:sqlx", "dep:axa-postgres-job-queue"]
+queue = ["dep:sqlx", "sqlx/postgres", "dep:axa-postgres-job-queue"]
 # Each of these re-exports a subcrate under the same name.
-idempotency = ["dep:axa-idempotency-key", "dep:sqlx"]
+idempotency = ["dep:axa-idempotency-key", "dep:sqlx", "sqlx/postgres"]
 keycloak = ["dep:axa-keycloak-auth"]
 openapi = ["dep:axa-openapi-docs"]
 opentelemetry = ["dep:axa-opentelemetry"]
@@ -73,7 +86,7 @@ tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-accepts-version-negotiation"]
 
 [dependencies]
-axa-diesel = { version = "0.2.1", path = "crates/axa-diesel", optional = true }
+axa-postgres-diesel = { version = "0.2.1", path = "crates/axa-postgres-diesel", optional = true }
 axa-environment = { version = "0.2.0", path = "crates/axa-environment" }
 axa-idempotency-key = { version = "0.2.2", path = "crates/axa-idempotency-key", optional = true }
 axa-openapi-docs = { version = "0.1.0", path = "crates/axa-openapi-docs", optional = true }
@@ -85,11 +98,18 @@ axa-problem = { version = "0.2.0", path = "crates/axa-problem" }
 axa-prometheus-metrics = { version = "0.1.1", path = "crates/axa-prometheus-metrics", optional = true }
 axa-request-rate-limit = { version = "0.3.0", path = "crates/axa-request-rate-limit", optional = true }
 axa-redis-cache = { version = "0.1.1", path = "crates/axa-redis-cache", optional = true }
-axa-seaorm = { version = "0.3.0", path = "crates/axa-seaorm", optional = true }
+axa-postgres-seaorm = { version = "0.3.0", path = "crates/axa-postgres-seaorm", optional = true }
 axa-web-session = { version = "0.1.0", path = "crates/axa-web-session", optional = true }
-axa-sqlx = { version = "0.1.3", path = "crates/axa-sqlx", optional = true }
+axa-postgres-sqlx = { version = "0.1.3", path = "crates/axa-postgres-sqlx", optional = true }
 axa-tera-templates = { version = "0.2.1", path = "crates/axa-tera-templates", optional = true }
-axa-toasty = { version = "0.1.0", path = "crates/axa-toasty", optional = true }
+axa-postgres-toasty = { version = "0.1.0", path = "crates/axa-postgres-toasty", optional = true }
+axa-mysql-sqlx = { version = "0.1.0", path = "crates/axa-mysql-sqlx", optional = true }
+axa-mysql-seaorm = { version = "0.1.0", path = "crates/axa-mysql-seaorm", optional = true }
+axa-mysql-diesel = { version = "0.1.0", path = "crates/axa-mysql-diesel", optional = true }
+axa-mysql-toasty = { version = "0.1.0", path = "crates/axa-mysql-toasty", optional = true }
+axa-sqlite-sqlx = { version = "0.1.0", path = "crates/axa-sqlite-sqlx", optional = true }
+axa-sqlite-seaorm = { version = "0.1.0", path = "crates/axa-sqlite-seaorm", optional = true }
+axa-sqlite-diesel = { version = "0.1.0", path = "crates/axa-sqlite-diesel", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-accepts-version-negotiation = { version = "0.2.1", path = "crates/axa-accepts-version-negotiation", optional = true }
@@ -113,8 +133,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }
 validator = { version = "0.21", optional = true }
 
-sea-orm = { version = "2.0", default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls"], optional = true }
-sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid", "chrono"], optional = true }
+sea-orm = { version = "2.0", default-features = false, features = ["runtime-tokio-rustls"], optional = true }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid", "chrono"], optional = true }
 
 [dev-dependencies]
 validator = { version = "0.21", features = ["derive"] }

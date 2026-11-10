@@ -455,7 +455,7 @@ impl Writer {
     /// # Errors
     ///
     /// As [`Writer::write`], with a refusal as `DbErr::Custom`.
-    #[cfg(feature = "sea-orm")]
+    #[cfg(feature = "seaorm")]
     pub async fn write_seaorm(
         &self,
         transaction: &sea_orm::DatabaseTransaction,
@@ -503,7 +503,7 @@ pub async fn write(
 /// # Errors
 ///
 /// As [`Writer::write_seaorm`].
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "seaorm")]
 pub async fn write_seaorm(
     transaction: &sea_orm::DatabaseTransaction,
     event: &Event,

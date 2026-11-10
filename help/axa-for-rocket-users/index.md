@@ -45,7 +45,7 @@ launch phases. Anything axa gives you can be read, replaced, or left out on its 
 | Sessions | `axa-web-session`, over `axum_session` | Signed and encrypted in production, `Secure`, `HttpOnly`, `SameSite=Lax`. Nothing is stored until `sign_in`. `csrf_token` and `csrf_verify` for forms |
 | `Flash` | None | Keep the message in the session |
 | Shield | The security headers in the standard stack | On every response, in every environment. See [below](#where-axa-is-safer-and-where-it-does-less) |
-| `rocket_db_pools`, `Connection<Db>` | One database feature: `sqlx`, `sea-orm`, `diesel`, or `toasty` | `axa::db::connect(&config.database)` opens the pool, and `ctx.db` holds it. Postgres only |
+| `rocket_db_pools`, `Connection<Db>` | One database feature: `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` | `axa::db::connect(&config.database)` opens the pool, and `ctx.db` holds it. Postgres only |
 | `rocket_dyn_templates` | `axa-tera-templates` (`tera` feature) | Tera only, loaded once, HTML escaped by default, and a `Page` sends its own CSP |
 | `rocket_ws`, `EventStream` | Axum's `WebSocketUpgrade` and `Sse` with `KeepAlive` | axa adds `server::Shutdown`, which a long-lived response waits on to end itself |
 | `rocket::local` client | `axa-test`, over `axum-test`, as a dev-dependency | Async only. `request::<App, _, _>` boots the full stack with no port |

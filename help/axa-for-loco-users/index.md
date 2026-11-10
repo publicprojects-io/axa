@@ -42,7 +42,7 @@ line, jobs, and shutdown. What it does not have, you add yourself, or leave out.
 | `loco_rs::Error` | `axa::Error`, sent as an RFC 9457 problem | See [Errors](../../README.md#errors) |
 | `config/*.yaml` rendered through Tera | Environment variables, with defaults in code in `Defaults` | No config files. See [Configuration](../../README.md#configuration) |
 | `LOCO_ENV` | `APP_ENV` | A release build with no `APP_ENV` is production |
-| SeaORM | The `sea-orm` feature (`axa-seaorm`), or `sqlx`, `diesel`, or `toasty` | Turn on one. `AppContext::db` is that library's pool, from `DB_URL` |
+| SeaORM | The `postgres-seaorm` feature (`axa-postgres-seaorm`), or `postgres-sqlx`, `postgres-diesel`, or `postgres-toasty` | Turn on one. `AppContext::db` is that library's pool, from `DB_URL` |
 | `loco_rs::schema`, SeaORM migrations | `axa::schema`, and the same `Migrator` | Your `seaql_migrations` history stays |
 | `seed`, `dump`, YAML fixtures | None | Write a small helper, or a task |
 | `TenantEntity` | None | Postgres row-level security, or the service's own code |
@@ -268,7 +268,7 @@ Do it in this order. The two guides have the detail.
 
 1. **Get a baseline.** Run every test, including those against a real Postgres, and
    write the counts down.
-2. **Keep SeaORM at first.** Use the `sea-orm` feature, so the first change is only about
+2. **Keep SeaORM at first.** Use the `postgres-seaorm` feature, so the first change is only about
    Loco. Moving to sqlx is a second change.
 3. **Replace `Hooks` with `App::run`**, and initializers with functions that take and
    return a `Router`. Add your layers before `middleware::apply`.

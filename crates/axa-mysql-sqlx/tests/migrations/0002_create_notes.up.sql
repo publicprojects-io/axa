@@ -1,0 +1,6 @@
+CREATE TABLE notes (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    item_id BIGINT NOT NULL,
+    body TEXT NOT NULL,
+    FOREIGN KEY (item_id) REFERENCES items (id)
+);

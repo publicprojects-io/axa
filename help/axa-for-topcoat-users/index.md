@@ -49,7 +49,7 @@ can see all of it. Nothing runs that your `main.rs` did not ask for.
 | `BodyLimit` | `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, and `middleware::body_limit(route, bytes)` for one route | 2 MB by default |
 | `Compression` | `HTTP_COMPRESSION` | On in production. Never compresses a response that sets a cookie or is `no-store` |
 | `HOST`, `PORT` | `PORT`, `BINDING`, `HOST`, and the rest of [Configuration](../../README.md#configuration) | In axa `HOST` is the public URL and `BINDING` is the listening address |
-| Database | One of `sqlx`, `sea-orm`, `diesel`, `toasty`, as `AppContext::db` | Topcoat has no database crate; its example uses Toasty, which axa supports with the `toasty` feature |
+| Database | One of `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, `postgres-toasty`, as `AppContext::db` | Topcoat has no database crate; its example uses Toasty, which axa supports with the `postgres-toasty` feature |
 | Background jobs | `BackgroundWorker` and the Postgres job queue (`queue` feature) | On Topcoat's roadmap. See [Background jobs and schedules](../background-jobs/index.md) |
 | Auth | `axa-paseto-auth` or `axa-keycloak-auth`, bearer tokens | Topcoat lists authentication as future work |
 | Sessions | `axa-web-session` (`session` feature), over `axum_session` | Signed and encrypted in production, nothing stored until `sign_in` |

@@ -628,7 +628,10 @@ mod tests {
 }
 
 // Every database but Toasty, which connects when its handle is made.
-#[cfg(all(test, not(any(axa_db = "none", axa_db = "toasty"))))]
+#[cfg(all(
+    test,
+    not(any(axa_db = "none", axa_db = "postgres_toasty", axa_db = "mysql_toasty"))
+))]
 mod database_tests {
     use super::*;
     use crate::{
@@ -670,7 +673,10 @@ mod database_tests {
     }
 }
 
-#[cfg(all(test, not(any(axa_db = "none", axa_db = "toasty"))))]
+#[cfg(all(
+    test,
+    not(any(axa_db = "none", axa_db = "postgres_toasty", axa_db = "mysql_toasty"))
+))]
 mod named_database_tests {
     use super::*;
     use crate::{
@@ -691,14 +697,14 @@ mod named_database_tests {
     }
 }
 
-#[cfg(all(test, feature = "sqlx"))]
+#[cfg(all(test, feature = "postgres-sqlx"))]
 mod sqlx_tests {
     use super::*;
-    use axa_sqlx::sqlx::postgres::PgPoolOptions;
+    use axa_postgres_sqlx::sqlx::postgres::PgPoolOptions;
 
     /// `AppContext::db` is the pool, and readiness asks it without being told.
     /// Nothing listens on this port, so the pool cannot answer.
-    #[cfg(axa_db = "sqlx")]
+    #[cfg(axa_db = "postgres_sqlx")]
     #[tokio::test]
     async fn the_context_pool_is_checked_without_being_named() {
         let defaults = crate::config::Defaults {
@@ -722,7 +728,7 @@ mod sqlx_tests {
             .unwrap();
         let checks = Checks::new().add("database", move || {
             let pool = pool.clone();
-            async move { axa_sqlx::ping(&pool).await }
+            async move { axa_postgres_sqlx::ping(&pool).await }
         });
         let answer = checks.answer(Vec::new()).await;
         assert_eq!(answer.failed, ["database"]);

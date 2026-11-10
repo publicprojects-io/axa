@@ -1,6 +1,6 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, the small shared library for services built directly on Axum. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-sqlx`, `axa-seaorm`, `axa-keycloak-auth`, `axa-paseto-auth`, `axa-idempotency-key`, `Idempotency-Key`, the outbox, `axa-postgres-job-queue`, scheduled jobs, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with axa, an accessories library for Axum websites, databases, microservices, and more. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-postgres-sqlx`, `axa-postgres-seaorm`, `axa-keycloak-auth`, `axa-paseto-auth`, `axa-idempotency-key`, `Idempotency-Key`, the outbox, `axa-postgres-job-queue`, scheduled jobs, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
 ---
 
 # Using axa in your Axum service
@@ -32,14 +32,14 @@ Read these rather than guessing at an API:
 | Upgrading to 0.11 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.11/index.md) |
 | Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
 | Leaving Loco | [From Loco into axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
-| Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
+| Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-postgres-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
 | Where the idempotency layer goes | [Guide](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md) |
 
 ## Install
 
 ```toml
 [dependencies]
-axa = { version = "0.11", features = ["sqlx", "queue"] }
+axa = { version = "0.11", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
@@ -52,13 +52,13 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 
 | Need | Feature |
 |---|---|
-| Postgres through sqlx, the preferred way. `AppContext::db` becomes a `PgPool` | `sqlx` |
+| Postgres through sqlx, the preferred way. `AppContext::db` becomes a `PgPool` | `postgres-sqlx` |
 | Postgres job queue | `queue` |
 | Transactional outbox and relay on Postgres | `outbox` |
 | The outbox, with payloads sealed at rest | `outbox-encryption` |
-| Keep SeaORM. `AppContext::db` becomes a `DatabaseConnection` | `sea-orm` |
-| Diesel, with no `libpq`. `AppContext::db` becomes a Diesel pool | `diesel` |
-| Toasty, before 1.0, with forward-only migrations. `AppContext::db` becomes a `toasty::Db` | `toasty` |
+| Keep SeaORM. `AppContext::db` becomes a `DatabaseConnection` | `postgres-seaorm` |
+| Diesel, with no `libpq`. `AppContext::db` becomes a Diesel pool | `postgres-diesel` |
+| Toasty, before 1.0, with forward-only migrations. `AppContext::db` becomes a `toasty::Db` | `postgres-toasty` |
 | Keycloak bearer tokens and ABAC | `keycloak` |
 | PASETO bearer tokens and ABAC | `paseto` |
 | Browser sessions | `session` |
@@ -127,7 +127,7 @@ call `middleware::apply`. Added after `into_app`, a layer sits outside the stand
 stack: its refusals have no request id, security headers, or CORS headers, and it has no
 panic or timeout protection.
 
-With the `sqlx` feature, pass a pool where this passes `()`. Then `/_health/ready` asks it
+With the `postgres-sqlx` feature, pass a pool where this passes `()`. Then `/_health/ready` asks it
 as `database`, so do not add it again as a named check:
 
 ```rust,ignore

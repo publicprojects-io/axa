@@ -42,7 +42,7 @@ Publish only from a commit where everything in section 5 of `spec/index.md` has 
    workspace members in this mode:
 
 ```sh
-cargo publish --dry-run -p axa-environment -p axa-sqlx -p axa -p ...
+cargo publish --dry-run -p axa-environment -p axa-postgres-sqlx -p axa -p ...
 ```
 
 ## 4. Publish
@@ -52,9 +52,15 @@ one of them, as the `queue` feature needs it. `axa-problem` goes before `axa-ide
 depend on it. No other subcrate depends on another, so the rest can go in any order.
 `axa-test` is the one crate that depends on `axa`, so it publishes after `axa`.
 
-`axa-sqlite-job-queue` is held: do not publish it until sqlx releases the raised cap on
+The SQLite crates are held: `axa-sqlite-job-queue`, `axa-sqlite-sqlx`, `axa-sqlite-seaorm`,
+and `axa-sqlite-diesel`. Do not publish them until sqlx releases the raised cap on
 `libsqlite3-sys` (sqlx PR #4502), `cargo update -p libsqlite3-sys` brings in 0.39 or
 later, and the RUSTSEC-2026-0459 ignore in `.cargo/audit.toml` is gone.
+
+crates.io refuses a crate whose dependencies, optional ones too, are not published, so
+`axa` cannot be published while its `sqlite-*` features name a held crate. Until the SQLite
+crates go out, a release of `axa` takes those features out of its `Cargo.toml` first, on
+the release commit only, and puts them back after.
 
 `axa-pagination` and `axa-offset-pagination` are retired, as axa 0.9 removed offset
 paging. Never publish either again.

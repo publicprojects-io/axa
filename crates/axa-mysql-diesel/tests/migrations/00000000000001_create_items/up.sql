@@ -1,0 +1,5 @@
+CREATE TABLE items (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL UNIQUE,
+    state ENUM('new', 'done') NOT NULL DEFAULT 'new'
+);

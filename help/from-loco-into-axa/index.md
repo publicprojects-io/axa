@@ -22,7 +22,7 @@ them on real Postgres.
 covers the database half in detail.
 
 **Convert one service first**, ideally the one with the least database code.
-Keep SeaORM for now by using axa's `sea-orm` feature, so this change is only about
+Keep SeaORM for now by using axa's `postgres-seaorm` feature, so this change is only about
 Loco. Moving from SeaORM to sqlx is a separate change.
 
 ## What changes
@@ -60,7 +60,7 @@ Remove `loco-rs` and add axa, pinned to a revision:
 
 ```toml
 [dependencies]
-axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>", features = ["sea-orm"] }
+axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>", features = ["postgres-seaorm"] }
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
@@ -69,13 +69,13 @@ axum-test = "21"
 ```
 
 Add the `queue` feature if the service has background workers. A service with no
-database of its own needs no features, and can then delete `sea-orm`, its
+database of its own needs no features, and can then delete `postgres-seaorm`, its
 migration crate, and its models.
 
 Do the same in `migration/Cargo.toml` if it depends on `loco-rs`:
 
 ```toml
-axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>", features = ["sea-orm"] }
+axa = { git = "https://github.com/publicprojects-io/axa", rev = "<commit>", features = ["postgres-seaorm"] }
 ```
 
 **Loco was enabling features for you.** Expect errors like `Uuid: Serialize is
@@ -425,7 +425,7 @@ ctx.health_checks = axa::health::Checks::new().add("search", move || {
 });
 ```
 
-**Moving on to sqlx?** Turn on the `sqlx` feature. `AppContext::db` is then a
+**Moving on to sqlx?** Turn on the `postgres-sqlx` feature. `AppContext::db` is then a
 `PgPool`, which readiness checks as `database`, and `axa::model` and
 `axa::validation` work as they did with SeaORM.
 

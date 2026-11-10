@@ -1,6 +1,6 @@
 # axa
 
-> Small shared library for services built directly on Axum. A library, not a framework: `main.rs` stays ordinary Axum and
+> Accessories library for Axum websites, databases, microservices, and more. A library, not a framework: `main.rs` stays ordinary Axum and
 > calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
 > the preferred way to reach a database. Version 0.11.0, Rust 1.97 or newer.
 
@@ -25,8 +25,9 @@
 - [axa for Poem users](help/axa-for-poem-users/index.md)
 - [axa for Topcoat users](help/axa-for-topcoat-users/index.md)
 - [From Loco into axa](help/from-loco-into-axa/index.md)
-- [From Loco SeaORM into axa-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
+- [From Loco SeaORM into axa-postgres-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)
+- [Upgrading to 0.12](help/upgrading-to-0.12/index.md)
 - [Upgrading to 0.11](help/upgrading-to-0.11/index.md)
 - [Upgrading to 0.3](help/upgrading-to-0.3/index.md)
 - [The transactional outbox](help/transactional-outbox/index.md)
@@ -56,8 +57,15 @@
 
 ## Crates
 
-- [axa-diesel](crates/axa-diesel/README.md) (feature `diesel`): Diesel pooling, migrations, and test resets for Axum services, in pure Rust.
-- [axa-toasty](crates/axa-toasty/README.md) (feature `toasty`): Toasty connections, migrations, and test resets for Axum services.
+- [axa-postgres-diesel](crates/axa-postgres-diesel/README.md) (feature `postgres-diesel`): Diesel on PostgreSQL: pooling, migrations, and test resets for Axum services, in pure Rust.
+- [axa-postgres-toasty](crates/axa-postgres-toasty/README.md) (feature `postgres-toasty`): Toasty on PostgreSQL: connections, migrations, and test resets for Axum services.
+- [axa-mysql-sqlx](crates/axa-mysql-sqlx/README.md) (feature `mysql-sqlx`): MySQL pooling, migrations, and test resets over sqlx for Axum services.
+- [axa-mysql-seaorm](crates/axa-mysql-seaorm/README.md) (feature `mysql-seaorm`): SeaORM connections, migrations, schema helpers, and test resets for Axum services on MySQL.
+- [axa-mysql-diesel](crates/axa-mysql-diesel/README.md) (feature `mysql-diesel`): Diesel pooling, migrations, and test resets for Axum services on MySQL, in pure Rust.
+- [axa-mysql-toasty](crates/axa-mysql-toasty/README.md) (feature `mysql-toasty`): Toasty connections, migrations, and test resets for Axum services, on MySQL.
+- [axa-sqlite-sqlx](crates/axa-sqlite-sqlx/README.md) (feature `sqlite-sqlx`): SQLite pooling, migrations, and test resets over sqlx for Axum services.
+- [axa-sqlite-seaorm](crates/axa-sqlite-seaorm/README.md) (feature `sqlite-seaorm`): SeaORM connections, migrations, schema helpers, and test resets on SQLite for Axum services, with an easy path from Loco.
+- [axa-sqlite-diesel](crates/axa-sqlite-diesel/README.md) (feature `sqlite-diesel`): Diesel pooling, migrations, and test resets for Axum services on SQLite.
 - [axa-environment](crates/axa-environment/README.md) (always included): Which environment a service runs in, read one way, with no dependencies.
 - [axa-keycloak-auth](crates/axa-keycloak-auth/README.md) (feature `keycloak`): Keycloak bearer authentication and ABAC enforcement for Axum services.
 - [axa-openapi-docs](crates/axa-openapi-docs/README.md) (feature `openapi`): Serve OpenAPI documents and a pinned Swagger UI from Axum services.
@@ -71,9 +79,9 @@
 - [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.
 - [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
 - [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services.
-- [axa-seaorm](crates/axa-seaorm/README.md) (feature `sea-orm`): SeaORM connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.
+- [axa-postgres-seaorm](crates/axa-postgres-seaorm/README.md) (feature `postgres-seaorm`): SeaORM on PostgreSQL: connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.
 - [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults.
-- [axa-sqlx](crates/axa-sqlx/README.md) (feature `sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
+- [axa-postgres-sqlx](crates/axa-postgres-sqlx/README.md) (feature `postgres-sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
 - [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.
 - [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for axa services, built on axum-test.
 - [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.

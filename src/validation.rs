@@ -58,7 +58,7 @@ impl From<ValidationErrors> for ModelValidationErrors {
     }
 }
 
-#[cfg(feature = "sea-orm")]
+#[cfg(has_seaorm)]
 impl From<ModelValidationErrors> for sea_orm::DbErr {
     fn from(errors: ModelValidationErrors) -> Self {
         // Compact on purpose: `code` and `message` only, which is the text
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(errors.errors["name"][0].params["min"], 2);
     }
 
-    #[cfg(feature = "sea-orm")]
+    #[cfg(has_seaorm)]
     #[test]
     fn the_database_error_is_compact_json() {
         use sea_orm::DbErr;

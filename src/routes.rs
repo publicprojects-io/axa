@@ -267,7 +267,7 @@ impl AppRoutes {
 }
 
 // Toasty connects when its handle is made, so with it alone there is no context.
-#[cfg(all(test, not(axa_db = "toasty")))]
+#[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
 mod tests {
     use super::*;
     use crate::{Environment, config::Defaults};

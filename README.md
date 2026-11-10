@@ -34,12 +34,30 @@ them: `AppContext::db` becomes its pool, `axa::db::connect` opens it from config
 any of them, `axa::model` and `axa::validation` give model errors and validation, and a
 broken constraint answers `409` or `422`.
 
-- [`axa-sqlx`](crates/axa-sqlx): Postgres over sqlx, with no ORM. `AppContext::db` is a `PgPool`
-- [`axa-seaorm`](crates/axa-seaorm): Postgres over SeaORM, with schema helpers and an easy path from Loco. `AppContext::db` is a `DatabaseConnection`
-- [`axa-diesel`](crates/axa-diesel): Postgres over Diesel, with no `libpq`. `AppContext::db` is a Diesel pool
-- [`axa-toasty`](crates/axa-toasty): Postgres over Toasty. `AppContext::db` is a `toasty::Db`. Toasty is before 1.0, and its migrations go forward only
+Each crate, and the `axa` feature that turns it on, is named for its database and
+library:
 
-Turn on one. With more than one, `sqlx` wins, then `sea-orm`, `diesel`, and `toasty`.
+| | sqlx | SeaORM | Diesel | Toasty |
+|---|---|---|---|---|
+| Postgres | [`axa-postgres-sqlx`](crates/axa-postgres-sqlx) | [`axa-postgres-seaorm`](crates/axa-postgres-seaorm) | [`axa-postgres-diesel`](crates/axa-postgres-diesel) | [`axa-postgres-toasty`](crates/axa-postgres-toasty) |
+| MySQL | [`axa-mysql-sqlx`](crates/axa-mysql-sqlx) | [`axa-mysql-seaorm`](crates/axa-mysql-seaorm) | [`axa-mysql-diesel`](crates/axa-mysql-diesel) | [`axa-mysql-toasty`](crates/axa-mysql-toasty) |
+| SQLite | [`axa-sqlite-sqlx`](crates/axa-sqlite-sqlx) | [`axa-sqlite-seaorm`](crates/axa-sqlite-seaorm) | [`axa-sqlite-diesel`](crates/axa-sqlite-diesel) | |
+
+- **sqlx** has no ORM: a service writes its own SQL. `AppContext::db` is the pool.
+- **SeaORM** adds models, schema helpers, and an easy path from Loco. `AppContext::db`
+  is a `DatabaseConnection`.
+- **Diesel** needs no C database client library: no `libpq` or `libmysqlclient`.
+  `AppContext::db` is a Diesel pool.
+- **Toasty** is before 1.0, and its migrations go forward only. `AppContext::db` is a
+  `toasty::Db`. There is no SQLite Toasty crate, as its SQLite driver needs a newer
+  SQLite library than sqlx allows in one build.
+
+MySQL takes TLS from the URL's `ssl-mode`, which production requires, in every MySQL
+crate alike. The SQLite crates build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459,
+so they are not published until sqlx raises its cap on it.
+
+Turn on one. With more than one, Postgres wins, then MySQL, then SQLite, and for each,
+sqlx, then SeaORM, Diesel, and Toasty.
 
 ### Authentication
 
@@ -596,7 +614,7 @@ async fn health_answers() {
 ## Requirements
 
 - Rust 1.97 or newer, on edition 2024
-- PostgreSQL for the `queue`, `outbox`, and `sea-orm` features
+- PostgreSQL for the `queue`, `outbox`, and `postgres-seaorm` features
 
 ## Development
 
@@ -635,7 +653,8 @@ how to move a service across.
 
 ## Relationship to Loco
 
-To upgrade from 0.10, read [Upgrading to axa 0.11](help/upgrading-to-0.11/index.md), and
+To upgrade from 0.11, read [Upgrading to axa 0.12](help/upgrading-to-0.12/index.md), from 0.10,
+[Upgrading to axa 0.11](help/upgrading-to-0.11/index.md), and
 from earlier versions, [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
 
 To move a project across, follow

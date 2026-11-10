@@ -2,7 +2,7 @@
 
 This guide covers the database half of leaving
 [Loco](https://loco.rs). You keep SeaORM, your entities, and your migrations, and
-swap Loco's helpers for `axa-seaorm`, which keeps their names and behaviour.
+swap Loco's helpers for `axa-postgres-seaorm`, which keeps their names and behaviour.
 
 For the rest of the move (routes, boot, configuration, tests), see
 [Converting a project from Loco to axa](../from-loco-into-axa/index.md).
@@ -23,14 +23,14 @@ For the rest of the move (routes, boot, configuration, tests), see
 
 ```toml
 [dependencies]
-axa = { version = "0.11", features = ["sea-orm"] }
+axa = { version = "0.11", features = ["postgres-seaorm"] }
 ```
 
 In a separate migration crate:
 
 ```toml
 [dependencies]
-axa = { version = "0.11", features = ["sea-orm"] }
+axa = { version = "0.11", features = ["postgres-seaorm"] }
 sea-orm-migration = { version = "2.0", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 ```
 

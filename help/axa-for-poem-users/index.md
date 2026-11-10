@@ -37,7 +37,7 @@ you do, because every piece is a plain function, struct, or layer.
 | `ForceHttps` | None | axa sends HSTS in production and leaves TLS and redirects to the proxy |
 | `poem::Error`, `ResponseError` | `axa::Error`, returned as `axa::Result<T>` | Becomes an RFC 9457 problem. A `500` sends no internal text |
 | Configuration | `Config::from_env` with `Defaults` in code | Poem has none of its own. axa reads only environment variables |
-| Database | `axa-sqlx`, `axa-seaorm`, `axa-diesel`, or `axa-toasty` | Poem has none. One feature makes `AppContext::db` its pool, and readiness checks it |
+| Database | `axa-postgres-sqlx`, `axa-postgres-seaorm`, `axa-postgres-diesel`, or `axa-postgres-toasty` | Poem has none. One feature makes `AppContext::db` its pool, and readiness checks it |
 | Background jobs | `BackgroundWorker`, and the `queue` feature on Postgres | Poem has none. MySQL and SQLite queues are crates of their own |
 | `poem-openapi` `ApiKey`, `Basic`, `Bearer` | `axa-paseto-auth` or `axa-keycloak-auth` | Poem's traits extract a credential. axa's crates verify a bearer token and enforce ABAC. Neither has API keys |
 | `CookieSession`, `ServerSession`, Redis sessions | `axa-web-session`, over `axum_session` | Signed and encrypted in production. Nothing stored until `sign_in` |

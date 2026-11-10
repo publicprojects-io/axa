@@ -5,7 +5,7 @@ description: Maintain the axa codebase itself. Use this whenever working directl
 
 # Maintaining axa
 
-axa is a small shared library for services built directly on Axum, written to be
+axa is an accessories library for Axum websites, databases, microservices, and more, written to be
 audited: the SQL, the middleware, and the startup path are all visible, with no
 framework between the reader and the behaviour. Judge a change by whether an auditor
 can still read the whole path.
@@ -71,7 +71,7 @@ These come from the principles in section 3 of the spec, and each is a reason to
 
 ## Traps
 
-**The feature sets are not interchangeable.** Some tests compile only without `sea-orm`,
+**The feature sets are not interchangeable.** Some tests compile only without `postgres-seaorm`,
 and the worker tests only without `queue` as well. A single `--all-features` run is
 not verification, so run all three test sets from section 5.
 

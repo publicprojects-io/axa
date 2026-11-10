@@ -1,7 +1,7 @@
 //! That a violated constraint is logged as a client's mistake. This has its own test
 //! binary for the reason given in `request_logging.rs`.
 
-#![cfg(any(feature = "queue", feature = "sqlx"))]
+#![cfg(any(feature = "queue", feature = "postgres-sqlx"))]
 
 use std::sync::{Arc, Mutex};
 

@@ -454,7 +454,16 @@ impl Queue {
 
 /// These need a real Postgres, so they are ignored by default. Run them with
 /// `AXA_TEST_DB_URL=postgres://... cargo test --all-features -- --ignored`.
-#[cfg(all(test, not(any(axa_db = "seaorm", axa_db = "toasty"))))]
+#[cfg(all(
+    test,
+    not(any(
+        axa_db = "postgres_seaorm",
+        axa_db = "mysql_seaorm",
+        axa_db = "sqlite_seaorm",
+        axa_db = "postgres_toasty",
+        axa_db = "mysql_toasty"
+    ))
+))]
 mod tests {
     use super::*;
     use crate::{

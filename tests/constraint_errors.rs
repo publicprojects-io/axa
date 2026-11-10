@@ -3,10 +3,10 @@
 
 #![cfg(any(
     feature = "queue",
-    feature = "sqlx",
-    feature = "sea-orm",
-    feature = "diesel",
-    feature = "toasty"
+    feature = "postgres-sqlx",
+    feature = "postgres-seaorm",
+    feature = "postgres-diesel",
+    feature = "postgres-toasty"
 ))]
 
 use axa::Error;
@@ -52,7 +52,7 @@ async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
 
 /// A database that refuses a write because it is read-only is the service's trouble,
 /// and passes: `503` with `Retry-After`, not a `500` and not the caller's mistake.
-#[cfg(any(feature = "queue", feature = "sqlx"))]
+#[cfg(any(feature = "queue", feature = "postgres-sqlx"))]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_read_only_database_is_unavailable_not_a_failure() {
@@ -77,7 +77,7 @@ async fn a_read_only_database_is_unavailable_not_a_failure() {
     assert_answers(response, StatusCode::SERVICE_UNAVAILABLE, "unavailable").await;
 }
 
-#[cfg(any(feature = "queue", feature = "sqlx"))]
+#[cfg(any(feature = "queue", feature = "postgres-sqlx"))]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
@@ -105,7 +105,7 @@ async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
     assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 }
 
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "postgres-seaorm")]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
@@ -148,11 +148,11 @@ async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
     .await;
 }
 
-#[cfg(feature = "diesel")]
+#[cfg(feature = "postgres-diesel")]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_diesel_is_the_callers_mistake() {
-    use axa::diesel::{PoolConfig, connect, diesel, diesel_async::RunQueryDsl};
+    use axa::postgres_diesel::{PoolConfig, connect, diesel, diesel_async::RunQueryDsl};
 
     let pool = connect(&PoolConfig::new(url())).await.unwrap();
     let mut connection = pool.get().await.unwrap();
@@ -185,11 +185,11 @@ async fn a_violated_constraint_through_diesel_is_the_callers_mistake() {
     assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 }
 
-#[cfg(feature = "toasty")]
+#[cfg(feature = "postgres-toasty")]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_toasty_is_the_callers_mistake() {
-    use axa::toasty::{PoolConfig, connect, toasty};
+    use axa::postgres_toasty::{PoolConfig, connect, toasty};
 
     let mut db = connect(&PoolConfig::new(url()), toasty::ModelSet::default())
         .await

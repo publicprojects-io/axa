@@ -430,12 +430,28 @@ fn worker_mode(name: &str) -> Option<WorkerMode> {
 }
 
 /// Whether a connection string keeps its traffic private: it demands TLS, or it goes
-/// no further than this machine. An address that cannot be read counts as neither.
-/// `sslmode=require` counts, though it encrypts without checking who answers. Only
-/// `verify-full` checks that.
+/// no further than this machine. An address that cannot be read, or a database this
+/// does not know, counts as neither, so it fails closed.
+///
+/// Postgres demands TLS with `sslmode` of `require`, `verify-ca`, or `verify-full`, and
+/// MySQL and MariaDB with `ssl-mode` of `REQUIRED`, `VERIFY_CA`, or `VERIFY_IDENTITY`.
+/// `require` and `REQUIRED` count, though they encrypt without checking who answers:
+/// only `verify-full` and `VERIFY_IDENTITY` check that. A SQLite database is a file on
+/// this machine, so it always stays private.
 fn stays_private(uri: &str) -> bool {
-    let Some((_, rest)) = uri.split_once("://") else {
+    if uri
+        .get(..7)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("sqlite:"))
+    {
+        return true;
+    }
+    let Some((scheme, rest)) = uri.split_once("://") else {
         return false;
+    };
+    let demanding: &[&str] = match scheme.to_ascii_lowercase().as_str() {
+        "postgres" | "postgresql" => &["require", "verify-ca", "verify-full"],
+        "mysql" | "mariadb" => &["required", "verify_ca", "verify_identity"],
+        _ => return false,
     };
     let (location, query) = rest.split_once('?').unwrap_or((rest, ""));
     // The last of a repeated parameter wins, as it does in the driver.
@@ -447,11 +463,9 @@ fn stays_private(uri: &str) -> bool {
             .map(|(_, value)| value)
             .next_back()
     };
-    if parameter(&["sslmode", "ssl-mode"]).is_some_and(|mode| {
-        ["require", "verify-ca", "verify-full"]
-            .iter()
-            .any(|safe| mode.eq_ignore_ascii_case(safe))
-    }) {
+    if parameter(&["sslmode", "ssl-mode"])
+        .is_some_and(|mode| demanding.iter().any(|safe| mode.eq_ignore_ascii_case(safe)))
+    {
         return true;
     }
     let authority = location.split('/').next().unwrap_or_default();
@@ -480,8 +494,9 @@ fn database_uri<F: Fn(&str) -> Option<String>>(
                 && !vars.flag("DB_ALLOW_INSECURE", false) =>
         {
             Err(Error::string(
-                "DB_URL must set sslmode to require, verify-ca, or verify-full in \
-                 production, unless DB_ALLOW_INSECURE is set",
+                "DB_URL must demand TLS in production, with sslmode set to require, \
+                 verify-ca, or verify-full for Postgres, or ssl-mode set to REQUIRED, \
+                 VERIFY_CA, or VERIFY_IDENTITY for MySQL, unless DB_ALLOW_INSECURE is set",
             ))
         }
         Some(uri) => Ok(uri),
@@ -489,10 +504,28 @@ fn database_uri<F: Fn(&str) -> Option<String>>(
         None if environment.is_production_like() => {
             Err(Error::string("DB_URL is required in production"))
         }
-        None => Ok(format!(
-            "postgres://postgres:postgres@localhost:5432/{}_{environment}",
-            defaults.database
-        )),
+        None => Ok(local_database_uri(defaults.database, environment)),
+    }
+}
+
+/// The database a development or test build uses when `DB_URL` is unset: one on this
+/// machine, for the database `AppContext::db` holds.
+fn local_database_uri(database: &str, environment: &Environment) -> String {
+    if cfg!(any(
+        axa_db = "mysql_sqlx",
+        axa_db = "mysql_seaorm",
+        axa_db = "mysql_diesel",
+        axa_db = "mysql_toasty"
+    )) {
+        format!("mysql://root@localhost:3306/{database}_{environment}")
+    } else if cfg!(any(
+        axa_db = "sqlite_sqlx",
+        axa_db = "sqlite_seaorm",
+        axa_db = "sqlite_diesel"
+    )) {
+        format!("sqlite://{database}_{environment}.sqlite3?mode=rwc")
+    } else {
+        format!("postgres://postgres:postgres@localhost:5432/{database}_{environment}")
     }
 }
 
@@ -885,18 +918,39 @@ mod tests {
     #[test]
     fn development_and_test_get_a_local_database_named_for_the_environment() {
         let dev = with(&[], &Environment::Development).unwrap();
-        assert!(dev.database.uri.ends_with("/svc_development"));
+        assert!(
+            dev.database.uri.contains("svc_development"),
+            "{}",
+            dev.database.uri
+        );
         let test = with(&[], &Environment::Test).unwrap();
-        assert!(test.database.uri.ends_with("/svc_test"));
+        assert!(
+            test.database.uri.contains("svc_test"),
+            "{}",
+            test.database.uri
+        );
     }
 
     #[test]
-    fn the_local_database_user_names_no_framework() {
-        let dev = with(&[], &Environment::Development).unwrap();
-        assert_eq!(
-            dev.database.uri,
+    fn the_local_database_is_the_database_the_context_holds_and_names_no_framework() {
+        let expected = if cfg!(any(
+            axa_db = "mysql_sqlx",
+            axa_db = "mysql_seaorm",
+            axa_db = "mysql_diesel",
+            axa_db = "mysql_toasty"
+        )) {
+            "mysql://root@localhost:3306/svc_development"
+        } else if cfg!(any(
+            axa_db = "sqlite_sqlx",
+            axa_db = "sqlite_seaorm",
+            axa_db = "sqlite_diesel"
+        )) {
+            "sqlite://svc_development.sqlite3?mode=rwc"
+        } else {
             "postgres://postgres:postgres@localhost:5432/svc_development"
-        );
+        };
+        let dev = with(&[], &Environment::Development).unwrap();
+        assert_eq!(dev.database.uri, expected);
     }
 
     #[test]
@@ -1003,6 +1057,37 @@ mod tests {
                 with(&[("DB_URL", uri)], &Environment::Production).is_ok(),
                 "{uri}"
             );
+        }
+    }
+
+    #[test]
+    fn production_asks_each_database_for_its_own_tls_setting() {
+        for uri in [
+            "mysql://me:pw@db.internal/app?ssl-mode=REQUIRED",
+            "mysql://me:pw@db.internal/app?ssl-mode=verify_identity",
+            "mariadb://db.internal/app?ssl-mode=VERIFY_CA",
+            "mysql://me:pw@localhost:3306/app",
+            "sqlite://var/lib/app/data.sqlite3",
+            "sqlite::memory:",
+            "SQLITE://app.db",
+        ] {
+            assert!(
+                with(&[("DB_URL", uri)], &Environment::Production).is_ok(),
+                "{uri}"
+            );
+        }
+        for uri in [
+            "mysql://me:pw@db.internal/app",
+            "mysql://me:pw@db.internal/app?ssl-mode=PREFERRED",
+            "mysql://me:pw@db.internal/app?ssl-mode=DISABLED",
+            // Postgres's spelling means nothing to MySQL, and MySQL's nothing to Postgres.
+            "mysql://me:pw@db.internal/app?sslmode=require",
+            "postgres://me:pw@db.internal/app?sslmode=REQUIRED",
+            "oracle://me:pw@db.internal/app?sslmode=require",
+        ] {
+            let error = with(&[("DB_URL", uri)], &Environment::Production).unwrap_err();
+            assert!(error.to_string().contains("ssl-mode"), "{uri}");
+            assert!(!error.to_string().contains("pw"), "{uri}");
         }
     }
 

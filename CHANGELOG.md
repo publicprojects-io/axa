@@ -3,7 +3,49 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [0.11.0] - 2026-11-10
+## [Unreleased]
+
+Read [Upgrading to axa 0.12](help/upgrading-to-0.12/index.md): for a service on Postgres,
+the upgrade is renaming.
+
+### Added
+
+- **Database crates for MySQL and SQLite**, each with the shape of its Postgres sibling:
+  `axa-mysql-sqlx`, `axa-mysql-seaorm`, `axa-mysql-diesel`, `axa-mysql-toasty`,
+  `axa-sqlite-sqlx`, `axa-sqlite-seaorm`, and `axa-sqlite-diesel`, all 0.1.0, each behind
+  the `axa` feature of its own name. Each makes `AppContext::db` its pool, and a violated
+  constraint and a database that cannot serve for now answer as they do on Postgres.
+  `axa-mysql-diesel` is pure Rust, with no `libmysqlclient`, and every MySQL crate reads
+  TLS from the URL's `ssl-mode`. There is no SQLite Toasty crate, as Toasty's SQLite
+  driver needs a newer `libsqlite3-sys` than sqlx allows in one build. The SQLite crates
+  build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459, so they are not published
+  until sqlx raises its cap on it.
+- **Production checks a MySQL `DB_URL` for TLS too**: `ssl-mode` of `REQUIRED`,
+  `VERIFY_CA`, or `VERIFY_IDENTITY`, unless it stays on this machine. A SQLite `DB_URL`
+  is a file on this machine, and a database `axa` does not know fails closed.
+- **A development build with no `DB_URL` uses a local database of the kind
+  `AppContext::db` holds**: Postgres, MySQL, or a SQLite file.
+
+### Changed
+
+- **The Postgres database crates are named for their database**: `axa-sqlx` is
+  `axa-postgres-sqlx`, `axa-seaorm` is `axa-postgres-seaorm`, `axa-diesel` is
+  `axa-postgres-diesel`, and `axa-toasty` is `axa-postgres-toasty`, each at the version
+  it had. Rename them in `Cargo.toml`, and `axa_sqlx::` and the like in code.
+- **The database features are named for their database and library**: `sqlx` is
+  `postgres-sqlx`, `sea-orm` is `postgres-seaorm`, `diesel` is `postgres-diesel`, and
+  `toasty` is `postgres-toasty`, and their modules are `axa::postgres_sqlx` and the like.
+  `axa-transactional-outbox`'s `sea-orm` feature is `seaorm`. With more than one
+  database feature on, Postgres wins, then MySQL, then SQLite, and for each, sqlx, then
+  SeaORM, Diesel, and Toasty.
+- **`axa::Error::Diesel` holds a `DieselError`**, the same for each database's Diesel
+  crate, with `Query`, `Pool`, and `Other`. `?` still turns a Diesel crate's error, and
+  Diesel's own query error, into it.
+- **A SeaORM feature builds sqlx too**, which SeaORM builds anyway, so that its errors are
+  read as sqlx's are, on every database.
+- **The crate description is "Accessories library for Axum websites, databases,
+  microservices, and more."**
+
 
 This covers `axa` 0.11.0, `axa-problem` 0.2.0 under its old name again, the new
 `axa-mysql-job-queue` 0.1.0 and `axa-toasty` 0.1.0, and new versions of `axa-seaorm`

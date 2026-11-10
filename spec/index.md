@@ -9,8 +9,8 @@ requirement with no test is marked **unverified**, and that is a gap to close.
 
 ## 1. Purpose
 
-`axa` is a small shared library for services built directly on Axum. sqlx is the
-preferred way to reach a database, and `axa-seaorm` supports projects that keep
+`axa` is an accessories library for Axum websites, databases, microservices, and more. sqlx is the
+preferred way to reach a database, and `axa-postgres-seaorm` supports projects that keep
 SeaORM. It exists so that a service can be audited by reading it: the SQL, the
 middleware, and the startup path are all visible, with no framework between
 the reader and the behaviour.
@@ -105,7 +105,7 @@ fixed once and an auditor reads it once.
 | CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DB_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
 | CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production`, `settings_warnings_go_to_stderr_whatever_the_logging` |
 | CFG-25 | The `Debug` text of `Database`, and so of `Config` and `AppContext`, hides any password in the connection string. | `debug_output_never_prints_a_password`, `a_pools_debug_text_holds_no_password` |
-| CFG-26 | The `Debug` text of `PoolConfig`, in `axa-sqlx`, `axa-seaorm`, `axa-diesel`, and `axa-toasty`, leaves the connection string out. | `debug_text_leaves_out_the_connection_string` |
+| CFG-26 | The `Debug` text of `PoolConfig`, in `axa-postgres-sqlx`, `axa-postgres-seaorm`, `axa-postgres-diesel`, and `axa-postgres-toasty`, leaves the connection string out. | `debug_text_leaves_out_the_connection_string` |
 | CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
 | CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
 | CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CONTENT_SECURITY_POLICY` names one, and an empty `HTTP_CONTENT_SECURITY_POLICY` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
@@ -171,7 +171,7 @@ From the outside in: request id, tracing, security headers, CORS, timeout,
 | ERR-4 | A custom error keeps its status, `code`, `detail`, and `errors`. | `custom_errors_keep_their_status_and_body`, `a_status_with_no_standard_reason_is_still_a_problem` |
 | ERR-5 | `not_found`, `unauthorized`, and `bad_request` build the matching variants. | `helpers_build_the_matching_variants`, `statuses_match_their_variants` |
 | ERR-6 | The `IntoResponse` match has no wildcard arm, so a new variant must choose its status. | Enforced by the compiler |
-| ERR-8 | With the `sqlx`, `queue`, or `sea-orm` feature, a violated unique or foreign key constraint answers `409`, and a violated check or not-null constraint answers `422` with code `unprocessable_entity`. Each logs as a client's mistake, with no text from the database, so no column or value is named. Any other database error is a generic `500`. | `a_sqlx_error_is_a_generic_500`, `a_violated_constraint_through_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_sea_orm_is_the_callers_mistake`, `a_violated_constraint_logs_nothing_at_error` |
+| ERR-8 | With the `postgres-sqlx`, `queue`, or `postgres-seaorm` feature, a violated unique or foreign key constraint answers `409`, and a violated check or not-null constraint answers `422` with code `unprocessable_entity`. Each logs as a client's mistake, with no text from the database, so no column or value is named. Any other database error is a generic `500`. | `a_sqlx_error_is_a_generic_500`, `a_violated_constraint_through_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_sea_orm_is_the_callers_mistake`, `a_violated_constraint_logs_nothing_at_error` |
 | ERR-7 | Only a server fault logs as an error, and it logs the error's message, never its `Debug` text, which for a database error quotes the row. A client's mistake logs no text, because it can quote personal data, and `Unauthorized` logs a warning. | `only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged` |
 | ERR-9 | Every error `axa` answers is an RFC 9457 problem with the media type `application/problem+json`: `type` is `about:blank`, `title` is the status's reason, `status` is the status, and `detail` is present only when there is something more to say. A success stays bare JSON. | `the_bodies_are_exactly_these`, `model_errors_answer_as_problems`, `a_panic_answers_like_any_other_internal_failure`, `json_serializes_with_a_json_content_type` |
 | ERR-10 | The machine-readable reason is the `code` extension member. `axa`'s own are `bad_request`, `unauthorized`, `not_found`, `conflict`, `validation`, `request_timeout`, `not_ready`, `not_started`, `shutting_down`, `unavailable`, `precondition_failed`, `precondition_required`, and `internal_server_error`, and a refusal shaped under ERR-13 takes its status's reason in lower case with underscores. | `the_bodies_are_exactly_these`, `a_request_past_its_timeout_is_a_408`, `a_wrong_method_is_a_problem_and_keeps_its_allow_header`, `a_stale_write_is_a_412_problem_and_writes_nothing`, `if_match_is_optional_unless_required` |
@@ -299,7 +299,7 @@ repeat. These tests need `AXA_TEST_DB_URL`.
 
 ### 4.12 SeaORM support
 
-`axa-seaorm` lets a project keep SeaORM while it leaves Loco. It stays available
+`axa-postgres-seaorm` lets a project keep SeaORM while it leaves Loco. It stays available
 after the Main X Index services move to sqlx, for other projects making the same
 move.
 
@@ -328,13 +328,13 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 
 | Id | Crate | Requirement | Test |
 |---|---|---|---|
-| SQX-1 | `axa-sqlx` | Pool settings reach sqlx. | `pool_settings_reach_the_options` |
-| SQX-2 | `axa-sqlx` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
-| SQX-3 | `axa-sqlx` | Services booting together all migrate. | `services_booting_together_all_migrate` |
-| SQX-4 | `axa-sqlx` | A table or type name reaches SQL only through `quote_identifier`, which refuses anything but lowercase ASCII letters, digits, and underscores. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
-| SQX-5 | `axa-sqlx` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
-| SQX-6 | `axa-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
-| SQX-7 | `axa-sqlx` | `Db` lets one function take the pool or an open transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
+| SQX-1 | `axa-postgres-sqlx` | Pool settings reach sqlx. | `pool_settings_reach_the_options` |
+| SQX-2 | `axa-postgres-sqlx` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
+| SQX-3 | `axa-postgres-sqlx` | Services booting together all migrate. | `services_booting_together_all_migrate` |
+| SQX-4 | `axa-postgres-sqlx` | A table or type name reaches SQL only through `quote_identifier`, which refuses anything but lowercase ASCII letters, digits, and underscores. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| SQX-5 | `axa-postgres-sqlx` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
+| SQX-6 | `axa-postgres-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
+| SQX-7 | `axa-postgres-sqlx` | `Db` lets one function take the pool or an open transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
 | ENV-D | `axa-environment` | A command that destroys data may run only in development or test, and only when confirmed. | `data_is_destroyed_only_in_development_or_test_and_only_when_confirmed` |
 | PAG-4 | `axa-cursor-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
 | PAG-7 | `axa-cursor-pagination` | A collection read MUST NOT take `?offset=`, and MUST NOT send `X-Total-Count`. | `there_is_no_offset_parameter`, `a_response_carries_no_total` |
@@ -357,11 +357,11 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | PST-10 | `axa-paseto-auth` | `parse_bool` does not read an unknown word as off. | `on_off_settings_parse` |
 | PST-11 | `axa-paseto-auth` | A decision carrying an obligation the service has not declared is a `403`. A handler reads a declared one through `Allowed`, which is refused where nothing was decided. | `an_obligation_nobody_carries_out_is_refused`, `a_handler_reads_the_obligations_the_service_declared`, `allowed_is_refused_where_nothing_was_decided` |
 | PST-12 | `axa-paseto-auth` | A `401` carries `WWW-Authenticate: Bearer`, as RFC 9110 requires, with no `error` parameter, so the challenge says no more than the status. A `403` carries none. | `a_401_carries_a_bearer_challenge_and_a_403_does_not` |
-| DSL-1 | `axa-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
-| DSL-2 | `axa-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
-| DSL-3 | `axa-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
-| DSL-5 | `axa-diesel` | A pool that is all in use answers with an error within `wait_timeout`, rather than waiting for ever. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
-| DSL-4 | `axa-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
+| DSL-1 | `axa-postgres-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
+| DSL-2 | `axa-postgres-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
+| DSL-3 | `axa-postgres-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| DSL-5 | `axa-postgres-diesel` | A pool that is all in use answers with an error within `wait_timeout`, rather than waiting for ever. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
+| DSL-4 | `axa-postgres-diesel` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
 | TRA-1 | `axa-tera-templates` | HTML templates escape values unless a template says `safe`. | `html_templates_escape_values`, `safe_turns_escaping_off` |
 | TRA-2 | `axa-tera-templates` | A missing variable or template is an error, not blank output. | `a_missing_variable_is_an_error_rather_than_blank`, `a_missing_template_is_an_error` |
 | TRA-3 | `axa-tera-templates` | A failed render is HTML, and shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
@@ -396,13 +396,13 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | OAP-7 | `axa-openapi-docs` | A path kept out on purpose, and a path item's other members, are not reported. | `a_path_kept_out_on_purpose_is_not_reported`, `a_path_items_other_members_are_not_operations` |
 | OAP-8 | `axa-openapi-docs` | `dangling_refs` reports a local `$ref` to nothing, and leaves references to other files alone. | `a_reference_that_resolves_is_not_reported`, `a_reference_to_nothing_is_reported_wherever_it_is`, `a_reference_to_another_file_is_left_alone` |
 | OAP-9 | `axa-openapi-docs` | The Swagger UI page sets its own `content-security-policy`, so the production default does not blank it. | `the_page_sets_a_policy_that_lets_it_load` |
-| SOR-1 | `axa-seaorm` | Pool settings reach `SeaORM`. | `pool_settings_reach_the_options` |
-| SOR-2 | `axa-seaorm` | `query::condition()` builds the same conditions as Loco's, all of which must hold. | `eq_and_ne_compare_values`, `several_conditions_must_all_hold` |
+| SOR-1 | `axa-postgres-seaorm` | Pool settings reach `SeaORM`. | `pool_settings_reach_the_options` |
+| SOR-2 | `axa-postgres-seaorm` | `query::condition()` builds the same conditions as Loco's, all of which must hold. | `eq_and_ne_compare_values`, `several_conditions_must_all_hold` |
 | SOR-3 | `axa` | With `sea-orm`, validation failures become a `DbErr` with Loco's compact JSON text, so snapshots do not change. | `the_database_error_is_compact_json` |
-| SOR-4 | `axa-seaorm` | Migrations apply, revert the requested steps, and list what is pending. `truncate` empties tables, refusing an unsafe name, and a duplicate is a unique violation. `dangerously_recreate` rebuilds from the first migration. | `migrations_apply_revert_and_list_what_is_pending`, `truncate_empties_tables_and_a_duplicate_is_a_unique_violation`, `dangerously_recreate_rebuilds_from_the_first_migration` |
-| TOA-1 | `axa-toasty` | `connect` checks that the database answers, and fails on one that does not. | `connect_checks_the_database_answers` |
-| TOA-2 | `axa-toasty` | Migrations apply once, and `pending` names the rest. | `migrations_apply_once_and_pending_names_the_rest` |
-| TOA-3 | `axa-toasty` | `truncate` empties tables and refuses an unsafe name, a duplicate is a unique violation, and `dangerously_recreate` rebuilds from the first migration. | `truncate_empties_tables_and_refuses_unsafe_names`, `a_duplicate_is_a_unique_violation`, `dangerously_recreate_rebuilds_from_the_first_migration` |
+| SOR-4 | `axa-postgres-seaorm` | Migrations apply, revert the requested steps, and list what is pending. `truncate` empties tables, refusing an unsafe name, and a duplicate is a unique violation. `dangerously_recreate` rebuilds from the first migration. | `migrations_apply_revert_and_list_what_is_pending`, `truncate_empties_tables_and_a_duplicate_is_a_unique_violation`, `dangerously_recreate_rebuilds_from_the_first_migration` |
+| TOA-1 | `axa-postgres-toasty` | `connect` checks that the database answers, and fails on one that does not. | `connect_checks_the_database_answers` |
+| TOA-2 | `axa-postgres-toasty` | Migrations apply once, and `pending` names the rest. | `migrations_apply_once_and_pending_names_the_rest` |
+| TOA-3 | `axa-postgres-toasty` | `truncate` empties tables and refuses an unsafe name, a duplicate is a unique violation, and `dangerously_recreate` rebuilds from the first migration. | `truncate_empties_tables_and_refuses_unsafe_names`, `a_duplicate_is_a_unique_violation`, `dangerously_recreate_rebuilds_from_the_first_migration` |
 | SES-1 | `axa-web-session` | `production` refuses a key under 64 bytes, rather than letting the session crate panic on it, and refuses two identical keys. | `a_short_key_is_refused_not_a_panic`, `the_two_keys_must_differ` |
 | SES-2 | `axa-web-session` | Production cookies are `Secure`, `HttpOnly`, `SameSite=Lax`, and signed. Only `development` is unsigned. | `a_production_cookie_is_secure_and_signed`, `a_development_cookie_is_neither_secure_nor_signed` |
 | SES-3 | `axa-web-session` | A live session's identifier without its signature, or with a changed one, reads nothing. | `a_real_id_with_no_signature_reads_nothing`, `a_changed_signature_reads_nothing`, `an_unsigned_cookie_can_be_forged_in_development` |
@@ -460,13 +460,20 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 
 ### 4.14 Databases
 
-Four crates reach Postgres: `axa-sqlx`, `axa-seaorm`, `axa-diesel`, and `axa-toasty`,
-behind the features `sqlx`, `sea-orm`, `diesel`, and `toasty`. Each has the same shape,
-so a service moves from one to another by changing names, not structure:
+Eleven crates reach a database, one for each database and library, each behind the
+feature of its own name: `<database>-<library>`, such as `postgres-sqlx` or
+`mysql-diesel`. Each has the same shape, so a service moves from one library or database
+to another by changing names, not structure.
 
-| Item | `axa-sqlx` | `axa-seaorm` | `axa-diesel` | `axa-toasty` |
+| | sqlx | SeaORM | Diesel | Toasty |
 |---|---|---|---|---|
-| `Pool`, the handle a service holds | `PgPool` | `DatabaseConnection` | a `deadpool` pool | `toasty::Db` |
+| Postgres | `axa-postgres-sqlx` | `axa-postgres-seaorm` | `axa-postgres-diesel` | `axa-postgres-toasty` |
+| MySQL | `axa-mysql-sqlx` | `axa-mysql-seaorm` | `axa-mysql-diesel` | `axa-mysql-toasty` |
+| SQLite | `axa-sqlite-sqlx` | `axa-sqlite-seaorm` | `axa-sqlite-diesel` | none: Toasty's SQLite driver needs a newer `libsqlite3-sys` than sqlx allows, and Cargo links one |
+
+| Item | sqlx | SeaORM | Diesel | Toasty |
+|---|---|---|---|---|
+| `Pool`, the handle a service holds | `PgPool`, `MySqlPool`, or `SqlitePool` | `DatabaseConnection` | a `deadpool` pool | `toasty::Db` |
 | `Error` | `sqlx::Error` | `DbErr` | its own | `toasty::Error` |
 | `PoolConfig::new(uri)`, its `Debug` text without the URL | yes | yes | yes | yes |
 | `connect`, `ping` | yes | yes | yes | yes, with the models |
@@ -475,15 +482,23 @@ so a service moves from one to another by changing names, not structure:
 | `truncate`, `dangerously_recreate` | yes | yes | yes | yes |
 | `is_unique_violation`, `quote_identifier` | yes | yes | yes | yes |
 
+What each database cannot do in that shape is in its crate's documentation and section
+4.21: MySQL has no `TRUNCATE ... CASCADE` and commits each DDL statement as it runs, so a
+failed migration stays part applied, and SQLite has no network, so no TLS. A MySQL URL
+asks for TLS with sqlx's `ssl-mode`, which every MySQL crate reads, and a SQLite URL is
+`sqlite://path`, made only with `?mode=rwc`. The SQLite crates build `libsqlite3-sys`
+0.37, which has RUSTSEC-2026-0459, so they are not published until sqlx raises its cap.
+
 | Id | Requirement | Test |
 |---|---|---|
-| DB-1 | `AppContext::db` is the `Pool` of the database feature that is on, and `()` with none. With more than one on, `sqlx` wins, because it is not an ORM, then `sea-orm`, `diesel`, and `toasty`. `build.rs` names the winner as `cfg(axa_db = ...)`. | `cargo clippy --all-targets` with each database feature alone and with all of them, in CI |
+| DB-1 | `AppContext::db` is the `Pool` of the database feature that is on, and `()` with none. With more than one on, Postgres wins, then MySQL, then SQLite, and for each, sqlx, because it is not an ORM, then SeaORM, Diesel, and Toasty. `build.rs` names the winner as `cfg(axa_db = ...)`, and the libraries built as `cfg(has_sqlx)` and the like. | `cargo clippy --all-targets` with each database feature alone and with all of them, in CI |
 | DB-2 | `db::connect` opens that `Pool` from `config::Database`, and each crate's `PoolConfig` is built from it with `From`. Toasty's also takes the models. | `cargo clippy --all-targets` with each database feature alone, in CI |
 | DB-3 | `/_health/ready` asks `AppContext::db` as `database`, whichever it is. | `readiness_fails_when_the_database_does_not_answer`, `readiness_names_the_database` |
-| DB-4 | A violated unique or foreign key constraint answers `409`, and a check or not-null one `422`, through each of the four, and no database's own text reaches the client. | `a_violated_constraint_through_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_sea_orm_is_the_callers_mistake`, `a_violated_constraint_through_diesel_is_the_callers_mistake`, `a_violated_constraint_through_toasty_is_the_callers_mistake` |
+| DB-4 | A violated unique or foreign key constraint answers `409`, and a check or not-null one `422`, through each library on each database, and no database's own text reaches the client. | `a_violated_constraint_through_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_sea_orm_is_the_callers_mistake`, `a_violated_constraint_through_diesel_is_the_callers_mistake`, `a_violated_constraint_through_toasty_is_the_callers_mistake`, `a_violated_constraint_through_mysql_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_mysql_toasty_is_the_callers_mistake`, `a_violated_constraint_through_sqlite_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_sqlite_seaorm_is_the_callers_mistake`, `a_violated_constraint_through_sqlite_diesel_is_the_callers_mistake` |
 | DB-5 | `axa::model` and `axa::validation` are the same for every database, and come with any database feature. `ModelError` has a variant for each database's error. | `model_errors_answer_as_problems`, `a_validation_failure_keeps_its_field_errors` |
 | DB-6 | Each crate's `pending` names the migrations not yet applied, and is empty once `migrate` has run. | `status_on_a_fresh_database_shows_nothing_applied`, `migrations_apply_revert_and_list_what_is_pending`, `migrations_apply_once_and_pending_names_the_rest` |
-| DB-7 | A database that cannot serve for now answers `503` with the `code` `unavailable` and `Retry-After`, through each of the four: a pool with no free connection, a connection lost, or a read-only, shutting-down, or full server. It quotes none of the driver's text. Any other database failure is still a `500`. | `a_sqlx_pool_with_no_connection_is_unavailable`, `a_sea_orm_pool_with_no_connection_is_unavailable`, `a_read_only_diesel_database_is_unavailable`, `a_read_only_toasty_database_is_unavailable`, `a_read_only_database_is_unavailable_not_a_failure` |
+| DB-7 | A database that cannot serve for now answers `503` with the `code` `unavailable` and `Retry-After`, through each library on each database: a pool with no free connection, a connection lost, or a read-only, shutting-down, busy, or full server, read from Postgres's codes, MySQL's error numbers, and SQLite's result codes. It quotes none of the driver's text. Any other database failure is still a `500`. | `a_sqlx_pool_with_no_connection_is_unavailable`, `a_sea_orm_pool_with_no_connection_is_unavailable`, `a_read_only_diesel_database_is_unavailable`, `a_read_only_toasty_database_is_unavailable`, `a_read_only_database_is_unavailable_not_a_failure`, `mysql_read_only_and_lost_connections_are_unavailable`, `sqlite_busy_locked_read_only_and_full_are_unavailable`, `a_violated_constraint_through_mysql_sqlx_is_the_callers_mistake`, `a_violated_constraint_through_sqlite_sqlx_is_the_callers_mistake` |
+| DB-8 | In production, `DB_URL` must demand TLS in its own database's spelling: Postgres's `sslmode` of `require`, `verify-ca`, or `verify-full`, or MySQL's `ssl-mode` of `REQUIRED`, `VERIFY_CA`, or `VERIFY_IDENTITY`, unless it stays on this machine or `DB_ALLOW_INSECURE` is set. A SQLite URL is a file on this machine. A database this does not know fails closed. With `DB_URL` unset, development uses a local database of the kind `AppContext::db` holds. | `production_asks_each_database_for_its_own_tls_setting`, `production_refuses_a_database_url_that_could_go_in_the_clear`, `the_local_database_is_the_database_the_context_holds_and_names_no_framework` |
 
 ### 4.15 Conditional requests
 
@@ -711,6 +726,104 @@ in section 4.18 except where a row below names its own.
 | SQJ-5 | A claim is one statement, and a schedule's tick and setup run in `BEGIN IMMEDIATE` transactions, so processes on one file take turns and each job and due time goes out once. | `two_processes_run_each_job_once`, `replicas_ticking_together_queue_each_due_time_once` |
 | SQJ-6 | It is not published while the `libsqlite3-sys` sqlx builds has RUSTSEC-2026-0459. | The release checklist |
 
+### 4.21 MySQL and SQLite database crates
+
+The MySQL and SQLite crates of section 4.14, each with the shape of its Postgres sibling.
+The MySQL tests need `AXA_TEST_MYSQL_URL`, and the SQLite tests make a file of their own,
+so they run in `cargo test`.
+
+| Id | Crate | Requirement | Test |
+|---|---|---|---|
+| MYX-1 | `axa-mysql-sqlx` | `PoolConfig`'s `Debug` text leaves out the URL, which can carry a password, and its settings reach the sqlx pool options. | `debug_text_leaves_out_the_connection_string`, `pool_settings_reach_the_options` |
+| MYX-2 | `axa-mysql-sqlx` | `quote_identifier` quotes a plain lower-case identifier with backticks and refuses anything else, so a name cannot carry SQL. | `identifiers_are_quoted_with_backticks`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| MYX-3 | `axa-mysql-sqlx` | TLS is asked for with the URL's `ssl-mode`, one of `DISABLED`, `PREFERRED`, `REQUIRED`, `VERIFY_CA`, `VERIFY_IDENTITY`, and any other value is refused. | `ssl_mode_is_read_from_the_url` |
+| MYX-4 | `axa-mysql-sqlx` | `is_unique_violation` is true for a duplicate under a unique constraint, and false for any other database error or an error not from the database. | `pooling_and_migrations_against_mysql`, `errors_that_are_not_from_the_database_are_not_unique_violations` |
+| MYX-5 | `axa-mysql-sqlx` | `connect` and `ping` reach the database; `migrate` applies every migration and changes nothing a second time; `status` lists them oldest first. | `pooling_and_migrations_against_mysql` |
+| MYX-6 | `axa-mysql-sqlx` | `revert` reverts the newest `steps` migrations, and all of them when `steps` is past the start; `pending` then names the reverted ones in order. | `pooling_and_migrations_against_mysql` |
+| MYX-7 | `axa-mysql-sqlx` | `pending` names every migration on a database never migrated, in order, and is empty once `migrate` has run. | `status_on_a_fresh_database_shows_nothing_applied` |
+| MYX-8 | `axa-mysql-sqlx` | Services migrating together all succeed, taking turns under sqlx's lock. | `services_booting_together_all_migrate` |
+| MYX-9 | `axa-mysql-sqlx` | `truncate` empties each table, a referenced one included, restarts its `AUTO_INCREMENT`, and leaves foreign key checks on afterwards. | `truncating_empties_referenced_tables_and_restores_foreign_key_checks` |
+| MYX-10 | `axa-mysql-sqlx` | `truncate` refuses a name that is not a plain identifier before anything is emptied, and is no error when given no tables. | `truncating_empties_referenced_tables_and_restores_foreign_key_checks` |
+| MYX-11 | `axa-mysql-sqlx` | `dangerously_recreate` drops every table and view in `DATABASE()`, those no migration made included, and migrates from the first migration. | `pooling_and_migrations_against_mysql`, `recreating_drops_views_and_tables_outside_the_migrations`, `status_on_a_fresh_database_shows_nothing_applied` |
+| MYX-12 | `axa-mysql-sqlx` | `dangerously_recreate` is refused when the URL names no database. | `recreating_without_a_database_is_refused` |
+| MYX-13 | `axa-mysql-sqlx` | A migration that fails after a DDL statement keeps that statement's change, as MySQL commits DDL as it goes, is not counted as applied, and stops `migrate` as dirty until the database is recreated. | `a_migration_that_fails_after_ddl_is_left_dirty` |
+| MYX-14 | `axa-mysql-sqlx` | `Db` lets one function take the pool or the caller's transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
+| MYO-1 | `axa-mysql-seaorm` | `PoolConfig`'s `Debug` text leaves out the URL, which can carry a password, and its settings reach `SeaORM`'s options. | `debug_text_leaves_out_the_connection_string`, `pool_settings_reach_the_options`, `the_default_timeouts_suit_a_real_database` |
+| MYO-2 | `axa-mysql-seaorm` | `connect` refuses a URL that does not start with `mysql://`, without quoting it. | `connect_refuses_a_url_that_is_not_mysql` |
+| MYO-3 | `axa-mysql-seaorm` | `connect` opens a pool that `ping` answers, and `ssl-mode` in the URL asks for TLS: `REQUIRED` gets an encrypted session and `DISABLED` does not. | `connect_and_ping_and_ssl_mode_asks_for_tls` |
+| MYO-4 | `axa-mysql-seaorm` | `quote_identifier` puts a plain lower-case identifier in backticks and refuses anything else. | `identifiers_are_quoted_and_unsafe_ones_refused` |
+| MYO-5 | `axa-mysql-seaorm` | `migrate` applies every migration, `pending` names those not applied in order and is empty after `migrate`, and `revert` undoes the last `steps`. | `migrations_apply_revert_and_list_what_is_pending` |
+| MYO-6 | `axa-mysql-seaorm` | `is_unique_violation` is true for a duplicate under a unique constraint, and false for a foreign key failure or an error not from the database. | `a_duplicate_is_a_unique_violation`, `errors_that_are_not_from_the_database_are_not_unique_violations` |
+| MYO-7 | `axa-mysql-seaorm` | `truncate` refuses a name that is not a plain identifier before anything is emptied. | `truncate_refuses_an_unsafe_name_before_emptying_anything` |
+| MYO-8 | `axa-mysql-seaorm` | `truncate` empties tables that a foreign key refers to, resets their `AUTO_INCREMENT`, and leaves foreign key checks on afterwards. | `truncate_empties_referenced_tables_resets_ids_and_restores_checks` |
+| MYO-9 | `axa-mysql-seaorm` | `dangerously_recreate` drops every table in `DATABASE()`, including ones no migration made and ones a foreign key refers to, applies every migration from the first, and leaves foreign key checks on. | `dangerously_recreate_rebuilds_from_the_first_migration` |
+| MYO-10 | `axa-mysql-seaorm` | `dangerously_recreate` refuses a connection with no database selected. | `dangerously_recreate_refuses_a_connection_with_no_database` |
+| MYO-11 | `axa-mysql-seaorm` | `schema::create_table` pluralises the table name, adds `created_at` and `updated_at` as `DATETIME` defaulting to the time of the insert in UTC, and keeps a timestamp after 2038, makes JSON `JSON` and a UUID `BINARY(16)`, and gives each reference a `BIGINT` column and a foreign key named `fk-<table>-<column>-to-<parent>`, optional with a `?`. `add_column`, `remove_column`, and `drop_table` change the schema as named. | `schema_helpers_against_mysql`, `table_names_are_pluralised_snake_case`, `reference_columns_are_singular` |
+| MYO-12 | `axa-mysql-seaorm` | `query::condition` builds the same conditions as Loco's, rendered for MySQL. | `eq_and_ne_compare_values`, `ordering_comparisons_use_their_operators`, `null_checks_use_is_null`, `membership_lists_every_value`, `contains_wraps_the_text_in_wildcards`, `several_conditions_must_all_hold`, `an_empty_condition_filters_nothing`, `with_accepts_a_seaorm_condition` |
+| MYD-1 | `axa-mysql-diesel` | No C database library or other TLS stack is linked. | `cargo tree -p axa-mysql-diesel -e normal` shows no `mysqlclient-sys`, `openssl`, or `native-tls` |
+| MYD-2 | `axa-mysql-diesel` | The `Debug` text of `PoolConfig` leaves the connection string out, and an unreadable URL's error does not quote its password. | `debug_text_leaves_out_the_connection_string`, `url_errors_leave_out_the_password` |
+| MYD-3 | `axa-mysql-diesel` | A name reaches SQL only through `quote_identifier`, which quotes with backticks and refuses anything but a plain lower-case identifier. | `identifiers_are_quoted_with_backticks`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| MYD-4 | `axa-mysql-diesel` | An error that is not from the database is not a unique violation, and a duplicate under a unique constraint is. | `errors_that_are_not_from_the_database_are_not_unique_violations`, `pooling_and_migrations_against_mysql` |
+| MYD-5 | `axa-mysql-diesel` | `connect` opens a pool that `ping` proves answers, and an unreachable database is an error. | `pooling_and_migrations_against_mysql`, `an_unreachable_database_is_an_error` |
+| MYD-6 | `axa-mysql-diesel` | Migrations apply once, `pending` names those not applied in order, and reverting takes back exactly the requested steps, stopping at the start. | `pooling_and_migrations_against_mysql` |
+| MYD-7 | `axa-mysql-diesel` | `truncate` refuses an unsafe name before any table is emptied, empties only the tables named even while another references them, restarts their counters, and turns foreign key checks back on. | `pooling_and_migrations_against_mysql`, `truncating_restarts_counters_and_turns_foreign_key_checks_back_on` |
+| MYD-8 | `axa-mysql-diesel` | `dangerously_recreate` drops every table in `DATABASE()`, whatever references it, and rebuilds from the first migration. | `pooling_and_migrations_against_mysql`, `recreating_drops_tables_the_migrations_do_not_know` |
+| MYD-9 | `axa-mysql-diesel` | A pool that is all in use answers with an error within `wait_timeout`, rather than waiting for ever. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
+| MYD-10 | `axa-mysql-diesel` | TLS is set from the URL's `ssl-mode`, read in any case, `PREFERRED` when absent; an unknown or repeated value, and `mysql_async`'s own TLS parameters, are refused; `ssl-ca` names an extra root; other parameters reach the driver; connections use TCP unless the URL says `prefer_socket=true`. | `ssl_mode_defaults_to_preferred`, `ssl_mode_is_read_from_the_url_in_any_case`, `an_unknown_ssl_mode_is_refused`, `the_drivers_own_tls_parameters_are_refused`, `ssl_ca_is_read_from_the_url`, `other_parameters_reach_the_driver`, `connections_use_tcp_unless_the_url_says_otherwise`, `each_ssl_mode_sets_the_drivers_tls_to_match` |
+| MYD-11 | `axa-mysql-diesel` | Against a server with a self-signed certificate, no `ssl-mode` and `REQUIRED` connect with TLS, `DISABLED` in plain text, and `VERIFY_CA` and `VERIFY_IDENTITY` refuse the certificate. | `with_no_ssl_mode_tls_is_used_when_offered`, `ssl_mode_required_connects_with_tls`, `ssl_mode_disabled_connects_in_plain_text`, `ssl_mode_verify_ca_and_verify_identity_refuse_an_untrusted_server` |
+| MYT-1 | `axa-mysql-toasty` | `PoolConfig`'s `Debug` text leaves out the URL. | `debug_text_leaves_out_the_connection_string` |
+| MYT-2 | `axa-mysql-toasty` | `quote_identifier` puts a plain lower-case identifier in backticks, and refuses anything else. | `identifiers_are_quoted`, `unsafe_identifiers_are_refused` |
+| MYT-3 | `axa-mysql-toasty` | An error that is not from the database is not a unique violation, and has no error number or `SQLSTATE`. | `errors_that_are_not_from_the_database_are_not_unique_violations` |
+| MYT-4 | `axa-mysql-toasty` | `connect` checks that the database answers, and fails on one that does not. | `connect_checks_the_database_answers` |
+| MYT-5 | `axa-mysql-toasty` | Migrations apply once, and `pending` names the rest. | `migrations_apply_once_and_pending_names_the_rest` |
+| MYT-6 | `axa-mysql-toasty` | `truncate` refuses an unsafe name before anything is emptied, empties tables that a foreign key joins, and leaves foreign key checks on. | `truncate_empties_tables_and_refuses_unsafe_names` |
+| MYT-7 | `axa-mysql-toasty` | A duplicate is a unique violation, with error number `1062` and `SQLSTATE` `23000`. | `a_duplicate_is_a_unique_violation` |
+| MYT-8 | `axa-mysql-toasty` | `dangerously_recreate` drops every table in `DATABASE()`, those no migration makes among them, and rebuilds from the first migration, leaving foreign key checks on. | `dangerously_recreate_rebuilds_from_the_first_migration` |
+| MYT-9 | `axa-mysql-toasty` | The URL's `ssl-mode` asks for TLS: `REQUIRED` connects over TLS, and `VERIFY_CA` refuses a certificate no trusted root signs. | `ssl_mode_in_the_url_asks_for_tls` |
+| SLX-1 | `axa-sqlite-sqlx` | `PoolConfig`'s `Debug` text leaves out the URL, and its pool settings reach the sqlx options. | `debug_text_leaves_out_the_connection_string`, `pool_settings_reach_the_options` |
+| SLX-2 | `axa-sqlite-sqlx` | A URL not starting with `sqlite:` is refused, and a missing file is not created unless the URL says `?mode=rwc`. | `a_url_that_is_not_sqlite_is_refused`, `a_missing_file_is_not_created_unless_asked` |
+| SLX-3 | `axa-sqlite-sqlx` | `connect` and `ping` work, and every connection has `foreign_keys` on, a five-second `busy_timeout`, and WAL for a file. | `every_connection_has_foreign_keys_wal_and_a_busy_timeout` |
+| SLX-4 | `axa-sqlite-sqlx` | A `sqlite::memory:` pool is one database shared by its connections, with foreign keys on and SQLite's memory journal. | `an_in_memory_pool_is_one_database_with_foreign_keys_on` |
+| SLX-5 | `axa-sqlite-sqlx` | `migrate` applies every migration once, `pending` names those not applied in order and is empty once `migrate` has run, and `revert` undoes the newest `steps`, or all of them. | `migrations_apply_revert_and_list_what_is_pending` |
+| SLX-6 | `axa-sqlite-sqlx` | `is_unique_violation` is true for a duplicate under a unique constraint or primary key, and false for a foreign key violation, a missing table, or an error not from the database. | `a_duplicate_is_a_unique_violation_and_other_errors_are_not`, `errors_that_are_not_from_the_database_are_not_unique_violations` |
+| SLX-7 | `axa-sqlite-sqlx` | `quote_identifier` double-quotes a plain lower-case identifier and refuses anything else. | `identifiers_are_quoted`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| SLX-8 | `axa-sqlite-sqlx` | `truncate` empties tables and restarts their autoincrement counters, and an empty list is not an error. | `truncate_empties_tables_and_restarts_their_counters` |
+| SLX-9 | `axa-sqlite-sqlx` | `truncate` refuses a name that is not a plain identifier before anything is emptied. | `truncate_refuses_an_unsafe_name_before_emptying_anything` |
+| SLX-10 | `axa-sqlite-sqlx` | `truncate` runs in one transaction with foreign keys checked at commit: tables listed together empty in any order, and a table still referenced from one not listed fails and changes nothing. | `truncate_keeps_foreign_keys_whatever_the_order` |
+| SLX-11 | `axa-sqlite-sqlx` | `dangerously_recreate` drops every table and view but SQLite's own, with foreign keys off, then migrates from the first migration, and leaves the connection it used with foreign keys on. | `dangerously_recreate_rebuilds_from_the_first_migration` |
+| SLX-12 | `axa-sqlite-sqlx` | One function taking `impl Into<Db>` serves the pool and a transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
+| SLO-1 | `axa-sqlite-seaorm` | `PoolConfig`'s `Debug` text leaves out the connection string, and its pool settings reach `SeaORM`'s options. | `debug_text_leaves_out_the_connection_string`, `pool_settings_reach_the_options`, `the_default_timeouts_suit_a_real_database` |
+| SLO-2 | `axa-sqlite-seaorm` | `quote_identifier` puts a plain lower-case identifier in double quotes and refuses anything else. A table name read from `sqlite_schema` is quoted with its double quotes doubled. | `identifiers_are_quoted_and_unsafe_ones_refused`, `any_name_read_from_the_schema_is_quoted_safely` |
+| SLO-3 | `axa-sqlite-seaorm` | Every connection of the pool has foreign keys on and the busy timeout, and a file uses WAL. An in-memory database is shared by the pool's connections. | `every_connection_has_foreign_keys_wal_and_a_busy_timeout`, `an_in_memory_database_is_shared_by_the_pools_connections`, `in_memory_urls_are_told_from_files` |
+| SLO-4 | `axa-sqlite-seaorm` | `connect` does not make a missing file unless the URL asks with `?mode=rwc`. | `a_missing_file_is_not_made_unless_the_url_asks` |
+| SLO-5 | `axa-sqlite-seaorm` | `ping` answers, `pending` names the unapplied migrations in order and is empty once `migrate` has run, and `revert` undoes the last `steps`. | `migrations_apply_revert_and_list_what_is_pending` |
+| SLO-6 | `axa-sqlite-seaorm` | A duplicate under a unique constraint or primary key is a unique violation. A foreign key violation, or an error not from the database, is not. | `a_duplicate_is_a_unique_violation`, `errors_that_are_not_from_the_database_are_not_unique_violations` |
+| SLO-7 | `axa-sqlite-seaorm` | `truncate` refuses a name that is not a plain identifier before anything is emptied. | `truncate_refuses_an_unsafe_name_before_emptying_anything` |
+| SLO-8 | `axa-sqlite-seaorm` | `truncate` empties the tables in one transaction with foreign key checks deferred, so they can be listed in any order, fails and empties nothing while a row elsewhere still refers to one, and starts their `AUTOINCREMENT` again at 1. | `truncate_empties_tables_in_any_order_and_restarts_their_ids` |
+| SLO-9 | `axa-sqlite-seaorm` | `dangerously_recreate` drops every table but SQLite's own, including ones no migration made, applies every migration from the start, and leaves foreign keys on. | `dangerously_recreate_rebuilds_from_the_first_migration` |
+| SLO-10 | `axa-sqlite-seaorm` | Table names are pluralised snake case, and reference columns are `<singular parent>_id`. | `table_names_are_pluralised_snake_case`, `reference_columns_are_singular` |
+| SLO-11 | `axa-sqlite-seaorm` | `create_table` adds `created_at` and `updated_at`, required and set to the time of the insert. | `schema_helpers_against_sqlite` |
+| SLO-12 | `axa-sqlite-seaorm` | A reference in `create_table` adds a required column whose key cascades on delete, and a `?` suffix makes it nullable with `ON DELETE SET NULL`. SQLite keeps no name for the key. | `schema_helpers_against_sqlite` |
+| SLO-13 | `axa-sqlite-seaorm` | `add_column` and `remove_column` add and remove a nullable column. SQLite refuses, with an error, a unique column, and a required column without a default once the table has rows. | `schema_helpers_against_sqlite` |
+| SLO-14 | `axa-sqlite-seaorm` | `query::condition` builds the same conditions on SQLite as on Postgres. | `eq_and_ne_compare_values`, `ordering_comparisons_use_their_operators`, `null_checks_use_is_null`, `membership_lists_every_value`, `contains_wraps_the_text_in_wildcards`, `several_conditions_must_all_hold`, `an_empty_condition_filters_nothing`, `with_accepts_a_seaorm_condition` |
+| SLO-15 | `axa-sqlite-seaorm` | It is not published while the `libsqlite3-sys` sqlx builds has RUSTSEC-2026-0459. | The release checklist |
+| SLD-1 | `axa-sqlite-diesel` | `PoolConfig`'s `Debug` text leaves out the URL. | `debug_text_leaves_out_the_url` |
+| SLD-2 | `axa-sqlite-diesel` | `quote_identifier` wraps a plain lower-case identifier in double quotes and refuses anything else, and a list with any refused name is refused whole. | `identifiers_are_quoted`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| SLD-3 | `axa-sqlite-diesel` | An error that is not from the database is not a unique violation, and a violated check constraint is not one either. | `errors_that_are_not_from_the_database_are_not_unique_violations`, `a_duplicate_is_a_unique_violation` |
+| SLD-4 | `axa-sqlite-diesel` | A duplicate under a unique constraint is a unique violation. | `a_duplicate_is_a_unique_violation` |
+| SLD-5 | `axa-sqlite-diesel` | URLs are `sqlite://path`, `sqlite:path`, or `sqlite::memory:`, handed to SQLite as a `file:` URI with their query parameters; any other URL is refused with `Error::InvalidUri` before anything is opened. | `sqlite_urls_become_file_uris`, `urls_that_are_not_sqlite_are_refused`, `a_url_that_is_not_sqlite_is_refused` |
+| SLD-6 | `axa-sqlite-diesel` | `connect` opens a file and `ping` answers; a file that cannot be opened is an error from `connect`. | `connect_and_ping_open_a_file`, `a_file_that_cannot_be_opened_is_an_error` |
+| SLD-7 | `axa-sqlite-diesel` | Every connection has foreign keys on and the configured busy timeout, and a file is in WAL mode; memory is not put in WAL. A busy timeout too large for SQLite is capped. | `every_connection_has_foreign_keys_wal_and_a_busy_timeout`, `foreign_keys_are_enforced`, `only_files_get_wal`, `a_huge_busy_timeout_is_capped` |
+| SLD-8 | `axa-sqlite-diesel` | `sqlite::memory:` gives each pool one database shared by all its connections, and no other pool's. | `each_memory_url_names_a_database_of_its_own`, `an_in_memory_database_is_shared_by_its_pool_and_no_other` |
+| SLD-9 | `axa-sqlite-diesel` | `migrate` applies what is pending and returns how many ran, nothing the second time; `pending` names the unapplied migrations in order, and is empty once `migrate` has run. | `migrate_and_pending_name_what_is_left` |
+| SLD-10 | `axa-sqlite-diesel` | `revert` undoes only the newest `steps` migrations, stops at the start, and `migrate` restores them. | `revert_undoes_the_newest_steps_and_stops_at_the_start` |
+| SLD-11 | `axa-sqlite-diesel` | `truncate` deletes every row of the named tables, in any order, and resets their `AUTOINCREMENT` counters; no tables is not an error. | `truncate_empties_tables_and_resets_their_counters` |
+| SLD-12 | `axa-sqlite-diesel` | `truncate` fails and deletes nothing when a table left out still references a deleted row, and leaves the connection usable. | `truncate_refuses_to_leave_a_reference_dangling` |
+| SLD-13 | `axa-sqlite-diesel` | `truncate` refuses a name `quote_identifier` refuses before anything is deleted. | `truncate_refuses_an_unsafe_name_before_deleting_anything` |
+| SLD-14 | `axa-sqlite-diesel` | `dangerously_recreate` drops every table and view other than SQLite's own, including ones no migration made, migrates from the first migration, works a second time, and leaves foreign keys on. | `dangerously_recreate_rebuilds_from_the_first_migration` |
+| SLD-15 | `axa-sqlite-diesel` | `dangerously_recreate` refuses a table name `quote_identifier` refuses and drops nothing. | `dangerously_recreate_refuses_a_name_it_cannot_quote_and_drops_nothing` |
+| SLD-16 | `axa-sqlite-diesel` | A pool that is all in use answers a caller with an error within its `wait_timeout`, and serves again once a connection is returned. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:
@@ -719,35 +832,47 @@ CI runs all of this on every push, in `.github/workflows/ci.yml`:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy --all-targets --features queue -- -D warnings
-cargo clippy --all-targets --features sqlx -- -D warnings
-cargo clippy --all-targets --features sea-orm -- -D warnings
-cargo clippy --all-targets --features diesel -- -D warnings
-cargo clippy --all-targets --features toasty -- -D warnings
+cargo clippy --all-targets --features postgres-sqlx -- -D warnings
+cargo clippy --all-targets --features postgres-seaorm -- -D warnings
+cargo clippy --all-targets --features postgres-diesel -- -D warnings
+cargo clippy --all-targets --features postgres-toasty -- -D warnings
+cargo clippy --all-targets --features mysql-sqlx -- -D warnings
+cargo clippy --all-targets --features mysql-seaorm -- -D warnings
+cargo clippy --all-targets --features mysql-diesel -- -D warnings
+cargo clippy --all-targets --features mysql-toasty -- -D warnings
+cargo clippy --all-targets --features sqlite-sqlx -- -D warnings
+cargo clippy --all-targets --features sqlite-seaorm -- -D warnings
+cargo clippy --all-targets --features sqlite-diesel -- -D warnings
 cargo clippy -p axa-transactional-outbox --all-targets --features encryption -- -D warnings
-cargo clippy -p axa-transactional-outbox --all-targets --features sea-orm -- -D warnings
+cargo clippy -p axa-transactional-outbox --all-targets --features seaorm -- -D warnings
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
 cargo test --release -p axa-environment
 cargo test --features queue
-cargo test --features sqlx
+cargo test --features postgres-sqlx
 cargo test --doc --features idempotency,paseto
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
-cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
+cargo tree -p axa-postgres-diesel --all-features -e normal   # must show no C database library
 AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
-AXA_TEST_DB_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
-AXA_TEST_DB_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
-AXA_TEST_DB_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
-AXA_TEST_DB_URL=postgres://... cargo test -p axa-toasty -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-sqlx -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-seaorm -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-diesel -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-toasty -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-job-queue -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-sqlx -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-seaorm -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-diesel -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test --all-features --test other_databases -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored
 ```
 

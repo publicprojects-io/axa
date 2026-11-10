@@ -4,21 +4,42 @@ use std::sync::Arc;
 
 use crate::{Environment, config::Config, health::Checks, store::Store};
 
-/// The database handle [`AppContext`] holds: `sqlx`'s pool with the `sqlx` feature,
-/// `SeaORM`'s connection with `sea-orm`, a Diesel pool with `diesel`, and Toasty's
-/// handle with `toasty`. With more than one on, `sqlx` wins, then `sea-orm`, `diesel`,
-/// and `toasty`. With none, there is no database.
-#[cfg(axa_db = "sqlx")]
-pub type Db = axa_sqlx::Pool;
-/// The database handle [`AppContext`] holds: `SeaORM`'s connection.
-#[cfg(axa_db = "seaorm")]
-pub type Db = axa_seaorm::Pool;
-/// The database handle [`AppContext`] holds: a Diesel pool.
-#[cfg(axa_db = "diesel")]
-pub type Db = axa_diesel::Pool;
-/// The database handle [`AppContext`] holds: Toasty's handle.
-#[cfg(axa_db = "toasty")]
-pub type Db = axa_toasty::Pool;
+/// The database handle [`AppContext`] holds: the `Pool` of the database feature that is
+/// on, such as a `PgPool` with `postgres-sqlx` or a Diesel pool with `mysql-diesel`. With
+/// more than one on, Postgres wins, then MySQL, then SQLite, and for each, sqlx, then
+/// `SeaORM`, Diesel, and Toasty. With none, there is no database.
+#[cfg(axa_db = "postgres_sqlx")]
+pub type Db = axa_postgres_sqlx::Pool;
+/// The database handle [`AppContext`] holds: `axa-postgres-seaorm`'s pool.
+#[cfg(axa_db = "postgres_seaorm")]
+pub type Db = axa_postgres_seaorm::Pool;
+/// The database handle [`AppContext`] holds: `axa-postgres-diesel`'s pool.
+#[cfg(axa_db = "postgres_diesel")]
+pub type Db = axa_postgres_diesel::Pool;
+/// The database handle [`AppContext`] holds: `axa-postgres-toasty`'s pool.
+#[cfg(axa_db = "postgres_toasty")]
+pub type Db = axa_postgres_toasty::Pool;
+/// The database handle [`AppContext`] holds: `axa-mysql-sqlx`'s pool.
+#[cfg(axa_db = "mysql_sqlx")]
+pub type Db = axa_mysql_sqlx::Pool;
+/// The database handle [`AppContext`] holds: `axa-mysql-seaorm`'s pool.
+#[cfg(axa_db = "mysql_seaorm")]
+pub type Db = axa_mysql_seaorm::Pool;
+/// The database handle [`AppContext`] holds: `axa-mysql-diesel`'s pool.
+#[cfg(axa_db = "mysql_diesel")]
+pub type Db = axa_mysql_diesel::Pool;
+/// The database handle [`AppContext`] holds: `axa-mysql-toasty`'s pool.
+#[cfg(axa_db = "mysql_toasty")]
+pub type Db = axa_mysql_toasty::Pool;
+/// The database handle [`AppContext`] holds: `axa-sqlite-sqlx`'s pool.
+#[cfg(axa_db = "sqlite_sqlx")]
+pub type Db = axa_sqlite_sqlx::Pool;
+/// The database handle [`AppContext`] holds: `axa-sqlite-seaorm`'s pool.
+#[cfg(axa_db = "sqlite_seaorm")]
+pub type Db = axa_sqlite_seaorm::Pool;
+/// The database handle [`AppContext`] holds: `axa-sqlite-diesel`'s pool.
+#[cfg(axa_db = "sqlite_diesel")]
+pub type Db = axa_sqlite_diesel::Pool;
 /// The database handle [`AppContext`] holds; none without a database feature.
 #[cfg(axa_db = "none")]
 pub type Db = ();
@@ -30,46 +51,96 @@ pub type Db = ();
 /// Fails when the database does not answer.
 #[cfg(not(axa_db = "none"))]
 pub async fn ping(db: &Db) -> crate::Result<()> {
-    #[cfg(axa_db = "sqlx")]
-    axa_sqlx::ping(db).await?;
-    #[cfg(axa_db = "seaorm")]
-    axa_seaorm::ping(db).await?;
-    #[cfg(axa_db = "diesel")]
-    axa_diesel::ping(db).await?;
-    #[cfg(axa_db = "toasty")]
-    axa_toasty::ping(db).await?;
+    #[cfg(axa_db = "postgres_sqlx")]
+    axa_postgres_sqlx::ping(db).await?;
+    #[cfg(axa_db = "postgres_seaorm")]
+    axa_postgres_seaorm::ping(db).await?;
+    #[cfg(axa_db = "postgres_diesel")]
+    axa_postgres_diesel::ping(db).await?;
+    #[cfg(axa_db = "postgres_toasty")]
+    axa_postgres_toasty::ping(db).await?;
+    #[cfg(axa_db = "mysql_sqlx")]
+    axa_mysql_sqlx::ping(db).await?;
+    #[cfg(axa_db = "mysql_seaorm")]
+    axa_mysql_seaorm::ping(db).await?;
+    #[cfg(axa_db = "mysql_diesel")]
+    axa_mysql_diesel::ping(db).await?;
+    #[cfg(axa_db = "mysql_toasty")]
+    axa_mysql_toasty::ping(db).await?;
+    #[cfg(axa_db = "sqlite_sqlx")]
+    axa_sqlite_sqlx::ping(db).await?;
+    #[cfg(axa_db = "sqlite_seaorm")]
+    axa_sqlite_seaorm::ping(db).await?;
+    #[cfg(axa_db = "sqlite_diesel")]
+    axa_sqlite_diesel::ping(db).await?;
     Ok(())
 }
 
-/// A database handle that was never opened, so that a test can build a context.
-/// A sqlx pool needs a runtime to exist, even one that never connects.
-#[cfg(all(test, axa_db = "seaorm"))]
-fn test_db() -> Db {
-    sea_orm::DatabaseConnection::default()
-}
-#[cfg(all(test, axa_db = "sqlx"))]
+/// A database handle that was never opened, so that a test can build a context, and
+/// whose ping fails. A sqlx pool needs a runtime to exist, even one that never connects.
+#[cfg(all(
+    test,
+    any(
+        axa_db = "postgres_sqlx",
+        axa_db = "mysql_sqlx",
+        axa_db = "sqlite_sqlx"
+    )
+))]
 fn test_db() -> Db {
     static RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
         std::sync::LazyLock::new(|| tokio::runtime::Runtime::new().expect("a runtime"));
     let _entered = RUNTIME.enter();
-    axa_sqlx::sqlx::postgres::PgPoolOptions::new()
-        .acquire_timeout(std::time::Duration::from_millis(50))
-        .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
-        .expect("a well-formed address")
+    let options =
+        sqlx::pool::PoolOptions::new().acquire_timeout(std::time::Duration::from_millis(50));
+    #[cfg(axa_db = "postgres_sqlx")]
+    let uri = "postgres://axa:axa@127.0.0.1:1/axa";
+    #[cfg(axa_db = "mysql_sqlx")]
+    let uri = "mysql://axa:axa@127.0.0.1:1/axa";
+    // A file in a folder that is not there, which nothing creates.
+    #[cfg(axa_db = "sqlite_sqlx")]
+    let uri = "sqlite:///axa-no-such-folder/never.sqlite3";
+    options.connect_lazy(uri).expect("a well-formed address")
 }
-#[cfg(all(test, axa_db = "diesel"))]
+#[cfg(all(
+    test,
+    any(
+        axa_db = "postgres_seaorm",
+        axa_db = "mysql_seaorm",
+        axa_db = "sqlite_seaorm"
+    )
+))]
 fn test_db() -> Db {
-    let config = axa_diesel::PoolConfig {
-        wait_timeout: std::time::Duration::from_millis(50),
-        ..axa_diesel::PoolConfig::new("postgres://axa:axa@127.0.0.1:1/axa")
-    };
-    let tls = axa_diesel::web_tls().expect("TLS settings");
-    axa_diesel::pool_with_tls(&config, tls).expect("a pool that never connects")
+    sea_orm::DatabaseConnection::default()
 }
-#[cfg(all(test, axa_db = "toasty"))]
+#[cfg(all(test, axa_db = "postgres_diesel"))]
+fn test_db() -> Db {
+    let config = axa_postgres_diesel::PoolConfig {
+        wait_timeout: std::time::Duration::from_millis(50),
+        ..axa_postgres_diesel::PoolConfig::new("postgres://axa:axa@127.0.0.1:1/axa")
+    };
+    let tls = axa_postgres_diesel::web_tls().expect("TLS settings");
+    axa_postgres_diesel::pool_with_tls(&config, tls).expect("a pool that never connects")
+}
+#[cfg(all(test, axa_db = "mysql_diesel"))]
+fn test_db() -> Db {
+    let config = axa_mysql_diesel::PoolConfig {
+        wait_timeout: std::time::Duration::from_millis(50),
+        ..axa_mysql_diesel::PoolConfig::new("mysql://axa:axa@127.0.0.1:1/axa")
+    };
+    axa_mysql_diesel::pool(&config).expect("a pool that never connects")
+}
+#[cfg(all(test, axa_db = "sqlite_diesel"))]
+fn test_db() -> Db {
+    let config = axa_sqlite_diesel::PoolConfig {
+        wait_timeout: std::time::Duration::from_millis(50),
+        ..axa_sqlite_diesel::PoolConfig::new("sqlite:///axa-no-such-folder/never.sqlite3")
+    };
+    axa_sqlite_diesel::pool(&config).expect("a pool that never connects")
+}
+#[cfg(all(test, any(axa_db = "postgres_toasty", axa_db = "mysql_toasty")))]
 fn test_db() -> Db {
     unimplemented!(
-        "Toasty connects when its handle is made, so a unit test with `toasty` as the only \
+        "Toasty connects when its handle is made, so a unit test with Toasty as the only \
          database feature has no context"
     )
 }
