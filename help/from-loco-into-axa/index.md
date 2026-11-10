@@ -151,6 +151,7 @@ fn defaults() -> Defaults {
         production_port: Some(8080),
         body_limit: 2 * MB,
         max_connections: 5,
+        ..Defaults::default()
     }
 }
 

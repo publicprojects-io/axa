@@ -19,6 +19,11 @@
 
 ## Guides
 
+- [axa for Loco users](help/axa-for-loco-users/index.md)
+- [axa for actix-web users](help/axa-for-actix-users/index.md)
+- [axa for Rocket users](help/axa-for-rocket-users/index.md)
+- [axa for Poem users](help/axa-for-poem-users/index.md)
+- [axa for Topcoat users](help/axa-for-topcoat-users/index.md)
 - [From Loco into axa](help/from-loco-into-axa/index.md)
 - [From Loco SeaORM into axa-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)

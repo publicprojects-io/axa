@@ -587,7 +587,7 @@ use axa_test::prelude::*;
 #[tokio::test]
 async fn health_answers() {
     request::<App, _, _>(|server, _ctx| async move {
-        assert_eq!(server.get("/_health").await.status_code(), 200);
+        assert_eq!(server.get("/_health/live").await.status_code(), 200);
     })
     .await;
 }
@@ -620,6 +620,18 @@ working on axa itself.
 
 Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
 carries a spec edit, a code edit, and a test edit together.
+
+## Coming from another framework
+
+Each of these explains axa in the terms of a framework you know: a map of its concepts
+onto axa and Axum, a first service written both ways, what is different on purpose, and
+how to move a service across.
+
+- [axa for Loco users](help/axa-for-loco-users/index.md)
+- [axa for actix-web users](help/axa-for-actix-users/index.md)
+- [axa for Rocket users](help/axa-for-rocket-users/index.md)
+- [axa for Poem users](help/axa-for-poem-users/index.md)
+- [axa for Topcoat users](help/axa-for-topcoat-users/index.md)
 
 ## Relationship to Loco
 
