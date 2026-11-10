@@ -39,12 +39,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.11", features = ["postgres-sqlx", "queue"] }
+axa = { version = "0.12", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa-test = "0.1"
+axa-test = "0.3"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must

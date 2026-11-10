@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.11.0"
+version = "0.12.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -90,7 +90,7 @@ axa-postgres-diesel = { version = "0.2.1", path = "crates/axa-postgres-diesel", 
 axa-environment = { version = "0.2.0", path = "crates/axa-environment" }
 axa-idempotency-key = { version = "0.2.2", path = "crates/axa-idempotency-key", optional = true }
 axa-openapi-docs = { version = "0.1.0", path = "crates/axa-openapi-docs", optional = true }
-axa-transactional-outbox = { version = "0.2.0", path = "crates/axa-transactional-outbox", optional = true }
+axa-transactional-outbox = { version = "0.3.0", path = "crates/axa-transactional-outbox", optional = true }
 axa-cursor-pagination = { version = "0.1.1", path = "crates/axa-cursor-pagination", optional = true }
 axa-keycloak-auth = { version = "0.4.0", path = "crates/axa-keycloak-auth", optional = true }
 axa-paseto-auth = { version = "0.6.0", path = "crates/axa-paseto-auth", optional = true }

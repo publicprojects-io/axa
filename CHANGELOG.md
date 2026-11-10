@@ -3,7 +3,19 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.12.0] - 2026-11-10
+
+This covers `axa` 0.12.0; the Postgres crates under their new names, `axa-postgres-sqlx`
+0.1.3, `axa-postgres-seaorm` 0.3.0, `axa-postgres-diesel` 0.2.1, and `axa-postgres-toasty`
+0.1.0; the new `axa-mysql-sqlx`, `axa-mysql-seaorm`, `axa-mysql-diesel`, and
+`axa-mysql-toasty`, all 0.1.0; and new versions of `axa-transactional-outbox` 0.3.0 and
+`axa-test` 0.3.0. `axa-sqlx` 0.1.4, `axa-seaorm` 0.3.1, `axa-diesel` 0.2.2, and
+`axa-toasty` 0.1.1 are the last under those names, published only to say where each went.
+
+The SQLite crates are in the repository and not published, and the `sqlite-sqlx`,
+`sqlite-seaorm`, and `sqlite-diesel` features are left out of the published `axa`
+0.12.0, as crates.io takes no feature that names an unpublished crate. Both come once sqlx
+releases its fix for RUSTSEC-2026-0459.
 
 Read [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md): for a service on Postgres,
 the upgrade is renaming.
@@ -35,7 +47,8 @@ the upgrade is renaming.
 - **The database features are named for their database and library**: `sqlx` is
   `postgres-sqlx`, `sea-orm` is `postgres-seaorm`, `diesel` is `postgres-diesel`, and
   `toasty` is `postgres-toasty`, and their modules are `axa::postgres_sqlx` and the like.
-  `axa-transactional-outbox`'s `sea-orm` feature is `seaorm`. With more than one
+  `axa-transactional-outbox` 0.3.0's `sea-orm` feature is `seaorm`, and `axa-test` 0.3.0
+  is for `axa` 0.12. With more than one
   database feature on, Postgres wins, then MySQL, then SQLite, and for each, sqlx, then
   SeaORM, Diesel, and Toasty.
 - **`axa::Error::Diesel` holds a `DieselError`**, the same for each database's Diesel

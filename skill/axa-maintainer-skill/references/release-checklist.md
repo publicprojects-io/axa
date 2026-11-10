@@ -59,8 +59,10 @@ later, and the RUSTSEC-2026-0459 ignore in `.cargo/audit.toml` is gone.
 
 crates.io refuses a crate whose dependencies, optional ones too, are not published, so
 `axa` cannot be published while its `sqlite-*` features name a held crate. Until the SQLite
-crates go out, a release of `axa` takes those features out of its `Cargo.toml` first, on
-the release commit only, and puts them back after.
+crates go out, publish `axa` from the tagged commit with those features and their
+dependencies taken out of its `Cargo.toml` in the working tree only, with
+`cargo publish -p axa --allow-dirty`, then restore the file. The commit keeps them, so CI
+and the repository still build them, and the CHANGELOG says the published crate lacks them.
 
 `axa-pagination` and `axa-offset-pagination` are retired, as Axa 0.9 removed offset
 paging. Never publish either again.
