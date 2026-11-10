@@ -1,613 +1,228 @@
 # axa
 
-**axa** is a shared library for web services built with [Axum](https://docs.rs/axum),
-that provides a middleware stack, health checks, error responses, configuration
-helpers, route tables, logging capabilities, background jobs, database queues, and
-graceful shutdown.
+**axa** is a small shared library for services built directly on [Axum](https://docs.rs/axum). It provides the plumbing every service needs: route tables, middleware, health checks, configuration, logging, graceful shutdown, background jobs, and more.
 
-## Why it exists
+> **A library, not a framework.** Your `main.rs` stays ordinary Rust that calls ordinary functions. Nothing calls into your code from behind a trait.
 
-A framework gives you a lot for free, and asks you to trust what it does on your
-behalf. For a service handling identity, clinical, or government records, that
-trade runs the wrong way: an auditor has to read the framework as well as your
-code, and each of its dependencies joins your supply chain.
+---
 
-axa takes the opposite position:
+## Why axa Exists
 
-- **You can read the whole path.** `main.rs` is ordinary Rust that calls ordinary
-  functions. Nothing calls into your code from behind a trait.
-- **One copy.** A defect in shared plumbing is fixed once, and an auditor reads
-  it once.
-- **Fewer dependencies.** Replacing Loco and SeaORM with sqlx took one measured
-  service from 510 normal dependencies to about 348, before counting anything
-  added to replace them.
-- **Safe defaults that fail closed.** A production service with no database URL,
-  or with a wildcard CORS origin, refuses to start.
+For services handling identity, clinical, or government records, the framework trade-off runs the wrong way: an auditor must read the framework **and** your code, and each dependency joins your supply chain.
 
-## A library, not a framework
+axa flips this model:
 
-There are no lifecycle hooks, macros, or generated code. `AppContext` is a plain
-struct, passed as ordinary Axum state, and `AppRoutes` builds an ordinary
-`axum::Router`. Any piece can be read, replaced, or left out on its own.
+| Framework Approach | axa Approach |
+|---|---|
+| `main.rs` hides behind traits | `main.rs` is ordinary Rust |
+| Shared code lives in framework | Shared code lives in one library |
+| 510+ dependencies (example) | ~348 dependencies (same service with sqlx) |
+| Permissive defaults | **Fail-closed defaults** |
 
-Some things will deliberately never be added: route macros, a generic CRUD
-controller, a dependency-injection container, a plugin system, a configuration
-language, and a database abstraction. Each one puts indirection back between a
-reader and the behaviour.
+### Fail-Closed Examples
 
-## Installing
+A production service **refuses to start** if:
+- No `DATABASE_URL` is provided (when database is configured)
+- `CORS_ALLOWED_ORIGINS=*` (wildcard CORS)
+- `DATABASE_URL` uses cleartext on a remote host
+- Any configuration value is invalid
 
-Add it from crates.io:
+---
 
-```toml
-[dependencies]
-axa = "0.10"
-```
+## Quick Start
 
-- [`axa-postgres-job-queue`](crates/axa-postgres-job-queue): the Postgres job queue, worker pool, and schedules
-- [`axa-test`](crates/axa-test): request-level test helpers, built on `axum-test`. Add it as a dev-dependency
-- [`axa-seaorm`](crates/axa-seaorm): a SeaORM-backed `AppContext`, connections, migration helpers, and model errors, with an easy path from Loco
-- [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`
-- [`axa-tera-templates`](crates/axa-tera-templates): Tera templates with safe escaping and generic errors
-- [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code
-- [`axa-redis-cache`](crates/axa-redis-cache): a Redis cache with mandatory expiry
-- [`axa-openapi-docs`](crates/axa-openapi-docs): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks
-- [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set
-- [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
-- [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
-- [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
-- [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
-- [`axa-keycloak-auth`](crates/axa-keycloak-auth): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
-- [`axa-paseto-auth`](crates/axa-paseto-auth): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
-- [`axa-problem-details-for-http-apis`](crates/axa-problem-details-for-http-apis): RFC 9457 problem details. Always included, as `axa::problem`
-- [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition
-- [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process
-- [`axa-idempotency-key`](crates/axa-idempotency-key): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
-- [`axa-accepts-version-negotiation`](crates/axa-accepts-version-negotiation): `Accepts-version` negotiation
+See the [Quick Start Guide](docs/QUICKSTART.md) for a complete 5-minute tutorial.
 
-`Environment` lives in [`axa-environment`](crates/axa-environment), which has no
-dependencies and is always included, so a migration crate can read the environment
-the same way without depending on `axa`.
-
-## Quick start
-
-This is a complete service with one route:
+### Minimal Service
 
 ```rust
-use axa::{
-    Environment, Result,
-    config::{Config, Defaults},
-    logger,
-    prelude::*,
-    server,
-};
+use axa::{Environment, config::{Config, Defaults}, logger, prelude::*, server};
 
 async fn hello() -> Result<Response> {
-    format::json(serde_json::json!({ "hello": "world" }))
+    format::json(serde_json::json!({"hello": "world"}))
 }
 
-async fn run() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let environment = Environment::from_env();
-    let defaults = Defaults {
-        // An empty name means this service has no database.
-        database: "",
-        ..Defaults::default()
-    };
-    let config = Config::from_env(&environment, &defaults)?;
+    let config = Config::from_env(&environment, &Defaults::default())?;
     logger::init("hello_service", &config.logger);
 
-    let server_config = config.server.clone();
     let ctx = AppContext::new(environment, (), config);
-
     let router = AppRoutes::with_default_routes()
         .add_route(Routes::new().prefix("/api").add("/hello", get(hello)))
         .into_app(ctx)?;
 
-    server::serve(router, &server_config).await
+    server::serve(router, &config.server).await
 }
 ```
 
-It listens on port 1241 and serves `/api/hello`, `/_ping`, `/_health`, and
-`/_readiness` under the standard middleware. It stops cleanly on `SIGTERM` or
-Ctrl-C, letting requests in flight finish.
-
-The default port spells the name: a=1, x=24, a=1.
-
-## What it provides
-
-### Routes
-
-`Routes` is a group sharing a prefix, and `AppRoutes` collects the groups:
-
-```rust
-use axa::prelude::*;
-
-async fn list() -> &'static str { "[]" }
-async fn create() -> &'static str { "{}" }
-async fn show(Path(id): Path<u32>) -> String { id.to_string() }
-
-fn folders() -> Routes {
-    Routes::new()
-        .prefix("/api/folders")
-        .add("/", get(list))
-        .add("/", post(create))
-        .add("/{id}", get(show))
-}
+Run it:
+```bash
+cargo run
 ```
 
-A `"/"` route is served at the prefix with no trailing slash, and two methods on
-one path merge. The fields are public, so a test can check what is mounted
-without booting anything:
+Your service listens on port **1241** (a=1, x=24, a=1) and serves:
+- `/api/hello` - Your custom route
+- `/_ping` - Process is up
+- `/_health` - Process is up
+- `/_readiness` - Database and dependencies ready
 
-```rust
-# use axa::prelude::*;
-# async fn list() -> &'static str { "[]" }
-let group = Routes::new().prefix("/api").add("/items", get(list));
-assert!(group.handlers.iter().any(|handler| handler.uri == "/items"));
+---
+
+## Installation
+
+```toml
+[dependencies]
+axa = "0.10"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 ```
 
-`AppRoutes::mounted` lists every route as `(method, full path)`, so a route census
-test can compare what is served with what is written down. A `HEAD` that comes with
-`GET` is left out, and a handler for every method shows as `ANY`. Axum keeps a
-router's methods private, so this reads its debug text, and a test fails if that
-text changes.
+---
 
-```rust
-# use axa::prelude::*;
-# async fn list() -> &'static str { "[]" }
-let routes = AppRoutes::empty()
-    .add_route(Routes::new().prefix("/api").add("/items", get(list)));
-assert_eq!(
-    routes.mounted(),
-    [("GET".to_string(), "/api/items".to_string())]
-);
-```
+## Features
 
-A route or group can state its own time limit where it is declared. It replaces
-`REQUEST_TIMEOUT_SECONDS` there, longer or shorter, and other routes are still cut
-off on time:
+axa is modular. Enable only what you need via Cargo features:
 
-```rust
-# use axa::prelude::*;
-use std::time::Duration;
+| Feature | Crate | Purpose |
+|---|---|---|
+| `sqlx` | `axa-sqlx` | PostgreSQL with sqlx (recommended) |
+| `sea-orm` | `axa-seaorm` | PostgreSQL with SeaORM |
+| `diesel` | `axa-diesel` | PostgreSQL with Diesel (no `libpq`) |
+| `queue` | `axa-postgres-job-queue` | Job queue and scheduling |
+| `outbox` | `axa-transactional-outbox` | Transactional outbox |
+| `outbox-encryption` | | Outbox with sealed payloads |
+| `paseto` | `axa-paseto-auth` | PASETO bearer tokens |
+| `keycloak` | `axa-keycloak-auth` | Keycloak OAuth2/OIDC |
+| `session` | `axa-web-session` | Browser sessions |
+| `redis` | `axa-redis-cache` | Redis cache |
+| `cursor-pagination` | `axa-cursor-pagination` | Signed cursor pagination |
+| `ratelimit` | `axa-request-rate-limit` | Rate limiting |
+| `idempotency` | `axa-idempotency-key` | Idempotency keys |
+| `versioning` | `axa-accepts-version-negotiation` | API versioning |
+| `openapi` | `axa-openapi-docs` | OpenAPI docs and Swagger UI |
+| `tracing` | `axa-tracing` | Advanced tracing and diagnostics |
+| `opentelemetry` | `axa-opentelemetry` | OTLP traces and metrics |
+| `prometheus` | `axa-prometheus-metrics` | Prometheus metrics |
+| `tera` | `axa-tera-templates` | Tera HTML templates |
+| `problem` | `axa-problem-details-for-http-apis` | RFC 9457 problem details (always included) |
 
-# async fn export() -> &'static str { "" }
-# async fn report() -> &'static str { "" }
-let reports = Routes::new()
-    .prefix("/api/reports")
-    .timeout(Duration::from_mins(2))
-    .add("/daily", get(report))
-    .add_with_timeout("/export", get(export), Duration::from_mins(10));
-# let _ = reports;
-```
+**Note**: Each feature adds dependencies. Enable only what you use.
 
-### Middleware
+---
 
-`AppRoutes::into_app` applies this stack, or call `middleware::apply` on any
-router. A service with layers of its own, such as an auth guard, adds them first and
-applies the stack last, because a layer added afterwards sits outside it. Its responses
-get no request id, security headers, or CORS headers, it has no panic or timeout
-protection, and it reads response bodies compressed:
+## Documentation
 
-```rust,ignore
-let router = routes.into_router(ctx.clone()).layer(from_fn(require_auth));
-let router = axa::middleware::apply(router, &ctx.config.http)?;
-```
-
-From the outside in:
-
-| Layer | Behaviour |
+| Resource | Purpose |
 |---|---|
-| Request id | Keeps a caller's `x-request-id` after removing unsafe characters, or mints a UUID. Always returned |
-| Tracing | Logs each finished request, and puts the request id, method, and route template on every log line written while serving it. The real path and query string are left out, because either can hold a token or personal data |
-| Panic catching | Turns a handler panic into a `500` |
-| Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
-| CORS | Off unless origins are configured |
-| Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
-| Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
-| Compression | Gzip, Brotli, and Zstd when enabled |
-| Body limit | Answers `413` over `BODY_LIMIT_BYTES`. `middleware::body_limit` raises it on one route |
-
-### Conditional requests
-
-`axa::conditional` follows RFC 9110. The standard stack answers `304` to a `GET` or
-`HEAD` that holds the `ETag` of its answer, whoever set the tag, so a handler only sets
-one. An `ETag` goes on a response like any header. Leave a timestamp out of it, or the
-tag moves every time:
-
-```rust
-use axa::{conditional::ETag, prelude::*};
-use serde_json::json;
-
-async fn dashboard() -> Result<Response> {
-    let payload = json!({ "open": 3 });
-    let tag = ETag::weak_of(&payload)?;
-    let mut body = payload;
-    body["as_of"] = json!("2026-11-07T09:00:00Z");
-    Ok((tag, format::json(body)?).into_response())
-}
-```
-
-`ETag::weak` and `ETag::strong` take text of your own, such as a version. For a tag from
-the body, add `conditional::etag` to a router or a route, before `apply` as with any
-layer:
-
-```rust
-use axa::{conditional, prelude::*};
-use axum::{Router, middleware::from_fn};
-
-# async fn list() -> &'static str { "[]" }
-let catalogue: Router = Router::new()
-    .route("/catalogue", get(list).layer(from_fn(conditional::etag)));
-```
-
-It hashes a `GET`'s `200` and gives it a weak tag, the same on every replica and for
-every encoding. It reads only a body of exact known size up to `conditional::MAX_BODY`
-(8 MB), so a stream or server-sent events pass through unread. It leaves alone an answer
-that has an `ETag` or says `no-store`, and a `HEAD`, whose body Axum has already dropped.
-It is opt-in because a body with a timestamp in it gains nothing, and because hashing
-what is marked `no-store` would put a hash of personal data on an answer nobody can
-revalidate. Put it outside what shapes the body, such as paging, and outside what sets
-`Cache-Control`.
-
-To refuse a stale write, read the record, then ask, once the caller is authorised:
-
-```rust
-use axa::{conditional::{self, ETag}, prelude::*};
-use axum::http::HeaderMap;
-
-async fn rename(headers: HeaderMap) -> Result<Response> {
-    # let version = 7;
-    conditional::require_if_match(&headers, &ETag::strong(&format!("v{version}"))?)?;
-    format::empty()
-}
-```
-
-`require_if_match` answers `428` with no `If-Match`, and `if_match` lets that through.
-Both answer `412` to a stale tag, and `if_match_holds` gives the answer alone for a
-service with a refusal of its own. `If-Match` compares strongly, as RFC 9110 requires, so
-a weak tag never passes it and a tag meant for it must be strong. The check and the write
-are two steps, so close the gap with a lock on the row or `UPDATE ... WHERE version = $1`.
-
-A `304` comes after the handler has run, so it saves bytes and not the query. It is made
-from the answer the caller would have had, so a refused caller gets the refusal and a tag
-says nothing about what they may not see. The hash is std's `DefaultHasher`, which catches
-accidents and not an adversary: a tag defending against someone who writes the data should
-be a version counter or a real digest.
-
-### Errors
-
-Handlers return `Result<T>` using `axa::Error`, which maps to a status and an
-[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) problem, with the media type
-`application/problem+json`. Successes stay bare JSON.
-
-| Error | Status | `code` | `detail` |
-|---|---|---|---|
-| `Error::NotFound` | `404` | `not_found` | Fixed text |
-| `Error::Unauthorized(_)` | `401` | `unauthorized` | Fixed text; yours is only logged |
-| `Error::BadRequest(_)` | `400` | `bad_request` | Your text |
-| `Error::CustomError(status, detail)` | Yours | Yours | Yours |
-| Anything else | `500` | `internal_server_error` | None; the real error is only logged |
-
-So a failed database call cannot put a hostname or a query in a client's
-response. The `not_found`, `unauthorized`, and `bad_request` functions build
-these for you.
-
-```json
-{"type":"about:blank","title":"Bad Request","status":400,"detail":"name is required","code":"bad_request"}
-```
-
-`code` is the machine-readable reason. Field errors go in an `errors` member, which
-`ErrorDetail::errors` sets. The standard stack makes Axum's own refusals problems too:
-an unmatched path's `404`, a wrong method's `405`, and an extractor's rejection. It
-treats any error sent as plain text or with no `content-type` the same way and drops
-the text, so a handler that has something to say returns an `Error`.
-
-### Configuration
-
-There are no config files. A service states its defaults in code, and the
-environment overrides them, so what a deployment runs with is visible in one
-place.
-
-| Variable | Effect |
-|---|---|
-| `APP_ENV` | `development`, `test`, or `production`. `LOCO_ENV` is also read. Any other name gets production's stricter behaviour. With neither set, a debug build is development and a release build is production |
-| `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
-| `DATABASE_URL` | Connection string. Required in production for a service with a database, where it must set `sslmode` to `require`, `verify-ca`, or `verify-full` unless it stays on this machine |
-| `DB_ALLOW_INSECURE` | Let a production service reach its database without demanding TLS, as on a network that encrypts its own traffic |
-| `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
-| `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds. 5 seconds and 10 minutes by default, or a service's `Defaults` |
-| `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot. A service sharing a database it does not own sets `Defaults::auto_migrate` to `false` |
-| `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
-| `BODY_LIMIT_BYTES` | Largest accepted request body |
-| `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
-| `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers, once it connects or starts another request. 30 by default, and `0` allows for ever |
-| `KEEP_ALIVE_TIMEOUT_SECONDS` | How long an idle connection is kept for a next request. Keep it above any load balancer's idle timeout. 75 by default, and `0` keeps it for ever |
-| `SEND_STALL_TIMEOUT_SECONDS` | How long a client that has stopped reading may hold up a response before it is dropped. Any write that goes through starts this again. 60 by default, and `0` waits for ever |
-| `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
-| `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
-| `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
-| `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |
-| `HTTP_CSP` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |
-| `REQUEST_TIMEOUT_SECONDS` | Per-request timeout. `0` turns it off |
-| `CORS_ALLOWED_ORIGINS` | Comma-separated origins |
-| `WORKER_MODE` | `BackgroundQueue`, `BackgroundAsync`, or `ForegroundBlocking` |
-
-Defaults change with the environment:
-
-| Setting | Development | Test | Production |
-|---|---|---|---|
-| Database | Local, derived from the service name | Local, derived from the service name | **Required** |
-| Migrate at boot | Yes | Yes | No |
-| Compression | Off | Off | On |
-| Request timeout | Off | Off | 60 seconds |
-| HSTS | Off | Off | On |
-| CORS | Any origin | Any origin | None until listed; `*` is refused |
-| Log format | Compact | Compact, off by default | JSON |
-| Jobs | Queue | In the foreground | Queue |
-
-A setting that is set but invalid, such as `HTTP_HSTS=tru`, is a mistake, and a
-silent default would hide it. In production and any unknown environment it stops
-the boot, and the error names the variable and its value. Elsewhere the default
-applies and `logger::init` prints a warning. A blank value counts as unset, which
-is what a compose file sends for an unset variable. Flags take `1`, `true`, `yes`,
-`on`, `0`, `false`, `no`, or `off`.
-
-In development and test, the local database is
-`postgres://postgres:postgres@localhost:5432/<name>_<environment>`.
-
-`Config::from_lookup` takes the lookup as a function, so configuration can be
-tested without touching the process environment:
-
-```rust
-use axa::{Environment, config::{Config, Defaults}};
-
-let config = Config::from_lookup(
-    &Environment::Development,
-    &Defaults::default(),
-    |name| (name == "PORT").then(|| "8000".to_string()),
-)
-.unwrap();
-assert_eq!(config.server.port, 8000);
-```
-
-### Health checks
-
-| Route | Meaning |
-|---|---|
-| `/_ping`, `/_health` | The process is up |
-| `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, as a problem whose `failed` names them |
-
-The route knows the database and queue only when axa holds them, which includes
-the pool in `AppContext::db` with the `sqlx` feature. Anything else is a named
-check, which is an ordinary async closure:
-
-```rust,ignore
-ctx.health_checks = Checks::new().add("search", || async { search::ping().await });
-```
-
-The route is public, so a caller must not be able to drive load at a dependency.
-One answer, passing or failing, is reused for 5 seconds, and callers during a round
-of checks wait for it. A check gets 2 seconds, and past that it has failed. Change
-these with `Checks::reuse_for` and `Checks::time_limit`. The response carries the
-check's name and never its error text, which is only logged. Do not put an address
-in a name.
-
-### Command line
-
-`axa::cli::Cli` is a `clap` parser that a service matches on itself:
-
-```text
-service start [--worker | --all] [--binding ADDR] [--port PORT]
-service db migrate | down [STEPS] | reset | status | truncate
-service task [NAME] [KEY:VALUE ...]
-service check
-```
-
-`axa::cli::parse` reads it, and takes the service's name, version, and description
-for `--help` and `--version`:
-
-```rust,no_run
-let cli = axa::cli::parse(
-    env!("CARGO_PKG_NAME"),
-    env!("CARGO_PKG_VERSION"),
-    env!("CARGO_PKG_DESCRIPTION"),
-);
-```
-
-`parse` refuses `db down`, `db reset`, and `db truncate`, because they destroy data.
-They run only in development or test, with `AXA_DESTROY_DATA=true`, and the process
-exits non-zero before your code runs. `--environment` cannot lift this: a production
-process stays refused whatever the flag says. `Cli::parse()` refuses them too.
-
-`check` validates the configuration, prints the effective settings with passwords
-and other secrets redacted, and exits, non-zero if refused. It connects to nothing,
-and it knows only the settings axa reads. `Config::apply_cli` applies the `start`
-overrides.
-
-### Tasks
-
-A task is a named job an operator runs by hand:
-
-```rust
-use axa::{prelude::*, task::{Tasks, Vars}};
-
-struct Greet;
-
-#[async_trait]
-impl Task for Greet {
-    fn task(&self) -> TaskInfo {
-        TaskInfo {
-            name: "greet".to_string(),
-            detail: "Say hello".to_string(),
-        }
-    }
-
-    async fn run(&self, _ctx: &AppContext, vars: &Vars) -> Result<()> {
-        println!("hello {}", vars.cli_arg("name")?);
-        Ok(())
-    }
-}
-
-let mut tasks = Tasks::default();
-tasks.register(Greet);
-```
-
-### Background jobs
-
-A worker is a type with serializable arguments:
-
-```rust
-use axa::prelude::*;
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize)]
-struct Args {
-    report_id: u64,
-}
-
-struct ReportWorker;
-
-#[async_trait]
-impl BackgroundWorker<Args> for ReportWorker {
-    fn build(_ctx: &AppContext) -> Self {
-        Self
-    }
-
-    async fn perform(&self, args: Args) -> Result<()> {
-        println!("building report {}", args.report_id);
-        Ok(())
-    }
-}
-```
-
-`ReportWorker::perform_later(&ctx, args)` then runs according to `WORKER_MODE`:
-
-| Mode | Behaviour |
-|---|---|
-| `BackgroundQueue` | Saved to Postgres for a worker process |
-| `BackgroundAsync` | Spawned on the current runtime |
-| `ForegroundBlocking` | Run before returning. Tests use this |
-
-### The job queue
-
-With the `queue` feature, jobs live in one `axa_queue` table. `Queue::connect` creates
-it, and `Queue::connect_existing` changes no schema, for a role that may not: a
-migration then runs `queue::SETUP_STATEMENTS`.
-It needs no broker: Postgres `FOR UPDATE SKIP LOCKED` lets each worker loop claim
-the oldest ready job in one statement, so no two loops ever claim the same row.
-
-A job moves from `queued` to `running` to `completed` or `failed`, keeping its
-error text on the row. A running job reports in every `heartbeat_interval`, so it
-can take as long as it needs, and one not heard from for `stale_minutes` is assumed
-lost with its worker. A job that panics fails, and its loop carries on.
-
-A job gets one attempt by default, because a retry repeats its work. Raise
-`max_attempts` for the queue, or override `BackgroundWorker::max_attempts` for jobs
-written to be repeated, and each retry then waits twice as long as the last. A job
-lost with its worker is queued again if it has attempts left and otherwise fails,
-so a crash cannot loop forever. Finished rows are deleted after `retention_days`.
-
-`queue::enqueue_on` queues a job on the caller's sqlx transaction, so the job and
-the record it is about commit together. `Queue::enqueue` uses its own connection.
-
-A process runs `workers` jobs at once, 2 by default, and `Queue::limit` holds one job
-type below that. A job may be delayed, given a priority, or given a time limit, and has
-none unless it is given one. `Queue::job` and `counts` say where a job is.
-`queue::cancel` and `queue::retry` change it, as an act of a named person for a
-reason, kept in the insert-only `axa_job_acts` in the caller's transaction, and
-`Queue::acts` reads them back. A run that lost its claim is stopped, and its job waits
-in `needs_review` for a person. `Queue::every` queues a job each interval, once per due
-time across replicas, with no drift, one job for times missed, and no stacking, and a
-schedule removed from code is archived, not deleted. See
-[Background jobs and schedules](help/background-jobs/index.md).
-
-**Nothing runs jobs by itself.** A service needs `start --all` or a separate
-`start --worker`, and `queue::warn_if_unserved` says so at boot. Queue arguments
-are stored in plain text, so never put a secret in them.
-
-### The outbox
-
-With the `outbox` feature, an event is a record, written with `outbox::write` on the
-caller's transaction, so it commits or rolls back with the change it describes. A relay
-then decides whether each event may go, publishes it, and records what happened, so a
-crash between the commit and the publish loses nothing. `Outbox::run` takes three
-closures: the decision, run in the claim's transaction, the publisher, so the broker
-client stays in the service, and the record, run in each outcome's transaction, so the
-service's audit row commits with it. A service with no rule and no audit passes
-`decide::deliver_all` and `record::nothing`.
-
-Events and attempts are only ever inserted, and the database's triggers refuse every
-change, so what was delivered, refused, and failed stays on record. A refusal is final.
-A hold charges nothing. Nothing is swept: a payload that must go is erased by a person,
-with `outbox::erase`, and the erasure is kept. A changed row is never published.
-
-Delivery is at least once, so a consumer must dedupe on `event_id`, which
-`outbox::inbox::seen` does. Several relays can run at once, and each event normally goes
-out once. Events with one topic and key go out in order, unless a topic is given
-`Order::None`. A broker that is down charges no event, and one it keeps refusing ends as
-`failed` and holds up nothing else.
-
-**Nothing relays by itself.** See the
-[guide](help/transactional-outbox/index.md) for what a service writes. A payload is at
-most 64 KiB by default, may be checked against a list of denied fields, and with
-`outbox-encryption` is sealed at rest. Prefer an id to a snapshot.
-
-### Testing
-
-With [`axa-test`](crates/axa-test) as a dev-dependency, a service implements `TestApp` to say how it boots
-for tests. That is the one trait axa asks a service to implement, and it exists
-only for tests.
-
-```rust,ignore
-use axa_test::prelude::*;
-
-#[tokio::test]
-async fn health_answers() {
-    request::<App, _, _>(|server, _ctx| async move {
-        assert_eq!(server.get("/_health").await.status_code(), 200);
-    })
-    .await;
-}
-```
+| **[Quick Start](docs/QUICKSTART.md)** | Hands-on 5-minute tutorial |
+| **[Feature Selection](docs/FEATURES.md)** | Choose the right features |
+| **[Configuration](docs/CONFIGURATION.md)** | All configuration options |
+| **[Examples](docs/EXAMPLES.md)** | Real-world patterns |
+| **[Architecture](docs/ARCHITECTURE.md)** | How axa works |
+| **[Specification](spec/index.md)** | Single source of truth |
+| **[Changelog](CHANGELOG.md)** | Release history |
+
+---
+
+## Project Links
+
+- **Source**: [github.com/publicprojects-io/axa](https://github.com/publicprojects-io/axa)
+- **Docs**: [docs.rs/axa](https://docs.rs/axa)
+- **Package**: [crates.io/crates/axa](https://crates.io/crates/axa)
+
+---
 
 ## Requirements
 
-- Rust 1.97 or newer, on edition 2024
-- PostgreSQL for the `queue`, `outbox`, and `sea-orm` features
+- Rust **1.97** or newer
+- Edition **2024**
+- PostgreSQL (for `queue`, `outbox`, `sqlx`, `sea-orm`, `idempotency` features)
 
-## Development
+---
 
-```sh
-cargo test --workspace --all-features
-cargo test --features queue
-cargo test --workspace
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue -- --ignored
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
-```
+## What axa Provides
 
-The last command runs the queue tests against a real Postgres. Those tests have
-caught a real race that nothing else did, so run them when you touch the queue.
-The full list that CI runs is in [section 5 of the spec](spec/index.md#5-verification).
+### Core (Always Available)
 
-AI agents have two skills: [`axa-skill`](skill/axa-skill/SKILL.md) for building a
-service with axa, and [`axa-maintainer-skill`](skill/axa-maintainer-skill/SKILL.md) for
-working on axa itself.
+- **Route tables**: `Routes` and `AppRoutes` build ordinary `axum::Router`
+- **Middleware stack**: Request ID, tracing, security headers, CORS, timeout, compression, body limit, panic catch
+- **Error handling**: RFC 9457 problem details with generic error text to clients
+- **Configuration**: Environment-based with code defaults
+- **Health checks**: `/_ping`, `/_health`, `/_readiness`
+- **Logging**: Structured logging with request tracking
+- **Graceful shutdown**: SIGTERM/SIGINT handling with in-flight request completion
+- **CLI**: Standard `start`, `db`, `task`, `check` commands
+- **Tasks**: Named jobs for operators to run
+- **Background jobs**: Worker abstraction with multiple modes
 
-Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
-carries a spec edit, a code edit, and a test edit together.
+### With Features
+
+Each optional feature adds specific capabilities. See [Feature Selection](docs/FEATURES.md) for details.
+
+---
+
+## Principles
+
+These principles guide axa's design:
+
+| Principle | Meaning |
+|---|---|
+| **Library, not framework** | Your code controls the flow |
+| **Two consumers first** | Code added only when two services need it, or one has a safety case |
+| **Fail closed** | Production refuses unsafe defaults |
+| **Generic errors** | Internal failure text goes to logs, not clients |
+| **Written afresh** | Not copied from Loco (Apache-2.0 only) |
+| **New dependencies raised first** | Cost is paid by all consumers |
+| **A record is not state** | Audit rows are append-only |
+| **Final means final** | Outcomes are never undone by helpers |
+| **An outcome commits with its audit** | API and audit commit together |
+| **The safe way is the only way** | Safer behavior replaces weaker, weaker is removed |
+
+---
+
+## Never Added
+
+These will **never** be added to axa, as they violate the auditability principle:
+
+- ❌ Lifecycle hooks
+- ❌ Route macros
+- ❌ Code generation
+- ❌ Dependency-injection container
+- ❌ Plugin system
+- ❌ Configuration language
+- ❌ Configuration files
+- ❌ Database abstraction
+- ❌ Generic CRUD controller
+
+---
+
+## Migration
+
+- **[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md)** - Breaking changes and upgrade path
+- **[From Loco into axa](help/from-loco-into-axa/index.md)** - Complete migration guide
+- **[From Loco SeaORM into axa-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)** - SeaORM-specific migration
+
+---
+
+## Contributing
+
+See [AGENTS.md](AGENTS.md) for:
+- Build, test, lint commands
+- Conventions and rules
+- Release process
+
+---
 
 ## Relationship to Loco
 
 To upgrade from an earlier version, read [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
 
-To move a project across, follow
-[Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and
-for the database, [Moving SeaORM code from Loco to axa](help/from-loco-seaorm-into-axa-seaorm/index.md).
+To move a project across, follow [Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and for the database, [Moving SeaORM code from Loco to axa](help/from-loco-seaorm-into-axa-seaorm/index.md).
 
-axa was extracted from what the Main X Index services relied on in
-[Loco](https://loco.rs) (Apache-2.0), and some differences are deliberate:
+axa was extracted from what the Main X Index services relied on in [Loco](https://loco.rs) (Apache-2.0), and some differences are deliberate:
 
 | Loco | axa |
 |---|---|
@@ -618,9 +233,12 @@ axa was extracted from what the Main X Index services relied on in
 | No request timeout or security headers by default | Both on in production; headers everywhere |
 | `If-None-Match` compared as one exact string | Weak comparison, lists, and `*`, as RFC 9110 has it |
 
-The code was written afresh rather than copied, so this crate can keep its own
-licence terms.
+The code was written afresh rather than copied, so this crate can keep its own licence terms.
+
+---
 
 ## License
 
-See [LICENSE.md](LICENSE.md).
+MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only
+
+See [LICENSE.md](LICENSE.md) for details.
