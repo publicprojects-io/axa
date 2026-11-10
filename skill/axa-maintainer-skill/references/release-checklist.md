@@ -65,6 +65,11 @@ partial publish is a normal state to recover from:
 
 - Publish the existing crates first where you can, then the new ones.
 - Run a loop that retries on a 429 and stops on any other error, with `axa` last.
+- A new crate that depends on `axa`, such as `axa-test` was in 0.10.0, must not wait
+  behind it. Hold `axa` until the 429's retry time has passed, then publish `axa` and
+  that crate back to back. In 0.10.0, `axa` went out nine minutes before `axa-test`,
+  and a service following the upgrade path in the CHANGELOG found no `axa-test`.
+- Tell other sessions only once every crate is in the index.
 - Do not treat the shell's exit code as the result. Read cargo's output, and check the
   crates.io index for each crate.
 

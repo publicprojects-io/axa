@@ -122,7 +122,12 @@ name. It breaks 0.9 in one place: the `testing` feature is now `axa-test`.
   under `[dev-dependencies]`, and changes `axa::testing::prelude` to
   `axa_test::prelude` and `axa::TestServer` to `axa_test::TestServer`. The prelude
   holds the same names, `request`, `boot_test`, `TestApp`, `BootResult`, and
-  `TestServer`, and `axa::prelude` no longer brings them in.
+  `TestServer`.
+
+  `axa::prelude` no longer brings them in. With `testing` on, it re-exported them, so
+  a test file that imports only `use axa::prelude::*;` and calls `request`,
+  `boot_test`, or `TestServer` now fails with E0425 or E0433. Add
+  `use axa_test::prelude::*;` to each such file.
 
 - The README no longer says which features no service uses yet, and spec P-2 and
   `AGENTS.md` no longer ask for that mark. P-2 itself stands: two consumers, or one
