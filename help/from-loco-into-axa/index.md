@@ -421,8 +421,9 @@ ctx.health_checks = axa::health::Checks::new().add("search", move || {
 });
 ```
 
-**Moving on to sqlx?** `AppContext::db` is then `()`, and readiness checks no
-database until you add your pool as a check, using `axa::sqlx::ping`.
+**Moving on to sqlx?** Turn on the `sqlx` feature. `AppContext::db` is then a
+`PgPool`, which readiness checks as `database`, and `axa::model` and
+`axa::validation` work as they did with SeaORM.
 
 The answer is reused for 5 seconds and a failure names the check, not its error, so
 an orchestrator polling faster than that sees the same answer.

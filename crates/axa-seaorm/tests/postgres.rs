@@ -153,3 +153,138 @@ async fn schema_helpers_against_postgres() {
     drop_table(&m, "axa_items").await.unwrap();
     assert!(column(&db, "axa_items", "id").await.is_none());
 }
+
+// The functions every database crate has.
+
+mod shared {
+    use axa_seaorm::{
+        dangerously_recreate, is_unique_violation, migrate, pending, ping, revert,
+        sea_orm::ConnectionTrait,
+        sea_orm_migration::{
+            MigrationName, MigrationTrait, MigratorTrait, SchemaManager, async_trait,
+            sea_orm::DbErr,
+        },
+        truncate,
+    };
+
+    struct People;
+    struct Notes;
+
+    impl MigrationName for People {
+        fn name(&self) -> &'static str {
+            "m0001_people"
+        }
+    }
+    impl MigrationName for Notes {
+        fn name(&self) -> &'static str {
+            "m0002_notes"
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for People {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared(
+                    "CREATE TABLE seaorm_people (id BIGSERIAL PRIMARY KEY, email TEXT UNIQUE)",
+                )
+                .await
+                .map(|_| ())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE seaorm_people")
+                .await
+                .map(|_| ())
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl MigrationTrait for Notes {
+        async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("CREATE TABLE seaorm_notes (id BIGSERIAL PRIMARY KEY)")
+                .await
+                .map(|_| ())
+        }
+        async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+            manager
+                .get_connection()
+                .execute_unprepared("DROP TABLE seaorm_notes")
+                .await
+                .map(|_| ())
+        }
+    }
+
+    struct Migrator;
+
+    impl MigratorTrait for Migrator {
+        fn migrations() -> Vec<Box<dyn MigrationTrait>> {
+            vec![Box::new(People), Box::new(Notes)]
+        }
+    }
+
+    async fn fresh() -> axa_seaorm::Pool {
+        let db = super::database().await;
+        for table in ["seaorm_notes", "seaorm_people", "seaql_migrations"] {
+            db.execute_unprepared(&format!("DROP TABLE IF EXISTS {table}"))
+                .await
+                .unwrap();
+        }
+        db
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn migrations_apply_revert_and_list_what_is_pending() {
+        let db = fresh().await;
+        ping(&db).await.unwrap();
+        assert_eq!(
+            pending::<Migrator>(&db).await.unwrap(),
+            ["m0001_people", "m0002_notes"]
+        );
+        migrate::<Migrator>(&db).await.unwrap();
+        assert_eq!(
+            pending::<Migrator>(&db).await.unwrap(),
+            Vec::<String>::new()
+        );
+        revert::<Migrator>(&db, 1).await.unwrap();
+        assert_eq!(pending::<Migrator>(&db).await.unwrap(), ["m0002_notes"]);
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn truncate_empties_tables_and_a_duplicate_is_a_unique_violation() {
+        let db = fresh().await;
+        migrate::<Migrator>(&db).await.unwrap();
+        let insert = "INSERT INTO seaorm_people (email) VALUES ('a@example.org')";
+        db.execute_unprepared(insert).await.unwrap();
+        let error = db.execute_unprepared(insert).await.unwrap_err();
+        assert!(is_unique_violation(&error), "{error}");
+        assert!(
+            truncate(&db, &["seaorm_people; DROP TABLE x"])
+                .await
+                .is_err()
+        );
+        truncate(&db, &["seaorm_people"]).await.unwrap();
+        db.execute_unprepared(insert).await.unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
+    async fn dangerously_recreate_rebuilds_from_the_first_migration() {
+        let db = fresh().await;
+        migrate::<Migrator>(&db).await.unwrap();
+        let insert = "INSERT INTO seaorm_people (email) VALUES ('a@example.org')";
+        db.execute_unprepared(insert).await.unwrap();
+        dangerously_recreate::<Migrator>(&db).await.unwrap();
+        db.execute_unprepared(insert).await.unwrap();
+        assert_eq!(
+            pending::<Migrator>(&db).await.unwrap(),
+            Vec::<String>::new()
+        );
+    }
+}

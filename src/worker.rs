@@ -138,7 +138,11 @@ fn no_queue() -> Result<String> {
     Err(Error::Worker("no job queue configured".to_string()))
 }
 
-#[cfg(all(test, not(feature = "sea-orm"), not(feature = "queue")))]
+#[cfg(all(
+    test,
+    not(any(axa_db = "seaorm", axa_db = "toasty")),
+    not(feature = "queue")
+))]
 mod tests {
     use super::*;
     use crate::{

@@ -27,9 +27,19 @@ axa = "0.10"
 
 ### Data
 
-- [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
-- [`axa-seaorm`](crates/axa-seaorm): a SeaORM-backed `AppContext`, connections, migration helpers, and model errors, with an easy path from Loco
-- [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`
+Each of these gives the same things for its library, so a service can move between
+them: `AppContext::db` becomes its pool, `axa::db::connect` opens it from configuration,
+`/_readiness` checks it, and each has `migrate`, `pending`, `truncate` and
+`dangerously_recreate` for tests, `is_unique_violation`, and `quote_identifier`. With
+any of them, `axa::model` and `axa::validation` give model errors and validation, and a
+broken constraint answers `409` or `422`.
+
+- [`axa-sqlx`](crates/axa-sqlx): Postgres over sqlx, with no ORM. `AppContext::db` is a `PgPool`
+- [`axa-seaorm`](crates/axa-seaorm): Postgres over SeaORM, with schema helpers and an easy path from Loco. `AppContext::db` is a `DatabaseConnection`
+- [`axa-diesel`](crates/axa-diesel): Postgres over Diesel, with no `libpq`. `AppContext::db` is a Diesel pool
+- [`axa-toasty`](crates/axa-toasty): Postgres over Toasty. `AppContext::db` is a `toasty::Db`. Toasty is before 1.0, and its migrations go forward only
+
+Turn on one. With more than one, `sqlx` wins, then `sea-orm`, `diesel`, and `toasty`.
 
 ### Authentication
 
@@ -54,6 +64,12 @@ axa = "0.10"
 
 For tests, add [`axa-test`](crates/axa-test) as a dev-dependency. It has request-level
 test helpers, built on `axum-test`, and is not a feature of `axa`.
+
+For MySQL, [`axa-mysql-job-queue`](crates/axa-mysql-job-queue) is the job queue, worker
+pool, and schedules on MySQL 8.4, and for a service on one machine,
+[`axa-sqlite-job-queue`](crates/axa-sqlite-job-queue) is the same on a SQLite file. Each
+has the same API as `axa-postgres-job-queue`, and is a crate on its own, not yet a feature
+of `axa`.
 
 ## Quick start
 
@@ -365,8 +381,8 @@ assert_eq!(config.server.port, 8000);
 | `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, as a problem whose `failed` names them |
 
 The route knows the database and queue only when axa holds them, which includes
-the pool in `AppContext::db` with the `sqlx` feature. Anything else is a named
-check, which is an ordinary async closure:
+`AppContext::db` with any database feature. Anything else is a named check, which is
+an ordinary async closure:
 
 ```rust,ignore
 ctx.health_checks = Checks::new().add("search", || async { search::ping().await });
@@ -571,9 +587,10 @@ cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-job-queue -- --ignored --test-threads=1
 ```
 
-The last command runs the queue tests against a real Postgres. Those tests have
+The last two commands run the queue tests against a real Postgres and MySQL. Those tests have
 caught a real race that nothing else did, so run them when you touch the queue.
 The full list that CI runs is in [section 5 of the spec](spec/index.md#5-verification).
 

@@ -73,8 +73,9 @@ pub enum Error {
     InvalidIdentifier(String),
 }
 
-/// Pool settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Pool settings. The connection string is left out of the `Debug` text, as it may
+/// hold a password.
+#[derive(Clone, PartialEq, Eq)]
 pub struct PoolConfig {
     /// Connection string.
     pub uri: String,
@@ -83,6 +84,15 @@ pub struct PoolConfig {
     /// How long a caller waits for a connection, whether a free one or a new one,
     /// before it gets an error.
     pub wait_timeout: Duration,
+}
+
+impl std::fmt::Debug for PoolConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PoolConfig")
+            .field("max_connections", &self.max_connections)
+            .field("wait_timeout", &self.wait_timeout)
+            .finish_non_exhaustive()
+    }
 }
 
 impl PoolConfig {
@@ -97,8 +107,14 @@ impl PoolConfig {
     }
 }
 
-/// TLS settings trusting the standard web roots.
-fn web_tls() -> Result<rustls::ClientConfig, rustls::Error> {
+/// TLS settings trusting the standard web roots, as [`connect`] uses. Pass them to
+/// [`pool_with_tls`] to build a pool that connects only when first used.
+///
+/// # Errors
+///
+/// Fails when `rustls` refuses the protocol versions, which it does not for its own
+/// defaults.
+pub fn web_tls() -> Result<rustls::ClientConfig, rustls::Error> {
     let roots = rustls::RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
     };
@@ -367,6 +383,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn debug_text_leaves_out_the_connection_string() {
+        let text = format!("{:?}", PoolConfig::new("postgres://me:hunter2@db/app"));
+        assert!(!text.contains("hunter2"), "{text}");
+        assert!(text.contains("max_connections"), "{text}");
+    }
 
     #[test]
     fn identifiers_are_quoted() {

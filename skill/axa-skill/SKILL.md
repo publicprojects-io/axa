@@ -55,8 +55,9 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Postgres job queue | `queue` |
 | Transactional outbox and relay on Postgres | `outbox` |
 | The outbox, with payloads sealed at rest | `outbox-encryption` |
-| Keep SeaORM | `sea-orm` |
-| Diesel, with no `libpq` | `diesel` |
+| Keep SeaORM. `AppContext::db` becomes a `DatabaseConnection` | `sea-orm` |
+| Diesel, with no `libpq`. `AppContext::db` becomes a Diesel pool | `diesel` |
+| Toasty, before 1.0, with forward-only migrations. `AppContext::db` becomes a `toasty::Db` | `toasty` |
 | Keycloak bearer tokens and ABAC | `keycloak` |
 | PASETO bearer tokens and ABAC | `paseto` |
 | Browser sessions | `session` |

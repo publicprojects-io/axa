@@ -229,24 +229,16 @@ async fn ok() -> Json<Health> {
 /// The checks axa can write itself: the database and queue it holds.
 fn built_in(ctx: &AppContext) -> Vec<Check> {
     #[cfg_attr(
-        not(any(feature = "sea-orm", feature = "sqlx", feature = "queue")),
+        all(axa_db = "none", not(feature = "queue")),
         allow(unused_mut, clippy::let_and_return)
     )]
     let mut checks = Vec::new();
-    #[cfg(feature = "sea-orm")]
+    #[cfg(not(axa_db = "none"))]
     {
         let db = ctx.db.clone();
         checks.push(Check::new("database", move || {
             let db = db.clone();
-            async move { db.ping().await }
-        }));
-    }
-    #[cfg(all(feature = "sqlx", not(feature = "sea-orm")))]
-    {
-        let pool = ctx.db.clone();
-        checks.push(Check::new("database", move || {
-            let pool = pool.clone();
-            async move { axa_sqlx::ping(&pool).await }
+            async move { crate::context::ping(&db).await }
         }));
     }
     #[cfg(feature = "queue")]
@@ -283,7 +275,7 @@ pub fn routes() -> Routes {
 }
 
 // With a database in the context, a context that was never opened fails readiness.
-#[cfg(all(test, not(any(feature = "sea-orm", feature = "sqlx"))))]
+#[cfg(all(test, axa_db = "none"))]
 mod tests {
     use super::*;
     use crate::{
@@ -510,7 +502,8 @@ mod tests {
     }
 }
 
-#[cfg(all(test, feature = "sea-orm"))]
+// Every database but Toasty, which connects when its handle is made.
+#[cfg(all(test, not(any(axa_db = "none", axa_db = "toasty"))))]
 mod database_tests {
     use super::*;
     use crate::{
@@ -529,11 +522,7 @@ mod database_tests {
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         // A connection that was never opened cannot answer a ping.
-        let ctx = AppContext::new(
-            Environment::Test,
-            sea_orm::DatabaseConnection::default(),
-            config,
-        );
+        let ctx = AppContext::for_test(Environment::Test, config);
         let router = AppRoutes::with_default_routes().into_router(ctx);
         let request = Request::builder()
             .uri("/_readiness")
@@ -551,7 +540,7 @@ mod database_tests {
     }
 }
 
-#[cfg(all(test, feature = "sea-orm"))]
+#[cfg(all(test, not(any(axa_db = "none", axa_db = "toasty"))))]
 mod named_database_tests {
     use super::*;
     use crate::{
@@ -566,11 +555,7 @@ mod named_database_tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let ctx = AppContext::new(
-            Environment::Test,
-            sea_orm::DatabaseConnection::default(),
-            config,
-        );
+        let ctx = AppContext::for_test(Environment::Test, config);
         let answer = ctx.health_checks.answer(built_in(&ctx)).await;
         assert_eq!(answer.failed, ["database"]);
     }
@@ -583,7 +568,7 @@ mod sqlx_tests {
 
     /// `AppContext::db` is the pool, and readiness asks it without being told.
     /// Nothing listens on this port, so the pool cannot answer.
-    #[cfg(not(feature = "sea-orm"))]
+    #[cfg(axa_db = "sqlx")]
     #[tokio::test]
     async fn the_context_pool_is_checked_without_being_named() {
         let defaults = crate::config::Defaults {

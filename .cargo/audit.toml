@@ -4,12 +4,16 @@
 
 [advisories]
 ignore = [
-    # libsqlite3-sys 0.37 (C SQLite). It is in Cargo.lock only because sqlx lists
-    # SQLite as an optional driver, and nothing in axa builds it: `cargo tree -i
-    # libsqlite3-sys --all-features --target all` prints nothing, and `cargo deny`,
-    # which would catch it if it were ever built, passes. sqlx-sqlite 0.9.0 caps it
-    # below 0.38, and the fix is in 0.39. sqlx raised the cap in
+    # libsqlite3-sys 0.37 (C SQLite 3.53), CVE-2026-119375: a crafted database and
+    # `-wal` file pair can make queries return uninitialized memory. It is local, and
+    # needs files a less trusted party wrote. `axa` itself does not build it, and
+    # `cargo deny`, which checks what `axa`'s features build, passes. Only
+    # `axa-sqlite-job-queue` builds it, which opens files the service makes itself,
+    # and which is not published until this is fixed. sqlx-sqlite 0.9.0 caps it
+    # below 0.38, and the fix is in 0.39. One crate may link `sqlite3`, so nothing
+    # else in the workspace can use a fixed copy. sqlx raised the cap in
     # https://github.com/transact-rs/sqlx/pull/4502, merged 2026-11-08 and not yet
-    # released. Once it is, run `cargo update -p libsqlite3-sys` and remove this.
+    # released. Once it is, run `cargo update -p libsqlite3-sys`, remove this, and
+    # `axa-sqlite-job-queue` may be published.
     "RUSTSEC-2026-0459",
 ]

@@ -52,6 +52,10 @@ one of them, as the `queue` feature needs it. `axa-problem` goes before `axa-ide
 depend on it. No other subcrate depends on another, so the rest can go in any order.
 `axa-test` is the one crate that depends on `axa`, so it publishes after `axa`.
 
+`axa-sqlite-job-queue` is held: do not publish it until sqlx releases the raised cap on
+`libsqlite3-sys` (sqlx PR #4502), `cargo update -p libsqlite3-sys` brings in 0.39 or
+later, and the RUSTSEC-2026-0459 ignore in `.cargo/audit.toml` is gone.
+
 `axa-pagination` and `axa-offset-pagination` are retired, as axa 0.9 removed offset
 paging. Never publish either again.
 

@@ -30,6 +30,21 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      mysql:
+        image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+        env:
+          MYSQL_ROOT_PASSWORD: axa
+          MYSQL_USER: axa
+          MYSQL_PASSWORD: axa
+          MYSQL_DATABASE: axa_test
+        # 3307 on the runner, which has a MySQL of its own installed.
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uaxa -paxa --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
       redis:
         image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
         ports:
@@ -61,6 +76,12 @@ jobs:
         run: cargo clippy --all-targets --features queue -- -D warnings
       - name: Clippy, sqlx
         run: cargo clippy --all-targets --features sqlx -- -D warnings
+      # Each database feature alone, as each makes `AppContext::db` its own handle.
+      - name: Clippy, each database alone
+        run: |
+          cargo clippy --all-targets --features sea-orm -- -D warnings
+          cargo clippy --all-targets --features diesel -- -D warnings
+          cargo clippy --all-targets --features toasty -- -D warnings
       # Each outbox feature alone, as a service turns it on: code behind one
       # feature can lint clean only beside the other.
       - name: Clippy, outbox features one at a time
@@ -106,9 +127,19 @@ jobs:
           cargo test -p axa-sqlx -- --ignored --test-threads=1
           cargo test -p axa-seaorm -- --ignored --test-threads=1
           cargo test -p axa-diesel -- --ignored --test-threads=1
+          cargo test -p axa-toasty -- --ignored --test-threads=1
           cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
           cargo test -p axa-idempotency-key -- --ignored --test-threads=1
           cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
+
+      - name: MySQL tests
+        env:
+          AXA_TEST_MYSQL_URL: mysql://axa:axa@127.0.0.1:3307/axa_test
+        # Binary logging is on, so only SUPER may create the queue's triggers unless
+        # this is set. A service's migration runs as such a role instead.
+        run: |
+          mysql -h127.0.0.1 -P3307 -uroot -paxa -e "SET GLOBAL log_bin_trust_function_creators = 1"
+          cargo test -p axa-mysql-job-queue -- --ignored --test-threads=1
 
       - name: Redis tests
         env:

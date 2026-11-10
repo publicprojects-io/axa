@@ -111,8 +111,8 @@ pub enum Error {
     /// A background-job failure.
     #[error("worker error: {0}")]
     Worker(String),
-    /// A model-layer failure.
-    #[cfg(feature = "sea-orm")]
+    /// A model-layer failure, from any database.
+    #[cfg(feature = "model")]
     #[error(transparent)]
     Model(#[from] crate::model::ModelError),
     /// A database failure. Becomes `409` for a violated unique or foreign key
@@ -126,9 +126,27 @@ pub enum Error {
     #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
     #[error(transparent)]
     Sqlx(#[from] sqlx::Error),
+    /// A Diesel failure. Becomes `409` for a violated unique or foreign key
+    /// constraint, and otherwise a generic `500`.
+    #[cfg(feature = "diesel")]
+    #[error(transparent)]
+    Diesel(#[from] axa_diesel::Error),
+    /// A Toasty failure. Becomes `409` for a violated unique or foreign key
+    /// constraint, and otherwise a generic `500`.
+    #[cfg(feature = "toasty")]
+    #[error(transparent)]
+    Toasty(#[from] axa_toasty::Error),
     /// Any other error.
     #[error(transparent)]
     Any(#[from] Box<dyn std::error::Error + Send + Sync>),
+}
+
+/// A Diesel query's own error, as Diesel's functions return it.
+#[cfg(feature = "diesel")]
+impl From<axa_diesel::diesel::result::Error> for Error {
+    fn from(error: axa_diesel::diesel::result::Error) -> Self {
+        Self::Diesel(axa_diesel::Error::Query(error))
+    }
 }
 
 impl Error {
@@ -287,14 +305,18 @@ type Broken = (StatusCode, &'static str, &'static str);
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
-    feature = "sea-orm"
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
 ))]
 const ALREADY_EXISTS: Broken = (StatusCode::CONFLICT, "conflict", "Resource already exists");
 #[cfg(any(
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
-    feature = "sea-orm"
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
 ))]
 const REFERENCE: Broken = (
     StatusCode::CONFLICT,
@@ -305,7 +327,9 @@ const REFERENCE: Broken = (
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
-    feature = "sea-orm"
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
 ))]
 const OUT_OF_RANGE: Broken = (
     StatusCode::UNPROCESSABLE_ENTITY,
@@ -316,7 +340,9 @@ const OUT_OF_RANGE: Broken = (
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
-    feature = "sea-orm"
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
 ))]
 const MISSING: Broken = (
     StatusCode::UNPROCESSABLE_ENTITY,
@@ -326,7 +352,7 @@ const MISSING: Broken = (
 
 /// The constraint a Postgres error code names, for an error that reaches `axa` with no
 /// kind of its own.
-#[cfg(feature = "sea-orm")]
+#[cfg(any(feature = "sea-orm", feature = "toasty"))]
 fn broken_by_code(code: &str) -> Option<Broken> {
     match code {
         "23505" => Some(ALREADY_EXISTS),
@@ -337,24 +363,52 @@ fn broken_by_code(code: &str) -> Option<Broken> {
     }
 }
 
+/// What a sqlx error that broke a constraint answers.
+#[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+fn broken_sqlx(error: &sqlx::Error) -> Option<Broken> {
+    match error.as_database_error()?.kind() {
+        sqlx::error::ErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
+        sqlx::error::ErrorKind::ForeignKeyViolation => Some(REFERENCE),
+        sqlx::error::ErrorKind::CheckViolation => Some(OUT_OF_RANGE),
+        sqlx::error::ErrorKind::NotNullViolation => Some(MISSING),
+        _ => None,
+    }
+}
+
 /// What a write that broke a unique, foreign key, check, or not-null constraint
 /// answers. Any other database error is not the caller's, and gets `None`.
 #[cfg(any(
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
-    feature = "sea-orm"
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
 ))]
 fn broken(error: &Error) -> Option<Broken> {
     match error {
         #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
-        Error::Sqlx(error) => match error.as_database_error()?.kind() {
-            sqlx::error::ErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
-            sqlx::error::ErrorKind::ForeignKeyViolation => Some(REFERENCE),
-            sqlx::error::ErrorKind::CheckViolation => Some(OUT_OF_RANGE),
-            sqlx::error::ErrorKind::NotNullViolation => Some(MISSING),
-            _ => None,
-        },
+        Error::Sqlx(error) => broken_sqlx(error),
+        #[cfg(feature = "sqlx")]
+        Error::Model(crate::model::ModelError::Sqlx(error)) => broken_sqlx(error),
+        #[cfg(feature = "diesel")]
+        Error::Diesel(error) | Error::Model(crate::model::ModelError::Diesel(error)) => {
+            use axa_diesel::diesel::result::{DatabaseErrorKind, Error as QueryError};
+            match error {
+                axa_diesel::Error::Query(QueryError::DatabaseError(kind, _)) => match kind {
+                    DatabaseErrorKind::UniqueViolation => Some(ALREADY_EXISTS),
+                    DatabaseErrorKind::ForeignKeyViolation => Some(REFERENCE),
+                    DatabaseErrorKind::CheckViolation => Some(OUT_OF_RANGE),
+                    DatabaseErrorKind::NotNullViolation => Some(MISSING),
+                    _ => None,
+                },
+                _ => None,
+            }
+        }
+        #[cfg(feature = "toasty")]
+        Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
+            broken_by_code(axa_toasty::sql_state(error)?)
+        }
         #[cfg(feature = "sea-orm")]
         Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
             // SeaORM names only unique and foreign key violations, so the code is read
@@ -376,7 +430,9 @@ fn broken(error: &Error) -> Option<Broken> {
     feature = "idempotency",
     feature = "queue",
     feature = "sqlx",
-    feature = "sea-orm"
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
 )))]
 fn broken(_error: &Error) -> Option<Broken> {
     None
@@ -390,7 +446,7 @@ impl Error {
         let client_mistake = match self {
             Self::NotFound | Self::BadRequest(_) | Self::JsonRejection(_) => true,
             Self::CustomError(status, _) => status.is_client_error(),
-            #[cfg(feature = "sea-orm")]
+            #[cfg(feature = "model")]
             Self::Model(
                 crate::model::ModelError::EntityNotFound
                 | crate::model::ModelError::EntityAlreadyExists
@@ -438,14 +494,14 @@ impl IntoResponse for Error {
                 };
                 (status, detail)
             }
-            #[cfg(feature = "sea-orm")]
+            #[cfg(feature = "model")]
             Self::Model(crate::model::ModelError::EntityNotFound) => resource_not_found(),
-            #[cfg(feature = "sea-orm")]
+            #[cfg(feature = "model")]
             Self::Model(crate::model::ModelError::EntityAlreadyExists) => (
                 StatusCode::CONFLICT,
                 ErrorDetail::new("conflict", "Resource already exists"),
             ),
-            #[cfg(feature = "sea-orm")]
+            #[cfg(feature = "model")]
             Self::Model(crate::model::ModelError::Validation(errors)) => (
                 StatusCode::BAD_REQUEST,
                 ErrorDetail {
@@ -463,10 +519,16 @@ impl IntoResponse for Error {
             | Self::JSON(_)
             | Self::Worker(_)
             | Self::Any(_) => internal(),
+            #[cfg(feature = "model")]
+            Self::Model(_) => internal(),
             #[cfg(feature = "sea-orm")]
-            Self::Model(_) | Self::DB(_) => internal(),
+            Self::DB(_) => internal(),
             #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
             Self::Sqlx(_) => internal(),
+            #[cfg(feature = "diesel")]
+            Self::Diesel(_) => internal(),
+            #[cfg(feature = "toasty")]
+            Self::Toasty(_) => internal(),
         };
         problem(status, detail).into_response()
     }
@@ -628,7 +690,7 @@ mod tests {
         assert!(!body.to_string().contains("secret"), "{body}");
     }
 
-    #[cfg(feature = "sea-orm")]
+    #[cfg(feature = "model")]
     #[tokio::test]
     async fn a_validation_failure_keeps_its_field_errors() {
         use crate::{
@@ -654,7 +716,7 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "sea-orm")]
+    #[cfg(feature = "model")]
     #[tokio::test]
     async fn model_errors_answer_as_problems() {
         use crate::model::ModelError;

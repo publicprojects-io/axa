@@ -1,7 +1,13 @@
 //! What a violated constraint answers, against a real Postgres, because a driver only
 //! reports a violation from a real database error.
 
-#![cfg(any(feature = "queue", feature = "sqlx", feature = "sea-orm"))]
+#![cfg(any(
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
+))]
 
 use axa::Error;
 use axum::{
@@ -113,4 +119,79 @@ async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
         "unprocessable_entity",
     )
     .await;
+}
+
+#[cfg(feature = "diesel")]
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_violated_constraint_through_diesel_is_the_callers_mistake() {
+    use axa::diesel::{PoolConfig, connect, diesel, diesel_async::RunQueryDsl};
+
+    let pool = connect(&PoolConfig::new(url())).await.unwrap();
+    let mut connection = pool.get().await.unwrap();
+    for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
+        diesel::sql_query(statement)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    let mut fails = async |statement: &'static str| {
+        let error = diesel::sql_query(statement)
+            .execute(&mut connection)
+            .await
+            .unwrap_err();
+        Error::from(error).into_response()
+    };
+    assert_answers(fails(DUPLICATE).await, StatusCode::CONFLICT, "conflict").await;
+    assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let out_of_range = fails(OUT_OF_RANGE).await;
+    assert_answers(
+        out_of_range,
+        unprocessable,
+        "outside what this field allows",
+    )
+    .await;
+    let missing = fails(MISSING).await;
+    assert_answers(missing, unprocessable, "A required value is missing").await;
+    let other = fails(NOT_A_CONSTRAINT).await;
+    assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
+}
+
+#[cfg(feature = "toasty")]
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_violated_constraint_through_toasty_is_the_callers_mistake() {
+    use axa::toasty::{PoolConfig, connect, toasty};
+
+    let mut db = connect(&PoolConfig::new(url()), toasty::ModelSet::default())
+        .await
+        .unwrap();
+    for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
+        toasty::sql::statement(statement)
+            .exec(&mut db)
+            .await
+            .unwrap();
+    }
+    let mut fails = async |statement: &'static str| {
+        let error = toasty::sql::statement(statement)
+            .exec(&mut db)
+            .await
+            .unwrap_err();
+        Error::from(error).into_response()
+    };
+    assert_answers(fails(DUPLICATE).await, StatusCode::CONFLICT, "conflict").await;
+    assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let out_of_range = fails(OUT_OF_RANGE).await;
+    assert_answers(
+        out_of_range,
+        unprocessable,
+        "outside what this field allows",
+    )
+    .await;
+    let missing = fails(MISSING).await;
+    assert_answers(missing, unprocessable, "A required value is missing").await;
+    let other = fails(NOT_A_CONSTRAINT).await;
+    assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 }

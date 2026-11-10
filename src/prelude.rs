@@ -16,6 +16,8 @@ pub use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 
+#[cfg(feature = "sea-orm")]
+pub use crate::query;
 pub use crate::{
     AppContext, Error, Result,
     error::{ErrorDetail, bad_request, not_found, unauthorized},
@@ -25,9 +27,8 @@ pub use crate::{
     task::{self, Task, TaskInfo},
     worker::BackgroundWorker,
 };
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "model")]
 pub use crate::{
     model::{ModelError, ModelResult},
-    query,
     validation::Validatable,
 };

@@ -8,7 +8,8 @@
 use std::path::Path;
 
 use axa_sqlx::{
-    Db, PoolConfig, connect, dangerously_recreate, is_unique_violation, migrate, ping, revert,
+    Db, PoolConfig, connect, dangerously_recreate, is_unique_violation, migrate, pending, ping,
+    revert,
     sqlx::{self, PgPool, Row, migrate::Migrator},
     status, truncate,
 };
@@ -166,7 +167,15 @@ async fn status_on_a_fresh_database_shows_nothing_applied() {
         .unwrap();
     let rows = status(&pool, &migrator).await.unwrap();
     assert!(rows.iter().all(|row| !row.applied));
+    assert_eq!(
+        pending(&pool, &migrator).await.unwrap(),
+        ["1_create items", "2_create notes"]
+    );
     dangerously_recreate(&pool, &migrator).await.unwrap();
+    assert_eq!(
+        pending(&pool, &migrator).await.unwrap(),
+        Vec::<String>::new()
+    );
 }
 
 /// One function, reached from the pool and from inside a transaction, in a

@@ -366,7 +366,7 @@ impl Queue {
     }
 
     /// A queue on a pool nothing listens to, for testing what depends on it.
-    #[cfg(all(test, not(feature = "sea-orm")))]
+    #[cfg(all(test, axa_db = "none"))]
     pub(crate) fn unreachable() -> Self {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .acquire_timeout(Duration::from_millis(50))
@@ -454,7 +454,7 @@ impl Queue {
 
 /// These need a real Postgres, so they are ignored by default. Run them with
 /// `AXA_TEST_DB_URL=postgres://... cargo test --all-features -- --ignored`.
-#[cfg(all(test, not(feature = "sea-orm")))]
+#[cfg(all(test, not(any(axa_db = "seaorm", axa_db = "toasty"))))]
 mod tests {
     use super::*;
     use crate::{

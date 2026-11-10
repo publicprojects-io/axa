@@ -1,14 +1,20 @@
-//! `SeaORM` connections, migration helpers, and model errors.
+//! `SeaORM` connections, migrations, schema helpers, and test resets.
 //!
-//! This crate makes leaving Loco easy. A project keeps `SeaORM` and most of its
-//! code, because the helpers Loco provided keep their names and behaviour:
+//! This crate has the same shape as `axa-sqlx`, `axa-diesel`, and `axa-toasty`: a
+//! [`Pool`], a [`PoolConfig`], [`connect`], [`ping`], [`migrate`], [`revert`],
+//! [`pending`], [`truncate`], [`dangerously_recreate`], [`is_unique_violation`], and
+//! [`quote_identifier`]. The migration functions take the service's `Migrator` as a
+//! type, as `sea-orm-migration` does.
+//!
+//! It also makes leaving Loco easy. A project keeps `SeaORM` and most of its code,
+//! because the helpers Loco provided keep their names and behaviour:
 //!
 //! | Loco | Here |
 //! |---|---|
-//! | `loco_rs::model::{ModelError, ModelResult}` | [`model`] |
+//! | `loco_rs::model::{ModelError, ModelResult}` | `axa::model`, for every database |
 //! | `loco_rs::model::query::condition()` | [`query::condition`] |
 //! | `loco_rs::schema` | [`schema`] |
-//! | `loco_rs::validation::Validatable` | [`validation::Validatable`] |
+//! | `loco_rs::validation::Validatable` | `axa::validation`, for every database |
 //! | `loco_rs::db::truncate_table` | [`truncate_table`] |
 //!
 //! ```no_run
@@ -23,13 +29,20 @@
 use std::time::Duration;
 
 pub use sea_orm;
-use sea_orm::{ConnectOptions, Database, DatabaseConnection, DbErr, EntityTrait};
+use sea_orm::{
+    ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr, EntityTrait, SqlErr,
+};
 pub use sea_orm_migration;
+use sea_orm_migration::MigratorTrait;
 
-pub mod model;
 pub mod query;
 pub mod schema;
-pub mod validation;
+
+/// The handle a service holds: `SeaORM`'s connection, which owns a pool.
+pub type Pool = DatabaseConnection;
+
+/// What this crate's functions return on failure.
+pub type Error = DbErr;
 
 /// Pool settings.
 #[derive(Clone, PartialEq, Eq)]
@@ -113,9 +126,115 @@ pub async fn truncate_table<T: EntityTrait>(
     Ok(())
 }
 
+/// Check the database connection.
+///
+/// # Errors
+///
+/// Fails when the database does not answer.
+pub async fn ping(pool: &Pool) -> Result<(), DbErr> {
+    pool.ping().await
+}
+
+/// Apply every pending migration of `M`.
+///
+/// # Errors
+///
+/// Fails on a database error, and then no later migration is tried.
+pub async fn migrate<M: MigratorTrait>(pool: &Pool) -> Result<(), DbErr> {
+    M::up(pool, None).await
+}
+
+/// Revert the last `steps` applied migrations of `M`, newest first.
+///
+/// # Errors
+///
+/// Fails on a database error.
+pub async fn revert<M: MigratorTrait>(pool: &Pool, steps: u32) -> Result<(), DbErr> {
+    M::down(pool, Some(steps)).await
+}
+
+/// The names of the migrations of `M` not yet applied, in order.
+///
+/// # Errors
+///
+/// Fails on a database error.
+pub async fn pending<M: MigratorTrait>(pool: &Pool) -> Result<Vec<String>, DbErr> {
+    Ok(M::get_pending_migrations(pool)
+        .await?
+        .iter()
+        .map(|migration| migration.name().to_string())
+        .collect())
+}
+
+/// Drop every table, then apply every migration of `M` from the start, as
+/// `Migrator::fresh` does. This destroys data: `axa::cli` allows it only in
+/// development and test, and only when confirmed.
+///
+/// # Errors
+///
+/// Fails on a database error.
+pub async fn dangerously_recreate<M: MigratorTrait>(pool: &Pool) -> Result<(), DbErr> {
+    M::fresh(pool).await
+}
+
+/// Whether `error` is the database refusing a duplicate under a unique constraint.
+#[must_use]
+pub fn is_unique_violation(error: &DbErr) -> bool {
+    matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+}
+
+/// `name` in double quotes, when it is a plain lower-case identifier: a letter or
+/// `_`, then letters, digits, and `_`. Anything else is refused, so it cannot carry
+/// SQL.
+#[must_use]
+pub fn quote_identifier(name: &str) -> Option<String> {
+    let mut chars = name.chars();
+    let first = chars.next()?;
+    let valid = (first.is_ascii_lowercase() || first == '_')
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    valid.then(|| format!("\"{name}\""))
+}
+
+/// Empty `tables` and restart their identities, for a test. Every name must be a
+/// plain lower-case identifier. [`truncate_table`] empties one entity's table.
+///
+/// # Errors
+///
+/// Fails on a database error, or a name that is not a plain identifier, before
+/// anything is emptied.
+pub async fn truncate<S: AsRef<str>>(pool: &Pool, tables: &[S]) -> Result<(), DbErr> {
+    if tables.is_empty() {
+        return Ok(());
+    }
+    let tables = tables
+        .iter()
+        .map(|name| {
+            quote_identifier(name.as_ref())
+                .ok_or_else(|| DbErr::Custom(format!("invalid identifier: {}", name.as_ref())))
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .join(", ");
+    pool.execute_unprepared(&format!("TRUNCATE {tables} RESTART IDENTITY CASCADE"))
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identifiers_are_quoted_and_unsafe_ones_refused() {
+        assert_eq!(quote_identifier("users").as_deref(), Some("\"users\""));
+        for name in ["", "1users", "Users", "a b", "a\"b", "a;b", "a.b"] {
+            assert_eq!(quote_identifier(name), None, "{name:?}");
+        }
+    }
+
+    #[test]
+    fn errors_that_are_not_from_the_database_are_not_unique_violations() {
+        assert!(!is_unique_violation(&DbErr::Custom("nothing".to_string())));
+    }
 
     #[test]
     fn debug_text_leaves_out_the_connection_string() {

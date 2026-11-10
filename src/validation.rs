@@ -1,12 +1,15 @@
-//! Model validation in `before_save`, with the shape of Loco's.
+//! Model validation, the same for every database, with the shape of Loco's.
 //!
-//! Implement [`Validatable`] on an `ActiveModel`, then call `self.validate()?`
-//! in `before_save`. A failure becomes a `DbErr::Custom` whose text is a JSON
-//! map of field name to error list.
+//! Implement [`Validatable`] on a model, or on the struct a handler builds from a
+//! request, then call `validate()?`. A failure is [`ModelValidationErrors`], which
+//! becomes `400` with each field's failures through [`crate::model::ModelError`].
+//!
+//! With `SeaORM`, implement it on an `ActiveModel` and call `self.validate()?` in
+//! `before_save`: there a failure becomes a `DbErr::Custom` whose text is a JSON map
+//! of field name to error list.
 
 use std::collections::{BTreeMap, HashMap};
 
-use sea_orm::DbErr;
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
 
@@ -55,7 +58,8 @@ impl From<ValidationErrors> for ModelValidationErrors {
     }
 }
 
-impl From<ModelValidationErrors> for DbErr {
+#[cfg(feature = "sea-orm")]
+impl From<ModelValidationErrors> for sea_orm::DbErr {
     fn from(errors: ModelValidationErrors) -> Self {
         // Compact on purpose: `code` and `message` only, which is the text
         // Loco produced, so snapshots of these errors do not change.
@@ -150,8 +154,11 @@ mod tests {
         assert_eq!(errors.errors["name"][0].params["min"], 2);
     }
 
+    #[cfg(feature = "sea-orm")]
     #[test]
     fn the_database_error_is_compact_json() {
+        use sea_orm::DbErr;
+
         let errors = model("Alice", "nope").validate().unwrap_err();
         let DbErr::Custom(text) = DbErr::from(errors) else {
             panic!("expected a custom error");

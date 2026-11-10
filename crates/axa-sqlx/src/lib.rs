@@ -4,6 +4,11 @@
 //! queries: a service writes its own SQL with `sqlx::query!`, so a reviewer
 //! reads exactly what runs.
 //!
+//! It has the same shape as `axa-seaorm`, `axa-diesel`, and `axa-toasty`: a [`Pool`],
+//! a [`PoolConfig`], [`connect`], [`ping`], [`migrate`], [`revert`], [`pending`],
+//! [`truncate`], [`dangerously_recreate`], [`is_unique_violation`], and
+//! [`quote_identifier`], with [`status`] besides.
+//!
 //! ```no_run
 //! use axa_sqlx::{PoolConfig, connect, migrate, sqlx};
 //!
@@ -28,6 +33,12 @@ use sqlx::{
     pool::PoolConnection,
     postgres::PgPoolOptions,
 };
+
+/// The handle a service holds: the pool.
+pub type Pool = PgPool;
+
+/// What this crate's connection and query functions return on failure.
+pub type Error = sqlx::Error;
 
 /// Pool settings.
 #[derive(Clone, PartialEq, Eq)]
@@ -287,6 +298,21 @@ pub async fn status(
             description: migration.description.to_string(),
             applied: applied.contains(&migration.version),
         })
+        .collect())
+}
+
+/// The names of the migrations in `migrator` not yet applied, in order, each as
+/// `version_description`.
+///
+/// # Errors
+///
+/// Fails on a database error.
+pub async fn pending(pool: &PgPool, migrator: &Migrator) -> Result<Vec<String>, sqlx::Error> {
+    Ok(status(pool, migrator)
+        .await?
+        .into_iter()
+        .filter(|migration| !migration.applied)
+        .map(|migration| format!("{}_{}", migration.version, migration.description))
         .collect())
 }
 

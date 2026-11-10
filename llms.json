@@ -39,6 +39,10 @@
       "crate": "axa-diesel"
     },
     {
+      "name": "toasty",
+      "crate": "axa-toasty"
+    },
+    {
       "name": "keycloak",
       "crate": "axa-keycloak-auth"
     },
@@ -194,6 +198,13 @@
       "readme": "crates/axa-diesel/README.md"
     },
     {
+      "name": "axa-toasty",
+      "version": "0.1.0",
+      "description": "Toasty connections, migrations, and test resets for Axum services.",
+      "feature": "toasty",
+      "readme": "crates/axa-toasty/README.md"
+    },
+    {
       "name": "axa-environment",
       "version": "0.1.1",
       "description": "Which environment a service runs in, read one way, with no dependencies.",
@@ -236,6 +247,20 @@
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
+      "name": "axa-mysql-job-queue",
+      "version": "0.1.0",
+      "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
+      "feature": null,
+      "readme": "crates/axa-mysql-job-queue/README.md"
+    },
+    {
+      "name": "axa-sqlite-job-queue",
+      "version": "0.1.0",
+      "description": "A SQLite job queue, worker pool, and recurring schedules for Axum services.",
+      "feature": null,
+      "readme": "crates/axa-sqlite-job-queue/README.md"
+    },
+    {
       "name": "axa-cursor-pagination",
       "version": "0.1.1",
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
@@ -272,8 +297,8 @@
     },
     {
       "name": "axa-seaorm",
-      "version": "0.2.1",
-      "description": "SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.",
+      "version": "0.3.0",
+      "description": "SeaORM connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.",
       "feature": "sea-orm",
       "readme": "crates/axa-seaorm/README.md"
     },

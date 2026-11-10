@@ -112,7 +112,7 @@ mod tests {
     }
 
     // With a database in the context, a test cannot build one.
-    #[cfg(not(any(feature = "sea-orm", feature = "sqlx")))]
+    #[cfg(axa_db = "none")]
     #[tokio::test]
     async fn a_missing_shared_value_is_the_generic_500() {
         use axum::{extract::FromRequestParts, http::Request, response::IntoResponse};

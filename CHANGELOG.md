@@ -5,8 +5,54 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`axa-mysql-job-queue` 0.1.0**, the MySQL twin of `axa-postgres-job-queue`: the same
+  job loops, limits, delays, priorities, status, schedules, and acts, on MySQL 8.4 or
+  later, with the same API and tables. It is a crate on its own, and not yet a feature
+  of `axa`. Setup creates two triggers, which with binary logging on needs `SUPER` or
+  `log_bin_trust_function_creators`, so run `SETUP_STATEMENTS` in a migration as such a
+  role. MySQL has no `TRUNCATE` trigger, so give the service's role no `DROP` on
+  `axa_job_acts`.
+- **`axa-sqlite-job-queue` 0.1.0**, the SQLite twin of `axa-postgres-job-queue`, for a
+  service on one machine: the same API, tables, and states, on a file. A claim is one
+  `UPDATE ... RETURNING`, and a schedule's tick a `BEGIN IMMEDIATE` transaction, so
+  each job and each due time goes out once across processes. Its tests need no server.
+  It is not published until sqlx releases the raised cap on `libsqlite3-sys`, as the
+  copy sqlx 0.9.0 builds has CVE-2026-119375.
+- **`axa-toasty` 0.1.0 and the `toasty` feature**, for Postgres over
+  [Toasty](https://github.com/tokio-rs/toasty) 0.11. `AppContext::db` becomes a
+  `toasty::Db`, and `axa::db::connect` takes the models as well as the configuration.
+  Toasty migrations go forward only, so there is no `revert`.
+- **The four database crates have the same shape**: `Pool`, `Error`, `PoolConfig`,
+  `connect`, `ping`, `migrate`, `pending`, `truncate`, `dangerously_recreate`,
+  `is_unique_violation`, and `quote_identifier`, and `revert` but for Toasty.
+  `axa-sqlx` gains `Pool`, `Error`, and `pending`. `axa-seaorm` gains `Pool`, `Error`,
+  `ping`, `migrate`, `revert`, `pending`, `truncate`, `dangerously_recreate`,
+  `is_unique_violation`, and `quote_identifier`. `axa-diesel` makes `web_tls` public.
+- **The `diesel` feature makes `AppContext::db` a Diesel pool**, which readiness
+  checks, and `axa::db::connect` opens from configuration. `axa::Error` takes a Diesel
+  error with `?`, and a broken constraint answers `409` or `422` as it does for sqlx.
+
 ### Changed
 
+- **`axa::model` and `axa::validation` work with every database**, and come with any
+  of `sqlx`, `sea-orm`, `diesel`, or `toasty`, through a new `model` feature they turn
+  on. `ModelError` has a variant for each database's error: `DbErr`, as before, and
+  `Sqlx`, `Diesel`, and `Toasty`. Code that names `axa::model` or `axa::validation`
+  does not change.
+- **`axa-seaorm` 0.3.0 no longer has `model` or `validation`**, which moved to `axa`.
+  A service that depends on `axa-seaorm` alone and names `axa_seaorm::model` or
+  `axa_seaorm::validation` uses `axa::model` and `axa::validation` instead.
+- **With both `sqlx` and `sea-orm` on, `AppContext::db` is now the `PgPool`**, not the
+  SeaORM connection, because sqlx is not an ORM. With more than one database feature
+  on, `sqlx` wins, then `sea-orm`, `diesel`, and `toasty`. A service that turns on
+  both and uses `ctx.db` as a `DatabaseConnection` turns off `sqlx`, or keeps its own
+  SeaORM connection.
+- **`axa-diesel`'s `PoolConfig` leaves the connection string out of its `Debug`
+  text**, as the sqlx and SeaORM ones do. It printed the password before.
+- **`AppContext`'s `Debug` text names the database by its type**, as a Diesel pool has
+  no `Debug` text of its own.
 - **`axa-problem-details-for-http-apis` is `axa-problem` again**, at 0.2.0, with the
   same code as `axa-problem-details-for-http-apis` 0.1.0. `axa::problem` is unchanged.
   A service that depends on the crate directly renames it in `Cargo.toml` and its

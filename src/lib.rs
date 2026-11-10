@@ -28,7 +28,7 @@
 //!     &Defaults { database: "", ..Defaults::default() },
 //!     |_| None,
 //! )?;
-//! # #[cfg(not(any(feature = "sea-orm", feature = "sqlx")))] {
+//! # #[cfg(axa_db = "none")] {
 //! let ctx = AppContext::new(environment, (), config);
 //! let router = AppRoutes::with_default_routes()
 //!     .add_route(Routes::new().prefix("/api").add("/hello", get(hello)))
@@ -71,7 +71,7 @@
 //! this crate can keep its own licence terms.
 
 /// Compiles the Rust examples in `README.md`, so they cannot go stale.
-#[cfg(all(doctest, not(any(feature = "sea-orm", feature = "sqlx"))))]
+#[cfg(all(doctest, axa_db = "none"))]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
 
@@ -88,6 +88,8 @@ pub mod format;
 pub mod health;
 pub mod logger;
 pub mod middleware;
+#[cfg(feature = "model")]
+pub mod model;
 pub mod prelude;
 #[cfg(feature = "queue")]
 pub mod queue;
@@ -95,6 +97,8 @@ pub mod routes;
 pub mod server;
 pub mod store;
 pub mod task;
+#[cfg(feature = "model")]
+pub mod validation;
 pub mod worker;
 
 #[cfg(feature = "versioning")]
@@ -124,11 +128,13 @@ pub use axa_request_rate_limit as ratelimit;
 #[cfg(feature = "sea-orm")]
 pub use axa_seaorm as seaorm;
 #[cfg(feature = "sea-orm")]
-pub use axa_seaorm::{model, query, schema, validation};
+pub use axa_seaorm::{query, schema};
 #[cfg(feature = "sqlx")]
 pub use axa_sqlx as sqlx;
 #[cfg(feature = "tera")]
 pub use axa_tera_templates as tera;
+#[cfg(feature = "toasty")]
+pub use axa_toasty as toasty;
 #[cfg(feature = "tracing")]
 pub use axa_tracing as tracing;
 #[cfg(feature = "outbox")]

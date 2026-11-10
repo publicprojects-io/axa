@@ -51,18 +51,21 @@
 ## Crates
 
 - [axa-diesel](crates/axa-diesel/README.md) (feature `diesel`): Diesel pooling, migrations, and test resets for Axum services, in pure Rust.
+- [axa-toasty](crates/axa-toasty/README.md) (feature `toasty`): Toasty connections, migrations, and test resets for Axum services.
 - [axa-environment](crates/axa-environment/README.md) (always included): Which environment a service runs in, read one way, with no dependencies.
 - [axa-keycloak-auth](crates/axa-keycloak-auth/README.md) (feature `keycloak`): Keycloak bearer authentication and ABAC enforcement for Axum services.
 - [axa-openapi-docs](crates/axa-openapi-docs/README.md) (feature `openapi`): Serve OpenAPI documents and a pinned Swagger UI from Axum services.
 - [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services.
 - [axa-transactional-outbox](crates/axa-transactional-outbox/README.md) (feature `outbox`, and `outbox-encryption` to seal payloads at rest): A transactional outbox and relay on Postgres for Axum services, that keeps a record of what it delivered and refused.
 - [axa-postgres-job-queue](crates/axa-postgres-job-queue/README.md) (feature `queue`): A Postgres job queue, worker pool, and recurring schedules for Axum services.
+- [axa-mysql-job-queue](crates/axa-mysql-job-queue/README.md) (a crate on its own, not a feature): A MySQL job queue, worker pool, and recurring schedules for Axum services.
+- [axa-sqlite-job-queue](crates/axa-sqlite-job-queue/README.md) (a crate on its own, not a feature): A SQLite job queue, worker pool, and recurring schedules for Axum services.
 - [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.
 - [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
 - [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.
 - [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
 - [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services.
-- [axa-seaorm](crates/axa-seaorm/README.md) (feature `sea-orm`): SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.
+- [axa-seaorm](crates/axa-seaorm/README.md) (feature `sea-orm`): SeaORM connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.
 - [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults.
 - [axa-sqlx](crates/axa-sqlx/README.md) (feature `sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
 - [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.

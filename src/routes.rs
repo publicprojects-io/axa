@@ -266,7 +266,8 @@ impl AppRoutes {
     }
 }
 
-#[cfg(test)]
+// Toasty connects when its handle is made, so with it alone there is no context.
+#[cfg(all(test, not(axa_db = "toasty")))]
 mod tests {
     use super::*;
     use crate::{Environment, config::Defaults};
@@ -290,14 +291,7 @@ mod tests {
         };
         let mut config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         config.http.timeout_seconds = seconds;
-        #[cfg(not(feature = "sea-orm"))]
-        return AppContext::for_test(Environment::Test, config);
-        #[cfg(feature = "sea-orm")]
-        return AppContext::new(
-            Environment::Test,
-            sea_orm::DatabaseConnection::default(),
-            config,
-        );
+        AppContext::for_test(Environment::Test, config)
     }
 
     async fn status(router: Router, method: &str, path: &str) -> StatusCode {

@@ -22,6 +22,7 @@ license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
 keywords = ["axum", "sqlx", "web", "service"]
 categories = ["web-programming::http-server"]
 include = [
+    "build.rs",
     "src/**/*",
     "spec/**/*",
     "help/**/*",
@@ -37,12 +38,18 @@ include = [
 
 [features]
 default = []
-# A SeaORM-backed `AppContext`, plus `axa-seaorm`.
-sea-orm = ["dep:sea-orm", "dep:axa-seaorm", "axa-transactional-outbox?/sea-orm"]
+# Each database feature re-exports its crate, adds `axa::model` and `axa::validation`,
+# and makes `AppContext::db` its handle. With more than one on, `sqlx` wins, then
+# `sea-orm`, `diesel`, and `toasty`.
+sea-orm = ["dep:sea-orm", "dep:axa-seaorm", "axa-transactional-outbox?/sea-orm", "model"]
+sqlx = ["dep:axa-sqlx", "dep:sqlx", "model"]
+diesel = ["dep:axa-diesel", "model"]
+toasty = ["dep:axa-toasty", "model"]
+# Model errors and validation, for every database. Each database feature turns it on.
+model = ["dep:validator"]
 # The Postgres job queue, worker pool, and schedules, from `axa-postgres-job-queue`.
 queue = ["dep:sqlx", "dep:axa-postgres-job-queue"]
 # Each of these re-exports a subcrate under the same name.
-diesel = ["dep:axa-diesel"]
 idempotency = ["dep:axa-idempotency-key", "dep:sqlx"]
 keycloak = ["dep:axa-keycloak-auth"]
 openapi = ["dep:axa-openapi-docs"]
@@ -61,7 +68,6 @@ prometheus = ["dep:axa-prometheus-metrics"]
 ratelimit = ["dep:axa-request-rate-limit"]
 redis = ["dep:axa-redis-cache"]
 session = ["dep:axa-web-session"]
-sqlx = ["dep:axa-sqlx", "dep:sqlx"]
 tera = ["dep:axa-tera-templates"]
 tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-accepts-version-negotiation"]
@@ -79,10 +85,11 @@ axa-problem = { version = "0.2.0", path = "crates/axa-problem" }
 axa-prometheus-metrics = { version = "0.1.0", path = "crates/axa-prometheus-metrics", optional = true }
 axa-request-rate-limit = { version = "0.2.0", path = "crates/axa-request-rate-limit", optional = true }
 axa-redis-cache = { version = "0.1.1", path = "crates/axa-redis-cache", optional = true }
-axa-seaorm = { version = "0.2.1", path = "crates/axa-seaorm", optional = true }
+axa-seaorm = { version = "0.3.0", path = "crates/axa-seaorm", optional = true }
 axa-web-session = { version = "0.1.0", path = "crates/axa-web-session", optional = true }
 axa-sqlx = { version = "0.1.2", path = "crates/axa-sqlx", optional = true }
 axa-tera-templates = { version = "0.2.1", path = "crates/axa-tera-templates", optional = true }
+axa-toasty = { version = "0.1.0", path = "crates/axa-toasty", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-accepts-version-negotiation = { version = "0.2.0", path = "crates/axa-accepts-version-negotiation", optional = true }
@@ -101,11 +108,13 @@ tower-http = { version = "0.7", features = ["catch-panic", "compression-full", "
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }
+validator = { version = "0.21", optional = true }
 
 sea-orm = { version = "2.0", default-features = false, features = ["sqlx-postgres", "runtime-tokio-rustls"], optional = true }
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid", "chrono"], optional = true }
 
 [dev-dependencies]
+validator = { version = "0.21", features = ["derive"] }
 tokio = { version = "1", features = ["io-util", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
 

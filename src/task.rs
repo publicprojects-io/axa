@@ -104,7 +104,7 @@ impl Tasks {
     }
 }
 
-#[cfg(all(test, not(feature = "sea-orm")))]
+#[cfg(all(test, not(any(axa_db = "seaorm", axa_db = "toasty"))))]
 mod tests {
     use super::*;
     use crate::{
