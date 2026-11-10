@@ -1,0 +1,75 @@
+# Vibe CLI ignore patterns for axa
+# See https://vibe.dev for documentation
+
+# Rust build artifacts
+target/
+**/target/
+
+# Cargo cache and registry
+.vibe/
+**/.vibe/
+
+# IDE directories
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Editor temporary files
+*.un~
+*.tmp
+*.bak
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment and local config
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Test and coverage output
+coverage/
+.nyc_output/
+
+# Node (if used for docs or tooling)
+node_modules/
+package-lock.json
+
+# Python (if used for tooling)
+__pycache__/
+*.py[cod]
+
+# Temporary and cache files
+*.cache
+.cache/
+.tmp/
+.temp/
+
+# Git
+.git/
+.gitignore
+
+# Local test databases (Postgres, Redis)
+*.sqlite
+*.sqlite3
+*.db
+
+# Documentation build output
+docs/_build/
+docs/_static/
+
+# Local overrides and patches
+patches/
+local/
