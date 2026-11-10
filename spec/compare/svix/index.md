@@ -208,9 +208,9 @@ free port that records each request it receives and answers with a status the te
 change at run time, used to test deliveries end to end. `wiremock` is also a dev
 dependency ([`Cargo.toml`][cargo]).
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Svix | axa |
+| Area | Svix | Axa |
 |---|---|---|
 | App shape | One binary, API and worker roles by config | `service start`, `--worker`, `--all`; library, not a binary |
 | Middleware | CORS open to all, trace, trailing-slash trim | Full stack: request id, trace, panic, security headers, CORS off by default, timeout, 304, compression, body limit |
@@ -235,7 +235,7 @@ dependency ([`Cargo.toml`][cargo]).
 | Pagination | Unsigned id iterators, forward and back | Signed cursors, forward with `Link` |
 | Tests | Real server per test, `TestReceiver` for callbacks | `axa-test` request helpers |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -258,7 +258,7 @@ default: the full list Svix uses, built on `ipnet`. The API would be a builder,
 .build()`, with redirects off by default, or each redirect target checked again.
 Responses would be read up to a size cap. Errors would be a typed `Blocked` versus
 transport failure, so a caller can answer `422` for a bad URL. Production would refuse
-`allow_net` of loopback, following axa's rule of refusing unsafe settings.
+`allow_net` of loopback, following Axa's rule of refusing unsafe settings.
 
 **Standard Webhooks signing and verifying.** A small crate, `axa-webhook-signature`,
 with `sign(id, timestamp, body, &[Key]) -> HeaderValue` and a verifier that checks the
@@ -272,7 +272,7 @@ when the service's broker is HTTP. It depends on `hmac`, `sha2`, `ed25519-dalek`
 **Field path on JSON body errors.** In `axa::extract::Json`, deserialise through
 `serde_path_to_error` instead of `axum::Json`, and put the path (such as
 `/items/0/name`, as a JSON Pointer) in the problem's `errors`, with a fixed message per
-serde error kind. The value stays out, as now. This fits axa's existing
+serde error kind. The value stays out, as now. This fits Axa's existing
 `ModelValidationErrors` shape and keeps the "quotes nothing" rule.
 
 **Jitter and job-chosen retry delay.** In `axa-postgres-job-queue` and the MySQL and
@@ -292,25 +292,25 @@ Postgres first, since `CONCURRENTLY` is a Postgres feature. It would show in
 `validator` and `utoipa` support. It is a few dozen lines and saves every service from
 writing `Option<Option<T>>` by hand.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Message, endpoint, and attempt models, and operational webhooks.** These are the
-  product. axa's outbox already leaves the broker to the service.
-- **Open CORS by default.** Svix allows any origin. axa keeps CORS off until origins are
+  product. Axa's outbox already leaves the broker to the service.
+- **Open CORS by default.** Svix allows any origin. Axa keeps CORS off until origins are
   set.
 - **Its idempotency design.** Re-running after five seconds and not fingerprinting the
-  body can run a write twice or replay the wrong answer. axa's Postgres design is safer.
+  body can run a write twice or replay the wrong answer. Axa's Postgres design is safer.
 - **Its health check.** It writes to the queue and cache on every call, with no caching
-  or time limit, so a public route can drive load. axa's readiness already avoids this.
-- **Redis and RabbitMQ queues through `omniqueue`.** axa's queues are in the database so
+  or time limit, so a public route can drive load. Axa's readiness already avoids this.
+- **Redis and RabbitMQ queues through `omniqueue`.** Axa's queues are in the database so
   that enqueueing joins the caller's transaction and acts are audited. A broker queue
   would lose both.
-- **Unsigned id iterators.** axa's cursors are signed, so a caller cannot forge one.
-- **Warnings for conflicting settings.** Svix logs and carries on. axa should keep
+- **Unsigned id iterators.** Axa's cursors are signed, so a caller cannot forge one.
+- **Warnings for conflicting settings.** Svix logs and carries on. Axa should keep
   refusing unsafe settings in production.
-- **`--wait-for` TCP polling.** Kubernetes startup probes already do this, and axa has
+- **`--wait-for` TCP polling.** Kubernetes startup probes already do this, and Axa has
   `/_health/startup`.
 - **A `/development/echo` route in debug builds.** It logs every header, which can
   include tokens.
-- **The JWT-specific "you sent the secret" message.** It is useful for HS256, but axa
+- **The JWT-specific "you sent the secret" message.** It is useful for HS256, but Axa
   uses PASETO and Keycloak, where it does not apply.

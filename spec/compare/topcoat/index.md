@@ -20,7 +20,7 @@ Axum router) as a route, run Tower middleware as a Topcoat layer, or expose a To
 router as a Tower service inside an Axum app
 ([`docs/router/tower.md`][tower-doc], [`crates/topcoat-router/src/tower.rs`][tower]).
 Compression uses `tower-http` inside. So this study looks for framework-level ideas
-that axa could take as plain functions and layers, not for Axum patterns.
+that Axa could take as plain functions and layers, not for Axum patterns.
 
 Links below are to files at that commit, under
 `https://github.com/tokio-rs/topcoat/blob/c249820e2a701dd13556602f97a8dd8e4a8a0ae6/`.
@@ -84,9 +84,9 @@ Links below are to files at that commit, under
 | Health, config, database, jobs | No health routes beyond an example `GET /api/health`. No configuration layer beyond `HOST` and `PORT`. No database crate; an example uses Toasty. Background jobs, rate limiting, authentication, validation, and OpenAPI are listed as future work in the roadmap ([`README.md`][readme]). |
 | Testing | Unit tests drive `Router::handle` directly, and `MemoryTransport` captures mail. There is no request-level test client crate. |
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Topcoat | axa |
+| Area | Topcoat | Axa |
 |---|---|---|
 | Relation to Axum | Own router and context; Tower and Axum only through a bridge | Built on Axum; plain Axum routers and layers |
 | Style | Framework: attribute macros, module-derived routes, link-time discovery | Library: plain functions, no hidden behaviour |
@@ -106,11 +106,11 @@ Links below are to files at that commit, under
 | Localisation | `Accept-Language` negotiation, ICU, Fluent | None |
 | Templates | `view!` macro, components, client runtime | Tera templates |
 | Static assets, sitemap | Hashed immutable assets, directory serving, sitemap builder | None |
-| SSE, WebSocket, multipart | Own implementations | Axum's own; axa keeps upgrades working |
+| SSE, WebSocket, multipart | Own implementations | Axum's own; Axa keeps upgrades working |
 | Jobs, outbox, idempotency, rate limits, auth, OpenAPI, pagination | Not present (roadmap) | Present |
 | Testing | `Router::handle`, memory mail transport | `axa-test` request helpers |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -152,24 +152,24 @@ path, so the layer can check against that list rather than redirecting blindly, 
 it must not turn a `404` into a redirect loop. It has to sit after the auth layers'
 own trailing-slash checks (`PST-5`), so it cannot downgrade a destructive action.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **The framework shape.** Attribute macros (`#[page]`, `#[route]`, `#[layer]`),
   module-derived routes, link-time discovery with `inventory`, and the `Cx` context in
-  place of extractors all hide behaviour that axa keeps in plain Axum code. axa's
+  place of extractors all hide behaviour that Axa keeps in plain Axum code. Axa's
   `Routes` and `AppRoutes::mounted` already give the visibility that discovery trades
   away.
 - **`#[memoize]` as a macro.** Its caching keyed on which context values were read is
-  clever but opaque. If axa adds request memoisation, it should be a plain function over
+  clever but opaque. If Axa adds request memoisation, it should be a plain function over
   request extensions.
 - **The view layer.** `view!`, components, the client runtime that translates Rust to
   JavaScript, shards, Tailwind, htmx, Datastar, the UI component library, fonts, and
-  icons are an HTML app framework. axa serves APIs and has Tera for the pages it needs.
+  icons are an HTML app framework. Axa serves APIs and has Tera for the pages it needs.
 - **Asset bundling from the binary and a dev proxy server.** They need a build-time
   tool and a CLI that owns the app's lifecycle.
-- **Typed per-status error structs and HTML error boundaries.** axa's single `Error`
+- **Typed per-status error structs and HTML error boundaries.** Axa's single `Error`
   with RFC 9457 problems is a better fit for APIs and already hides internal text.
-- **Fluent and ICU formatting.** Too large and product-specific for axa; a locale
+- **Fluent and ICU formatting.** Too large and product-specific for Axa; a locale
   negotiation helper is the part worth taking.
-- **Its lack of observability, health checks, and configuration.** These are where axa
+- **Its lack of observability, health checks, and configuration.** These are where Axa
   is ahead; nothing to take.

@@ -12,7 +12,7 @@ started with `axum::serve`, holding an `Arc<dyn DynDatabase>` that is backed by 
 SQLite, or MySQL through sqlx. The server stores only encrypted blobs, so most of its
 API is accounts, sessions, and record upload and download.
 
-> **Since this was written**, axa 0.11 added `RequestMetrics` measures requests by route template. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added `RequestMetrics` measures requests by route template. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Links below are to files at that commit, under
 `https://github.com/atuinsh/atuin/blob/da746332055c20356e6bd2d2740fe71479055321/`.
@@ -64,7 +64,7 @@ panic catching in the stack.
 `trusted_proxies`. It walks the header from right to left, skips trusted hops, and takes
 the first untrusted address. The header name is configurable (`X-Forwarded-For` by
 default, or `X-Real-IP`). IPv4-mapped IPv6 peers are made canonical first. This is close
-to what axa does.
+to what Axa does.
 
 ### Errors
 
@@ -155,9 +155,9 @@ Integration tests start the real server on a port-0 listener, wait 200 ms, and d
 with Atuin's own client library against a live Postgres from `ATUIN_DB_URI`
 ([`tests/common/mod.rs`][tests]). Admin commands are tested by running the built binary.
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Atuin server | axa |
+| Area | Atuin server | Axa |
 |---|---|---|
 | Routing | Plain `Router`, optional path prefix | `Routes` groups, prefixes, per-route timeouts, route census |
 | Middleware | Trace, client address, metrics, version header | Request id, trace, panic catching, security headers, CORS, timeout, 304, compression, body limit |
@@ -180,7 +180,7 @@ with Atuin's own client library against a live Postgres from `ATUIN_DB_URI`
 | Admin | User create, set password, delete | CLI with tasks and `db` commands, no user commands |
 | Testing | Real server on a port, live Postgres, fixed sleep | In-process request helpers |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -197,10 +197,10 @@ with Atuin's own client library against a live Postgres from `ATUIN_DB_URI`
 [Sentry Relay study](../sentry-relay/index.md): `axa_prometheus_metrics::RequestMetrics`,
 registered in the service's `Registry`, with a middleware labelling by method,
 `MatchedPath` template, and status. Atuin shows the trap to avoid: its unmatched
-requests are labelled with the raw path, so a scanner can create a label per URL. axa
+requests are labelled with the raw path, so a scanner can create a label per URL. Axa
 should use the fixed label `unmatched`.
 
-**Secrets from files.** In axa's configuration, accept `DB_PASSWORD_FILE` (and, in
+**Secrets from files.** In Axa's configuration, accept `DB_PASSWORD_FILE` (and, in
 general, `<NAME>_FILE` for each secret-like variable that `redact` already knows), read
 once at boot. Follow Atuin's refusals, which fit P-3: both the variable and its file
 set is an error, an empty file is an error, a password file with a URL that already
@@ -217,23 +217,23 @@ compression of large exports would use it. It needs only Tokio.
 that, when set, serves the metrics path and the health routes on that port only. Atuin
 binds its metrics listener to loopback by default, which is the safe default to copy.
 
-## What axa should not copy
+## What Axa should not copy
 
-- **One trait over three databases with SQL in constants.** axa's spec rules out a
+- **One trait over three databases with SQL in constants.** Axa's spec rules out a
   database abstraction, and the dialect constants hide each query from the code that
   runs it.
-- **Migrating on every connect with no way to turn it off.** axa's `DB_AUTO_MIGRATE` and
+- **Migrating on every connect with no way to turn it off.** Axa's `DB_AUTO_MIGRATE` and
   `db migrate` commands let a service that shares a database leave it alone.
-- **A health route that asks nothing.** axa's readiness, which asks the database, is
+- **A health route that asks nothing.** Axa's readiness, which asks the database, is
   better for a service that cannot work without it.
-- **Telling a caller whether a username exists, and no login throttling.** axa's
+- **Telling a caller whether a username exists, and no login throttling.** Axa's
   `lock_out_failures` and a single `401` for both cases are the safer pattern.
-- **A configuration file written on first run.** axa's spec rules out configuration
+- **A configuration file written on first run.** Axa's spec rules out configuration
   files.
 - **The Kubernetes service-link guard.** It exists because Atuin reads `ATUIN_PORT`.
-  axa reads `PORT` and no `<name>_PORT` variable, so a Service link does not collide
+  Axa reads `PORT` and no `<name>_PORT` variable, so a Service link does not collide
   with it.
-- **Awaiting a webhook inside the request.** axa's outbox is the right place for work
+- **Awaiting a webhook inside the request.** Axa's outbox is the right place for work
   that may fail after the answer is decided.
 - **Testing against a real port with a fixed sleep.** `axa-test` runs requests in process
   and needs no wait.

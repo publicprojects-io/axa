@@ -1,4 +1,4 @@
-# axa
+# Axa
 
 > Accessories library for Axum websites, databases, microservices, and more. A library, not a framework: `main.rs` stays ordinary Axum and
 > calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
@@ -14,8 +14,8 @@
 
 ## Skills
 
-- [axa-skill](skill/axa-skill/SKILL.md): building a service with axa
-- [axa-maintainer-skill](skill/axa-maintainer-skill/SKILL.md): working on the axa codebase
+- [axa-skill](skill/axa-skill/SKILL.md): building a service with Axa
+- [axa-maintainer-skill](skill/axa-maintainer-skill/SKILL.md): working on the Axa codebase
 
 ## Guides
 
@@ -24,7 +24,7 @@
 - [axa for Rocket users](help/axa-for-rocket-users/index.md)
 - [axa for Poem users](help/axa-for-poem-users/index.md)
 - [axa for Topcoat users](help/axa-for-topcoat-users/index.md)
-- [From Loco into axa](help/from-loco-into-axa/index.md)
+- [From Loco into Axa](help/from-loco-into-axa/index.md)
 - [From Loco SeaORM into axa-postgres-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)
 - [Upgrading to 0.12](help/upgrading-to-0.12/index.md)
@@ -83,7 +83,7 @@
 - [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults.
 - [axa-postgres-sqlx](crates/axa-postgres-sqlx/README.md) (feature `postgres-sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
 - [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.
-- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for axa services, built on axum-test.
+- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test.
 - [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.
 - [axa-idempotency-key](crates/axa-idempotency-key/README.md) (feature `idempotency`): Idempotency-Key handling over Postgres for Axum services.
 - [axa-request-rate-limit](crates/axa-request-rate-limit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services.

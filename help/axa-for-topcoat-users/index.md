@@ -1,26 +1,26 @@
-# axa for Topcoat users
+# Axa for Topcoat users
 
 This page is for someone who knows [Topcoat](https://github.com/tokio-rs/topcoat) well
-and is meeting [axa](../../README.md) for the first time. It says what axa is in
+and is meeting [axa](../../README.md) for the first time. It says what Axa is in
 Topcoat's terms, what maps to what, and where the two differ on purpose.
 
 Start with one honest point: the two aim at different things. Topcoat is a framework
 for full-stack, server-rendered apps: `view!` templates, async components, a browser
-runtime, assets, fonts, icons, mail, and localisation. axa is the plumbing under a web
+runtime, assets, fonts, icons, mail, and localisation. Axa is the plumbing under a web
 service: the middleware stack, configuration, errors, health routes, jobs, and
-shutdown. Most axa services are JSON APIs. If your Topcoat app is mostly pages and
-client reactivity, axa replaces little of what you use, and you would be moving to
+shutdown. Most Axa services are JSON APIs. If your Topcoat app is mostly pages and
+client reactivity, Axa replaces little of what you use, and you would be moving to
 plain Axum with Tera templates. If it is mostly API routes, or you need jobs, health
-probes, metrics, and configuration that Topcoat does not have yet, axa covers a lot.
+probes, metrics, and configuration that Topcoat does not have yet, Axa covers a lot.
 
-## What axa is
+## What Axa is
 
-axa is a library on [Axum](https://docs.rs/axum), not a framework. Your handlers are
+Axa is a library on [Axum](https://docs.rs/axum), not a framework. Your handlers are
 ordinary Axum handlers, your routes become an ordinary `axum::Router`, and your
-`main.rs` calls axa's functions in an order you can read. There are no attribute
+`main.rs` calls Axa's functions in an order you can read. There are no attribute
 macros, no routes taken from the module tree, no link-time discovery, and no request
 context like `Cx`. State is Axum state (`AppContext`, a plain struct), and request data
-comes from Axum extractors. axa adds the standard middleware stack, configuration from
+comes from Axum extractors. Axa adds the standard middleware stack, configuration from
 the environment, RFC 9457 error responses, the three Kubernetes health routes, a
 command line, background jobs, and graceful shutdown. Any piece can be read, replaced,
 or left out.
@@ -30,30 +30,30 @@ can see all of it. Nothing runs that your `main.rs` did not ask for.
 
 ## Concept map
 
-| Topcoat | axa or Axum | Note |
+| Topcoat | Axa or Axum | Note |
 |---|---|---|
 | `Router::builder()`, `module_router!`, `discover()` | `Routes` and `AppRoutes`, which build an `axum::Router` | Every path is written as a string where the route is added. `AppRoutes::mounted` lists `(method, path)` for a test |
 | `#[page]`, `#[route]` | A plain `async fn` added with `get(...)`, `post(...)` | No attribute. A handler returns anything that is `IntoResponse`, usually `axa::Result<Response>` |
 | `#[layout]`, `Slot` | Nothing | Use Tera's template inheritance (`{% extends %}`) in [`axa-tera-templates`](../../crates/axa-tera-templates) |
-| `#[component]`, `view!` | Nothing in axa | Tera templates, or an HTML crate of your choice. See [Templates](#templates-and-server-rendered-pages) |
+| `#[component]`, `view!` | Nothing in Axa | Tera templates, or an HTML crate of your choice. See [Templates](#templates-and-server-rendered-pages) |
 | `href!` | Nothing | Paths are strings. `AppRoutes::mounted` lets a test check that a linked path is served |
 | `cx: &Cx`, `context::<T>(cx)` | Axum extractors: `State`, `Path`, `Query`, `Json`, `Form` | `axa::extract` has `Json`, `Path`, and `Query` that reject with a problem quoting nothing the caller sent |
 | `path_param!`, `#[query_params]` | `Path<T>`, `Query<T>` | Serde types, as in any Axum app |
 | `RouterBuilder::with(value)` | `AppContext`, and `ctx.shared_store` for values of your own | `SharedStore<T>` is an extractor that clones a value out of the store |
 | `#[layer]` | A Tower layer or `axum::middleware::from_fn` | Add yours before `middleware::apply`, so the standard stack wraps them |
 | `#[memoize]` | Nothing | Put a computed value in the request's extensions from a layer, or pass it along |
-| `OriginPolicy` | Nothing equivalent | `axa-web-session` has form tokens. See [Where axa does less](#where-axa-does-less) |
+| `OriginPolicy` | Nothing equivalent | `axa-web-session` has form tokens. See [Where Axa does less](#where-axa-does-less) |
 | Error per status, `ok_or_not_found()` | `axa::Error`, with `not_found()`, `bad_request(...)`, `unauthorized(...)` | Every error is an RFC 9457 problem in `application/problem+json`. Internal text is logged, never sent |
 | `error_boundary` | Nothing | An Axum `Router::fallback` that returns HTML is left alone by the standard stack, as it only rewrites errors with no `content-type` or `text/plain` |
 | `TrustedProxies` | `TRUSTED_PROXIES`, and the `axa::client::ClientAddr` extractor | A CIDR list, and `X-Forwarded-For` only |
 | `BodyLimit` | `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, and `middleware::body_limit(route, bytes)` for one route | 2 MB by default |
 | `Compression` | `HTTP_COMPRESSION` | On in production. Never compresses a response that sets a cookie or is `no-store` |
-| `HOST`, `PORT` | `PORT`, `BINDING`, `HOST`, and the rest of [Configuration](../../README.md#configuration) | In axa `HOST` is the public URL and `BINDING` is the listening address |
-| Database | One of `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, `postgres-toasty`, as `AppContext::db` | Topcoat has no database crate; its example uses Toasty, which axa supports with the `postgres-toasty` feature |
+| `HOST`, `PORT` | `PORT`, `BINDING`, `HOST`, and the rest of [Configuration](../../README.md#configuration) | In Axa `HOST` is the public URL and `BINDING` is the listening address |
+| Database | One of `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, `postgres-toasty`, as `AppContext::db` | Topcoat has no database crate; its example uses Toasty, which Axa supports with the `postgres-toasty` feature |
 | Background jobs | `BackgroundWorker` and the Postgres job queue (`queue` feature) | On Topcoat's roadmap. See [Background jobs and schedules](../background-jobs/index.md) |
 | Auth | `axa-paseto-auth` or `axa-keycloak-auth`, bearer tokens | Topcoat lists authentication as future work |
 | Sessions | `axa-web-session` (`session` feature), over `axum_session` | Signed and encrypted in production, nothing stored until `sign_in` |
-| Cookies outside sessions | Nothing in axa | `axum-extra`'s cookie jars, including signed and private ones |
+| Cookies outside sessions | Nothing in Axa | `axum-extra`'s cookie jars, including signed and private ones |
 | Mail | Nothing | Use [`lettre`](https://docs.rs/lettre) directly, from a job |
 | Localisation | Nothing | Read `Accept-Language` yourself, or use a localisation crate |
 | Assets, fonts, icons | Nothing | `tower-http`'s `ServeDir`, with your own cache headers |
@@ -63,13 +63,13 @@ can see all of it. Nothing runs that your `main.rs` did not ask for.
 | Shutdown | `SHUTDOWN_TIMEOUT_SECONDS` (25 by default) and `SHUTDOWN_DRAIN_SECONDS` | Readiness answers `503` from the moment shutdown begins |
 | Logging, metrics | `axa::logger`, request id and tracing in the stack, `axa-prometheus-metrics`, `axa-opentelemetry` | Topcoat has none built in |
 | `topcoat new`, `dev`, `fmt` | `axa::cli`: `start`, `db`, `task`, `check` | No generator and no dev server. `cargo run -- check` prints the effective settings |
-| Tower bridge | Not needed | axa is Tower and Axum all the way down |
+| Tower bridge | Not needed | Axa is Tower and Axum all the way down |
 
 ## A first service
 
 The same small app in each: one HTML page at `/` and one JSON route at `/api/hello`.
 
-In axa, with `features = ["tera"]`:
+In Axa, with `features = ["tera"]`:
 
 ```toml
 [dependencies]
@@ -163,7 +163,7 @@ async fn main() {
 }
 ```
 
-The Topcoat version is shorter, and its template is checked at compile time. The axa
+The Topcoat version is shorter, and its template is checked at compile time. The Axa
 version says where its configuration, logging, state, and middleware come from, and
 it has health routes, timeouts, security headers, and a production configuration
 check that the Topcoat version does not.
@@ -171,7 +171,7 @@ check that the Topcoat version does not.
 ## Templates and server-rendered pages
 
 [`axa-tera-templates`](../../crates/axa-tera-templates), as `axa::tera` with the `tera`
-feature, is the part of axa meant for pages. It is small on purpose:
+feature, is the part of Axa meant for pages. It is small on purpose:
 
 - `Templates` compiles templates once at boot, from a glob or from `(name, source)`
   pairs. Share it through `ctx.shared_store` or your own state.
@@ -199,13 +199,13 @@ other way needs its own `content-security-policy`, or the service sets
 These come from the [principles](../../spec/index.md#3-principles).
 
 **No macros that hide control flow (P-1).** Topcoat's `#[page]`, `#[layer]`,
-`module_router!`, and `#[memoize]` decide things for you that axa leaves in your code.
+`module_router!`, and `#[memoize]` decide things for you that Axa leaves in your code.
 The spec rules out route macros, code generation, and lifecycle hooks. The cost is more
 lines in `main.rs`. The gain is that an auditor reads the startup path, the routes, and
 the layer order from the service itself.
 
 **Layer order is yours, and it matters.** Topcoat runs its `OriginPolicy` before any
-layer, and compression after every layer. In axa, `AppRoutes::into_app` applies the
+layer, and compression after every layer. In Axa, `AppRoutes::into_app` applies the
 standard stack, or you call `middleware::apply` on any router. Add your own layers,
 such as an auth guard, first, and apply the stack last:
 
@@ -225,7 +225,7 @@ and CORS refuses `*`. `cargo run -- check` shows what each setting came to.
 
 **Errors never send internal text (P-4).** Any failure other than a client's mistake is
 a generic `500` problem, and the real error is only logged. Topcoat also hides a
-`500`'s text, so this will feel familiar. The difference is the shape: every axa error
+`500`'s text, so this will feel familiar. The difference is the shape: every Axa error
 is `application/problem+json` with a `code`, including an unmatched path's `404` and a
 wrong method's `405`. That suits an API. For a site, add an HTML `fallback` of your
 own, which the stack leaves alone because it has a media type.
@@ -234,13 +234,13 @@ own, which the stack leaves alone because it has a media type.
 `X-Forwarded-For` is ignored and the client is the peer. Set it to the CIDR ranges of
 your load balancers. There is no hop-count mode.
 
-**The safe way is the only way (P-10).** When axa replaces a weaker behaviour it
+**The safe way is the only way (P-10).** When Axa replaces a weaker behaviour it
 removes the old one rather than keeping it as an option. Expect fewer switches than
 Topcoat offers, such as no per-route compression setting.
 
-## Where axa is safer, and where it does less
+## Where Axa is safer, and where it does less
 
-### Where axa goes further
+### Where Axa goes further
 
 - **Health and shutdown.** Three probe routes with fixed meanings, cached checks that a
   public caller cannot use to drive load, and a drain period in which readiness
@@ -259,9 +259,9 @@ Topcoat offers, such as no per-route compression setting.
 - **Compression and caching.** A response that sets a cookie is `no-store`, and is never
   compressed, which compression can leak (BREACH).
 
-### Where axa does less
+### Where Axa does less
 
-Topcoat has these and axa does not, today:
+Topcoat has these and Axa does not, today:
 
 | Topcoat has | Use in the meantime |
 |---|---|
@@ -275,7 +275,7 @@ Topcoat has these and axa does not, today:
 | Hashed, immutable assets, fonts, icons, sitemap | `tower-http`'s `ServeDir`, and your own build step |
 | `view!`, components, the client runtime | Tera, plus a script library served from your own origin |
 
-Topcoat's sessions give the app only a hash of the token to store. axa's sessions are
+Topcoat's sessions give the app only a hash of the token to store. Axa's sessions are
 `axum_session`'s, signed and encrypted in production; this page does not claim they
 store only a hash.
 
@@ -285,7 +285,7 @@ Move the API routes first, and only move pages if you are content with Tera. A
 practical order:
 
 1. **Decide what moves.** API routes, jobs, and anything that needs health probes move
-   well. Pages built on components, signals, and shards have no axa equivalent.
+   well. Pages built on components, signals, and shards have no Axa equivalent.
 2. **Set up the service shape.** Write `main.rs` from the [first service](#a-first-service),
    or from the [Loco guide's `App::run`](../from-loco-into-axa/index.md#3-turn-hooks-into-plain-functions)
    if you want the `start`, `db`, `task`, and `check` commands.
@@ -312,8 +312,8 @@ practical order:
    and that each page still loads its styles under the production CSP.
 
 During a move, Topcoat's optional `tower` feature can expose a Topcoat router as a Tower
-service, so it can be mounted inside the axa app while routes move one at a time. It
-then sits inside axa's stack, so check that the two do not both compress or both set
+service, so it can be mounted inside the Axa app while routes move one at a time. It
+then sits inside Axa's stack, so check that the two do not both compress or both set
 security headers.
 
 ## Further reading
@@ -325,8 +325,8 @@ security headers.
 - [The specification](../../spec/index.md), and its
   [principles](../../spec/index.md#3-principles)
 - [Health routes](../../spec/health/index.md)
-- [Topcoat compared with axa](../../spec/compare/topcoat/index.md)
+- [Topcoat compared with Axa](../../spec/compare/topcoat/index.md)
 - [Background jobs and schedules](../background-jobs/index.md)
-- [Upgrading to axa 0.11](../upgrading-to-0.11/index.md), for the current setting names
-- [Converting a project from Loco to axa](../from-loco-into-axa/index.md), for a
+- [Upgrading to Axa 0.11](../upgrading-to-0.11/index.md), for the current setting names
+- [Converting a project from Loco to Axa](../from-loco-into-axa/index.md), for a
   worked `App::run` and test boot

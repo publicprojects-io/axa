@@ -1,25 +1,25 @@
-# axa for Rocket users
+# Axa for Rocket users
 
-This page is for someone who knows [Rocket](https://rocket.rs) well and is meeting axa
-for the first time. It says what axa is in Rocket's terms, where each Rocket idea goes,
+This page is for someone who knows [Rocket](https://rocket.rs) well and is meeting Axa
+for the first time. It says what Axa is in Rocket's terms, where each Rocket idea goes,
 and what will surprise you. It is an orientation, not a reference: the
 [README](../../README.md) and the [specification](../../spec/index.md) are that.
 
-## What axa is
+## What Axa is
 
 Rocket is a framework. It owns the server, the router, the request and response types,
 and the launch lifecycle, and your code fills in routes, guards, and fairings that it
-calls. axa is not a framework. It is a library of building blocks for services built
+calls. Axa is not a framework. It is a library of building blocks for services built
 directly on [Axum](https://docs.rs/axum). Your handlers are ordinary Axum handlers, your
-router is an ordinary `axum::Router`, and your `main.rs` calls axa's functions in the
-order you write them. axa adds what sits around the handlers: the middleware stack,
+router is an ordinary `axum::Router`, and your `main.rs` calls Axa's functions in the
+order you write them. Axa adds what sits around the handlers: the middleware stack,
 configuration from the environment, error responses, health routes, the command line,
 background jobs, and graceful shutdown. There are no route macros, no fairings, and no
-launch phases. Anything axa gives you can be read, replaced, or left out on its own.
+launch phases. Anything Axa gives you can be read, replaced, or left out on its own.
 
 ## Concept map
 
-| Rocket | axa or Axum | Note |
+| Rocket | Axa or Axum | Note |
 |---|---|---|
 | `#[get("/path")]`, `routes![...]`, `mount` | `Routes::new().prefix("/api").add("/path", get(handler))`, collected by `AppRoutes` | Plain function calls, no macros. `AppRoutes::mounted` lists every `(method, path)` for a test |
 | `<name>` in a route | `{name}` in the path, read with `Path` | `axa::extract::Path` rejects with a problem that quotes nothing |
@@ -33,7 +33,7 @@ launch phases. Anything axa gives you can be read, replaced, or left out on its 
 | Catchers (`#[catch(404)]`, `register`) | None | Every error is an RFC 9457 problem. `axa::Error` maps to the status; see [Errors](../../README.md#errors) |
 | `Rocket.toml`, `ROCKET_` variables, Figment | Environment variables only, with `Defaults` in code | No config files. `Config::from_env` reads them, and `Config::from_lookup` for tests |
 | Profiles (`debug`, `release`, `ROCKET_PROFILE`) | `APP_ENV`: `development`, `test`, `production` | With it unset, a debug build is development and a release build is production, much as Rocket picks its profile. Any unknown name is production-like |
-| `figment.extract::<MyConfig>()` for your own settings | Read your own variables | axa has no public reader for a service's own settings today. `axa::config::redact` hides a secret-shaped value if you print one |
+| `figment.extract::<MyConfig>()` for your own settings | Read your own variables | Axa has no public reader for a service's own settings today. `axa::config::redact` hides a secret-shaped value if you print one |
 | `secret_key` | No global key | `axa-web-session` requires two distinct keys of at least 64 bytes in production |
 | Forms, `Form<T>`, `#[derive(FromForm)]` | Axum's `Form`, in `axa::prelude` | The standard stack turns its plain-text rejection into a problem with no detail. Multipart is Axum's `Multipart` |
 | Field validators (`len`, `range`, ...) | `Validatable` over the [`validator`](https://docs.rs/validator) crate | A failure is a `400` with the `code` `validation` and each field's errors, not Rocket's `422` |
@@ -41,13 +41,13 @@ launch phases. Anything axa gives you can be read, replaced, or left out on its 
 | `limits` per data kind | One limit, `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` | `middleware::body_limit(route, bytes)` raises it on one route. Over the limit is a `413` problem |
 | `TempFile`, `FileName` | None | Use Axum's `Multipart`, and sanitise the file name yourself |
 | `FileServer` | None | Use `tower_http::services::ServeDir` |
-| `CookieJar`, private cookies | `axum-extra`'s `CookieJar`, `SignedCookieJar`, `PrivateCookieJar` | axa has no cookie helper. For sign-in, use `axa-web-session` |
+| `CookieJar`, private cookies | `axum-extra`'s `CookieJar`, `SignedCookieJar`, `PrivateCookieJar` | Axa has no cookie helper. For sign-in, use `axa-web-session` |
 | Sessions | `axa-web-session`, over `axum_session` | Signed and encrypted in production, `Secure`, `HttpOnly`, `SameSite=Lax`. Nothing is stored until `sign_in`. `csrf_token` and `csrf_verify` for forms |
 | `Flash` | None | Keep the message in the session |
 | Shield | The security headers in the standard stack | On every response, in every environment. See [below](#where-axa-is-safer-and-where-it-does-less) |
 | `rocket_db_pools`, `Connection<Db>` | One database feature: `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` | `axa::db::connect(&config.database)` opens the pool, and `ctx.db` holds it. Postgres only |
 | `rocket_dyn_templates` | `axa-tera-templates` (`tera` feature) | Tera only, loaded once, HTML escaped by default, and a `Page` sends its own CSP |
-| `rocket_ws`, `EventStream` | Axum's `WebSocketUpgrade` and `Sse` with `KeepAlive` | axa adds `server::Shutdown`, which a long-lived response waits on to end itself |
+| `rocket_ws`, `EventStream` | Axum's `WebSocketUpgrade` and `Sse` with `KeepAlive` | Axa adds `server::Shutdown`, which a long-lived response waits on to end itself |
 | `rocket::local` client | `axa-test`, over `axum-test`, as a dev-dependency | Async only. `request::<App, _, _>` boots the full stack with no port |
 | Health checks | `/_health/live`, `/_health/ready`, `/_health/startup` | Built in. Rocket has none |
 | Shutdown: `grace`, `mercy`, `Shutdown` | `SHUTDOWN_DRAIN_SECONDS`, `SHUTDOWN_TIMEOUT_SECONDS`, `server::Shutdown` | On `SIGTERM` or Ctrl-C. Readiness refuses from the moment shutdown begins |
@@ -57,11 +57,11 @@ launch phases. Anything axa gives you can be read, replaced, or left out on its 
 | Metrics, tracing export | `axa-prometheus-metrics`, `axa-opentelemetry` | Rocket has neither |
 | Auth | `axa-paseto-auth` or `axa-keycloak-auth`, or your own extractor | Rocket leaves this to a guard you write |
 | `ip_header`, `client_ip` | `axa::client::ClientAddr` | `X-Forwarded-For` is read only from `TRUSTED_PROXIES` |
-| TLS and mTLS listeners | None | axa's server speaks plain HTTP/1. TLS ends at the proxy in front |
+| TLS and mTLS listeners | None | Axa's server speaks plain HTTP/1. TLS ends at the proxy in front |
 
 ## A first service
 
-This is a complete axa service with two routes, based on the README's
+This is a complete Axa service with two routes, based on the README's
 [quick start](../../README.md#quick-start). The manifest:
 
 ```toml
@@ -146,7 +146,7 @@ fn rocket() -> _ {
 ```
 
 The Rocket version is shorter, because `#[launch]` builds the runtime, reads
-`Rocket.toml` and `ROCKET_` variables, and runs the server for you. In axa each of those
+`Rocket.toml` and `ROCKET_` variables, and runs the server for you. In Axa each of those
 steps is a line in `main`: read the environment, read the configuration, start logging,
 build the context, build the router, serve. When something goes wrong at boot, the line
 that did it is in your own file.
@@ -154,11 +154,11 @@ that did it is in your own file.
 ## What is different on purpose
 
 **No macros, and nothing that calls you back.** Rocket's route attributes, fairings, and
-sentinels let the framework decide what runs and when. axa forbids route macros and
+sentinels let the framework decide what runs and when. Axa forbids route macros and
 lifecycle hooks ([P-1](../../spec/index.md#3-principles), and
 [Must not be added](../../spec/index.md#must-not-be-added)), so that the control flow
 is readable from the service's own code. What a fairing did becomes a Tower layer, or a
-line in `main`. The one trait axa asks for, `TestApp`, exists only for tests.
+line in `main`. The one trait Axa asks for, `TestApp`, exists only for tests.
 
 **No `Forward`.** Rocket tries routes in rank order until a guard succeeds. Axum answers
 one route per path and method, so which handler answers is never a question. A guard
@@ -173,13 +173,13 @@ invalid, such as `HTTP_HSTS=tru`, stops a production boot and names the variable
 what a boot would refuse.
 
 **Production refuses what is unsafe.** Rocket fails closed on one setting, a missing
-`secret_key` outside debug. axa does it more widely: production with a database and no
+`secret_key` outside debug. Axa does it more widely: production with a database and no
 `DB_URL` refuses to boot, a `DB_URL` that could go in the clear is refused unless
 `DB_ALLOW_INSECURE` is set, `*` as a CORS origin is refused, and a bad
 `TRUSTED_PROXIES` list is refused. None of these falls back to a development value.
 
 **Errors never send internal text.** Rocket's catchers answer HTML or JSON for a status.
-axa answers every error as an RFC 9457 problem, with `application/problem+json` and a
+Axa answers every error as an RFC 9457 problem, with `application/problem+json` and a
 `code`. An internal failure is a generic `500` whose real text is only logged
 ([P-4](../../spec/index.md#3-principles)), so a failed query cannot put a hostname in a
 response. Axum's own refusals, such as an unmatched path or a rejected extractor, are
@@ -188,7 +188,7 @@ that cannot serve, such as a pool with no free connection, answers `503` with
 `Retry-After`.
 
 **Client addresses come only from named proxies.** Rocket believes `X-Real-IP` from any
-caller by default. axa ignores `X-Forwarded-For` unless the peer is in
+caller by default. Axa ignores `X-Forwarded-For` unless the peer is in
 `TRUSTED_PROXIES`, and then takes the rightmost entry that is not a proxy, so a caller
 cannot name its own address.
 
@@ -196,14 +196,14 @@ cannot name its own address.
 `validation` and an `errors` member by field. A broken check or not-null constraint in
 the database answers `422`, and a broken unique or foreign key constraint `409`.
 
-## Where axa is safer, and where it does less
+## Where Axa is safer, and where it does less
 
 These follow the [Rocket comparison](../../spec/compare/rocket/index.md), checked
-against axa 0.11.
+against Axa 0.11.
 
 ### Safer, or stricter, by default
 
-| Rocket | axa |
+| Rocket | Axa |
 |---|---|
 | Shield sends `nosniff`, `X-Frame-Options: SAMEORIGIN`, and a `Permissions-Policy` that blocks only `interest-cohort`, and no CSP | `nosniff`, `x-frame-options: DENY`, `referrer-policy: no-referrer`, `cross-origin-opener-policy` and `cross-origin-resource-policy` of `same-origin`, and a `permissions-policy` that turns off camera, microphone, location, payment, USB, sensors, and ad topics. Production adds HSTS and `default-src 'none'; frame-ancestors 'none'`. A handler's own value wins |
 | HSTS turns on when every listener is TLS outside debug | HSTS is on in production by setting, `HTTP_HSTS` and `HSTS_MAX_AGE_SECONDS` |
@@ -220,7 +220,7 @@ Otherwise production's strict default blanks the page.
 
 ### Does less, today
 
-| Rocket has | axa today | Use meanwhile |
+| Rocket has | Axa today | Use meanwhile |
 |---|---|---|
 | Typed `extract` of your own settings, with the same rules as Rocket's | No public settings reader | Read `std::env::var` yourself, refuse to boot on a bad production value, and never print a secret |
 | `Contextual<T>`, to re-render a form with values and errors | None | Build the template context from the submitted form and `ModelValidationErrors` |
@@ -246,9 +246,9 @@ imports. Your domain code, models, and SQL carry over. Do it in this order:
 1. **Get a baseline.** Run the whole test suite, against a real database, and write
    down the counts.
 2. **Write `main.rs` first**, as above, with your old port in `Defaults::port` if
-   proxies point at it. Rocket's default was 8000; axa's is 1241.
+   proxies point at it. Rocket's default was 8000; Axa's is 1241.
 3. **Move configuration.** Go through `Rocket.toml` and every `ROCKET_` variable. Rocket's
-   own settings become axa's: `port` and `address` become `PORT` and `BINDING`, a
+   own settings become Axa's: `port` and `address` become `PORT` and `BINDING`, a
    `databases` URL becomes `DB_URL`, `limits` becomes `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`
    and `body_limit` on the routes that need more, `log_level` becomes `LOG_LEVEL`, and
    `ip_header` becomes `TRUSTED_PROXIES`. Your own settings become variables you read.
@@ -292,8 +292,8 @@ Then test what a Rocket service never had to:
 - [The specification](../../spec/index.md), and its
   [principles](../../spec/index.md#3-principles)
 - [Health routes](../../spec/health/index.md)
-- [Rocket compared with axa](../../spec/compare/rocket/index.md)
+- [Rocket compared with Axa](../../spec/compare/rocket/index.md)
 - [Background jobs and schedules](../background-jobs/index.md)
 - [Idempotency keys](../idempotency-keys/index.md)
 - [The transactional outbox](../transactional-outbox/index.md)
-- [Upgrading to axa 0.11](../upgrading-to-0.11/index.md)
+- [Upgrading to Axa 0.11](../upgrading-to-0.11/index.md)

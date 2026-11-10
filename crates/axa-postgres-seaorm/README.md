@@ -22,7 +22,7 @@ and behaviour here.
 
 Enable it through the `postgres-seaorm` feature of `axa`, or depend on this crate alone.
 The full walkthrough is
-[Moving SeaORM code from Loco to axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md).
+[Moving SeaORM code from Loco to Axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md).
 
 ## License
 

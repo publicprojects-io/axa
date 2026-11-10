@@ -1,9 +1,9 @@
 ---
 name: axa-skill
-description: Build, configure, secure, test, and deploy Rust web services with axa, an accessories library for Axum websites, databases, microservices, and more. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the axa job queue, `axa-postgres-sqlx`, `axa-postgres-seaorm`, `axa-keycloak-auth`, `axa-paseto-auth`, `axa-idempotency-key`, `Idempotency-Key`, the outbox, `axa-postgres-job-queue`, scheduled jobs, or moving a Loco service onto axa, even if they only say "my Axum service" and the manifest shows axa. Not for changing axa's own source; use axa-maintainer-skill for that.
+description: Build, configure, secure, test, and deploy Rust web services with Axa, an accessories library for Axum websites, databases, microservices, and more. Use this whenever a project depends on the `axa` crate or any `axa-*` crate, or the user asks about `AppContext`, `AppRoutes`, `Routes`, `axa::Error`, `Config::from_env`, `cli::parse`, `BackgroundWorker`, the Axa job queue, `axa-postgres-sqlx`, `axa-postgres-seaorm`, `axa-keycloak-auth`, `axa-paseto-auth`, `axa-idempotency-key`, `Idempotency-Key`, the outbox, `axa-postgres-job-queue`, scheduled jobs, or moving a Loco service onto Axa, even if they only say "my Axum service" and the manifest shows Axa. Not for changing Axa's own source; use axa-maintainer-skill for that.
 ---
 
-# Using axa in your Axum service
+# Using Axa in your Axum service
 
 [axa](https://github.com/publicprojects-io/axa) holds the plumbing every Axum service
 needs: route tables, a standard middleware stack, health checks, error responses,
@@ -13,8 +13,8 @@ Postgres job queue.
 It is a library, not a framework. `main.rs` stays ordinary Rust that calls ordinary
 functions, `AppContext` is a plain struct passed as Axum state, and `AppRoutes` builds
 an ordinary `axum::Router`. Write code that keeps that true: an auditor should be able
-to read the whole path from `main.rs` down. Reach for plain Axum whenever axa has no
-opinion, because everything axa returns is plain Axum.
+to read the whole path from `main.rs` down. Reach for plain Axum whenever Axa has no
+opinion, because everything Axa returns is plain Axum.
 
 Check the version in the project's `Cargo.toml` before relying on a detail here. This
 skill describes 0.9, and says so where an earlier version differs.
@@ -26,12 +26,12 @@ Read these rather than guessing at an API:
 | Need | Read |
 |---|---|
 | The API of a version | [docs.rs/axa](https://docs.rs/axa) |
-| Everything axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
+| Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
 | Upgrading to 0.11 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.11/index.md) |
 | Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
-| Leaving Loco | [From Loco into axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
+| Leaving Loco | [From Loco into Axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
 | Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-postgres-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
 | Where the idempotency layer goes | [Guide](https://github.com/publicprojects-io/axa/blob/main/help/idempotency-keys/index.md) |
 
@@ -200,7 +200,7 @@ let cli = axa::cli::parse(
 - Order every list by something ending in a unique column, such as
   `ORDER BY created_at, id`.
 - Pass user text for `LIKE` through `escape_like` and bind it with `ESCAPE '\'`.
-- There is no offset paging. axa 0.9 removed `offset-pagination`, because its total
+- There is no offset paging. Axa 0.9 removed `offset-pagination`, because its total
   counts rows a record policy hides.
 
 ## Configuration
@@ -420,7 +420,7 @@ know, so refuse to start on it, because a typo read as off could turn enforcemen
 ## Testing
 
 With `axa-test` as a dev-dependency, implement `TestApp` to say how a service boots for tests. It
-is the one trait axa asks a service to implement, and it exists only for tests.
+is the one trait Axa asks a service to implement, and it exists only for tests.
 
 ```rust,ignore
 use axa_test::prelude::*;
@@ -446,9 +446,9 @@ path)`, without booting anything.
   a span travels with that span, so treat the collector as you treat the logs.
 - Use `axa_tracing::Redacted` for a field that must not reach a log.
 
-## What axa will not add
+## What Axa will not add
 
 Route macros, a generic CRUD controller, a dependency-injection container, a plugin
 system, a configuration language, and a database abstraction are out on purpose. Write
-these in the service, in plain Rust, rather than looking for an axa feature. Domain
+these in the service, in plain Rust, rather than looking for an Axa feature. Domain
 logic, handlers, models, and SQL stay in each service.

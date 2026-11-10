@@ -5,7 +5,7 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Read [Upgrading to axa 0.12](help/upgrading-to-0.12/index.md): for a service on Postgres,
+Read [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md): for a service on Postgres,
 the upgrade is renaming.
 
 ### Added
@@ -54,7 +54,7 @@ This covers `axa` 0.11.0, `axa-problem` 0.2.0 under its old name again, the new
 `axa-idempotency-key` 0.2.2, `axa-accepts-version-negotiation` 0.2.1, and
 `axa-prometheus-metrics` 0.1.1. `axa-sqlite-job-queue` 0.1.0 is in the repository and
 not yet published. It breaks 0.10 in its settings, health routes, and more, so read
-[Upgrading to axa 0.11](help/upgrading-to-0.11/index.md) before deploying it.
+[Upgrading to Axa 0.11](help/upgrading-to-0.11/index.md) before deploying it.
 
 ### Added
 
@@ -293,7 +293,7 @@ break; see [Upgrading to 0.9](help/upgrading-to-0.3/index.md#upgrading-to-09).
 - **Offset paging, with `axa-offset-pagination`, breaking (P-10).** `axa` has no
   `offset-pagination` or `pagination` feature, and no `axa::offset_pagination` or
   `axa::pagination`. Its total could count rows a record policy hides. Page with
-  `cursor-pagination`. The crate stays on crates.io for axa 0.8 and earlier, and is not
+  `cursor-pagination`. The crate stays on crates.io for Axa 0.8 and earlier, and is not
   published again. See
   [Upgrading to 0.9](help/upgrading-to-0.3/index.md#upgrading-to-09).
 
@@ -403,7 +403,7 @@ This covers `axa` 0.7.0, `axa-ratelimit` 0.2.0, and five new crates: `axa-worker
 0.1.0, `axa-idempotency` 0.1.0, `axa-outbox` 0.1.0, `axa-cursor-pagination` 0.1.0, and
 `axa-offset-pagination` 0.1.0. `axa-offset-pagination` supersedes `axa-pagination`
 0.1.1. Some changes break; see
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.7 says what
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.7 says what
 to change.
 
 ### Added
@@ -527,7 +527,7 @@ to change.
 
 This covers `axa` 0.6.2. No subcrate changes. A write that breaks a check or not-null
 constraint answers `422`, not `500`; see
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.2 says what
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.2 says what
 to check.
 
 ### Fixed
@@ -543,7 +543,7 @@ to check.
 
 This covers `axa` 0.6.1. No subcrate changes. A rejected JSON body's `code` changes at
 `413`, `415`, and `422`; see
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.1 says what
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.1 says what
 to check.
 
 ### Fixed
@@ -569,7 +569,7 @@ to check.
 This covers `axa` 0.6.0, `axa-keycloak` 0.3.0, `axa-pagination` 0.1.1, `axa-paseto` 0.5.0,
 `axa-ratelimit` 0.1.0, `axa-tera` 0.2.1, and `axa-versioning` 0.2.0. It breaks 0.5: every
 error's body changes, and `config::Server` has a new field. See
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what a
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what a
 service changes.
 
 ### Added
@@ -601,7 +601,7 @@ service changes.
   say `detail`. Successes stay bare JSON. The body used to be `{error, description,
   errors}`: `error` is now the `code` extension member, `description` is `detail`, and
   `errors` is an extension member as before. See
-  [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what
+  [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what
   a service changes.
 - **Breaking: `ErrorDetail`'s fields are `code` and `detail`**, in place of `error` and
   `description`. `ErrorDetail::new` and `with_reason` take what they took.
@@ -650,7 +650,7 @@ This covers `axa` 0.5.0, `axa-diesel` 0.2.0, `axa-keycloak` 0.2.0, `axa-opentele
 0.1.1, `axa-paseto` 0.4.0, `axa-redis` 0.1.1, `axa-seaorm` 0.2.1, `axa-sqlx` 0.1.2, and `axa-versioning` 0.1.1. It breaks 0.4 for
 code that builds `config::Http`, `config::Server`, or `axa_diesel::PoolConfig` without
 `..`, because each has a new field. See
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.5 also shows
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.5 also shows
 how to add `axa-tracing` and `axa-opentelemetry`.
 
 ### Added
@@ -696,8 +696,8 @@ turned on by another dependency now speaks HTTP/1 only.
 ### Added
 
 - `DbCommand::destroys_data` and `cli::DESTROY_DATA_VAR`.
-- Two AI agent skills: `skill/axa-skill` for building a service with axa, and
-  `skill/axa-maintainer-skill` for working on axa itself.
+- Two AI agent skills: `skill/axa-skill` for building a service with Axa, and
+  `skill/axa-maintainer-skill` for working on Axa itself.
 
 ### Fixed
 
@@ -726,7 +726,7 @@ turned on by another dependency now speaks HTTP/1 only.
 This covers `axa` 0.4.0, `axa-paseto` 0.3.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1,
 `axa-environment` 0.1.1, and the first releases of `axa-keycloak`, `axa-tracing`, and
 `axa-opentelemetry`, each 0.1.0. It breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
-timeouts are longer. See [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose
+timeouts are longer. See [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose
 last section covers 0.4.
 
 ### Added
@@ -817,7 +817,7 @@ last section covers 0.4.
 ## [0.3.0] - 2026-11-06
 
 This covers `axa` 0.3.0, `axa-tera` 0.2.0, and `axa-session` 0.1.0. It breaks 0.2.0:
-see [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
+see [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md).
 
 ### Added
 
@@ -905,7 +905,7 @@ have new fields, and `axa-paseto` now enforces by default.
   A service on sqlx adds its pool this way. The route answers `{"ok":true}` as
   before when all is well.
 - A `check` command, with `cli::check`, `Config::settings`, and `config::redact`.
-  It reads the settings axa knows about and connects to nothing, so it says
+  It reads the settings Axa knows about and connects to nothing, so it says
   nothing about a service's own settings or whether the database answers.
 - `Config::apply_cli`, for the `start --binding` and `--port` overrides.
 - `Routes::timeout` and `Routes::add_with_timeout`, for a time limit stated where

@@ -15,7 +15,7 @@ catching. Its work behind the handlers runs as actor-style services from its own
 `relay-system` crate, not inside the request. This study looks at backpressure, load
 shedding, request body handling, health, and metrics.
 
-> **Since this was written**, axa 0.11 added the body limit binds a handler that reads the body itself; `RequestMetrics` measures requests by route template. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added the body limit binds a handler that reads the body itself; `RequestMetrics` measures requests by route template. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Links below are to files at that commit, under
 `https://github.com/getsentry/relay/blob/0d47301d73ae3f7a1441d058b7786a24eb3130c0/`.
@@ -168,9 +168,9 @@ Most behaviour is tested from Python: `tests/integration` holds about 70 pytest 
 that start a real Relay binary against a mock Sentry. I did not study the Rust unit
 tests.
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Relay | axa |
+| Area | Relay | Axa |
 |---|---|---|
 | Server | `axum-server`, own acceptor, `SO_REUSEPORT`, backlog, TCP keep-alive, idle timeout | Own hyper loop with header read, keep-alive, and send-stall timeouts |
 | Connection cap | Semaphore on the make-service, off by default, extra connections wait | `MAX_CONNECTIONS`, 10,000 by default, extra connections wait |
@@ -192,7 +192,7 @@ tests.
 | Shutdown | Controller with timeout, then forced | `SHUTDOWN_TIMEOUT_SECONDS`, requests and jobs finish first |
 | Testing | Python integration tests against a binary | In-process request helpers in `axa-test` |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -209,7 +209,7 @@ tests.
 
 **Request body decompression.** Add it to `axa::middleware::apply` behind
 `HTTP_REQUEST_DECOMPRESSION`, off by default, using `tower-http`'s `RequestDecompression`
-(the `decompression-full` feature of a crate axa already depends on). Put it outside the
+(the `decompression-full` feature of a crate Axa already depends on). Put it outside the
 body limit layer, so that `DefaultBodyLimit`, and the streamed limit below, count
 decoded bytes and a small bomb still gets `413`. An unknown `content-encoding` should
 get `415` as a problem. Port Relay's zip bomb test as a requirement, with a small fixture
@@ -246,19 +246,19 @@ routes and the metrics path on that port only, and the public router stops servi
 Both listeners share one shutdown signal. This changes HLT-10's premise, that probes are
 on the public port, so the health spec would need a row for it.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Sending error text to clients.** Relay returns the whole cause chain and panic
-  messages. axa's P-4 forbids this, and axa is right for services that hold data.
+  messages. Axa's P-4 forbids this, and Axa is right for services that hold data.
 - **Trusting forwarding headers from anyone.** Relay takes four headers from any peer.
-  axa's `TRUSTED_PROXIES` rule is safer wherever the address feeds a limit or an audit record.
+  Axa's `TRUSTED_PROXIES` rule is safer wherever the address feeds a limit or an audit record.
 - **Background-loop readiness.** Relay computes readiness on a timer whether anyone
-  asks or not. axa's reused answer with one round at a time gives the same protection
+  asks or not. Axa's reused answer with one round at a time gives the same protection
   without a task, and adds startup.
 - **The actor runtime and envelope buffer.** `relay-system`, the SQLite spool, and
   project-config caches are Relay's product. A library cannot offer them generically.
-- **StatsD and cost attribution.** axa has Prometheus and OTLP. CPU time per request for
+- **StatsD and cost attribution.** Axa has Prometheus and OTLP. CPU time per request for
   billing is Sentry-specific.
 - **`X-Sentry-Rate-Limits`, empty `content-encoding` tolerance, and the autoscaling
   endpoint.** These serve Sentry's SDKs and its own autoscaler.
-- **A YAML configuration file.** axa's spec rules out configuration files.
+- **A YAML configuration file.** Axa's spec rules out configuration files.

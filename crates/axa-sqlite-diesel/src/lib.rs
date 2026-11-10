@@ -1,6 +1,6 @@
 //! Diesel pooling, migrations, and test resets, on SQLite.
 //!
-//! This has the same shape as `axa-postgres-diesel` and the other axa database
+//! This has the same shape as `axa-postgres-diesel` and the other Axa database
 //! crates, so a service can move between them by changing names: a [`Pool`], an
 //! [`Error`], [`PoolConfig`], [`connect`], [`ping`], [`migrate`], [`pending`],
 //! [`revert`], [`truncate`], [`dangerously_recreate`], [`is_unique_violation`],

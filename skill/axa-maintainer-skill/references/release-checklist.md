@@ -62,7 +62,7 @@ crates.io refuses a crate whose dependencies, optional ones too, are not publish
 crates go out, a release of `axa` takes those features out of its `Cargo.toml` first, on
 the release commit only, and puts them back after.
 
-`axa-pagination` and `axa-offset-pagination` are retired, as axa 0.9 removed offset
+`axa-pagination` and `axa-offset-pagination` are retired, as Axa 0.9 removed offset
 paging. Never publish either again.
 
 **crates.io limits new crates.** After a small burst, each new name waits about ten

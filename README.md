@@ -1,6 +1,6 @@
-# axa
+# Axa
 
-**axa** is a shared library for web services built with [Axum](https://docs.rs/axum),
+**Axa** is a shared library for web services built with [Axum](https://docs.rs/axum),
 that provides a middleware stack, health checks, error responses, configuration
 helpers, route tables, logging capabilities, background jobs, database queues, and
 graceful shutdown.
@@ -402,8 +402,8 @@ own route:
 | Route | Probe | A failure means | It asks |
 |---|---|---|---|
 | `/_health/live` | Liveness | Kill and restart the container | Nothing: it answers `200` once the server is running |
-| `/_health/ready` | Readiness | Take the pod out of the Service, so it gets no traffic | The database and queue axa holds, and your named checks. `503` if one fails, as a problem whose `failed` names them |
-| `/_health/startup` | Startup | Not booted yet: hold off the other two | The database axa holds. Once it passes, it passes for good |
+| `/_health/ready` | Readiness | Take the pod out of the Service, so it gets no traffic | The database and queue Axa holds, and your named checks. `503` if one fails, as a problem whose `failed` names them |
+| `/_health/startup` | Startup | Not booted yet: hold off the other two | The database Axa holds. Once it passes, it passes for good |
 
 ```yaml
 livenessProbe:
@@ -462,7 +462,7 @@ process stays refused whatever the flag says. `Cli::parse()` refuses them too.
 
 `check` validates the configuration, prints the effective settings with passwords
 and other secrets redacted, and exits, non-zero if refused. It connects to nothing,
-and it knows only the settings axa reads. `Config::apply_cli` applies the `start`
+and it knows only the settings Axa reads. `Config::apply_cli` applies the `start`
 overrides.
 
 ### Tasks
@@ -596,7 +596,7 @@ most 64 KiB by default, may be checked against a list of denied fields, and with
 ### Testing
 
 With [`axa-test`](crates/axa-test) as a dev-dependency, a service implements `TestApp` to say how it boots
-for tests. That is the one trait axa asks a service to implement, and it exists
+for tests. That is the one trait Axa asks a service to implement, and it exists
 only for tests.
 
 ```rust,ignore
@@ -633,16 +633,16 @@ caught a real race that nothing else did, so run them when you touch the queue.
 The full list that CI runs is in [section 5 of the spec](spec/index.md#5-verification).
 
 AI agents have two skills: [`axa-skill`](skill/axa-skill/SKILL.md) for building a
-service with axa, and [`axa-maintainer-skill`](skill/axa-maintainer-skill/SKILL.md) for
-working on axa itself.
+service with Axa, and [`axa-maintainer-skill`](skill/axa-maintainer-skill/SKILL.md) for
+working on Axa itself.
 
 Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
 carries a spec edit, a code edit, and a test edit together.
 
 ## Coming from another framework
 
-Each of these explains axa in the terms of a framework you know: a map of its concepts
-onto axa and Axum, a first service written both ways, what is different on purpose, and
+Each of these explains Axa in the terms of a framework you know: a map of its concepts
+onto Axa and Axum, a first service written both ways, what is different on purpose, and
 how to move a service across.
 
 - [axa for Loco users](help/axa-for-loco-users/index.md)
@@ -653,18 +653,18 @@ how to move a service across.
 
 ## Relationship to Loco
 
-To upgrade from 0.11, read [Upgrading to axa 0.12](help/upgrading-to-0.12/index.md), from 0.10,
-[Upgrading to axa 0.11](help/upgrading-to-0.11/index.md), and
-from earlier versions, [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
+To upgrade from 0.11, read [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md), from 0.10,
+[Upgrading to Axa 0.11](help/upgrading-to-0.11/index.md), and
+from earlier versions, [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md).
 
 To move a project across, follow
-[Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and
-for the database, [Moving SeaORM code from Loco to axa](help/from-loco-seaorm-into-axa-seaorm/index.md).
+[Converting a project from Loco to Axa](help/from-loco-into-axa/index.md), and
+for the database, [Moving SeaORM code from Loco to Axa](help/from-loco-seaorm-into-axa-seaorm/index.md).
 
-axa was extracted from what the Main X Index services relied on in
+Axa was extracted from what the Main X Index services relied on in
 [Loco](https://loco.rs) (Apache-2.0), and some differences are deliberate:
 
-| Loco | axa |
+| Loco | Axa |
 |---|---|
 | A `Hooks` trait drives your app | Your `main.rs` calls plain functions |
 | YAML config rendered through a template engine | The environment, with defaults in code |

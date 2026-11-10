@@ -1,4 +1,4 @@
-# Upgrading to axa 0.12
+# Upgrading to Axa 0.12
 
 This covers a service on 0.11. The database crates and features are now named for their
 database and library, and there are crates for MySQL and SQLite beside Postgres. For a

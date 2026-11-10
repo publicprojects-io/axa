@@ -1,4 +1,4 @@
-# Upgrading to axa 0.11
+# Upgrading to Axa 0.11
 
 This covers a service on 0.10. Several changes compile cleanly and behave differently,
 and the worst of them takes a service down at deploy, so read

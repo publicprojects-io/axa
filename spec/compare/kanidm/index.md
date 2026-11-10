@@ -12,7 +12,7 @@ use `axum::serve`: it runs its own accept loop over `hyper-util`, and terminates
 itself with `rustls`. This study looks at security hardening, auth, sessions, CSRF,
 headers, TLS, and observability.
 
-> **Since this was written**, axa 0.11 added a response that sets a cookie is `no-store` unless its handler says otherwise; the stack sends `cross-origin-opener-policy`, `cross-origin-resource-policy`, and `permissions-policy`; compression skips a response that sets a cookie or is `no-store`. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added a response that sets a cookie is `no-store` unless its handler says otherwise; the stack sends `cross-origin-opener-policy`, `cross-origin-resource-policy`, and `permissions-policy`; compression skips a response that sets a cookie or is `no-store`. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Links below are to files at that commit, under
 `https://github.com/kanidm/kanidm/blob/253e73a56f51347a141fe47a2548faf05d5b9db3/`.
@@ -170,9 +170,9 @@ one route, not separate liveness and readiness. [`apidocs/mod.rs`][apidocs] serv
 Swagger UI and `openapi.json` from `utoipa` derives. `/robots.txt` disallows everything,
 and the `.well-known` change-password and passkey endpoints are served.
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Kanidm | axa |
+| Area | Kanidm | Axa |
 |---|---|---|
 | Server loop | Own `hyper-util` loop, per-connection timeouts, HTTP version choice | Own loop with header-read and keep-alive limits, stalled-client tests, and graceful drain |
 | Graceful shutdown | Stops accepting; I found no drain of requests in flight | Drains in-flight requests with a grace period |
@@ -192,7 +192,7 @@ and the `.well-known` change-password and passkey endpoints are served.
 | Rate limits | None found in the HTTP layer | `axa-request-rate-limit` |
 | OpenAPI | `utoipa` and Swagger UI | `axa-openapi-docs` with drift checks |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -222,7 +222,7 @@ value sending none. `cross-origin-embedder-policy: require-corp` breaks pages th
 third-party images, so it should be opt-in, not a default.
 
 **Compression that skips secret-bearing answers.** `tower-http`'s `CompressionLayer`
-takes a `compress_when` predicate. axa could pass one that refuses any response with
+takes a `compress_when` predicate. Axa could pass one that refuses any response with
 `set-cookie` or `cache-control: no-store`, and offer a route-level opt-out marker. This
 keeps the current `HTTP_COMPRESSION` switch and costs nothing for static or public
 answers. The rule should be written in the spec as a requirement with a test.
@@ -238,26 +238,26 @@ file paths, hashes each with SHA-384, and returns a `script-src` fragment (and t
 matching `integrity` attributes for templates). A missing file is an error at startup,
 not at request time. It depends on `sha2` and `base64`.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Leftmost `X-Forwarded-For`.** Kanidm takes the first entry from a trusted proxy. That
-  entry is whatever the client wrote, unless the proxy replaces the header. axa reads
+  entry is whatever the client wrote, unless the proxy replaces the header. Axa reads
   from the right, which is the safer rule.
 - **Full URI and client address in the request span.** Query strings can hold OAuth2
-  codes and tokens, and addresses are personal data. axa logs the route template on
+  codes and tokens, and addresses are personal data. Axa logs the route template on
   purpose.
-- **Ignoring the caller's request id.** axa keeps a cleaned caller id, which helps trace
+- **Ignoring the caller's request id.** Axa keeps a cleaned caller id, which helps trace
   a request across services.
-- **Headers that overwrite the handler.** Kanidm replaces everything but CSP. axa's rule
+- **Headers that overwrite the handler.** Kanidm replaces everything but CSP. Axa's rule
   that a handler's own value wins is easier to reason about.
 - **`'unsafe-eval'` in the CSP and an unconditional HSTS.** Both are product choices for
   Kanidm's UI and its always-TLS deployment, not good library defaults.
 - **The htmx request guard.** It suits Kanidm's htmx UI. A general service should use
-  `csrf_verify`, which axa already has.
+  `csrf_verify`, which Axa already has.
 - **A per-process signing key for login state.** It forces sticky sessions behind a load
-  balancer. Kanidm accepts that on purpose; axa's sessions should keep working across
+  balancer. Kanidm accepts that on purpose; Axa's sessions should keep working across
   replicas.
-- **The `WebError` mapping and the single `/status` route.** axa's problem details and
+- **The `WebError` mapping and the single `/status` route.** Axa's problem details and
   three health routes already do more.
 - **In-process TLS as a default.** It is worth offering as an optional crate, but most
   services run behind a proxy that terminates TLS, and certificate handling is a large

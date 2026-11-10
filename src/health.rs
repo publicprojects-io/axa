@@ -3,8 +3,8 @@
 //! | Route | Probe | A failure means | Asks |
 //! |---|---|---|---|
 //! | [`LIVE`], `/_health/live` | Liveness | Kill and restart the container | Nothing: it answers once the server is running |
-//! | [`READY`], `/_health/ready` | Readiness | Send the pod no traffic | The database and queue axa holds, and the named checks in [`AppContext::health_checks`]. It answers `503` from the moment shutdown begins |
-//! | [`STARTUP`], `/_health/startup` | Startup | Not booted yet: hold off the other two | The database axa holds. Once it passes, it passes for good |
+//! | [`READY`], `/_health/ready` | Readiness | Send the pod no traffic | The database and queue Axa holds, and the named checks in [`AppContext::health_checks`]. It answers `503` from the moment shutdown begins |
+//! | [`STARTUP`], `/_health/startup` | Startup | Not booted yet: hold off the other two | The database Axa holds. Once it passes, it passes for good |
 //!
 //! No route asks a third party. Restarting a container does not bring back a
 //! payment provider, and a pod that is not ready gets no traffic at all, so every
@@ -270,7 +270,7 @@ async fn ok() -> Json<Health> {
     Json(Health { ok: true })
 }
 
-/// The checks axa can write itself: the database it holds, and the queue too unless
+/// The checks Axa can write itself: the database it holds, and the queue too unless
 /// `database_only`.
 fn built_in(ctx: &AppContext, database_only: bool) -> Vec<Check> {
     #[cfg_attr(

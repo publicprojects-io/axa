@@ -12,7 +12,7 @@ migrations. It runs on Heroku as three processes from one binary: `migrate` on r
 `tower-http` 0.7, Diesel 2.3 through `diesel-async` and `deadpool`, `utoipa` for OpenAPI,
 and OpenTelemetry for traces and metrics ([`Cargo.toml`][cargo]).
 
-> **Since this was written**, axa 0.11 added a database that cannot serve answers `503` with `Retry-After`. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added a database that cannot serve answers `503` with `Retry-After`. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Links below are to files at that commit, under
 `https://github.com/rust-lang/crates.io/blob/426033177301a42884b592917a3c5e146ef18d11/`.
@@ -227,9 +227,9 @@ run pending background jobs, and snapshot helpers built on `insta`. A `ChaosProx
 ([`chaosproxy.rs`][chaos]) sits between the app and Postgres so tests can cut the network
 and check the `503` and recovery paths.
 
-## Compared with axa
+## Compared with Axa
 
-| Area | crates.io | axa |
+| Area | crates.io | Axa |
 |---|---|---|
 | Routing | `utoipa_axum` `routes!` macro, spec from the router | `Routes`/`AppRoutes`, plain functions, OpenAPI drift checks |
 | Timeouts | One 30 s timeout, plus a 30 s body-read timeout | Global, per-group, and per-route timeouts; header read timeout |
@@ -250,7 +250,7 @@ and check the `503` and recovery paths.
 | Tests | Per-test schema from a migrated template, `TestApp` builder, chaos proxy | `TestApp` trait and request helpers |
 | Idempotency, outbox, version negotiation | None found | Yes |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -282,7 +282,7 @@ deadpool `post_create` hook as crates.io does, and the other database crates the
 equivalents, all with the same environment names: `DB_STATEMENT_TIMEOUT_SECONDS`
 (default perhaps 30), `DB_APPLICATION_NAME` (default the service name), and
 `DB_READ_ONLY`. The worker can set a longer timeout for its own pool. Production could
-refuse an unset statement timeout, in line with axa's refusal of unsafe settings.
+refuse an unset statement timeout, in line with Axa's refusal of unsafe settings.
 
 **Per-test schema.** In `axa-test`, a `TestDatabase::new()` that on first use migrates a
 template schema, keeps its DDL, and replays it into a fresh random schema reached by
@@ -307,7 +307,7 @@ burst).check(&mut tx, key)` returning the existing `Verdict` so the `429` and
 
 **Operator block.** A layer in `axa::middleware`, off by default, reading
 `BLOCKED_CLIENT_ADDRESSES`, `BLOCKED_ROUTES` (route templates, `503`), and a header rule
-list, using the client address axa already resolves. It answers with a problem that
+list, using the client address Axa already resolves. It answers with a problem that
 carries the request id. Config only; no regex dependency unless header patterns are
 wanted.
 
@@ -320,25 +320,25 @@ on the replica alone.
 last used, and an Axum layer that puts the token's subject on the request. It should work
 with the existing ABAC rather than adding a second scope model.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Trusted Publishing, crate scopes, the index, typosquat checks, OG images, readmes,
   docs.rs and CDN invalidation jobs.** These are the registry's product.
-- **`AppError` as a boxed trait object with a custom JSON envelope.** axa's RFC 9457
+- **`AppError` as a boxed trait object with a custom JSON envelope.** Axa's RFC 9457
   problems with stable codes are the better contract, and the envelope is kept for
   `cargo` compatibility only ([`docs/API-DESIGN.md`][apidesign]).
-- **The `routes!` macro as the router.** It ties routing to code generation, which axa
-  rules out. axa's drift check gets the same assurance without it.
-- **No health routes.** crates.io relies on Heroku; axa's three probes are better for
+- **The `routes!` macro as the router.** It ties routing to code generation, which Axa
+  rules out. Axa's drift check gets the same assurance without it.
+- **No health routes.** crates.io relies on Heroku; Axa's three probes are better for
   Kubernetes.
-- **External scheduling through a CLI `enqueue-job`.** axa's in-process schedules, safe
+- **External scheduling through a CLI `enqueue-job`.** Axa's in-process schedules, safe
   across replicas, are simpler to run.
 - **Trusting `X-Forwarded-For` by CDN IP ranges, and CDN origin auth.** Both are tied to
-  their CDNs (`crates_io_real_ip` and the shared secret header). axa's `TRUSTED_PROXIES`
+  their CDNs (`crates_io_real_ip` and the shared secret header). Axa's `TRUSTED_PROXIES`
   is the general form; an origin secret is one line a service can add.
 - **`User-Agent` required.** A policy for a public API used by scripts, not a default.
 - **Blanket `Access-Control-Allow-Origin: *` and static-path cache headers** in
-  [`common_headers.rs`][common]. axa keeps CORS off until configured.
+  [`common_headers.rs`][common]. Axa keeps CORS off until configured.
 - **A pinned root certificate and `danger_accept_invalid_certs` outside production** in
   [`db.rs`][db]. Specific to their database host.
 - **Splitting the middleware stack for compile time.** A workaround for their stack, not

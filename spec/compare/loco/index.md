@@ -5,8 +5,8 @@ is <https://github.com/loco-rs/loco>. I read commit
 [`0fce092`](https://github.com/loco-rs/loco/tree/0fce092950d4989b9d4add2c70439cf59ee47557)
 of 6 November 2026, when the crate was `loco-rs` 1.3.1. The repository has about 9,600
 stars and about 79,000 lines of Rust, counting the `loco-gen` generator and its tests.
-axa was taken from what the Main X Index services used in Loco, so this comparison
-looks mostly at what Loco has that axa does not. Loco drives the application through a
+Axa was taken from what the Main X Index services used in Loco, so this comparison
+looks mostly at what Loco has that Axa does not. Loco drives the application through a
 `Hooks` trait, builds an `axum::Router` from `AppRoutes`, and applies a named
 middleware stack that the application edits by name.
 
@@ -35,11 +35,11 @@ Links point at commit `0fce092`.
 | Scaffolding | `cargo loco generate` for model, migration, controller, scaffold (API, or HTML pages), mailer, worker, task, scheduler, notifier, OAuth controller, data, and Docker, nginx, and Lambda deployment files | [`loco-gen/src/lib.rs`](https://github.com/loco-rs/loco/blob/0fce092950d4989b9d4add2c70439cf59ee47557/loco-gen/src/lib.rs), [`loco-gen/src/templates/`](https://github.com/loco-rs/loco/blob/0fce092950d4989b9d4add2c70439cf59ee47557/loco-gen/src/templates) |
 | Test helpers | `request` and `request_with_create_db`, which makes a fresh Postgres database or SQLite file for each test and drops it after. `seed` loads fixtures. `RequestConfig` keeps cookies and sets a default content type. Redaction filters for snapshot tests, and CSS selector assertions over HTML (`assert_css_eq`, `assert_link`, `assert_count`) | [`src/testing/request.rs`](https://github.com/loco-rs/loco/blob/0fce092950d4989b9d4add2c70439cf59ee47557/src/testing/request.rs), [`src/testing/db.rs`](https://github.com/loco-rs/loco/blob/0fce092950d4989b9d4add2c70439cf59ee47557/src/testing/db.rs), [`src/testing/redaction.rs`](https://github.com/loco-rs/loco/blob/0fce092950d4989b9d4add2c70439cf59ee47557/src/testing/redaction.rs), [`src/testing/selector.rs`](https://github.com/loco-rs/loco/blob/0fce092950d4989b9d4add2c70439cf59ee47557/src/testing/selector.rs) |
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Loco | axa |
+| Area | Loco | Axa |
 |---|---|---|
-| Control flow | `Hooks` trait the framework drives | `main.rs` calls plain functions. Hooks are on axa's "must not be added" list |
+| Control flow | `Hooks` trait the framework drives | `main.rs` calls plain functions. Hooks are on Axa's "must not be added" list |
 | Configuration | YAML per environment, rendered by Tera | Environment variables with defaults in code, and production refuses unsafe or invalid values |
 | Middleware | Named, editable stack, configured in YAML. Powered-by header by default | Fixed stack in a documented order. No powered-by header. Security headers everywhere, HSTS in production |
 | Errors | `loco_rs::Error` to JSON | RFC 9457 problems, internal text never sent, constraint violations to `409` and `422` |
@@ -60,7 +60,7 @@ Links point at commit `0fce092`.
 | Observability | `tracing` logger | Request span with route template, Prometheus, OpenTelemetry, redaction |
 | Other | | Idempotency keys, outbox, cursor pagination, version negotiation, conditional requests, OpenAPI drift checks, connection-level timeouts |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -85,12 +85,12 @@ drop must refuse any database not made by the guard, and must never run against 
 database that `APP_ENV` says is production, in line with `AXA_DESTROY_DATA`. It needs
 only what the database crates already depend on.
 
-**Captured mail and log assertions.** If axa gains a mail crate, it should have a
+**Captured mail and log assertions.** If Axa gains a mail crate, it should have a
 memory transport whose messages a test reads, as Loco's `EmailSender::stub` and
 `deliveries()` do. Without a mail crate, `axa-test` can still offer a log capture: a
 `tracing` layer that records events at a level for the current test, so a test can
 check that a refusal was logged and that a secret was not. It depends only on
-`tracing-subscriber`, which axa already uses.
+`tracing-subscriber`, which Axa already uses.
 
 **A mail crate.** A crate such as `axa-smtp-mail` would hold a `Mailer` struct built
 from environment variables (`SMTP_URL`, `SMTP_FROM`), refuse plaintext SMTP in
@@ -129,34 +129,34 @@ timestamp. This matches Loco's scheme in
 client. The client must refuse private and loopback addresses unless allowed, because
 the target URL often comes from a user.
 
-## What axa should not copy
+## What Axa should not copy
 
-- **The `Hooks` trait and initializers.** axa's spec forbids lifecycle hooks. A Loco
+- **The `Hooks` trait and initializers.** Axa's spec forbids lifecycle hooks. A Loco
   initializer is a function that takes and returns a `Router`, and that is what the
   migration guide already says to write. The untyped `initializers` map in YAML is the
-  kind of hidden configuration axa avoids.
+  kind of hidden configuration Axa avoids.
 - **The editable middleware stack.** Editing layers by name makes the order a matter of
-  configuration. axa keeps one documented order and lets a service add layers before
+  configuration. Axa keeps one documented order and lets a service add layers before
   `apply`.
 - **YAML rendered through Tera.** A template engine in front of configuration is how an
-  empty `get_env(default="")` becomes an empty secret, as the axa migration guide warns.
-- **Scaffolding and generators.** Code generation is on axa's "must not be added" list,
+  empty `get_env(default="")` becomes an empty secret, as the Axa migration guide warns.
+- **Scaffolding and generators.** Code generation is on Axa's "must not be added" list,
   and generated controllers become each service's own code. The deployment templates
   for Docker, nginx, and Lambda are product choices.
-- **A generic `Cache` over several drivers, with no expiry.** axa's Redis cache already
+- **A generic `Cache` over several drivers, with no expiry.** Axa's Redis cache already
   requires expiry and falls back to the loader. A database cache driver adds load to
   the database the cache should protect.
-- **A Redis job queue.** axa keeps jobs in the database the work is about, so a job
+- **A Redis job queue.** Axa keeps jobs in the database the work is about, so a job
   commits with its record. A second store loses that.
 - **Shell commands from the scheduler.** Running shell text from configuration is a
   wide door for little gain. A job or a task does the same.
-- **JWTs signed with a shared HMAC key.** axa chose PASETO and Keycloak. Adding HS256
+- **JWTs signed with a shared HMAC key.** Axa chose PASETO and Keycloak. Adding HS256
   JWTs would add a weaker way beside a stronger one, against P-10.
 - **Multi-tenancy for SeaORM only.** Loco's `TenantEntity` works only with SeaORM, and
-  axa has four database crates of one shape. Tenant scoping that a developer must
+  Axa has four database crates of one shape. Tenant scoping that a developer must
   remember to call is weaker than row-level security in Postgres. If two services need
   tenants, the work is a design question first.
 - **A Slack channel.** Slack is one product's API. A service that wants it can post
   through the outbox's publisher.
-- **The powered-by header and the fallback HTML page.** axa sends no product header,
+- **The powered-by header and the fallback HTML page.** Axa sends no product header,
   and answers an unmatched path with a problem.

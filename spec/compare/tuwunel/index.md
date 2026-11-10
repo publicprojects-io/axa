@@ -13,7 +13,7 @@ it in a `tower::ServiceBuilder` stack. It serves on TCP, Unix sockets, sockets p
 systemd, and direct TLS. It is a product, not a library, so most of it is
 Matrix-specific. This page looks for the parts that are not.
 
-> **Since this was written**, axa 0.11 added `/_health/ready` answers `503` from the moment shutdown begins. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added `/_health/ready` answers `503` from the moment shutdown begins. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 ## How it is built
 
@@ -41,11 +41,11 @@ Links point at commit `a9da94f`.
 | Admin tooling | Admin commands sent as messages in an admin room or a console: backups, checkpoints, config show and reload, cache clearing, memory and runtime stats, restart, shutdown | [`src/admin/server/`](https://github.com/matrix-construct/tuwunel/tree/a9da94f15108f39d2b5e28dc09514ab683ecdd7f/src/admin/server), [`src/admin/debug/`](https://github.com/matrix-construct/tuwunel/tree/a9da94f15108f39d2b5e28dc09514ab683ecdd7f/src/admin/debug) |
 | Testing | About 150 integration test files in `src/main/tests`. A fixture boots an isolated server on an ephemeral port with a database named for the test, waits for the listener, runs the exercise, and removes the database. `test_utils` records warnings a test emits, and can run a test in a child process. The `tests` directory adds the Complement suite and Playwright | [`src/main/tests/fixture/mod.rs`](https://github.com/matrix-construct/tuwunel/blob/a9da94f15108f39d2b5e28dc09514ab683ecdd7f/src/main/tests/fixture/mod.rs), [`src/service/test_utils.rs`](https://github.com/matrix-construct/tuwunel/blob/a9da94f15108f39d2b5e28dc09514ab683ecdd7f/src/service/test_utils.rs) |
 
-## Compared with axa
+## Compared with Axa
 
-| Area | tuwunel | axa |
+| Area | tuwunel | Axa |
 |---|---|---|
-| Middleware | Its own stack, much like axa's. Adds request and response body timeouts, a sensitive-header marker, and CSP only on HTML | Request id, tracing, panic, security headers, CORS, timeout, `304`, compression, body limit. CSP on every production response. Header-read and send-stall limits at the connection |
+| Middleware | Its own stack, much like Axa's. Adds request and response body timeouts, a sensitive-header marker, and CSP only on HTML | Request id, tracing, panic, security headers, CORS, timeout, `304`, compression, body limit. CSP on every production response. Header-read and send-stall limits at the connection |
 | Writes when a client hangs up | Spawned, so they finish | Dropped with the handler future. A sqlx transaction rolls back, but work outside it may be left half done |
 | Requests during shutdown | `503` to new requests on open connections | Stops accepting, and lets requests in flight finish. From `src/health.rs`, readiness does not turn `503` after `SIGTERM`; I did not test it |
 | Errors | Matrix `errcode` JSON, sanitised, with rules for relaying upstream errors | RFC 9457 problems, internal text never sent |
@@ -62,7 +62,7 @@ Links point at commit `a9da94f`.
 | Process | systemd notify and watchdog, socket activation, Unix sockets, direct TLS | TCP, `SIGTERM` and Ctrl-C |
 | Tests | Booted servers per test, warning capture | `axa-test` request helpers |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -94,8 +94,8 @@ that runs the handler in a spawned task and awaits it, so dropping the response 
 does not drop the handler. It must stay inside shutdown's limit: tuwunel ends a
 detached task with `503` once the shutdown timeout passes, in
 [`src/router/request.rs`](https://github.com/matrix-construct/tuwunel/blob/a9da94f15108f39d2b5e28dc09514ab683ecdd7f/src/router/request.rs),
-and axa would tie it to `SHUTDOWN_TIMEOUT_SECONDS`. The request span must be carried
-into the task. tuwunel does this for every non-safe method. axa could do the same,
+and Axa would tie it to `SHUTDOWN_TIMEOUT_SECONDS`. The request span must be carried
+into the task. tuwunel does this for every non-safe method. Axa could do the same,
 but a per-route choice is easier to reason about for a handler that is already
 cancel-safe.
 
@@ -118,29 +118,29 @@ is a starting point. No new dependency.
 built on a `tracing-subscriber` layer set as the thread's default, and a way to read
 the recorded events and fields, as tuwunel's
 [`src/service/test_utils.rs`](https://github.com/matrix-construct/tuwunel/blob/a9da94f15108f39d2b5e28dc09514ab683ecdd7f/src/service/test_utils.rs)
-records warnings. axa's own tests that check a secret is never logged would use it too.
+records warnings. Axa's own tests that check a secret is never logged would use it too.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Everything Matrix.** Federation, room state, `ruma` types, UIAA, appservices,
   presence, push, and the admin room are the product.
-- **TOML files and `-O` overrides, and reloading them.** axa reads only the
+- **TOML files and `-O` overrides, and reloading them.** Axa reads only the
   environment, by design. A reload that must check which fields may not change is the
   kind of complexity that choice avoids.
 - **The `Services` registry and service trait.** It is a dependency-injection
-  container in all but name, which axa's spec forbids. Its `State` is a raw pointer
-  justified by a safety note, which axa has no reason to need.
-- **RocksDB and its migration markers.** axa services keep their data in Postgres,
+  container in all but name, which Axa's spec forbids. Its `State` is a raw pointer
+  justified by a safety note, which Axa has no reason to need.
+- **RocksDB and its migration markers.** Axa services keep their data in Postgres,
   MySQL, or SQLite, where the job queue and outbox live too.
 - **Admin commands as chat messages, in-place restart, and hot-reloaded modules.**
   These suit a self-hosted server with one operator. A service in Kubernetes is
   restarted by the orchestrator, and its operators use the CLI and tasks.
 - **CSP only on HTML responses.** tuwunel serves user media and needs this exception.
-  axa sends a strict CSP on every production response, which is safer for an API.
-- **Trusting headers from loopback and listed subnets without configuration.** axa's
+  Axa sends a strict CSP on every production response, which is safer for an API.
+- **Trusting headers from loopback and listed subnets without configuration.** Axa's
   `TRUSTED_PROXIES` reads `X-Forwarded-For` from the right and ignores it when unset,
   which is stricter.
-- **Metrics only through admin commands.** axa's Prometheus and OTLP export are what a
+- **Metrics only through admin commands.** Axa's Prometheus and OTLP export are what a
   cluster reads.
 - **Sentry, jemalloc, and tokio-console as built-in features.** A service can add
   these itself. They are not shared needs.

@@ -1,6 +1,6 @@
 //! Toasty connections, migrations, and test resets for Axum services, on MySQL.
 //!
-//! This crate has the same shape as `axa-postgres-toasty` and the other axa database
+//! This crate has the same shape as `axa-postgres-toasty` and the other Axa database
 //! crates: a [`Pool`], a [`PoolConfig`], [`connect`], [`ping`], [`migrate`],
 //! [`pending`], [`truncate`], [`dangerously_recreate`], [`is_unique_violation`], and
 //! [`quote_identifier`]. `axa`'s `mysql-toasty` feature re-exports it as
@@ -29,7 +29,7 @@
 //! - URLs are `mysql://user:password@host:port/database`, and must name a database.
 //!   Toasty's MySQL driver reads them with `sqlx`, so TLS is asked for with `sqlx`'s
 //!   `ssl-mode` query parameter (`DISABLED`, `PREFERRED`, `REQUIRED`, `VERIFY_CA`, or
-//!   `VERIFY_IDENTITY`), as with every axa MySQL crate.
+//!   `VERIFY_IDENTITY`), as with every Axa MySQL crate.
 //! - [`quote_identifier`] uses backticks.
 //! - [`truncate`] empties each table on one connection with foreign key checks off,
 //!   then turns them back on. `TRUNCATE` restarts each table's `AUTO_INCREMENT`.
@@ -85,7 +85,7 @@ impl std::fmt::Debug for PoolConfig {
 }
 
 impl PoolConfig {
-    /// Settings for `uri`, with the same defaults as the other axa database crates:
+    /// Settings for `uri`, with the same defaults as the other Axa database crates:
     /// ten connections, a five-second wait, and ten minutes idle.
     #[must_use]
     pub fn new(uri: impl Into<String>) -> Self {

@@ -45,5 +45,5 @@ full list that CI runs, including the Postgres and Redis tests. `[lints]` in
 
 - [`skill/axa-maintainer-skill`](skill/axa-maintainer-skill/SKILL.md): working on this
   codebase, including the traps and the release checklist.
-- [`skill/axa-skill`](skill/axa-skill/SKILL.md): using axa in a service. Update it when
+- [`skill/axa-skill`](skill/axa-skill/SKILL.md): using Axa in a service. Update it when
   anything a service sees changes.

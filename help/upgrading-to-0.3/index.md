@@ -1,4 +1,4 @@
-# Upgrading to axa 0.3
+# Upgrading to Axa 0.3
 
 This covers a service on 0.1 or 0.2. Most of the work is small, but several changes
 compile cleanly and behave differently, so read
@@ -325,7 +325,7 @@ names either feature no longer builds.
   `Link: rel="next"` header, and gets no `X-Total-Count`. A bad limit or cursor is a
   `422`, and a limit above the maximum is refused, not clamped.
 - `escape_like` is in `axa::cursor_pagination`.
-- A service that cannot move its callers yet stays on axa 0.8 until it can.
+- A service that cannot move its callers yet stays on Axa 0.8 until it can.
 
 ### axa-idempotency 0.2
 

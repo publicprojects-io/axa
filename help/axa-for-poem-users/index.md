@@ -1,19 +1,19 @@
-# axa for Poem users
+# Axa for Poem users
 
 This page is for someone who knows [Poem](https://github.com/poem-web/poem) well and is
-meeting [axa](../../README.md) for the first time. It says what axa is in Poem's terms,
+meeting [axa](../../README.md) for the first time. It says what Axa is in Poem's terms,
 where each Poem piece goes, and what is different on purpose. The claims about Poem come
 from the [comparison page](../../spec/compare/poem/index.md), which was written from
 Poem's source at a named commit.
 
-## What axa is
+## What Axa is
 
 Poem is a framework of its own: its own `Endpoint` and `Middleware` traits, its own
 router, its own server over `hyper`, and macros such as `#[handler]` and `#[OpenApi]`. It
-does not use Axum. axa is not a framework. It is a library on top of
+does not use Axum. Axa is not a framework. It is a library on top of
 [Axum](https://docs.rs/axum), so your handlers become ordinary Axum handlers, your
-middleware becomes Tower layers, and your `main.rs` calls axa's functions in an order you
-can read. axa adds what sits around the handlers: a standard middleware stack,
+middleware becomes Tower layers, and your `main.rs` calls Axa's functions in an order you
+can read. Axa adds what sits around the handlers: a standard middleware stack,
 configuration from the environment, RFC 9457 error responses, health routes, graceful
 shutdown, jobs, and optional crates for databases, auth, sessions, metrics, and OpenAPI.
 Nothing calls into your code from behind. If you want to leave a piece out or replace it,
@@ -21,25 +21,25 @@ you do, because every piece is a plain function, struct, or layer.
 
 ## Concept map
 
-| Poem | axa or Axum | Note |
+| Poem | Axa or Axum | Note |
 |---|---|---|
 | `#[handler] fn` | A plain `async fn` | Axum needs no macro. `axa::prelude` re-exports Axum's `get`, `post`, and the rest |
 | `Route::new().at(..).nest(..)` | `Routes::new().prefix(..).add(..)`, collected by `AppRoutes` | Both build an ordinary `axum::Router`. You can also use `Router` directly |
 | `/users/:id` | `/users/{id}` | Axum's path syntax |
-| `web::Path`, `Query`, `Json`, `Form` | Axum's extractors, or `axa::extract::{Json, Path, Query}` | axa's versions reject with an `axa::Error`, so the caller gets a problem that quotes nothing they sent |
+| `web::Path`, `Query`, `Json`, `Form` | Axum's extractors, or `axa::extract::{Json, Path, Query}` | Axa's versions reject with an `axa::Error`, so the caller gets a problem that quotes nothing they sent |
 | `FromRequest` | Axum's `FromRequest` and `FromRequestParts` | The same idea |
 | `Data<&T>` with `AddData` | `State<AppContext>`, `AppContext::shared_store`, or `Extension` | `AppContext` is a plain struct passed as Axum state |
 | `Middleware<E>`, `EndpointExt::with`, `around` | Tower layers and `axum::middleware::from_fn` | Add your own layers first, then `axa::middleware::apply` last. See below |
 | `RequestId`, `Tracing`, `CatchPanic`, `Cors`, `Compression` | The standard stack in `axa::middleware::apply` | One stack, in a fixed order, with safe defaults per environment |
 | `SizeLimit` | The stack's body limit, `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` | Counts a streamed body as it arrives. `middleware::body_limit(route, bytes)` raises it on one route |
 | `SensitiveHeader` | Already in the stack | `authorization`, `proxy-authorization`, `cookie`, and `set-cookie` are marked sensitive |
-| `SetHeader`, `PropagateHeader`, `NormalizePath` | `tower-http` layers | axa adds nothing here. The stack already sets the security headers |
-| `ForceHttps` | None | axa sends HSTS in production and leaves TLS and redirects to the proxy |
+| `SetHeader`, `PropagateHeader`, `NormalizePath` | `tower-http` layers | Axa adds nothing here. The stack already sets the security headers |
+| `ForceHttps` | None | Axa sends HSTS in production and leaves TLS and redirects to the proxy |
 | `poem::Error`, `ResponseError` | `axa::Error`, returned as `axa::Result<T>` | Becomes an RFC 9457 problem. A `500` sends no internal text |
-| Configuration | `Config::from_env` with `Defaults` in code | Poem has none of its own. axa reads only environment variables |
+| Configuration | `Config::from_env` with `Defaults` in code | Poem has none of its own. Axa reads only environment variables |
 | Database | `axa-postgres-sqlx`, `axa-postgres-seaorm`, `axa-postgres-diesel`, or `axa-postgres-toasty` | Poem has none. One feature makes `AppContext::db` its pool, and readiness checks it |
 | Background jobs | `BackgroundWorker`, and the `queue` feature on Postgres | Poem has none. MySQL and SQLite queues are crates of their own |
-| `poem-openapi` `ApiKey`, `Basic`, `Bearer` | `axa-paseto-auth` or `axa-keycloak-auth` | Poem's traits extract a credential. axa's crates verify a bearer token and enforce ABAC. Neither has API keys |
+| `poem-openapi` `ApiKey`, `Basic`, `Bearer` | `axa-paseto-auth` or `axa-keycloak-auth` | Poem's traits extract a credential. Axa's crates verify a bearer token and enforce ABAC. Neither has API keys |
 | `CookieSession`, `ServerSession`, Redis sessions | `axa-web-session`, over `axum_session` | Signed and encrypted in production. Nothing stored until `sign_in` |
 | `Csrf`, `CsrfVerifier` | `axa_web_session::csrf_token` and `csrf_verify` | Bound to the session, not a stateless cookie pair |
 | `RealIp` | `axa::client::ClientAddr`, from `TRUSTED_PROXIES` | Forwarding headers count only from listed proxies |
@@ -56,15 +56,15 @@ you do, because every piece is a plain function, struct, or layer.
 | `MaybeUndefined<T>` | None | Use `serde_with`'s `double_option`, or your own enum |
 | `Multipart`, `Upload` | Axum's `Multipart`, in the prelude | No spooling helper. Raise the route's limit with `body_limit` |
 | `SSE`, WebSocket | Axum's own | `server::Shutdown` is an extractor a stream waits on, to end at shutdown |
-| `StaticFilesEndpoint`, `EmbeddedFilesEndpoint` | `tower-http`'s `ServeDir`, or `rust-embed` | axa adds nothing |
+| `StaticFilesEndpoint`, `EmbeddedFilesEndpoint` | `tower-http`'s `ServeDir`, or `rust-embed` | Axa adds nothing |
 | `RouteDomain` | None | Match `Host` in a handler, or with `axum-extra` |
 | `i18n` | None | Use `fluent` directly |
 | `rustls`, `native-tls`, OpenSSL, ACME | None | TLS belongs to the proxy or platform in front |
 | `poem-grpc` | None. Use `tonic` | See [gRPC, MCP, and Lambda](#grpc-mcp-and-lambda) |
 | `poem-mcpserver` | None. Use `rmcp` | As above |
 | `poem-lambda` | None. Use `lambda_http` | As above |
-| `poem-worker` (Cloudflare Workers) | None | axa assumes a Tokio server process |
-| Nothing | Tasks, the CLI, idempotency keys, the outbox, cursor pages, rate limits, Redis cache, `Accepts-version` | axa's own. See the [README](../../README.md#installing) |
+| `poem-worker` (Cloudflare Workers) | None | Axa assumes a Tokio server process |
+| Nothing | Tasks, the CLI, idempotency keys, the outbox, cursor pages, rate limits, Redis cache, `Accepts-version` | Axa's own. See the [README](../../README.md#installing) |
 
 ## A first service
 
@@ -108,7 +108,7 @@ async fn main() -> Result<(), std::io::Error> {
 }
 ```
 
-In axa, with `axa = "0.11"`, `serde_json`, and `tokio` with `macros` and
+In Axa, with `axa = "0.11"`, `serde_json`, and `tokio` with `macros` and
 `rt-multi-thread`:
 
 ```rust,ignore
@@ -146,7 +146,7 @@ async fn main() -> Result<()> {
 }
 ```
 
-The axa version has no handler macro and no `.with`. `into_app` applies the whole
+The Axa version has no handler macro and no `.with`. `into_app` applies the whole
 standard stack, and `with_default_routes` mounts the three health routes. It listens on
 port 1241, or `PORT`, and stops on `SIGTERM` as well as Ctrl-C, waiting up to
 `SHUTDOWN_TIMEOUT_SECONDS` (25 by default) for requests in flight. It also does several
@@ -164,13 +164,13 @@ let router = axa::middleware::apply(router, &ctx.config.http)?;
 ```
 
 This is the reverse of how `.with` reads in Poem, where the last `.with` is outermost. In
-axa the standard stack must be outermost, so it goes on last.
+Axa the standard stack must be outermost, so it goes on last.
 
 ## What is different on purpose
 
 These come from the principles in [section 3 of the spec](../../spec/index.md#3-principles).
 
-**No macros and no traits to implement (P-1).** axa has no `#[handler]`, no route macro,
+**No macros and no traits to implement (P-1).** Axa has no `#[handler]`, no route macro,
 and no code generation, and the spec forbids adding them. The only trait it asks for is
 `TestApp`, for tests. You read the control flow in your own `main.rs`.
 
@@ -182,13 +182,13 @@ is set but invalid, such as `HTTP_HSTS=tru`, stops the boot and names the variab
 secrets hidden.
 
 **Errors never send internal text (P-4).** Poem sends an error's `Display` text as plain
-text by default. axa sends an RFC 9457 problem. `Error::BadRequest` and
+text by default. Axa sends an RFC 9457 problem. `Error::BadRequest` and
 `Error::CustomError` send your text, `Error::Unauthorized` logs yours and sends fixed
 text, and anything else is a `500` with no detail, the real error only logged. Axum's own
 rejections, and any plain-text error body, are reshaped the same way.
 
 **Client addresses only from named proxies.** Poem's `RealIp` believes `X-Real-IP`,
-`Forwarded`, and `X-Forwarded-For` from any caller. axa believes `X-Forwarded-For` only
+`Forwarded`, and `X-Forwarded-For` from any caller. Axa believes `X-Forwarded-For` only
 from the addresses in `TRUSTED_PROXIES`, reading from the right, and ignores it when that
 is unset. Set it to your load balancer's range, or every client looks like the proxy.
 
@@ -196,7 +196,7 @@ is unset. Set it to your load balancer's range, or every client looks like the p
 `*`. Sessions are signed and encrypted in production, with no plain mode there. A caller's
 request id is cleaned before it is reused. There is no switch back to the weaker form.
 
-**The stack has a fixed order.** In Poem you choose each middleware and its order. In axa
+**The stack has a fixed order.** In Poem you choose each middleware and its order. In Axa
 one function applies one stack, so every service answers the same way, and an auditor
 reads it once. You can still skip `apply` and build your own, but then you own the
 result.
@@ -209,7 +209,7 @@ In `poem-openapi`, one `#[OpenApi]` impl block builds both the routes and the do
 so they cannot disagree. Its validators, such as `max_length` or `minimum`, run on input
 and appear in the schema. It serves six documentation UIs from bundled JavaScript.
 
-axa cannot work that way, because it forbids route macros. Routes stay in `Routes` and
+Axa cannot work that way, because it forbids route macros. Routes stay in `Routes` and
 Axum. The document comes from somewhere else: written by hand as JSON, or generated by
 [`utoipa`](https://docs.rs/utoipa) in your own code, which `axa_openapi_docs` re-exports.
 Since the two are written apart, they can drift, and `axa-openapi-docs` catches that in a
@@ -253,13 +253,13 @@ should not be described publicly. There is no RapiDoc, ReDoc, or Scalar.
 
 ## gRPC, MCP, and Lambda
 
-axa has no crate for any of these, on purpose: each already has a library that works with
-Axum and Tower, and axa would only wrap it.
+Axa has no crate for any of these, on purpose: each already has a library that works with
+Axum and Tower, and Axa would only wrap it.
 
 - **gRPC: [`tonic`](https://docs.rs/tonic).** Run it on its own port beside the Axum
-  server, or combine the two in one listener. axa's stack is shaped for HTTP and JSON
+  server, or combine the two in one listener. Axa's stack is shaped for HTTP and JSON
   (problem bodies, timeouts, body limits), so keep it on the Axum side. For
-  `grpc.health.v1`, `tonic-health` gives a reporter you set by hand, as Poem's does. axa
+  `grpc.health.v1`, `tonic-health` gives a reporter you set by hand, as Poem's does. Axa
   does not feed it from `/_health/ready`'s checks, though you can call the same checks
   yourself.
 - **MCP: the official [`rmcp`](https://docs.rs/rmcp) SDK.** Its streamable HTTP server is
@@ -268,16 +268,16 @@ Axum and Tower, and axa would only wrap it.
   no such check in `poem-mcpserver`.
 - **Lambda: [`lambda_http`](https://docs.rs/lambda_http).** It runs an Axum `Router`
   directly, so build the router as usual with `into_app` and hand it to `lambda_http`
-  instead of `server::serve`. The middleware and errors still apply. axa's server
+  instead of `server::serve`. The middleware and errors still apply. Axa's server
   settings, such as shutdown drain and connection limits, do not, because Lambda runs the
   loop, and the health routes have no probe to answer.
 
-## Where axa is safer, and where it does less
+## Where Axa is safer, and where it does less
 
-Poem gives you a wide set of parts and leaves the defaults to you. axa picks the
-defaults. Some of Poem's defaults are ones axa deliberately does not copy:
+Poem gives you a wide set of parts and leaves the defaults to you. Axa picks the
+defaults. Some of Poem's defaults are ones Axa deliberately does not copy:
 
-| Poem | axa |
+| Poem | Axa |
 |---|---|
 | Error `Display` text in the response | Only logged |
 | `RealIp` trusts forwarding headers from anyone | `TRUSTED_PROXIES` only |
@@ -288,7 +288,7 @@ defaults. Some of Poem's defaults are ones axa deliberately does not copy:
 | OTel metrics labelled with `url.full` and the error message | Route template only, so no query strings or error text in metrics |
 | No security headers built in | `nosniff`, frame, referrer, opener and resource policy, permissions policy, CSP and HSTS in production |
 
-And things Poem has that axa does not have today:
+And things Poem has that Axa does not have today:
 
 | Poem | Use in the meantime |
 |---|---|
@@ -366,9 +366,9 @@ What to test, because it compiles either way:
 - [The specification](../../spec/index.md), and its [principles](../../spec/index.md#3-principles)
 - [Health routes](../../spec/health/index.md)
 - [axa and Poem compared](../../spec/compare/poem/index.md)
-- [Upgrading to axa 0.11](../upgrading-to-0.11/index.md), for the current setting names
+- [Upgrading to Axa 0.11](../upgrading-to-0.11/index.md), for the current setting names
 - [Background jobs and schedules](../background-jobs/index.md)
 - [Idempotency keys](../idempotency-keys/index.md)
 - [The transactional outbox](../transactional-outbox/index.md)
-- [Converting a project from Loco to axa](../from-loco-into-axa/index.md), for a worked
+- [Converting a project from Loco to Axa](../from-loco-into-axa/index.md), for a worked
   migration of a whole service

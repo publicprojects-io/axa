@@ -3,7 +3,7 @@
 SeaORM connections, migrations, schema helpers, and test resets on SQLite for Axum
 services, from the [axa](https://github.com/publicprojects-io/axa) family.
 
-It is the SQLite twin of `axa-postgres-seaorm`, and has the same shape as the other axa
+It is the SQLite twin of `axa-postgres-seaorm`, and has the same shape as the other Axa
 database crates: a `Pool`, a `PoolConfig`, `connect`, `ping`, `migrate`, `revert`,
 `pending`, `truncate`, `dangerously_recreate`, `is_unique_violation`, and
 `quote_identifier`. The migration functions take the service's `Migrator` as a type.

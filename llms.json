@@ -347,7 +347,7 @@
     {
       "name": "axa-test",
       "version": "0.2.0",
-      "description": "Request-level test helpers for axa services, built on axum-test.",
+      "description": "Request-level test helpers for Axa services, built on axum-test.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
     },

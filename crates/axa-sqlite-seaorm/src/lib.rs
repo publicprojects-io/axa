@@ -1,7 +1,7 @@
 //! `SeaORM` connections, migrations, schema helpers, and test resets, on SQLite.
 //!
 //! This crate is the SQLite twin of `axa-postgres-seaorm`, and has the same shape as
-//! the other axa database crates: a [`Pool`], a [`PoolConfig`], [`connect`],
+//! the other Axa database crates: a [`Pool`], a [`PoolConfig`], [`connect`],
 //! [`ping`], [`migrate`], [`revert`], [`pending`], [`truncate`],
 //! [`dangerously_recreate`], [`is_unique_violation`], and [`quote_identifier`]. The
 //! migration functions take the service's `Migrator` as a type, as
@@ -88,7 +88,7 @@ pub struct PoolConfig {
 }
 
 impl std::fmt::Debug for PoolConfig {
-    /// Leaves the connection string out, as every axa database crate does, because
+    /// Leaves the connection string out, as every Axa database crate does, because
     /// for other databases it can carry a password.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PoolConfig")

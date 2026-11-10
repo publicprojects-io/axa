@@ -13,7 +13,7 @@ asks a different question from the others: which of Poem's built-in capabilities
 `axa` offer to Axum services as plain functions and layers, and which does Axum, Tower, or
 `tower-http` already give them.
 
-> **Since this was written**, axa 0.11 added `RequestMetrics` measures requests by route template; credential headers are marked sensitive in the standard stack. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added `RequestMetrics` measures requests by route template; credential headers are marked sensitive in the standard stack. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Links below are to files at that commit, under
 `https://github.com/poem-web/poem/blob/eddf799728955fa183835ebadd5b834b9ad903d3/`.
@@ -176,9 +176,9 @@ with a five-minute idle timeout. I found no check of the `Origin` header in
 [`streamable_http.rs`][mcp-http]. `poem-lambda` runs an endpoint under `lambda_http`, and
 gives the Lambda context as an extractor ([`lambda/src/lib.rs`][lambda]).
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Poem | axa |
+| Area | Poem | Axa |
 |---|---|---|
 | Shape | A framework: own traits, router, server, macros | A library over Axum: plain functions and layers, no macros |
 | Errors | `Display` text sent as plain text by default | RFC 9457 problems; internal text only logged; extractor rejections reshaped and their quoted values dropped |
@@ -202,7 +202,7 @@ gives the Lambda context as an extractor ([`lambda/src/lib.rs`][lambda]).
 | PATCH tri-state | `MaybeUndefined<T>` | None |
 | API key / Basic auth | Extraction traits only | PASETO and Keycloak with ABAC; no API key |
 | Uploads | Streamed fields, spool to temp file | Axum `Multipart` re-exported, no helper |
-| SSE, WebSockets | Built in | Axum has both; axa keeps upgrades working (SRV-9) and lets SSE pass the ETag layer |
+| SSE, WebSockets | Built in | Axum has both; Axa keeps upgrades working (SRV-9) and lets SSE pass the ETag layer |
 | Static and embedded files | Built in | None. `tower-http` `ServeDir`; `rust-embed` with Axum |
 | i18n | Fluent with `Accept-Language` | None |
 | Host routing | `RouteDomain` | None. Axum can match `Host` in a handler or with `axum-extra` |
@@ -212,16 +212,16 @@ gives the Lambda context as an extractor ([`lambda/src/lib.rs`][lambda]).
 | MCP | `poem-mcpserver` | None. The official `rmcp` SDK has a Tower service for Axum |
 | Lambda | `poem-lambda` | None. `lambda_http` runs an Axum `Router` directly |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
 | Prometheus request metrics layer | `axa-prometheus-metrics` serves a registry but measures no requests. A scrape-only service has no latency or error rate without OTel | S | Done in 0.11 (T-10, PRM-2) |
-| Tokio runtime and task metrics | Scheduling delay and slow polls show a blocked runtime before timeouts do. Poem measures task futures; nothing in axa does | S | Medium |
+| Tokio runtime and task metrics | Scheduling delay and slow polls show a blocked runtime before timeouts do. Poem measures task futures; nothing in Axa does | S | Medium |
 | Mark credential headers sensitive in the standard stack | `Authorization`, `Cookie`, `Set-Cookie`, and `Proxy-Authorization` would stay out of any `Debug` print and HPACK index. One `tower-http` layer | S | Done in 0.11 (T-9, MID-22) |
 | Tri-state PATCH field | `null` and absent mean different things in a `PATCH`. Every service writing partial updates meets it | S | Medium |
 | Bounded upload helper | Spool a multipart file to a temporary file with a per-file and total size limit and an allowed media type list, answering `413` or `415` as problems | M | Medium |
-| OpenAPI schema conformance in tests | Poem cannot drift because one macro makes both. axa forbids that macro, so check instead that a real response body matches its documented schema | M | Medium |
+| OpenAPI schema conformance in tests | Poem cannot drift because one macro makes both. Axa forbids that macro, so check instead that a real response body matches its documented schema | M | Medium |
 | gRPC health from readiness checks | A service serving `tonic` beside Axum could answer `grpc.health.v1` from the same named checks as `/_health/ready` | S | Low |
 | Trailing-slash policy | Already in `tower-http`; at most one line in the README on where to put it | S | Low |
 | `Accept-Language` negotiation for Tera templates | Useful for public sites; a function from header and offered locales to one locale | S | Low |
@@ -270,39 +270,39 @@ drift check, this closes most of what Poem's single macro gives, without a macro
 would depend on `jsonschema` as a dev-only dependency of `axa-test`, which is raised first
 (P-6).
 
-## What axa should not copy
+## What Axa should not copy
 
-- **The framework itself.** `#[handler]`, `#[OpenApi]`, and `Middleware<E>` are what axa
+- **The framework itself.** `#[handler]`, `#[OpenApi]`, and `Middleware<E>` are what Axa
   forbids (route macros, code generation, traits a service implements). Axum already has
   handlers as plain functions, `from_fn` layers, and Tower.
-- **Error text in the response.** Poem sends an error's `Display` text by default. axa
+- **Error text in the response.** Poem sends an error's `Display` text by default. Axa
   only logs it (P-4).
 - **Trusting forwarding headers.** `RealIp` believes `X-Real-IP` and `X-Forwarded-For`
-  from any caller, so a client can choose its own address. axa's `client::resolve` with
+  from any caller, so a client can choose its own address. Axa's `client::resolve` with
   `TRUSTED_PROXIES` is the safer design already.
 - **A default CSRF key.** `Csrf::default` sets the AES key to `Default::default()`, all
   zero bytes ([`middleware/csrf.rs`][csrf-mw], line 95), and the documented example uses
   `Csrf::new()` without a key. Anyone who knows that can forge tokens. A stateless CSRF
-  layer in axa, if ever wanted, must take its key explicitly and refuse to build without
+  layer in Axa, if ever wanted, must take its key explicitly and refuse to build without
   one (P-3, P-10).
 - **Plain cookie sessions by default.** `CookieConfig::default` is `CookieSecurity::Plain`.
   `axa-web-session` already requires signing and encryption in production.
-- **Reusing a caller's request id as it is.** axa cleans it first.
+- **Reusing a caller's request id as it is.** Axa cleans it first.
 - **A body limit that trusts `Content-Length`.** Poem refuses a chunked body with `411`
-  and does not count a streamed body. axa's limit counts bytes as they arrive.
+  and does not count a streamed body. Axa's limit counts bytes as they arrive.
 - **The full URL and error message as metric labels.** Poem's OTel metrics label each
   request with `url.full` and failed ones with the error message. That gives unbounded
   label cardinality and puts query strings and error text, which can hold personal data,
-  into the metrics store. axa labels by route template only.
+  into the metrics store. Axa labels by route template only.
 - **TLS, ACME, and certificate reload.** These belong to the proxy or the platform in
-  front of an axa service, and the ACME client is a large dependency.
-- **Bundled documentation UIs.** Poem compiles six UIs' JavaScript into the crate. axa
+  front of an Axa service, and the ACME client is a large dependency.
+- **Bundled documentation UIs.** Poem compiles six UIs' JavaScript into the crate. Axa
   serves one pinned Swagger UI with integrity hashes, which is smaller to audit.
 - **Its own gRPC, MCP, and Lambda crates.** `tonic`, the official `rmcp` SDK, and
-  `lambda_http` already run with Axum and Tower. axa would only be wrapping them. Any MCP
+  `lambda_http` already run with Axum and Tower. Axa would only be wrapping them. Any MCP
   endpoint should also check `Origin`, which I did not find in Poem's.
 - **Static files, embedding, WebSockets, SSE, host routing, compression, CORS.**
   Axum, `tower-http`, `axum-extra`, and `rust-embed` already cover them.
-- **`SizeLimit`, `NormalizePath`, `PropagateHeader`, `SetHeader` as axa code.** These are
-  `tower-http` layers already. axa adds value only where it chooses a safe default for the
+- **`SizeLimit`, `NormalizePath`, `PropagateHeader`, `SetHeader` as Axa code.** These are
+  `tower-http` layers already. Axa adds value only where it chooses a safe default for the
   standard stack.

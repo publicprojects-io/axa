@@ -165,7 +165,7 @@ pub(crate) use axa_mysql_toasty::toasty as toasty_crate;
 #[cfg(feature = "postgres-toasty")]
 pub(crate) use axa_postgres_toasty::toasty as toasty_crate;
 
-/// A failure from Diesel or from one of axa's Diesel crates, whichever database it is
+/// A failure from Diesel or from one of Axa's Diesel crates, whichever database it is
 /// for, kept as what `axa` needs to answer it.
 #[cfg(has_diesel)]
 #[derive(Debug, thiserror::Error)]

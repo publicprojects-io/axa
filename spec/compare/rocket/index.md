@@ -10,10 +10,10 @@ about 25,800 stars and is dual-licensed MIT and Apache-2.0. Rocket does not use 
 runs its own server over `hyper` 1 and `hyper-util` ([`core/lib/Cargo.toml`][cargo]),
 with its own router, its own request and response types, and its own middleware model
 (fairings). So this study does not look at how it uses Axum. It asks which of Rocket's
-capabilities and framework-level ideas axa could offer to Axum services as plain
+capabilities and framework-level ideas Axa could offer to Axum services as plain
 library code, and which Axum, Tower, or `axum-extra` already give.
 
-> **Since this was written**, axa 0.11 added a database that cannot serve answers `503` with `Retry-After`; the stack sends a `permissions-policy`; `server::Shutdown` lets a handler wait for shutdown. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added a database that cannot serve answers `503` with `Retry-After`; the stack sends a `permissions-policy`; `server::Shutdown` lets a handler wait for shutdown. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Links below are to files at that commit, under
 `https://github.com/rwf2/Rocket/blob/3a54d079aef060a8f732bd04ea54b0581a604087/`.
@@ -185,9 +185,9 @@ extension before it. [`fairing.rs`][tfairing] loads templates at ignition, faili
 launch if they do not load, and in a debug build checks for changed files before each
 request and reloads them.
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Rocket | axa |
+| Area | Rocket | Axa |
 |---|---|---|
 | Shape | Framework: macros, fairings, launch lifecycle, its own server | Library over Axum; no hooks or macros |
 | Configuration | Figment: defaults, `Rocket.toml`, `ROCKET_` variables, profiles | Environment variables only, defaults in code, production refuses unsafe values |
@@ -211,15 +211,15 @@ request and reloads them.
 | Pool exhausted | `503` | `sqlx::Error` other than a broken constraint becomes `500`; I found no `PoolTimedOut` case in `src/error.rs` |
 | Pool lifecycle | Opened at ignition, closed at shutdown | Opened by `axa::db::connect`; I found no explicit close in `src/boot.rs`, `src/cli.rs`, or `src/db.rs` |
 | Templates | Three engines, reload in debug | Tera only, loaded once, escaping and page CSP enforced |
-| SSE and WebSockets | Event streams with heartbeat; `rocket_ws` | Axum's `Sse` with `KeepAlive` and `WebSocketUpgrade` already cover these; axa adds nothing |
+| SSE and WebSockets | Event streams with heartbeat; `rocket_ws` | Axum's `Sse` with `KeepAlive` and `WebSocketUpgrade` already cover these; Axa adds nothing |
 | Testing | Local client, cookie tracking, blocking and async | `axa-test` over `axum-test`, the full stack with no port; `axum-test` has a cookie-saving option, which I did not confirm in its source |
 | Health, jobs, outbox, metrics, OpenAPI | None in Rocket or its contrib crates | All present |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
-| A public settings reader for a service's own variables | Rocket gives an application's own settings the same rules as its own. In axa a service's own variables get none of the production refusal or secret redaction, which breaks P-3 at the edge | M | High |
+| A public settings reader for a service's own variables | Rocket gives an application's own settings the same rules as its own. In Axa a service's own variables get none of the production refusal or secret redaction, which breaks P-3 at the edge | M | High |
 | `503` with `Retry-After` when the pool has no connection | A full pool is overload, not a bug. `500` tells a load balancer and a client the wrong thing, and pages someone | S | Done in 0.11 (T-5, DB-7) |
 | `Permissions-Policy` in the standard headers | Turns off camera, microphone, geolocation and similar for an API or a page that never uses them. The Kanidm study asks for the same, with COOP and CORP | S | Done in 0.11 (T-6, MID-20) |
 | A shutdown signal a handler can wait on | An SSE stream or WebSocket never finishes, so today it holds every shutdown to its full timeout and is then cut off | S | Done in 0.11 (T-3, SRV-16) |
@@ -261,7 +261,7 @@ Put a cloneable `axa::server::Shutdown` (a `tokio::sync::watch` receiver or a
 `CancellationToken`) on `AppContext`, fired when the drain starts. A stream ends itself
 with `stream.take_until(ctx.shutdown.wait())`, and the drain then finishes early instead
 of waiting out `SHUTDOWN_TIMEOUT_SECONDS`. Axum's `Sse` and `KeepAlive` stay as they
-are; axa only adds the signal.
+are; Axa only adds the signal.
 
 **`extract::Form` and a form context.** Add `Form<T>` to `src/extract.rs` beside `Json`,
 rejecting with a problem that quotes nothing, and running `Validatable` when `T`
@@ -277,10 +277,10 @@ sanitised file name modelled on Rocket's `FileName::as_str`, with the raw name b
 method whose name says it is unsafe. It could live in `axa` behind a feature, and would
 add `tempfile`.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Config files and profiles.** Figment layers `Rocket.toml` under the environment,
-  and profiles let a file say what each environment gets. axa's spec forbids
+  and profiles let a file say what each environment gets. Axa's spec forbids
   configuration files, and `APP_ENV` already chooses the defaults. What is worth taking
   is the typed reader, above, not the layering.
 - **Fairings and sentinels.** Both are hooks the framework drives. Axum's Tower layers
@@ -288,17 +288,17 @@ add `tempfile`.
   the service's `main`. With `State<AppContext>` checked at compile time, a launch-time
   check for missing state is not needed.
 - **Route macros, `Forward`, and route ranks.** Matching a route by trying guards in
-  order hides which handler answers. axa forbids route macros, and Axum's router answers
+  order hides which handler answers. Axa forbids route macros, and Axum's router answers
   exactly one route per path and method.
-- **Catchers by path, and HTML by default.** axa answers every error as a problem so
+- **Catchers by path, and HTML by default.** Axa answers every error as a problem so
   that one shape reaches every client. An HTML page for browsers belongs in the templates
   crate, as an opt-in.
 - **Believing `X-Real-IP` from anyone.** Rocket's default records a forged address.
-  axa's `TRUSTED_PROXIES` rule is better.
-- **Turning HSTS on because TLS was detected.** axa terminates no TLS, and states HSTS
+  Axa's `TRUSTED_PROXIES` rule is better.
+- **Turning HSTS on because TLS was detected.** Axa terminates no TLS, and states HSTS
   per environment, which is clearer than a side effect of how the server was bound.
 - **Unsigned flash cookies.** A visitor can write Rocket's `_flash` cookie. A flash
-  message in axa would live in the session.
+  message in Axa would live in the session.
 - **A general private-cookie jar.** `axum-extra` already has `PrivateCookieJar` and
   `SignedCookieJar`, and `axa-web-session` covers signed sessions with keys required in
   production. A second cookie helper would have no second consumer (P-2).
@@ -308,5 +308,5 @@ add `tempfile`.
   `#[tokio::test]`.
 - **SSE heartbeats and a WebSocket crate.** Axum's `Sse` with `KeepAlive` and
   `WebSocketUpgrade` already do this.
-- **Its own server and TLS listeners, including mTLS.** axa's server already has more
+- **Its own server and TLS listeners, including mTLS.** Axa's server already has more
   connection limits than Rocket's, and TLS sits in the proxy in front.

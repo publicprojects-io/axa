@@ -1,6 +1,6 @@
 //! `SeaORM` connections, migrations, schema helpers, and test resets, for MySQL.
 //!
-//! This crate has the same shape as `axa-postgres-seaorm` and the other axa
+//! This crate has the same shape as `axa-postgres-seaorm` and the other Axa
 //! database crates: a [`Pool`], a [`PoolConfig`], [`connect`], [`ping`],
 //! [`migrate`], [`revert`], [`pending`], [`truncate`], [`dangerously_recreate`],
 //! [`is_unique_violation`], and [`quote_identifier`]. The migration functions take

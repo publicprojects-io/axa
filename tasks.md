@@ -7,7 +7,7 @@ dependency** names a crate to raise first (P-6). **Sources** are the studies in
 
 ## Stage 1: close the holes, with no new dependency
 
-Done in axa 0.11.0 (#23). T-7 needed no `no_store` helper of its own: neither auth crate
+Done in Axa 0.11.0 (#23). T-7 needed no `no_store` helper of its own: neither auth crate
 issues a token, and a response that sets a cookie is marked `no-store` automatically. T-4
 made `http-body-util` a direct dependency, which every build already had, and changed
 `middleware::body_limit` to wrap a route.

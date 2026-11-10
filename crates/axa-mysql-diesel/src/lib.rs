@@ -1,6 +1,6 @@
 //! Diesel pooling, migrations, and test resets for MySQL, in pure Rust.
 //!
-//! This has the same shape as `axa-postgres-diesel` and the other axa database
+//! This has the same shape as `axa-postgres-diesel` and the other Axa database
 //! crates, so a service can move between them by changing names. It uses
 //! `diesel-async` over `mysql_async`, so there is no `libmysqlclient` to link,
 //! no OpenSSL, and no C in the database path. It holds the operations every
@@ -35,7 +35,7 @@
 //!
 //! Connections use TLS through `rustls` with `ring`, trusting the standard web
 //! roots. The connection URL takes the same `ssl-mode` query parameter as
-//! `sqlx`, so one URL works with every axa MySQL crate. This crate reads it
+//! `sqlx`, so one URL works with every Axa MySQL crate. This crate reads it
 //! from the URL itself and sets `mysql_async`'s TLS to match:
 //!
 //! | `ssl-mode` | Here |

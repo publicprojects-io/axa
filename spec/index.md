@@ -1,4 +1,4 @@
-# axa specification
+# Axa specification
 
 This directory is the single source of truth for `axa`. Code conforms to the
 spec, not the other way round. A change in behaviour is one change carrying
@@ -322,7 +322,7 @@ Paging is `axa-cursor-pagination`, the `cursor-pagination` feature, as
 `axa::cursor_pagination`. Offset paging is gone (P-10): its total could count rows a
 record policy hides, an offset is a scan, and the position was the caller's.
 `axa-offset-pagination`, and `axa-pagination` before it, stay on crates.io for services
-still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
+still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 `offset-pagination` or `pagination` feature, and no `axa::offset_pagination` or
 `axa::pagination`. PAG-1, PAG-2, PAG-3, PAG-5, and PAG-6 went with them.
 

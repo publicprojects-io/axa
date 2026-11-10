@@ -221,9 +221,9 @@ lists 22 threats with the advisories behind each. SSRF, broken authorisation, an
 limits are among the top ones, and it recommends one SSRF-guarded outbound client and one shared
 webhook-signature helper.
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Windmill | axa |
+| Area | Windmill | Axa |
 |---|---|---|
 | Routing | One large `Router` with `nest` and `Extension` state, Cargo features inside it | `Routes` and `AppRoutes`, route census with `mounted`, per-route timeouts |
 | Middleware | Panic catch, trace, body limit, CORS on chosen routes. No timeout, compression, or security headers on the API | Full standard stack, including request id, security headers, timeout, `304`, compression |
@@ -247,7 +247,7 @@ webhook-signature helper.
 | Tests | Real server per test on a `#[sqlx::test]` database with fixtures | `axa-test` boots the full router in process; no per-test database |
 | Shutdown | Two-phase killpill, workers before server | Graceful shutdown of requests and jobs with a timeout |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -255,10 +255,10 @@ webhook-signature helper.
 | Inbound webhook signature verification | Almost every service receives signed webhooks, and each one rewrites HMAC, timestamp, and constant-time checks | S | High |
 | Recovery from stale prepared statements after a migration | A rolling deploy that changes a column type makes every pooled connection fail once; this costs one query instead | S | Medium |
 | Postgres row-level security context per transaction | Lets a service enforce tenant or owner isolation in the database as well as in ABAC, with visible SQL | S | Medium |
-| Readiness that waits for the schema | In production axa does not migrate at boot, so a new pod can serve against an old schema | S | Medium |
+| Readiness that waits for the schema | In production Axa does not migrate at boot, so a new pod can serve against an old schema | S | Medium |
 | Fetch Metadata check against cross-site requests | A cheap layer that refuses cross-site state-changing requests that carry cookies, which session CSRF tokens only cover for forms | S | Medium |
 | Per-test database in `axa-test` | Lets tests run in parallel on isolated, migrated databases with fixtures | S | Medium |
-| Server-sent events helper | SSE through axa's stack needs the timeout, compression, and buffering handled, and a clean end at shutdown | M | Medium |
+| Server-sent events helper | SSE through Axa's stack needs the timeout, compression, and buffering handled, and a clean end at shutdown | M | Medium |
 | `_FILE` variants for secret settings | Kubernetes and Docker secrets are mounted as files | S | Low |
 | Column encryption with key ids | The outbox already seals payloads; a service storing third-party tokens needs the same for a column | M | Low |
 | User and tenant fields on the request span | Lets logs be filtered by who made the request; must stay opt-in, as it is personal data | S | Low |
@@ -314,29 +314,29 @@ the stream when the shutdown signal fires. The route would be declared with no t
 `Routes::add_with_timeout`, and the compression layer would need to skip `text/event-stream`,
 which should be checked and tested.
 
-## What axa should not copy
+## What Axa should not copy
 
 - **Configuration in scattered globals and in the database.** `lazy_static` env reads in each
-  module hide what a deployment runs with, which is the opposite of axa's single `Config`.
+  module hide what a deployment runs with, which is the opposite of Axa's single `Config`.
   Settings edited in a database table and a restart on change are a product feature for a
   self-hosted admin UI.
-- **Every sqlx error as `400`, and plain-text errors.** axa's problem details and constraint
+- **Every sqlx error as `400`, and plain-text errors.** Axa's problem details and constraint
   mapping are better.
 - **Tokens in a query parameter.** Windmill needs it for `EventSource` and webhook URLs, and its
   own CSRF code has to work around it. A library should not offer it by default.
-- **Client IP from the first `X-Forwarded-For` entry.** The caller chooses that entry. axa's
+- **Client IP from the first `X-Forwarded-For` entry.** The caller chooses that entry. Axa's
   trusted-proxy rule is already correct.
-- **`CorsLayer` with `allow_origin(Any)` on chosen routes.** Fine for Windmill's embeds, but axa's
+- **`CorsLayer` with `allow_origin(Any)` on chosen routes.** Fine for Windmill's embeds, but Axa's
   "none until listed, `*` refused in production" is the safer default.
 - **The polled `notify_event` table.** It suits a fleet that cannot rely on `LISTEN/NOTIFY` through
-  a pooler, but axa's outbox already covers reliable messages between processes.
+  a pooler, but Axa's outbox already covers reliable messages between processes.
 - **Version gates for the worker fleet (`min_version.rs`).** They exist because Windmill workers
   run user code from many releases at once. They are tied to its release numbering.
-- **Secret masking in job logs.** It matches secrets inside the output of user code. axa's
+- **Secret masking in job logs.** It matches secrets inside the output of user code. Axa's
   `Redacted` field type is the right tool for a service's own logs.
 - **Cargo features inside the router expression and `_oss`/`_ee` file pairs.** They reflect an
-  open-core build, and make the router hard to read. axa's crates per feature are clearer.
-- **A hand-written OpenAPI file with no drift check.** axa already does better.
-- **One health route with a "degraded" state.** axa's three probes are the better model for
+  open-core build, and make the router hard to read. Axa's crates per feature are clearer.
+- **A hand-written OpenAPI file with no drift check.** Axa already does better.
+- **One health route with a "degraded" state.** Axa's three probes are the better model for
   Kubernetes. The detailed and database routes are operator tooling, and a service can add them
   as its own authenticated routes.

@@ -1,35 +1,35 @@
-# axa for Loco users
+# Axa for Loco users
 
-This page is for someone who knows [Loco](https://loco.rs) well and is meeting axa for
-the first time. It says what axa is in Loco's terms, where each Loco concept went, and
+This page is for someone who knows [Loco](https://loco.rs) well and is meeting Axa for
+the first time. It says what Axa is in Loco's terms, where each Loco concept went, and
 which differences are on purpose. To move a real service across, follow
-[Converting a project from Loco to axa](../from-loco-into-axa/index.md) and
-[Moving SeaORM code from Loco to axa](../from-loco-seaorm-into-axa-seaorm/index.md).
+[Converting a project from Loco to Axa](../from-loco-into-axa/index.md) and
+[Moving SeaORM code from Loco to Axa](../from-loco-seaorm-into-axa-seaorm/index.md).
 This page does not repeat their steps.
 
-## What axa is
+## What Axa is
 
-axa was taken from what the Main X Index services used in Loco, and written afresh. Much
+Axa was taken from what the Main X Index services used in Loco, and written afresh. Much
 will look familiar: `AppContext`, `Routes`, `AppRoutes`, `format::json`,
 `BackgroundWorker`, `Task`, and `request::<App, _, _>` keep their names and their shape.
 The difference is who is in charge. Loco is a framework: you implement `Hooks`, call
 `cli::main::<App, Migrator>()`, and Loco boots the app, builds the middleware, and runs
-the command. axa is a library on Axum. Your `main.rs` calls plain functions, in an order
+the command. Axa is a library on Axum. Your `main.rs` calls plain functions, in an order
 you can read, and gets back an ordinary `axum::Router`. Your handlers are Axum handlers,
-and any Axum or Tower crate works with them. axa adds the parts every service needs
+and any Axum or Tower crate works with them. Axa adds the parts every service needs
 around them: the middleware stack, configuration, errors, health routes, the command
 line, jobs, and shutdown. What it does not have, you add yourself, or leave out.
 
 ## Concept map
 
-| Loco | axa or Axum | Note |
+| Loco | Axa or Axum | Note |
 |---|---|---|
-| `impl Hooks for App` | Plain functions you call from `main.rs` | Lifecycle hooks are on axa's [must not be added](../../spec/index.md#must-not-be-added) list |
+| `impl Hooks for App` | Plain functions you call from `main.rs` | Lifecycle hooks are on Axa's [must not be added](../../spec/index.md#must-not-be-added) list |
 | `cli::main::<App, Migrator>()` and `cargo loco` | `axa::cli::parse`, then your own `match` on `start`, `db`, `task`, and `check` | `cargo loco start` becomes `cargo run -- start` |
 | `cargo loco doctor` | `service check` | Validates the settings, prints them with secrets hidden, and connects to nothing |
 | Controllers and `Routes` | `Routes` and `AppRoutes`, which build an `axum::Router` | `AppRoutes::with_default_routes()` adds the health routes. `AppRoutes::mounted()` lists `(method, path)` |
 | Handlers | Axum handlers. `axa::prelude` brings in `Path`, `Query`, `Json`, `State`, `format`, and the routing functions | `format::json`, `format::html`, `format::redirect` and the rest are still there |
-| Extractors, `JsonValidate` | Axum extractors, or `axa::extract::{Json, Path, Query}` | axa's reject a bad request as a problem that quotes nothing. Validation is `Validatable::validate`, called by hand |
+| Extractors, `JsonValidate` | Axum extractors, or `axa::extract::{Json, Path, Query}` | Axa's reject a bad request as a problem that quotes nothing. Validation is `Validatable::validate`, called by hand |
 | `AppContext` and `SharedStore` | `AppContext`, passed as plain Axum state, with `ctx.shared_store` | It holds the environment, `db`, `config`, `shared_store`, `health_checks`, and with `queue`, `queue_provider`. No mailer, storage, or cache |
 | `AppContextBuilder`, `after_context` | Build the `AppContext` yourself, then set its fields | |
 | `Initializer` | A function that takes and returns a `Router` | Call them in order, before `middleware::apply` |
@@ -120,7 +120,7 @@ server:
   binding: <%= get_env(name="BINDING", default="localhost") %>
 ```
 
-In axa the same service is one file, and every step is in it:
+In Axa the same service is one file, and every step is in it:
 
 ```rust,ignore
 use axa::{
@@ -176,12 +176,12 @@ that `App::run` [in full](../from-loco-into-axa/index.md#3-turn-hooks-into-plain
 Each of these comes from a principle in [the spec](../../spec/index.md#3-principles).
 
 **You can read the control flow.** Loco's `Hooks` trait has about twenty methods that
-Loco calls in its own order. axa has no hooks, no route macros, and no plugin system
+Loco calls in its own order. Axa has no hooks, no route macros, and no plugin system
 (P-1). What `boot`, `after_routes`, `initializers`, and `on_shutdown` did becomes code
 in your `main.rs`, in the order it runs. It is longer, and an auditor reads it once.
 
 **One middleware order.** Loco lets YAML and the `middlewares` hook switch layers on and
-off and move them by name. axa has one documented order. You add your own layers, such
+off and move them by name. Axa has one documented order. You add your own layers, such
 as an auth guard, to the router before `middleware::apply`, so they sit inside the
 stack. A layer added after `apply` sits outside it: its refusals get no request id,
 security headers, or CORS headers. This compiles, so test a refusal's headers.
@@ -191,7 +191,7 @@ in front of them. Defaults live in code, in `Defaults`, and each variable overri
 Production refuses to boot on a missing `DB_URL`, a `DB_URL` without TLS, `*` in
 `CORS_ALLOWED_ORIGINS`, or any setting that is set but invalid, such as `HTTP_HSTS=tru`,
 and names the variable (P-3). In Loco, `get_env(default="")` could quietly give an empty
-secret. Any environment name axa does not know, such as `staging`, gets production's
+secret. Any environment name Axa does not know, such as `staging`, gets production's
 strict behaviour, so check guards with `ctx.environment.is_production_like()`.
 
 **Errors never send internal text.** Every error is an `application/problem+json` body
@@ -201,7 +201,7 @@ constraint `422`, and a database that cannot serve `503`. Axum's own refusals, s
 `405` or a bad `Json` body, become problems too.
 
 **Client addresses come only from proxies you name.** Loco's `RemoteIP` now trusts one
-configured header source, with no chain of proxies. axa reads `X-Forwarded-For` from the
+configured header source, with no chain of proxies. Axa reads `X-Forwarded-For` from the
 right, only through the addresses or CIDR ranges in `TRUSTED_PROXIES`, and ignores it
 when that is unset. A handler reads the result with `axa::client::ClientAddr`. Behind a
 load balancer, list it, or every client looks like the load balancer, and
@@ -223,17 +223,17 @@ of them should ask a third party.
 only in development or test, with `AXA_DESTROY_DATA=true`, and the command line refuses
 them before your code runs.
 
-## Where axa is safer, and where it does less
+## Where Axa is safer, and where it does less
 
-Loco is far broader than axa, and much of that breadth is useful. The
+Loco is far broader than Axa, and much of that breadth is useful. The
 [comparison](../../spec/compare/loco/index.md) lists it in detail. In short:
 
-**Where axa chose a stricter design:**
+**Where Axa chose a stricter design:**
 
 - Every cache entry expires, and a Redis failure falls back to the loader. Loco's cache
   allows entries with no expiry and has a database driver.
 - Jobs live in the same database as the records they are about, so `queue::enqueue_on`
-  commits a job with its record. axa has no Redis queue for that reason.
+  commits a job with its record. Axa has no Redis queue for that reason.
 - Jobs report a heartbeat, a job lost with its worker is retried or failed, not looped,
   and `queue::cancel` and `queue::retry` are acts of a named person, kept as records.
 - Bearer auth is PASETO or Keycloak, not JWTs signed with a shared HMAC key.
@@ -242,7 +242,7 @@ Loco is far broader than axa, and much of that breadth is useful. The
   visitor who has not signed in.
 - Tera pages escape HTML by default, and a failed render shows no template source.
 
-**What Loco has that axa does not, and what to use meanwhile:**
+**What Loco has that Axa does not, and what to use meanwhile:**
 
 | Loco has | Use meanwhile |
 |---|---|
@@ -258,7 +258,7 @@ Loco is far broader than axa, and much of that breadth is useful. The
 | Static file middleware | `tower-http`'s `ServeDir` |
 | Generators | Write the code, or copy it from a service you trust |
 
-axa also has things Loco does not: idempotency keys, a transactional outbox, signed
+Axa also has things Loco does not: idempotency keys, a transactional outbox, signed
 cursor pagination, `Accepts-version` negotiation, OpenAPI drift checks, and
 connection-level timeouts.
 
@@ -281,7 +281,7 @@ Do it in this order. The two guides have the detail.
    optionally startup to `/_health/startup`. Update load balancers and uptime checks. On
    Kubernetes, set `SHUTDOWN_DRAIN_SECONDS` a little above the time the cluster takes to
    remove a pod.
-6. **Drain `pg_loco_queue`.** axa uses `axa_queue`, and moves no jobs.
+6. **Drain `pg_loco_queue`.** Axa uses `axa_queue`, and moves no jobs.
 7. **Test the real binary.** Run `APP_ENV=production cargo run -- check` with the real
    settings, start it, and check that it refuses bad settings, sends the security
    headers on a refusal, answers the three health routes, and exits cleanly on
@@ -294,9 +294,9 @@ Read that before you start.
 
 ## Further reading
 
-- [Converting a project from Loco to axa](../from-loco-into-axa/index.md), the step by
+- [Converting a project from Loco to Axa](../from-loco-into-axa/index.md), the step by
   step
-- [Moving SeaORM code from Loco to axa](../from-loco-seaorm-into-axa-seaorm/index.md)
+- [Moving SeaORM code from Loco to Axa](../from-loco-seaorm-into-axa-seaorm/index.md)
 - [The comparison with Loco](../../spec/compare/loco/index.md), from Loco's source
 - The README: [Quick start](../../README.md#quick-start),
   [Middleware](../../README.md#middleware), [Errors](../../README.md#errors),
@@ -309,4 +309,4 @@ Read that before you start.
 - [Background jobs and schedules](../background-jobs/index.md)
 - [The transactional outbox](../transactional-outbox/index.md)
 - [Idempotency keys](../idempotency-keys/index.md)
-- [Upgrading to axa 0.11](../upgrading-to-0.11/index.md)
+- [Upgrading to Axa 0.11](../upgrading-to-0.11/index.md)

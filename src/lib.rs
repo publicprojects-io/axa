@@ -1,4 +1,4 @@
-//! # axa
+//! # Axa
 //!
 //! Accessories library for Axum websites, databases, microservices, and more.
 //!

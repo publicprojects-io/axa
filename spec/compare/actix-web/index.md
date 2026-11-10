@@ -15,7 +15,7 @@ across eleven crates, among them `actix-files`, `actix-multipart`, `actix-test`,
 community crate in its own repository,
 <https://github.com/AaronErhardt/actix-governor>, read at `b14d4da`.
 
-> **Since this was written**, axa 0.11 added a `401` carries `WWW-Authenticate: Bearer`; `server::Shutdown` lets a handler wait for shutdown. Those rows below are marked "Done in 0.11", and the rest stand as written.
+> **Since this was written**, Axa 0.11 added a `401` carries `WWW-Authenticate: Bearer`; `server::Shutdown` lets a handler wait for shutdown. Those rows below are marked "Done in 0.11", and the rest stand as written.
 
 Because Actix Web is a framework, this page does not ask how it builds an Axum service.
 It asks which of its capabilities an Axum service still lacks, which Axum, Tower, or
@@ -149,9 +149,9 @@ with an `awc` client.
 `web::Payload` each have a config with a size limit and an error handler
 (`types/`).
 
-## Compared with axa
+## Compared with Axa
 
-| Area | Actix Web and actix-extras | axa |
+| Area | Actix Web and actix-extras | Axa |
 |---|---|---|
 | Shape | A framework: server, router, macros, `App` builder | A library on Axum: plain functions, no macros, no hooks |
 | Server | Own server, many workers, TLS, h2, Unix sockets | `hyper` over HTTP/1 only, TLS left to a proxy (`src/server.rs`), with header-read, keep-alive, send-stall, and connection limits |
@@ -176,7 +176,7 @@ with an `awc` client.
 | Testing | `actix-web::test`, `actix-test` | `axa-test` over `axum-test`, the whole stack, no port |
 | Protobuf | `actix-protobuf` | None. `axum-extra` has a `Protobuf` extractor |
 
-## What axa could add
+## What Axa could add
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
@@ -197,7 +197,7 @@ with an `awc` client.
 `401` should add `WWW-Authenticate: Bearer` with `error="invalid_token"` when a token
 was sent and failed, and with no `error` when none was sent, as RFC 6750 section 3.1
 says. A `realm` could come from the guard's configuration. The `detail` stays as it
-is, and `error_description` should not quote the reason, which axa keeps fixed. No new
+is, and `error_description` should not quote the reason, which Axa keeps fixed. No new
 dependency.
 
 **Shutdown signal.** `axa::server` would hold a `tokio_util::sync::CancellationToken`,
@@ -212,7 +212,7 @@ both (`SRV-6`).
 function that reads fields into a map of small text values and `TempFile`s spooled
 with `tempfile` into a chosen directory, and refusals as problems: `413` for size,
 `400` for too many parts or a duplicate field. It should keep the client's file name
-only as untrusted text and never use it as a path. No derive macro, because axa
+only as untrusted text and never use it as a path. No derive macro, because Axa
 avoids code generation.
 
 **Shared rate-limit store.** `axa-request-rate-limit` would take a store, in memory
@@ -234,25 +234,25 @@ with a production default such as 12 hours. It is the same check as
 `enforce_login_deadline` in `actix-identity/src/middleware.rs`, inside the crate that
 already owns `sign_in`.
 
-## What axa should not copy
+## What Axa should not copy
 
-- **Its own server, workers, and TLS.** Axum runs on `hyper`, and axa leaves TLS and
+- **Its own server, workers, and TLS.** Axum runs on `hyper`, and Axa leaves TLS and
   HTTP/2 to a proxy so that no step waits with no limit (`SRV-7`).
-- **Route macros and the `App` builder.** axa's spec forbids macros and code
+- **Route macros and the `App` builder.** Axa's spec forbids macros and code
   generation, and `Routes` is plain data.
 - **Static files, `NormalizePath`, WebSockets, SSE, typed headers, Protobuf, and
   `Condition`.** `tower-http` (`ServeDir`, `NormalizePathLayer`), Axum
   (`extract::ws`, `response::sse`), `axum-extra` (`TypedHeader`, `Protobuf`), and
   `Option<Layer>` already cover them.
-- **`ConnectionInfo`'s trust in forwarded headers.** axa's `TRUSTED_PROXIES` is the
+- **`ConnectionInfo`'s trust in forwarded headers.** Axa's `TRUSTED_PROXIES` is the
   safer design.
-- **A `Logger` format string that logs the path.** axa logs the route template on
+- **A `Logger` format string that logs the path.** Axa logs the route template on
   purpose.
-- **`actix-settings`' TOML file.** axa takes configuration from the environment only.
+- **`actix-settings`' TOML file.** Axa takes configuration from the environment only.
 - **Cookie-stored session state.** It is limited to 4 KB, cannot be revoked server
-  side, and axa's encrypted server-side store with nothing kept before sign-in is the
+  side, and Axa's encrypted server-side store with nothing kept before sign-in is the
   stronger default.
-- **`actix-limitation`'s bare `429` and `500` on a store error.** axa's limiter
+- **`actix-limitation`'s bare `429` and `500` on a store error.** Axa's limiter
   already answers better.
 - **Directory listings.** Rarely wanted in a service, and they leak file names.
 - **Guards as a routing mechanism.** Axum's method routers and middleware do this,

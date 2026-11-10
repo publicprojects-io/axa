@@ -1,4 +1,4 @@
-# Plan: what axa adds next
+# Plan: what Axa adds next
 
 This plan comes from studying twelve open-source Rust web projects from their source, eight
 services on Axum and four other frameworks. Each study is in [`spec/compare/`](spec/compare/index.md),
@@ -63,7 +63,7 @@ So the plan has three stages.
 
 ### Stage 1: close the holes, with no new dependency
 
-**Done in axa 0.11.0**, with the spec ids in [`tasks.md`](tasks.md).
+**Done in Axa 0.11.0**, with the spec ids in [`tasks.md`](tasks.md).
 
 These make what `axa` already does correct, so they need no new consumer. Most are small,
 and several are breaking, so they belong in 0.11 with the other breaking changes on main:

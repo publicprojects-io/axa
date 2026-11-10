@@ -1,27 +1,27 @@
-# axa for Actix Web users
+# Axa for Actix Web users
 
 This page is for a developer who knows [Actix Web](https://actix.rs) and its companion
 crates in `actix-extras`, and is meeting [axa](../../README.md) for the first time. It
-says what axa is in Actix terms, where each thing you use today lives, and what will
+says what Axa is in Actix terms, where each thing you use today lives, and what will
 surprise you. It is an orientation, not a reference.
 
-## What axa is
+## What Axa is
 
-axa is a library on [Axum](https://docs.rs/axum), not a framework. There is no `App`
+Axa is a library on [Axum](https://docs.rs/axum), not a framework. There is no `App`
 builder, no `HttpServer`, no route macros, and nothing that calls your code. Your
 handlers become ordinary Axum handlers, your state is ordinary Axum state, and your
-`main.rs` calls axa's functions in an order you can read. axa adds what goes around
+`main.rs` calls Axa's functions in an order you can read. Axa adds what goes around
 the handlers: a middleware stack, configuration from the environment, error responses,
 health routes, graceful shutdown, background jobs, and optional crates for sessions,
-authentication, rate limits, metrics, and the rest. Anything axa does not cover, you
+authentication, rate limits, metrics, and the rest. Anything Axa does not cover, you
 take from Axum, Tower, or `tower-http`, and it fits without an adapter.
 
-The biggest change is not axa. It is moving from Actix Web to Axum: another router,
+The biggest change is not Axa. It is moving from Actix Web to Axum: another router,
 another extractor trait, another middleware model, and futures that must be `Send`.
 
 ## Concept map
 
-| Actix Web | axa or Axum | Note |
+| Actix Web | Axa or Axum | Note |
 |---|---|---|
 | `HttpServer::new(...).bind(...).run()` | `axa::server::serve(router, &config.server)` | HTTP/1 only, with no TLS of its own. Put TLS and HTTP/2 in a proxy. One multi-threaded Tokio runtime, not a runtime per worker |
 | `workers`, `max_connections`, `keep_alive`, `client_request_timeout` | `MAX_CONNECTIONS`, `KEEP_ALIVE_TIMEOUT_SECONDS`, `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS`, `SEND_STALL_TIMEOUT_SECONDS` | Environment variables. There is no worker count |
@@ -43,7 +43,7 @@ another extractor trait, another middleware model, and futures that must be `Sen
 | `Condition` | `Option<Layer>` | Tower implements `Layer` for `Option` |
 | `ConnectionInfo::realip_remote_addr` | `axa::client::ClientAddr` | Believes `X-Forwarded-For` only from `TRUSTED_PROXIES` |
 | `actix-settings` | `axa::config::Config::from_env`, with `Defaults` in code | No configuration files |
-| Database | `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` feature | Actix leaves this to you. With axa, `AppContext::db` is the pool and readiness checks it |
+| Database | `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` feature | Actix leaves this to you. With Axa, `AppContext::db` is the pool and readiness checks it |
 | Background jobs | `BackgroundWorker` and the `queue` feature | A Postgres queue with workers and schedules. MySQL and SQLite queues are crates of their own |
 | Templates | `axa-tera-templates` (`tera` feature) | Escapes by default, shows nothing of a failed render, and sends a page-friendly CSP |
 | `actix_web::test`, `actix-test` | `axa-test`, over `axum-test` | Real requests through the full stack, with no port |
@@ -55,7 +55,7 @@ another extractor trait, another middleware model, and futures that must be `Sen
 
 ### The companion crates
 
-| Crate | Use with axa | Note |
+| Crate | Use with Axa | Note |
 |---|---|---|
 | `actix-session` | `axa-web-session` (`session` feature), over `axum_session` | A Postgres or memory store, signed and encrypted in production. Nothing is stored for a visitor until `sign_in`, which also gives the session a new id. `csrf_token` and `csrf_verify` for forms. No cookie-only store |
 | `actix-identity` | `axa_web_session::sign_in` and `sign_out`, with the user id put in the session | `SessionOptions::lifetime` is an idle limit, and `max_lifetime` limits a long-term session and its cookie. There is no `login_deadline` counted from sign-in |
@@ -72,7 +72,7 @@ another extractor trait, another middleware model, and futures that must be `Sen
 
 The same service both ways: one JSON route under `/api`.
 
-In axa, `src/main.rs`:
+In Axa, `src/main.rs`:
 
 ```rust,ignore
 use axa::{
@@ -154,7 +154,7 @@ async fn main() -> std::io::Result<()> {
 }
 ```
 
-The axa one listens on port 1241, or `PORT`, and also serves the three health routes.
+The Axa one listens on port 1241, or `PORT`, and also serves the three health routes.
 Every response has a request id and the security headers, an unknown path is a `404`
 problem, and in production it has a 60-second request timeout, compression, and HSTS.
 It stops cleanly on `SIGTERM` or Ctrl-C. A release build with no `APP_ENV` runs as
@@ -162,11 +162,11 @@ production.
 
 For a real service, parse the command line with `axa::cli::parse`, so that `start`,
 `db migrate`, `task`, and `check` work, as in step 3 of
-[Converting a project from Loco to axa](../from-loco-into-axa/index.md#3-turn-hooks-into-plain-functions).
+[Converting a project from Loco to Axa](../from-loco-into-axa/index.md#3-turn-hooks-into-plain-functions).
 
 ## What is different on purpose
 
-**No macros, no `App` factory.** axa forbids route macros and code generation, and
+**No macros, no `App` factory.** Axa forbids route macros and code generation, and
 lifecycle hooks a service implements (P-1). A route table is a value: a test can list
 what is mounted with `AppRoutes::mounted()` without booting anything. Because there is
 no factory closure run once per worker, there is no `web::Data` built outside it to
@@ -175,7 +175,7 @@ share: one `AppContext` is cloned into the router.
 **Handler futures must be `Send`.** Actix runs single-threaded worker runtimes, so an
 `Rc` or a `RefCell` held across an `.await` compiles there. Axum runs on a
 multi-threaded runtime and refuses it. Use `Arc` and `tokio::sync`, or drop the value
-before the `.await`. This is Axum's rule, not axa's.
+before the `.await`. This is Axum's rule, not Axa's.
 
 **Middleware order is explicit.** Add your own layers first, then call
 `axa::middleware::apply`, or use `AppRoutes::into_app`, which applies it for you. A
@@ -188,14 +188,14 @@ Production refuses to boot on a missing `DB_URL`, a setting that is set but inva
 or a bad `TRUSTED_PROXIES` list (P-3). Run `check` to see what each setting came to.
 
 **Errors never send internal text.** Actix's default `ResponseError` response writes
-the error's `Display` text as the body. In axa, anything that is not a client's mistake
+the error's `Display` text as the body. In Axa, anything that is not a client's mistake
 is a `500` with no detail, and the real error goes to the log (P-4). `Error::BadRequest`
 is the one variant whose text you send. A database error does not reach the client: a
 broken constraint is a `409` or `422` with fixed text.
 
 **A client's address comes only through named proxies.** `ConnectionInfo` believes
 `Forwarded` and `X-Forwarded-For` from anyone, and its documentation warns against
-using it for security. axa reads `X-Forwarded-For` only from peers in `TRUSTED_PROXIES`
+using it for security. Axa reads `X-Forwarded-For` only from peers in `TRUSTED_PROXIES`
 and takes the rightmost untrusted entry. With the variable unset, the header is ignored.
 It does not read `Forwarded`, `X-Forwarded-Proto`, or `X-Forwarded-Host`.
 
@@ -207,11 +207,11 @@ person's data, so `/api/items/{id}` is logged and `/api/items/42?token=...` is n
 a JSON API and blanks an HTML page, so a service that serves pages sets
 `HTTP_CONTENT_SECURITY_POLICY`. A response that sets a cookie is `no-store`.
 
-**One server, one protocol.** axa's server speaks HTTP/1 so that no step waits with no
+**One server, one protocol.** Axa's server speaks HTTP/1 so that no step waits with no
 limit, and leaves TLS and HTTP/2 to a proxy. There is no `bind_rustls`, `bind_openssl`,
 or `bind_uds`.
 
-## Where axa is safer, and where it does less
+## Where Axa is safer, and where it does less
 
 Safer, or stricter by default:
 
@@ -293,7 +293,7 @@ What to test, beyond your own suite:
 - `APP_ENV=production cargo run -- check` with your real settings, and a real
   `SIGTERM` during a slow request.
 
-[Converting a project from Loco to axa](../from-loco-into-axa/index.md) is written for
+[Converting a project from Loco to Axa](../from-loco-into-axa/index.md) is written for
 Loco, but its sections on the test boot, background workers, readiness, and
 [what can go wrong silently](../from-loco-into-axa/index.md#what-can-go-wrong-silently)
 apply here too.
@@ -306,7 +306,7 @@ apply here too.
   [Health checks](../../README.md#health-checks)
 - [The specification](../../spec/index.md), with the principles in section 3
 - [Health routes](../../spec/health/index.md)
-- [Actix Web compared with axa](../../spec/compare/actix-web/index.md)
+- [Actix Web compared with Axa](../../spec/compare/actix-web/index.md)
 - [Background jobs and schedules](../background-jobs/index.md)
 - [Idempotency keys](../idempotency-keys/index.md)
-- [Upgrading to axa 0.11](../upgrading-to-0.11/index.md)
+- [Upgrading to Axa 0.11](../upgrading-to-0.11/index.md)

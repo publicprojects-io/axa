@@ -1,4 +1,4 @@
-# Converting a project from Loco to axa
+# Converting a project from Loco to Axa
 
 This guide takes a working [Loco](https://loco.rs) service to plain Axum plus
 [axa](../../README.md). It comes from converting 13 production-shaped services,
@@ -18,21 +18,21 @@ after conversion you must be able to say whether you caused it.
 conversions, four services had every unit test passing and 13 failures between
 them on real Postgres.
 
-**Moving SeaORM code?** [Moving SeaORM code from Loco to axa](../from-loco-seaorm-into-axa-seaorm/index.md)
+**Moving SeaORM code?** [Moving SeaORM code from Loco to Axa](../from-loco-seaorm-into-axa-seaorm/index.md)
 covers the database half in detail.
 
 **Convert one service first**, ideally the one with the least database code.
-Keep SeaORM for now by using axa's `postgres-seaorm` feature, so this change is only about
+Keep SeaORM for now by using Axa's `postgres-seaorm` feature, so this change is only about
 Loco. Moving from SeaORM to sqlx is a separate change.
 
 ## What changes
 
-| Loco | axa |
+| Loco | Axa |
 |---|---|
 | `impl Hooks for App` | Plain functions on `App` |
 | `cli::main::<App, Migrator>()` | `App::run(cli::parse(...))`, written out in your own code |
 | `config/*.yaml` | Environment variables, with defaults in code |
-| Loco's environment variable | `APP_ENV`, the only variable axa reads for this |
+| Loco's environment variable | `APP_ENV`, the only variable Axa reads for this |
 | `Initializer` | A function that takes and returns a `Router` |
 | `use loco_rs::prelude::*` | `use axa::prelude::*` |
 | `ctx.shared_store`, `AppContext`, `Routes` | The same names, with the same shape |
@@ -56,7 +56,7 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 
 ### 1. Update the manifest
 
-Remove `loco-rs` and add axa, pinned to a revision:
+Remove `loco-rs` and add Axa, pinned to a revision:
 
 ```toml
 [dependencies]
@@ -83,7 +83,7 @@ not satisfied`. Loco's dependency tree switched these on, and your crate now has
 to ask for them. The ones we hit were `uuid`'s `serde`, `tokio`'s `macros`, and
 `validator`'s `derive`.
 
-**Match `axum-test` to axa.** A crate listing its own older `axum-test` gets two
+**Match `axum-test` to Axa.** A crate listing its own older `axum-test` gets two
 copies, and errors that say `TestServer` does not match `TestServer`.
 
 ### 2. Replace the imports
@@ -232,7 +232,7 @@ the process is in development or test and `AXA_DESTROY_DATA=true` is set, so a s
 `refuse_outside_development` is a second check at the call. If `reset` has no place
 in your service, make it an error.
 
-If you keep the Loco ports, set them in `Defaults`. Otherwise you get axa's
+If you keep the Loco ports, set them in `Defaults`. Otherwise you get Axa's
 default, 1241, and any proxy or healthcheck pointing at the old port breaks.
 
 Router order differs from Loco on purpose: `after_routes` adds your layers first, and
@@ -291,7 +291,7 @@ now live somewhere:
 | YAML | Now |
 |---|---|
 | `server.port`, `binding`, `host` | `Defaults`, then `PORT`, `BINDING`, `HOST` |
-| `database.uri` | `DB_URL`, not `DATABASE_URL`, which axa does not read. Required in production |
+| `database.uri` | `DB_URL`, not `DATABASE_URL`, which Axa does not read. Required in production |
 | `database.max_connections` | `Defaults`, then `DB_MAX_CONNECTIONS` |
 | `limit_payload.body_limit` | `Defaults::body_limit`, then `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` |
 | `compression`, `cors` | `HTTP_COMPRESSION`, `CORS_ALLOWED_ORIGINS` |
@@ -304,7 +304,7 @@ now live somewhere:
 Update your `Dockerfile` too: remove `COPY ... config`, and set `APP_ENV` in place
 of Loco's environment variable. A release build without it is production.
 
-**Check your settings for typos.** axa refuses a production boot on a setting that
+**Check your settings for typos.** Axa refuses a production boot on a setting that
 is set and invalid, such as `HTTP_HSTS=tru`. Run `cargo run -- check` with your real variables. It prints what
 each setting came to, with secrets hidden, and fails on what a boot would refuse.
 
@@ -434,7 +434,7 @@ an orchestrator polling faster than that sees the same answer.
 
 ### 10. Migrations
 
-Files using `loco_rs::schema` need only the import changed. axa's helpers cover
+Files using `loco_rs::schema` need only the import changed. Axa's helpers cover
 the column types our services used, so you may see a missing `ColType` variant.
 They create `created_at` and `updated_at` and pluralise table names the same way.
 
@@ -455,7 +455,7 @@ environment, and to fail closed on any unknown name.
 
 **A check on one environment name.** Search for `Environment::Production` too.
 `matches!(ctx.environment, Environment::Production)` is false for any name but
-`production` and `prod`, while axa treats every unknown name as production-like.
+`production` and `prod`, while Axa treats every unknown name as production-like.
 With `APP_ENV=prod-eu`, a guard written that way turns itself off while the
 service otherwise runs as production. Use `ctx.environment.is_production_like()`.
 
@@ -483,7 +483,7 @@ any login link in the email sits in plain text in a job table. We send from a
 detached `tokio::spawn`. A crash mid-send then loses that one email, and the user
 asks again.
 
-**CORS.** axa sends no CORS headers in production until
+**CORS.** Axa sends no CORS headers in production until
 `CORS_ALLOWED_ORIGINS` is set, and removes the permissive default. Remove any
 `CorsLayer::permissive()` of your own as well. A browser client calling the API
 directly from another origin needs its origin listed. A service that read its
@@ -492,10 +492,10 @@ stops working with no error. Development and test default to `*`, so a service
 that kept CORS closed there must clear `config.http.cors_origins`.
 
 **Production security headers.** If `config/production.yaml` has a
-`secure_headers:` block, compare it with what axa sends. Loco sent them only when
+`secure_headers:` block, compare it with what Axa sends. Loco sent them only when
 that block was present, and it could be a preset plus overrides:
 
-| Header | Loco's `github` preset | axa in production |
+| Header | Loco's `github` preset | Axa in production |
 |---|---|---|
 | `content-security-policy` | A policy for pages | `default-src 'none'; frame-ancestors 'none'`. Set `HTTP_CONTENT_SECURITY_POLICY` |
 | `strict-transport-security` | 20 years, unless overridden | One year. Set `HSTS_MAX_AGE_SECONDS` |

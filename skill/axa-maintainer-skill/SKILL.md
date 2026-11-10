@@ -1,11 +1,11 @@
 ---
 name: axa-maintainer-skill
-description: Maintain the axa codebase itself. Use this whenever working directly in the publicprojects-io/axa repository, including changing `src/` or any `crates/axa-*` subcrate, editing `spec/index.md`, adding a subcrate or feature, updating dependencies or Dependabot PRs, changing CI, verifying a change, or preparing and publishing a release, even if the user only says "fix this in axa" or "release axa". Not for a service that merely depends on axa; use axa-skill for that.
+description: Maintain the Axa codebase itself. Use this whenever working directly in the publicprojects-io/axa repository, including changing `src/` or any `crates/axa-*` subcrate, editing `spec/index.md`, adding a subcrate or feature, updating dependencies or Dependabot PRs, changing CI, verifying a change, or preparing and publishing a release, even if the user only says "fix this in Axa" or "release Axa". Not for a service that merely depends on Axa; use axa-skill for that.
 ---
 
-# Maintaining axa
+# Maintaining Axa
 
-axa is an accessories library for Axum websites, databases, microservices, and more, written to be
+Axa is an accessories library for Axum websites, databases, microservices, and more, written to be
 audited: the SQL, the middleware, and the startup path are all visible, with no
 framework between the reader and the behaviour. Judge a change by whether an auditor
 can still read the whole path.
@@ -132,7 +132,7 @@ because its version detection has no limit and `http1_only` does nothing on its 
 path.
 
 **`axa-keycloak-auth` stands alone.** It depends on neither `authentication-verifier` nor any
-other axa crate, and states the source of each copy. A fix to the original does not
+other Axa crate, and states the source of each copy. A fix to the original does not
 reach a copy, so check both ways, including `axa-paseto-auth`, which shares its shape.
 
 ## Dependencies
