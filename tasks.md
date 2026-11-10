@@ -7,6 +7,11 @@ dependency** names a crate to raise first (P-6). **Sources** are the studies in
 
 ## Stage 1: close the holes, with no new dependency
 
+Done in axa 0.11.0 (#23). T-7 needed no `no_store` helper of its own: neither auth crate
+issues a token, and a response that sets a cookie is marked `no-store` automatically. T-4
+made `http-body-util` a direct dependency, which every build already had, and changed
+`middleware::body_limit` to wrap a route.
+
 | Id | Task | Where | Effort | Breaking | Sources |
 |---|---|---|---|---|---|
 | T-1 | Send `WWW-Authenticate: Bearer` on every `401`, with `error="invalid_token"` where RFC 6750 says, and no more detail than the `401` already gives | `axa-keycloak-auth`, `axa-paseto-auth` | S | No | actix-web |

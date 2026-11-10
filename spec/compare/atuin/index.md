@@ -12,6 +12,8 @@ started with `axum::serve`, holding an `Arc<dyn DynDatabase>` that is backed by 
 SQLite, or MySQL through sqlx. The server stores only encrypted blobs, so most of its
 API is accounts, sessions, and record upload and download.
 
+> **Since this was written**, axa 0.11 added `RequestMetrics` measures requests by route template. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Links below are to files at that commit, under
 `https://github.com/atuinsh/atuin/blob/da746332055c20356e6bd2d2740fe71479055321/`.
 
@@ -182,7 +184,7 @@ with Atuin's own client library against a live Postgres from `ATUIN_DB_URI`
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
-| Prometheus request metrics layer | Count and duration by route template is the first graph of any service | S | High |
+| Prometheus request metrics layer | Count and duration by route template is the first graph of any service | S | Done in 0.11 (T-10, PRM-2) |
 | Secrets read from files | Container and Kubernetes secrets arrive as files, and keeping them out of the environment keeps them out of `/proc` and crash dumps | S | Medium |
 | Capped blocking pool | Password hashing and other CPU-heavy work must not take every blocking thread | S | Medium |
 | Optional internal listener for metrics and health | Keeps scrapes off the public port without relying on a proxy rule | M | Medium |

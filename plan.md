@@ -63,6 +63,8 @@ So the plan has three stages.
 
 ### Stage 1: close the holes, with no new dependency
 
+**Done in axa 0.11.0**, with the spec ids in [`tasks.md`](tasks.md).
+
 These make what `axa` already does correct, so they need no new consumer. Most are small,
 and several are breaking, so they belong in 0.11 with the other breaking changes on main:
 

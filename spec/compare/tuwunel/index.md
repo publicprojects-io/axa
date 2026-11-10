@@ -13,6 +13,8 @@ it in a `tower::ServiceBuilder` stack. It serves on TCP, Unix sockets, sockets p
 systemd, and direct TLS. It is a product, not a library, so most of it is
 Matrix-specific. This page looks for the parts that are not.
 
+> **Since this was written**, axa 0.11 added `/_health/ready` answers `503` from the moment shutdown begins. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 ## How it is built
 
 Links point at commit `a9da94f`.
@@ -70,7 +72,7 @@ Links point at commit `a9da94f`.
 | Safe `Content-Disposition` for downloads | Serving a user's upload inline as HTML or SVG is stored cross-site scripting | S | Medium |
 | A log capture for tests | Lets a test check that a refusal was logged and that a secret was not | S | Medium |
 | Supervised long-running tasks | Services run loops beside the server (relays, listeners). One that panics should be logged and restarted with a delay, and stop at shutdown | S | Low |
-| Readiness that fails once shutdown begins | Lets a load balancer stop sending traffic before the listener closes | S | Low |
+| Readiness that fails once shutdown begins | Lets a load balancer stop sending traffic before the listener closes | S | Done in 0.11 (T-2, HLT-11) |
 | Request body timeout | A slow upload on a route with a long time limit holds a slot | S | Low |
 | Unix sockets and systemd notify | Useful for services behind a local proxy or run by systemd, rarely in Kubernetes | M | Low |
 | Changing the log filter at run time | Helpful in an incident, but needs an authenticated admin route | S | Low |

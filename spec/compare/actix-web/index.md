@@ -15,6 +15,8 @@ across eleven crates, among them `actix-files`, `actix-multipart`, `actix-test`,
 community crate in its own repository,
 <https://github.com/AaronErhardt/actix-governor>, read at `b14d4da`.
 
+> **Since this was written**, axa 0.11 added a `401` carries `WWW-Authenticate: Bearer`; `server::Shutdown` lets a handler wait for shutdown. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Because Actix Web is a framework, this page does not ask how it builds an Axum service.
 It asks which of its capabilities an Axum service still lacks, which Axum, Tower, or
 `tower-http` already give it, and which of the rest `axa` could offer as a library.
@@ -178,8 +180,8 @@ with an `awc` client.
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
-| `WWW-Authenticate` on every `401` from `axa-keycloak-auth` and `axa-paseto-auth` | RFC 9110 says a `401` must carry one, and RFC 6750 defines `Bearer` with `error="invalid_token"`. Clients and gateways use it to tell a missing token from a bad one | S | High |
-| A signal handlers can await when shutdown begins | A WebSocket or SSE stream holds its connection until `SHUTDOWN_TIMEOUT_SECONDS` cuts it, as `hyper`'s graceful shutdown does not reach an upgraded connection. With a signal, a handler can send close code `1001` or end its stream | S | Medium |
+| `WWW-Authenticate` on every `401` from `axa-keycloak-auth` and `axa-paseto-auth` | RFC 9110 says a `401` must carry one, and RFC 6750 defines `Bearer` with `error="invalid_token"`. Clients and gateways use it to tell a missing token from a bad one | S | Done in 0.11 (T-1, PST-12, KCK-13) |
+| A signal handlers can await when shutdown begins | A WebSocket or SSE stream holds its connection until `SHUTDOWN_TIMEOUT_SECONDS` cuts it, as `hyper`'s graceful shutdown does not reach an upgraded connection. With a signal, a handler can send close code `1001` or end its stream | S | Done in 0.11 (T-3, SRV-16) |
 | Multipart upload limits and temp files | Axum parses fields but leaves part counts, per-field limits, memory caps, and spooling to disk to each service. These are easy to get wrong and generic | M | Medium |
 | A shared store for `axa-request-rate-limit` | In-process limits multiply by the number of replicas. A Redis window lets a limit or a lockout hold across them | M | Medium |
 | A static credential guard for operator routes | Metrics, docs, and admin routes sometimes need a fixed token or Basic password. `tower-http`'s is deprecated and not constant-time | S | Medium |

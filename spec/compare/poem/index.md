@@ -13,6 +13,8 @@ asks a different question from the others: which of Poem's built-in capabilities
 `axa` offer to Axum services as plain functions and layers, and which does Axum, Tower, or
 `tower-http` already give them.
 
+> **Since this was written**, axa 0.11 added `RequestMetrics` measures requests by route template; credential headers are marked sensitive in the standard stack. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Links below are to files at that commit, under
 `https://github.com/poem-web/poem/blob/eddf799728955fa183835ebadd5b834b9ad903d3/`.
 
@@ -214,9 +216,9 @@ gives the Lambda context as an extractor ([`lambda/src/lib.rs`][lambda]).
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
-| Prometheus request metrics layer | `axa-prometheus-metrics` serves a registry but measures no requests. A scrape-only service has no latency or error rate without OTel | S | High |
+| Prometheus request metrics layer | `axa-prometheus-metrics` serves a registry but measures no requests. A scrape-only service has no latency or error rate without OTel | S | Done in 0.11 (T-10, PRM-2) |
 | Tokio runtime and task metrics | Scheduling delay and slow polls show a blocked runtime before timeouts do. Poem measures task futures; nothing in axa does | S | Medium |
-| Mark credential headers sensitive in the standard stack | `Authorization`, `Cookie`, `Set-Cookie`, and `Proxy-Authorization` would stay out of any `Debug` print and HPACK index. One `tower-http` layer | S | Medium |
+| Mark credential headers sensitive in the standard stack | `Authorization`, `Cookie`, `Set-Cookie`, and `Proxy-Authorization` would stay out of any `Debug` print and HPACK index. One `tower-http` layer | S | Done in 0.11 (T-9, MID-22) |
 | Tri-state PATCH field | `null` and absent mean different things in a `PATCH`. Every service writing partial updates meets it | S | Medium |
 | Bounded upload helper | Spool a multipart file to a temporary file with a per-file and total size limit and an allowed media type list, answering `413` or `415` as problems | M | Medium |
 | OpenAPI schema conformance in tests | Poem cannot drift because one macro makes both. axa forbids that macro, so check instead that a real response body matches its documented schema | M | Medium |

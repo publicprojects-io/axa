@@ -28,7 +28,8 @@ were read on 9 and 10 November 2026. [`plan.md`](../../plan.md) draws them toget
 | Topcoat | A young full-stack framework for server-rendered apps | [topcoat](topcoat/index.md) |
 
 A claim on a page comes from the code or documents it cites. Where a page could not confirm
-something, it says so. Five of the gaps they name were checked against `axa`'s own code and
-hold: no `WWW-Authenticate` on a `401`, readiness that stays `200` during shutdown, a body
-limit that a handler reading `Body` gets past, no request metrics, and no request
-decompression.
+something, it says so. Five of the gaps they named were checked against `axa`'s own code,
+and four of them, no `WWW-Authenticate` on a `401`, readiness that stays `200` during
+shutdown, a body limit that a handler reading `Body` gets past, and no request metrics,
+were closed in axa 0.11, with the rest of stage 1 of the plan. Each page marks what landed
+as "Done in 0.11". Request decompression is still open, as T-20.

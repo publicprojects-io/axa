@@ -15,6 +15,8 @@ catching. Its work behind the handlers runs as actor-style services from its own
 `relay-system` crate, not inside the request. This study looks at backpressure, load
 shedding, request body handling, health, and metrics.
 
+> **Since this was written**, axa 0.11 added the body limit binds a handler that reads the body itself; `RequestMetrics` measures requests by route template. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Links below are to files at that commit, under
 `https://github.com/getsentry/relay/blob/0d47301d73ae3f7a1441d058b7786a24eb3130c0/`.
 
@@ -195,8 +197,8 @@ tests.
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
 | Request body decompression with the limit on decoded bytes | Clients and SDKs send gzip bodies, and a naive decoder is a zip bomb | S | High |
-| Body limit that also covers streamed bodies | `DefaultBodyLimit` binds extractors only, so a handler that reads `Body` has no limit | S | High |
-| Prometheus request metrics layer | Count and duration by route template, method, and status is what every service graphs first | S | High |
+| Body limit that also covers streamed bodies | `DefaultBodyLimit` binds extractors only, so a handler that reads `Body` has no limit | S | Done in 0.11 (T-4, MID-7a) |
+| Prometheus request metrics layer | Count and duration by route template, method, and status is what every service graphs first | S | Done in 0.11 (T-10, PRM-2) |
 | Overload refusal: a bounded hand-off and a standard `503` | A service that queues background work should refuse fast when full, not grow without bound | S | Medium |
 | Memory watermark check and refusal | Lets a pod shed load and leave the Service before the kernel kills it | M | Medium |
 | Optional internal listener for health and metrics | Keeps probes and scrapes off the public port, so neither can be reached or loaded from outside | M | Medium |

@@ -12,6 +12,8 @@ use `axum::serve`: it runs its own accept loop over `hyper-util`, and terminates
 itself with `rustls`. This study looks at security hardening, auth, sessions, CSRF,
 headers, TLS, and observability.
 
+> **Since this was written**, axa 0.11 added a response that sets a cookie is `no-store` unless its handler says otherwise; the stack sends `cross-origin-opener-policy`, `cross-origin-resource-policy`, and `permissions-policy`; compression skips a response that sets a cookie or is `no-store`. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Links below are to files at that commit, under
 `https://github.com/kanidm/kanidm/blob/253e73a56f51347a141fe47a2548faf05d5b9db3/`.
 
@@ -194,9 +196,9 @@ and the `.well-known` change-password and passkey endpoints are served.
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
-| A `no-store` layer for credential routes | Tokens, sessions, and login answers should never sit in a browser or proxy cache | S | High |
-| Cross-origin and Permissions-Policy headers | COOP and CORP stop cross-origin window and resource attacks at no cost to an API | S | High |
-| Compression that skips secret-bearing answers | BREACH: compressing a response that holds a token next to attacker text leaks it | S | Medium |
+| A `no-store` layer for credential routes | Tokens, sessions, and login answers should never sit in a browser or proxy cache | S | Done in 0.11 (T-7, MID-21) |
+| Cross-origin and Permissions-Policy headers | COOP and CORP stop cross-origin window and resource attacks at no cost to an API | S | Done in 0.11 (T-6, MID-20) |
+| Compression that skips secret-bearing answers | BREACH: compressing a response that holds a token next to attacker text leaks it | S | Done in 0.11 (T-8, MID-21) |
 | PROXY protocol v1 and v2 from trusted ranges | Layer-4 load balancers (such as AWS NLB) give the client address only this way | M | Medium |
 | CSP script hashes from files | Lets a server-rendered app drop `'unsafe-inline'` without nonces | M | Medium |
 | Optional in-process TLS with reload and mTLS | Services without a proxy, and mTLS between services | L | Low |

@@ -12,6 +12,8 @@ migrations. It runs on Heroku as three processes from one binary: `migrate` on r
 `tower-http` 0.7, Diesel 2.3 through `diesel-async` and `deadpool`, `utoipa` for OpenAPI,
 and OpenTelemetry for traces and metrics ([`Cargo.toml`][cargo]).
 
+> **Since this was written**, axa 0.11 added a database that cannot serve answers `503` with `Retry-After`. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Links below are to files at that commit, under
 `https://github.com/rust-lang/crates.io/blob/426033177301a42884b592917a3c5e146ef18d11/`.
 
@@ -252,7 +254,7 @@ and check the `503` and recovery paths.
 
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
-| Map pool timeouts, closed connections, and read-only transactions to `503` | A database outage now answers `500`, which says "our bug" and is not retried | S | High |
+| Map pool timeouts, closed connections, and read-only transactions to `503` | A database outage now answers `500`, which says "our bug" and is not retried | S | Done in 0.11 (T-5, DB-7) |
 | Per-connection setup: `statement_timeout`, `application_name`, optional read-only | A runaway query holds a connection for ever; `pg_stat_activity` cannot name the service | S | High |
 | Per-test database schema from a migrated template in `axa-test` | Tests that share one database cannot run in parallel safely, and per-test migrations are slow | M | High |
 | `LISTEN`/`NOTIFY` wake-up for `axa-postgres-job-queue` | Removes up to one poll interval of latency without polling faster | M | Medium |

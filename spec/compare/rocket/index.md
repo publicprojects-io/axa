@@ -13,6 +13,8 @@ with its own router, its own request and response types, and its own middleware 
 capabilities and framework-level ideas axa could offer to Axum services as plain
 library code, and which Axum, Tower, or `axum-extra` already give.
 
+> **Since this was written**, axa 0.11 added a database that cannot serve answers `503` with `Retry-After`; the stack sends a `permissions-policy`; `server::Shutdown` lets a handler wait for shutdown. Those rows below are marked "Done in 0.11", and the rest stand as written.
+
 Links below are to files at that commit, under
 `https://github.com/rwf2/Rocket/blob/3a54d079aef060a8f732bd04ea54b0581a604087/`.
 
@@ -218,9 +220,9 @@ request and reloads them.
 | Capability | Why it matters | Effort | Priority |
 |---|---|---|---|
 | A public settings reader for a service's own variables | Rocket gives an application's own settings the same rules as its own. In axa a service's own variables get none of the production refusal or secret redaction, which breaks P-3 at the edge | M | High |
-| `503` with `Retry-After` when the pool has no connection | A full pool is overload, not a bug. `500` tells a load balancer and a client the wrong thing, and pages someone | S | Medium |
-| `Permissions-Policy` in the standard headers | Turns off camera, microphone, geolocation and similar for an API or a page that never uses them. The Kanidm study asks for the same, with COOP and CORP | S | Medium |
-| A shutdown signal a handler can wait on | An SSE stream or WebSocket never finishes, so today it holds every shutdown to its full timeout and is then cut off | S | Medium |
+| `503` with `Retry-After` when the pool has no connection | A full pool is overload, not a bug. `500` tells a load balancer and a client the wrong thing, and pages someone | S | Done in 0.11 (T-5, DB-7) |
+| `Permissions-Policy` in the standard headers | Turns off camera, microphone, geolocation and similar for an API or a page that never uses them. The Kanidm study asks for the same, with COOP and CORP | S | Done in 0.11 (T-6, MID-20) |
+| A shutdown signal a handler can wait on | An SSE stream or WebSocket never finishes, so today it holds every shutdown to its full timeout and is then cut off | S | Done in 0.11 (T-3, SRV-16) |
 | `extract::Form` with problem rejection, and a form context | Axum's `Form` rejects with plain text that can quote input, as its `Json` does. A server-rendered form needs the submitted values and per-field errors back | M | Medium |
 | An upload helper: a multipart field to a capped temp file, with a sanitised name | Every service with uploads writes this, and the file name and size checks are where it goes wrong | M | Medium |
 | HTML error pages for browsers in `axa-tera-templates` | A Tera page that fails shows raw problem JSON to a visitor | M | Low |
