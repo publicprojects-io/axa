@@ -2,7 +2,7 @@
 //! these with `--test-threads=1`.
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
 //! ```
 
 use std::{
@@ -29,7 +29,7 @@ use tokio::sync::Notify;
 use tower::ServiceExt;
 
 fn url() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 async fn connect() -> PgPool {
@@ -183,7 +183,7 @@ async fn rows(pool: &PgPool) -> i64 {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_retry_gets_the_first_answer_and_runs_nothing() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -205,7 +205,7 @@ async fn a_retry_gets_the_first_answer_and_runs_nothing() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_replay_hands_out_no_cookie() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -218,7 +218,7 @@ async fn a_replay_hands_out_no_cookie() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn with_no_key_nothing_is_kept_and_every_request_runs() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -233,7 +233,7 @@ async fn with_no_key_nothing_is_kept_and_every_request_runs() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_method_that_changes_nothing_ignores_its_key() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -251,7 +251,7 @@ async fn a_method_that_changes_nothing_ignores_its_key() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_same_key_on_a_different_request_is_refused() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -282,7 +282,7 @@ async fn the_same_key_on_a_different_request_is_refused() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn one_key_is_two_keys_for_two_callers() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -302,7 +302,7 @@ async fn one_key_is_two_keys_for_two_callers() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn with_no_caller_a_keyed_request_is_refused_and_does_not_run() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -321,7 +321,7 @@ async fn with_no_caller_a_keyed_request_is_refused_and_does_not_run() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_duplicate_while_the_first_runs_is_told_to_wait() {
     let pool = pool().await;
     let (started, finish) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
@@ -362,7 +362,7 @@ async fn a_duplicate_while_the_first_runs_is_told_to_wait() {
 
 /// Replicas share nothing but the database, so each request here has its own pool.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn of_many_requests_at_once_on_two_replicas_exactly_one_runs() {
     const REQUESTS: usize = 40;
     let pool = pool().await;
@@ -429,7 +429,7 @@ async fn of_many_requests_at_once_on_two_replicas_exactly_one_runs() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_failure_releases_the_key_so_a_retry_runs() {
     let pool = pool().await;
     for body in ["server", "client"] {
@@ -483,7 +483,7 @@ async fn running_claim(pool: &PgPool, key: &str, fingerprint: &str, ran: f64, le
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_duplicate_of_a_long_run_is_told_to_wait_longer_and_never_past_its_lease() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -515,7 +515,7 @@ async fn fingerprint_of(pool: &PgPool, key: &str) -> String {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_claim_abandoned_by_a_crash_is_taken_over_by_the_same_request() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -536,7 +536,7 @@ async fn a_claim_abandoned_by_a_crash_is_taken_over_by_the_same_request() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_different_request_cannot_take_over_an_abandoned_claim() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -554,7 +554,7 @@ async fn a_different_request_cannot_take_over_an_abandoned_claim() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn of_many_retries_of_an_abandoned_claim_exactly_one_takes_it() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -574,7 +574,7 @@ async fn of_many_retries_of_an_abandoned_claim_exactly_one_takes_it() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_run_that_reports_in_outlives_its_lease() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -651,7 +651,7 @@ async fn lose_a_run(app: &Router, started: &Notify) {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
     let pool = pool().await;
     let (runs, started) = (Runs::default(), Arc::new(Notify::new()));
@@ -672,7 +672,7 @@ async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn by_default_a_lost_run_holds_its_key_for_the_whole_ttl() {
     let pool = pool().await;
     let (runs, started) = (Runs::default(), Arc::new(Notify::new()));
@@ -704,7 +704,7 @@ async fn by_default_a_lost_run_holds_its_key_for_the_whole_ttl() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer() {
     let pool = pool().await;
     let (started, finish) = (Arc::new(Notify::new()), Arc::new(Notify::new()));
@@ -747,7 +747,7 @@ async fn a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_expired_answer_is_not_replayed_and_the_key_runs_afresh() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -766,7 +766,7 @@ async fn an_expired_answer_is_not_replayed_and_the_key_runs_afresh() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_sweep_deletes_what_has_expired_and_nothing_else() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -795,7 +795,7 @@ async fn a_sweep_deletes_what_has_expired_and_nothing_else() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_store_being_down_stops_the_request_before_it_runs() {
     let pool = connect().await;
     setup(&pool).await.unwrap();
@@ -817,7 +817,7 @@ async fn the_store_being_down_stops_the_request_before_it_runs() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_store_failing_after_the_work_still_answers_the_caller() {
     let store = pool().await;
     let routes = {
@@ -838,7 +838,7 @@ async fn the_store_failing_after_the_work_still_answers_the_caller() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_body_over_the_limit_is_refused_before_it_runs() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -881,25 +881,25 @@ async fn assert_ran_once_and_is_not_repeated(path: &str, sent: &[u8]) {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_answer_over_the_limit_is_sent_and_not_kept() {
     assert_ran_once_and_is_not_repeated("/huge", "x".repeat(2048).as_bytes()).await;
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_stream_is_passed_on_and_not_kept() {
     assert_ran_once_and_is_not_repeated("/stream", b"streamed").await;
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_answer_a_handler_compressed_is_sent_and_not_kept() {
     assert_ran_once_and_is_not_repeated("/encoded", b"not really gzip").await;
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_key_that_is_not_one_clean_value_is_refused() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -921,7 +921,7 @@ async fn a_key_that_is_not_one_clean_value_is_refused() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn only_narrows_what_is_covered_and_cannot_widen_it() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -945,7 +945,7 @@ async fn only_narrows_what_is_covered_and_cannot_widen_it() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_required_key_refuses_a_request_without_one() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -968,7 +968,7 @@ async fn a_required_key_refuses_a_request_without_one() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_required_key_cannot_widen_what_is_covered() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -989,7 +989,7 @@ async fn a_required_key_cannot_widen_what_is_covered() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn forget_lets_a_retry_run_once_a_job_has_failed() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -1009,7 +1009,7 @@ async fn forget_lets_a_retry_run_once_a_job_has_failed() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn forget_leaves_a_run_in_progress_alone() {
     let pool = pool().await;
     let keys = keys(&pool);
@@ -1019,7 +1019,7 @@ async fn forget_leaves_a_run_in_progress_alone() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn erasing_a_caller_deletes_what_is_held_for_them_and_for_nobody_else() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -1038,7 +1038,7 @@ async fn erasing_a_caller_deletes_what_is_held_for_them_and_for_nobody_else() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_row_holds_no_request_and_a_copy_of_the_answer() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -1060,7 +1060,7 @@ async fn the_row_holds_no_request_and_a_copy_of_the_answer() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn services_booting_together_all_set_up() {
     let pool = connect().await;
     sqlx::query("DROP TABLE IF EXISTS axa_idempotency")
@@ -1078,7 +1078,7 @@ async fn services_booting_together_all_set_up() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn check_finds_a_missing_table() {
     let pool = connect().await;
     setup(&pool).await.unwrap();
@@ -1102,7 +1102,7 @@ async fn check_finds_a_missing_table() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_setup_statements_alone_make_a_working_table() {
     let pool = connect().await;
     sqlx::query("DROP TABLE IF EXISTS axa_idempotency")
@@ -1121,7 +1121,7 @@ async fn the_setup_statements_alone_make_a_working_table() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_redirect_is_kept_as_the_write_it_answers() {
     let pool = pool().await;
     let runs = Runs::default();
@@ -1146,7 +1146,7 @@ async fn a_redirect_is_kept_as_the_write_it_answers() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_empty_answer_replays_as_an_empty_answer() {
     let pool = pool().await;
     let runs = Runs::default();

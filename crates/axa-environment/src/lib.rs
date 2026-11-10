@@ -20,9 +20,9 @@
 use std::fmt;
 
 /// The variables that name the environment, in the order they are read.
-pub const VARIABLES: [&str; 2] = ["APP_ENV", "LOCO_ENV"];
+pub const VARIABLES: [&str; 1] = ["APP_ENV"];
 
-/// The environment, taken from `APP_ENV` (or the older `LOCO_ENV`).
+/// The environment, taken from `APP_ENV`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Environment {
     /// Local development; the default for a debug build.
@@ -82,7 +82,7 @@ impl Environment {
     /// use axa_environment::Environment;
     ///
     /// let name = Environment::name_from(|variable| {
-    ///     (variable == "LOCO_ENV").then(|| "staging".to_string())
+    ///     (variable == "APP_ENV").then(|| "staging".to_string())
     /// });
     /// assert_eq!(name.as_deref(), Some("staging"));
     /// ```
@@ -93,7 +93,7 @@ impl Environment {
             .find_map(|variable| lookup(variable).filter(|name| !name.trim().is_empty()))
     }
 
-    /// Read the environment from `APP_ENV`, then `LOCO_ENV`.
+    /// Read the environment from `APP_ENV`.
     #[must_use]
     pub fn from_env() -> Self {
         Self::resolve(Self::name().as_deref(), cfg!(debug_assertions))
@@ -165,18 +165,17 @@ mod tests {
     }
 
     #[test]
-    fn app_env_is_read_before_loco_env() {
-        let both = lookup(&[("APP_ENV", "production"), ("LOCO_ENV", "development")]);
-        assert_eq!(Environment::name_from(both).as_deref(), Some("production"));
-        let older = lookup(&[("LOCO_ENV", "test")]);
-        assert_eq!(Environment::name_from(older).as_deref(), Some("test"));
+    fn only_app_env_names_the_environment() {
+        let set = lookup(&[("APP_ENV", "production"), ("RUST_ENV", "development")]);
+        assert_eq!(Environment::name_from(set).as_deref(), Some("production"));
+        let other = lookup(&[("RUST_ENV", "test")]);
+        assert_eq!(Environment::name_from(other), None);
         assert_eq!(Environment::name_from(lookup(&[])), None);
     }
 
     #[test]
     fn a_blank_name_counts_as_unset() {
-        let blank = lookup(&[("APP_ENV", "  "), ("LOCO_ENV", "production")]);
-        assert_eq!(Environment::name_from(blank).as_deref(), Some("production"));
+        assert_eq!(Environment::name_from(lookup(&[("APP_ENV", "  ")])), None);
         assert_eq!(Environment::name_from(lookup(&[("APP_ENV", "")])), None);
     }
 

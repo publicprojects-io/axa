@@ -32,7 +32,7 @@ Loco. Moving from SeaORM to sqlx is a separate change.
 | `impl Hooks for App` | Plain functions on `App` |
 | `cli::main::<App, Migrator>()` | `App::run(cli::parse(...))`, written out in your own code |
 | `config/*.yaml` | Environment variables, with defaults in code |
-| `LOCO_ENV` | `APP_ENV` (`LOCO_ENV` is still read by axa) |
+| Loco's environment variable | `APP_ENV`, the only variable axa reads for this |
 | `Initializer` | A function that takes and returns a `Router` |
 | `use loco_rs::prelude::*` | `use axa::prelude::*` |
 | `ctx.shared_store`, `AppContext`, `Routes` | The same names, with the same shape |
@@ -290,9 +290,9 @@ now live somewhere:
 | YAML | Now |
 |---|---|
 | `server.port`, `binding`, `host` | `Defaults`, then `PORT`, `BINDING`, `HOST` |
-| `database.uri` | `DATABASE_URL`. Required in production |
+| `database.uri` | `DB_URL`, not `DATABASE_URL`, which axa does not read. Required in production |
 | `database.max_connections` | `Defaults`, then `DB_MAX_CONNECTIONS` |
-| `limit_payload.body_limit` | `Defaults::body_limit`, then `BODY_LIMIT_BYTES` |
+| `limit_payload.body_limit` | `Defaults::body_limit`, then `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` |
 | `compression`, `cors` | `HTTP_COMPRESSION`, `CORS_ALLOWED_ORIGINS` |
 | `workers.mode` | `WORKER_MODE` |
 | `logger` | `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` |
@@ -301,7 +301,7 @@ now live somewhere:
 | `dangerously_recreate: true` | **See below** |
 
 Update your `Dockerfile` too: remove `COPY ... config`, and set `APP_ENV` in place
-of `LOCO_ENV`. A release build with neither set is production.
+of Loco's environment variable. A release build without it is production.
 
 **Check your settings for typos.** axa refuses a production boot on a setting that
 is set and invalid, such as `HTTP_HSTS=tru`. Run `cargo run -- check` with your real variables. It prints what
@@ -345,7 +345,7 @@ impl TestApp for App {
 Getting this wrong leaves rows behind between tests, which shows up as confusing
 count mismatches.
 
-`Migrator::fresh` here runs against whatever `DATABASE_URL` the tests see, and it
+`Migrator::fresh` here runs against whatever `DB_URL` the tests see, and it
 drops every table, so do not leave that variable pointing at a real database.
 
 Change a `loco_rs::{TestServer, app::AppContext}` import to
@@ -440,8 +440,9 @@ Your `seaql_migrations` history is unaffected, because SeaORM still runs them.
 Each of these happened in our conversions, and none caused a compile error.
 
 **A security guard reading the old variable name.** Search your whole codebase
-for `LOCO_ENV` and `RUST_ENV`, not just your Dockerfile. One of our services
-refused its public development signing key only when `LOCO_ENV=production`. The
+for Loco's environment variable and `RUST_ENV`, not just your Dockerfile. One of
+our services refused its public development signing key only when Loco's variable
+said production. The
 Dockerfile moved to `APP_ENV`, the check stopped firing, and a production
 container with no signing key would have used that public key. Anyone could then
 have forged admin tokens. No test noticed. The fix was to read the shared
@@ -491,7 +492,7 @@ that block was present, and it could be a preset plus overrides:
 
 | Header | Loco's `github` preset | axa in production |
 |---|---|---|
-| `content-security-policy` | A policy for pages | `default-src 'none'; frame-ancestors 'none'`. Set `HTTP_CSP` |
+| `content-security-policy` | A policy for pages | `default-src 'none'; frame-ancestors 'none'`. Set `HTTP_CONTENT_SECURITY_POLICY` |
 | `strict-transport-security` | 20 years, unless overridden | One year. Set `HSTS_MAX_AGE_SECONDS` |
 | `x-frame-options` | `sameorigin` | `DENY` |
 | `x-content-type-options` | `nosniff` | `nosniff` |
@@ -507,7 +508,7 @@ nothing today, and it hides that advisory if the crate ever comes back through
 something else.
 
 **The default local database.** Any script or test that relied on the local
-`postgres://loco:loco@localhost:5432/...` must set `DATABASE_URL`, because the
+`postgres://loco:loco@localhost:5432/...` must set `DB_URL`, because the
 default user is now `postgres`. It fails to connect, so you will see this one, but
 only where that default was in use.
 
@@ -522,12 +523,12 @@ have not finished. Commit with explicit paths.
 | CORS | Off in production unless origins are listed |
 | Request timeout | 60 seconds in production. Raise `REQUEST_TIMEOUT_SECONDS`, or give a slow route its own limit with `Routes::add_with_timeout`, or a group with `Routes::timeout` |
 | Security headers | Added to every response, in place of any `secure_headers:` block. See above |
-| Content security policy | A strict policy in production. A service that serves pages must set `HTTP_CSP` |
+| Content security policy | A strict policy in production. A service that serves pages must set `HTTP_CONTENT_SECURITY_POLICY` |
 | HSTS | On in production |
 | `x-powered-by` | Gone |
 | Automatic `If-None-Match` comparison | Kept, in the standard stack, and now weak, with lists and `*`, as RFC 9110 has it. A handler sets an `ETag` and need not return its own `304`. Neither Loco nor `axa` generates a tag unless a route adds `conditional::etag` |
-| Missing `DATABASE_URL` in production | Refuses to boot |
-| Release build with no `APP_ENV` or `LOCO_ENV` | Production, not development, so it refuses to boot with no `DATABASE_URL`, and binds `0.0.0.0`. A debug build is still development. Set `APP_ENV` where you run a release build locally |
+| Missing `DB_URL` in production | Refuses to boot |
+| Release build with no `APP_ENV` | Production, not development, so it refuses to boot with no `DB_URL`, and binds `0.0.0.0`. A debug build is still development. Set `APP_ENV` where you run a release build locally |
 | A setting set but invalid | Refuses to boot in production and any unknown environment, naming the variable. Warned about elsewhere |
 | Default local database | `postgres://postgres:postgres@localhost:5432/...`, not `loco:loco` |
 
@@ -545,7 +546,7 @@ cargo test -- --ignored --test-threads=1   # against a real Postgres
 Compare the counts with your baseline, then search for what is left:
 
 ```sh
-git grep -n -E 'loco_rs|loco-rs|LOCO_ENV|RUST_ENV|pg_loco_queue|config/.*\.yaml'
+git grep -n -i -E 'loco|RUST_ENV|config/.*\.yaml'
 ```
 
 Run `cargo update` until `loco-rs` is gone from `Cargo.lock`.
@@ -553,8 +554,8 @@ Run `cargo update` until `loco-rs` is gone from `Cargo.lock`.
 Finally, **start the real binary**, because tests do not cover this:
 
 ```sh
-APP_ENV=production cargo run -- check   # non-zero with no DATABASE_URL
-APP_ENV=production cargo run -- start   # refuses to boot with no DATABASE_URL
+APP_ENV=production cargo run -- check   # non-zero with no DB_URL
+APP_ENV=production cargo run -- start   # refuses to boot with no DB_URL
 curl -i localhost:<port>/_health
 ```
 

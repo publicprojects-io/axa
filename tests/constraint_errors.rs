@@ -26,7 +26,7 @@ const MISSING: &str = "INSERT INTO axa_constraint_parent (id, name) VALUES (4, N
 const NOT_A_CONSTRAINT: &str = "SELECT * FROM axa_constraint_no_such_table";
 
 fn url() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
@@ -46,7 +46,7 @@ async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
 
 #[cfg(any(feature = "queue", feature = "sqlx"))]
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
     let pool = sqlx::PgPool::connect(&url()).await.unwrap();
     for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
@@ -74,7 +74,7 @@ async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
 
 #[cfg(feature = "sea-orm")]
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
     use sea_orm::{ConnectionTrait, Database};
 

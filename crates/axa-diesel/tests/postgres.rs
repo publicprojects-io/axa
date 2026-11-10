@@ -2,7 +2,7 @@
 //! every table in the database they are given. Run them with:
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
 //! ```
 
 use std::{path::Path, time::Duration};
@@ -22,7 +22,7 @@ struct Count {
 }
 
 async fn pool() -> Pool {
-    let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     connect(&PoolConfig::new(uri)).await.expect("connect")
 }
 
@@ -53,7 +53,7 @@ async fn insert_item(pool: &Pool, name: &str) -> Result<usize, diesel::result::E
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn pooling_and_migrations_against_postgres() {
     let pool = pool().await;
     ping(&pool).await.unwrap();
@@ -108,7 +108,7 @@ async fn pooling_and_migrations_against_postgres() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn recreating_keeps_extensions() {
     let pool = pool().await;
     {
@@ -128,9 +128,9 @@ async fn recreating_keeps_extensions() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_pool_that_is_all_in_use_answers_with_an_error_in_time() {
-    let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     let config = PoolConfig {
         max_connections: 1,
         wait_timeout: Duration::from_millis(100),
@@ -145,7 +145,7 @@ async fn a_pool_that_is_all_in_use_answers_with_an_error_in_time() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_unreachable_database_is_an_error() {
     let config = PoolConfig::new("postgres://nobody:nothing@127.0.0.1:1/none");
     assert!(connect(&config).await.is_err());

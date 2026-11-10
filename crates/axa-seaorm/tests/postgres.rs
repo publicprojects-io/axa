@@ -2,7 +2,7 @@
 //! and drop tables in the database they are given. Run them with:
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
 //! ```
 
 use axa_seaorm::{
@@ -13,7 +13,7 @@ use axa_seaorm::{
 };
 
 async fn database() -> DatabaseConnection {
-    let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     connect(&PoolConfig::new(uri)).await.expect("connect")
 }
 
@@ -50,7 +50,7 @@ async fn foreign_keys(db: &DatabaseConnection, table: &str) -> Vec<String> {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and changes its schema"]
+#[ignore = "needs AXA_TEST_DB_URL and changes its schema"]
 async fn schema_helpers_against_postgres() {
     let db = database().await;
     let m = SchemaManager::new(&db);

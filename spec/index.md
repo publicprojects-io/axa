@@ -77,7 +77,7 @@ fixed once and an auditor reads it once.
 
 | Id | Requirement | Test |
 |---|---|---|
-| ENV-1 | `APP_ENV` names the environment, then `LOCO_ENV`. A blank value counts as unset. | `app_env_is_read_before_loco_env`, `a_blank_name_counts_as_unset` |
+| ENV-1 | `APP_ENV` names the environment, and no other variable does. A blank value counts as unset. | `only_app_env_names_the_environment`, `a_blank_name_counts_as_unset` |
 | ENV-2 | `dev` and `prod` are accepted as short forms, in any case. | `parses_names_and_short_forms` |
 | ENV-3 | Any name other than development and test is production-like. | `unknown_environment_is_production_like` |
 | ENV-4 | With no name, a debug build is development and a release build is production, so a release binary started with no variables fails closed. The build is read from `cfg!(debug_assertions)`. | `a_debug_build_with_no_name_is_development`, `a_release_build_with_no_name_is_production`, `parsing_a_blank_name_follows_the_build`, and `with_no_name_this_build_decides`, which CI runs in a debug build and a release build |
@@ -90,8 +90,8 @@ fixed once and an auditor reads it once.
 |---|---|---|
 | CFG-1 | The default port is 1241. | `default_port_is_1241` |
 | CFG-2 | A service may set its own port, and a separate production port. | `production_port_applies_only_in_production` |
-| CFG-3 | Production with a database and no `DATABASE_URL` refuses to boot. | `production_refuses_to_boot_without_a_database_url` |
-| CFG-4 | A service with an empty `database` default needs no `DATABASE_URL`. | `a_service_with_no_database_boots_in_production_without_one` |
+| CFG-3 | Production with a database and no `DB_URL` refuses to boot. | `production_refuses_to_boot_without_a_database_url` |
+| CFG-4 | A service with an empty `database` default needs no `DB_URL`. | `a_service_with_no_database_boots_in_production_without_one` |
 | CFG-5 | Development and test get a local database named `<database>_<environment>`, as the user `postgres`. | `development_and_test_get_a_local_database_named_for_the_environment`, `the_local_database_user_names_no_framework` |
 | CFG-6 | Only the `test` environment sets `dangerously_truncate`. | `only_tests_ever_truncate` |
 | CFG-7 | Production does not migrate at boot by default. | `production_does_not_migrate_at_boot_by_default` |
@@ -102,18 +102,18 @@ fixed once and an auditor reads it once.
 | CFG-12 | The `test` environment runs jobs in the foreground unless `WORKER_MODE` says otherwise. | `tests_run_jobs_in_the_foreground` |
 | CFG-13 | A production-like environment refuses a number, flag, level, format, worker mode, or log filter that is set but invalid. | `production_refuses_an_unparsable_number`, `a_number_out_of_range_is_refused`, `production_refuses_a_flag_it_does_not_know`, `production_refuses_a_name_it_does_not_know`, `a_bad_log_filter_is_refused_and_never_reaches_the_logger` |
 | CFG-14 | The refusal names every invalid variable and its value, and never the value under a secret-shaped name. | `every_problem_is_named_at_once`, `an_invalid_value_under_a_secret_name_is_not_printed` |
-| CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DATABASE_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
+| CFG-15 | A blank value counts as unset for the settings of CFG-13 and for `DB_URL`. `CORS_ALLOWED_ORIGINS`, `BINDING`, and `HOST` keep a blank value. | `a_blank_value_counts_as_unset`, `production_refuses_a_blank_database_url` |
 | CFG-16 | Warnings are kept on `Logger::warnings`, and `logger::init` writes them to stderr. Valid settings raise none. | `valid_settings_raise_no_warnings`, `check_shows_warnings_outside_production`, `settings_warnings_go_to_stderr_whatever_the_logging` |
 | CFG-25 | The `Debug` text of `Database`, and so of `Config` and `AppContext`, hides any password in the connection string. | `debug_output_never_prints_a_password`, `a_pools_debug_text_holds_no_password` |
 | CFG-26 | The `Debug` text of `PoolConfig`, in `axa-sqlx` and `axa-seaorm`, leaves the connection string out. | `debug_text_leaves_out_the_connection_string` |
 | CFG-17 | `redact` hides the whole value of a secret-shaped name, the password in a URL, and any secret-shaped `key=value` pair. It errs towards hiding. | `redact_hides_secret_shaped_names`, `redact_hides_the_password_in_a_url`, `redact_hides_secret_pairs` |
 | CFG-18 | `Config::apply_cli` applies `start --binding` and `--port`, and nothing else. | `the_command_line_overrides_only_what_start_gives` |
-| CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CSP` names one, and an empty `HTTP_CSP` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
+| CFG-19 | Production sends a strict `content-security-policy` unless `HTTP_CONTENT_SECURITY_POLICY` names one, and an empty `HTTP_CONTENT_SECURITY_POLICY` sends none. Elsewhere there is none by default. | `production_sends_a_strict_policy_by_default`, `development_sends_no_policy_by_default`, `a_service_can_name_its_own_policy_or_none` |
 | CFG-20 | `HSTS_MAX_AGE_SECONDS` sets the HSTS lifetime, one year by default. | `the_hsts_max_age_can_be_set`, `production_sends_a_strict_policy_by_default` |
 | CFG-21 | The database connect timeout is 5 seconds and the idle timeout 10 minutes, unless a service's `Defaults` or a variable says otherwise. | `the_database_timeouts_suit_a_real_database`, `a_service_can_state_its_own_database_defaults` |
 | CFG-22 | Outside production a service migrates at boot unless `Defaults::auto_migrate` is off, and a variable beats that. | `development_migrates_at_boot_by_default`, `a_service_can_state_its_own_database_defaults` |
 | CFG-23 | An unset smallest pool size follows a smaller largest one. A largest size of 0, or a smallest above the largest, is invalid as in CFG-13. | `a_small_largest_pool_size_carries_the_smallest_with_it`, `a_pool_that_cannot_exist_is_refused` |
-| CFG-24 | Production refuses a `DATABASE_URL` that could go in the clear: it must demand TLS or stay on this machine, judged by `host` and `hostaddr` as the driver reads them, unless `DB_ALLOW_INSECURE` is set. `require` encrypts without checking who answers, and `verify-full` is what checks. An address it cannot read is refused, and the error does not quote it. | `production_refuses_a_database_url_that_could_go_in_the_clear`, `production_accepts_a_database_url_that_stays_private` |
+| CFG-24 | Production refuses a `DB_URL` that could go in the clear: it must demand TLS or stay on this machine, judged by `host` and `hostaddr` as the driver reads them, unless `DB_ALLOW_INSECURE` is set. `require` encrypts without checking who answers, and `verify-full` is what checks. An address it cannot read is refused, and the error does not quote it. | `production_refuses_a_database_url_that_could_go_in_the_clear`, `production_accepts_a_database_url_that_stays_private` |
 
 The variables are listed in `README.md`.
 
@@ -244,7 +244,7 @@ a browser (TRA-3).
 The engine is `axa-postgres-job-queue` (section 4.18), and `axa::queue` puts `BackgroundWorker`
 over it. These rows are proved through `axa::queue`. A job gets one attempt by default, because a retry repeats its work. Raising
 `max_attempts` makes delivery at least once, so that job's work must be safe to
-repeat. These tests need `AXA_TEST_DATABASE_URL`.
+repeat. These tests need `AXA_TEST_DB_URL`.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -283,7 +283,7 @@ repeat. These tests need `AXA_TEST_DATABASE_URL`.
 | SRV-4 | The job loops stop when the server cannot start. | `the_job_loops_stop_when_the_server_cannot_start` |
 | SRV-5 | `SHUTDOWN_TIMEOUT_SECONDS`, 25 by default, limits how long shutdown waits for requests and jobs. `0` waits for as long as they take. | `a_hung_request_cannot_hold_shutdown_past_its_limit`, `a_zero_shutdown_limit_waits_for_requests`, `a_hung_job_cannot_hold_shutdown_past_its_limit` |
 | SRV-6 | Requests and jobs hear of shutdown at once and share one limit, and no job starts after that. | `requests_and_jobs_share_one_limit_and_no_job_starts_during_it` |
-| SRV-7 | A client that does not finish its headers within `HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped, from when it connects or sends the first byte of a later request, including one that sends nothing. `0` allows for ever. A limit too long for the clock means none. The exception is a request that starts in the same read as the end of the last one: it is bound by the keep-alive limit instead, because `hyper` holds those bytes where this crate cannot see them. The server speaks HTTP/1 only, so that no step waits with no limit. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address`, `a_client_that_sends_nothing_is_dropped`, `an_http2_client_that_goes_silent_is_dropped`, `a_stall_in_a_second_requests_headers_is_dropped` |
+| SRV-7 | A client that does not finish its headers within `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS`, 30 by default, is dropped, from when it connects or sends the first byte of a later request, including one that sends nothing. `0` allows for ever. A limit too long for the clock means none. The exception is a request that starts in the same read as the end of the last one: it is bound by the keep-alive limit instead, because `hyper` holds those bytes where this crate cannot see them. The server speaks HTTP/1 only, so that no step waits with no limit. A handler still sees the client's address. | `a_client_that_stalls_in_its_headers_is_dropped`, `a_header_limit_of_zero_waits_for_ever`, `a_handler_still_sees_the_clients_address`, `a_client_that_sends_nothing_is_dropped`, `an_http2_client_that_goes_silent_is_dropped`, `a_stall_in_a_second_requests_headers_is_dropped` |
 | SRV-8 | At most `MAX_CONNECTIONS` connections, by default `server::MAX_CONNECTIONS`, are open at once. An upgraded connection counts for as long as its socket is open. More wait to be accepted, and are not refused. | `connections_past_the_limit_wait_their_turn`, `a_limit_of_zero_means_none`, `an_upgraded_connection_keeps_its_slot` |
 | SRV-9 | A connection can still be upgraded, as a WebSocket is. | `a_connection_can_be_upgraded` |
 | SRV-10 | `MAX_CONNECTIONS` sets the limit, and `0` is invalid. | `the_connection_limit_is_a_setting_and_cannot_be_zero` |
@@ -513,7 +513,7 @@ replay. A retry is told to wait until the claim's lease ends, and with
 `rerun_abandoned_after` it then runs the handler again. A handler that must not repeat
 needs a unique constraint of its own.
 
-The Postgres tests need `AXA_TEST_DATABASE_URL`.
+The Postgres tests need `AXA_TEST_DB_URL`.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -566,7 +566,7 @@ state, and change only as OBX-39 allows. An event's state is its latest attempt:
 `refused`, `rejected`, `failed`, `lost`, `abandoned`, `returned`, `released`, `erased`,
 or `imported`.
 
-These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/`.
+These tests need `AXA_TEST_DB_URL`, except where the name is in `src/`.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -614,7 +614,7 @@ These tests need `AXA_TEST_DATABASE_URL`, except where the name is in `src/`.
 
 `axa-postgres-job-queue` holds the queue's engine: its tables and SQL, the job loops, and what is
 below. It does not depend on `axa`, so its handlers are closures over JSON, its error is
-its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DATABASE_URL`, except
+its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DB_URL`, except
 where the name is in `src/`.
 
 `axa_queue` and `axa_schedule` are working state, and change as jobs run. `axa_job_acts`
@@ -670,17 +670,17 @@ cargo test --features queue
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-diesel --all-features -e normal   # must show no C database library
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue -- --ignored
-AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
+AXA_TEST_DB_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-seaorm -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-diesel -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored
 ```
 

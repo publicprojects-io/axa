@@ -5,35 +5,11 @@ that provides a middleware stack, health checks, error responses, configuration
 helpers, route tables, logging capabilities, background jobs, database queues, and
 graceful shutdown.
 
-## Why it exists
-
-A framework gives you a lot for free, and asks you to trust what it does on your
-behalf. For a service handling identity, clinical, or government records, that
-trade runs the wrong way: an auditor has to read the framework as well as your
-code, and each of its dependencies joins your supply chain.
-
-axa takes the opposite position:
-
-- **You can read the whole path.** `main.rs` is ordinary Rust that calls ordinary
-  functions. Nothing calls into your code from behind a trait.
-- **One copy.** A defect in shared plumbing is fixed once, and an auditor reads
-  it once.
-- **Fewer dependencies.** Replacing Loco and SeaORM with sqlx took one measured
-  service from 510 normal dependencies to about 348, before counting anything
-  added to replace them.
-- **Safe defaults that fail closed.** A production service with no database URL,
-  or with a wildcard CORS origin, refuses to start.
-
 ## A library, not a framework
 
-There are no lifecycle hooks, macros, or generated code. `AppContext` is a plain
-struct, passed as ordinary Axum state, and `AppRoutes` builds an ordinary
-`axum::Router`. Any piece can be read, replaced, or left out on its own.
-
-Some things will deliberately never be added: route macros, a generic CRUD
-controller, a dependency-injection container, a plugin system, a configuration
-language, and a database abstraction. Each one puts indirection back between a
-reader and the behaviour.
+`AppContext` is a plain struct, passed as ordinary Axum state, and `AppRoutes`
+builds an ordinary `axum::Router`. Any piece can be read, replaced, or left out on
+its own.
 
 ## Installing
 
@@ -206,7 +182,7 @@ From the outside in:
 | Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
 | Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
 | Compression | Gzip, Brotli, and Zstd when enabled |
-| Body limit | Answers `413` over `BODY_LIMIT_BYTES`. `middleware::body_limit` raises it on one route |
+| Body limit | Answers `413` over `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`. `middleware::body_limit` raises it on one route |
 
 ### Conditional requests
 
@@ -311,24 +287,24 @@ place.
 
 | Variable | Effect |
 |---|---|
-| `APP_ENV` | `development`, `test`, or `production`. `LOCO_ENV` is also read. Any other name gets production's stricter behaviour. With neither set, a debug build is development and a release build is production |
+| `APP_ENV` | `development`, `test`, or `production`. Any other name gets production's stricter behaviour. With it unset, a debug build is development and a release build is production |
 | `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
-| `DATABASE_URL` | Connection string. Required in production for a service with a database, where it must set `sslmode` to `require`, `verify-ca`, or `verify-full` unless it stays on this machine |
+| `DB_URL` | Connection string. Required in production for a service with a database, where it must set `sslmode` to `require`, `verify-ca`, or `verify-full` unless it stays on this machine |
 | `DB_ALLOW_INSECURE` | Let a production service reach its database without demanding TLS, as on a network that encrypts its own traffic |
 | `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
 | `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds. 5 seconds and 10 minutes by default, or a service's `Defaults` |
 | `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot. A service sharing a database it does not own sets `Defaults::auto_migrate` to `false` |
 | `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
-| `BODY_LIMIT_BYTES` | Largest accepted request body |
+| `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` | Largest accepted request body |
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |
-| `HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers, once it connects or starts another request. 30 by default, and `0` allows for ever |
+| `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS` | How long a client has to send a request's headers, once it connects or starts another request. 30 by default, and `0` allows for ever |
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | How long an idle connection is kept for a next request. Keep it above any load balancer's idle timeout. 75 by default, and `0` keeps it for ever |
 | `SEND_STALL_TIMEOUT_SECONDS` | How long a client that has stopped reading may hold up a response before it is dropped. Any write that goes through starts this again. 60 by default, and `0` waits for ever |
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
 | `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |
-| `HTTP_CSP` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |
+| `HTTP_CONTENT_SECURITY_POLICY` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |
 | `REQUEST_TIMEOUT_SECONDS` | Per-request timeout. `0` turns it off |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins |
 | `WORKER_MODE` | `BackgroundQueue`, `BackgroundAsync`, or `ForegroundBlocking` |
@@ -583,8 +559,8 @@ cargo test --workspace --all-features
 cargo test --features queue
 cargo test --workspace
 cargo clippy --workspace --all-targets --all-features -- -D warnings
-AXA_TEST_DATABASE_URL=postgres://... cargo test --features queue -- --ignored
-AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
 ```
 
 The last command runs the queue tests against a real Postgres. Those tests have

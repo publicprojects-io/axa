@@ -23,8 +23,8 @@
 //! - **A page can load its own files.** `axa`'s production default,
 //!   `default-src 'none'`, suits a JSON API and would block a page's stylesheets
 //!   and images. [`Page`] sends [`PAGE_CSP`] in its place, and a handler or
-//!   `HTTP_CSP` can name another. It allows no inline script, and files only from
-//!   the page's own origin.
+//!   `HTTP_CONTENT_SECURITY_POLICY` can name another. It allows no inline
+//!   script, and files only from the page's own origin.
 //!
 //! A template name without one of those extensions is not escaped, so never
 //! render user input into a `.txt` template that ends up in a page.

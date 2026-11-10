@@ -2,7 +2,7 @@
 //! every table in the database they are given. Run them with:
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-sqlx -- --ignored --test-threads=1
 //! ```
 
 use std::path::Path;
@@ -14,7 +14,7 @@ use axa_sqlx::{
 };
 
 async fn pool() -> PgPool {
-    let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     connect(&PoolConfig::new(uri)).await.expect("connect")
 }
 
@@ -51,7 +51,7 @@ async fn insert_item(pool: &PgPool, name: &str) -> Result<i64, sqlx::Error> {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn pooling_and_migrations_against_postgres() {
     let pool = pool().await;
     let migrator = migrator().await;
@@ -115,7 +115,7 @@ async fn pooling_and_migrations_against_postgres() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn recreating_keeps_extensions() {
     let pool = pool().await;
     let migrator = migrator().await;
@@ -133,7 +133,7 @@ async fn recreating_keeps_extensions() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn services_booting_together_all_migrate() {
     let pool = pool().await;
     let migrator = migrator().await;
@@ -155,7 +155,7 @@ async fn services_booting_together_all_migrate() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn status_on_a_fresh_database_shows_nothing_applied() {
     let pool = pool().await;
     let migrator = migrator().await;
@@ -179,7 +179,7 @@ async fn item_count(db: impl Into<Db<'_>>) -> Result<i64, sqlx::Error> {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL and drops every table in it"]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn one_function_serves_the_pool_and_a_transaction() {
     let pool = pool().await;
     let migrator = migrator().await;

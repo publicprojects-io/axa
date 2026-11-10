@@ -23,7 +23,7 @@ impl std::io::Write for Captured {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_logs_nothing_at_error() {
     let captured = Captured::default();
     let writer = captured.clone();
@@ -32,7 +32,7 @@ async fn a_violated_constraint_logs_nothing_at_error() {
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .init();
-    let url = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     let pool = sqlx::PgPool::connect(&url).await.unwrap();
     let mut setup = pool.begin().await.unwrap();
     sqlx::query("CREATE TEMPORARY TABLE axa_logged (email TEXT UNIQUE)")

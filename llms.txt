@@ -6,7 +6,7 @@
 
 ## Docs
 
-- [README](README.md): why it exists, install, quick start, what it provides
+- [README](README.md): install, quick start, what it provides
 - [AGENTS](AGENTS.md): build, test, lint, and conventions
 - [Specification](spec/index.md): the single source of truth, each requirement naming its test
 - [Changelog](CHANGELOG.md): changes by version

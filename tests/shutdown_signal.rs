@@ -235,7 +235,7 @@ impl BackgroundWorker<u64> for SlowWorker {
 }
 
 fn database() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 /// Held for a whole test, because the job tests share one table.
@@ -292,7 +292,7 @@ async fn job_outlives_sigterm(test: &str, role: &str) {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn sigterm_lets_a_job_in_progress_finish_in_a_worker() {
     const TEST: &str = "sigterm_lets_a_job_in_progress_finish_in_a_worker";
     if std::env::var_os(ROLE).is_some() {
@@ -304,7 +304,7 @@ async fn sigterm_lets_a_job_in_progress_finish_in_a_worker() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn sigterm_lets_a_job_in_progress_finish_beside_a_server() {
     const TEST: &str = "sigterm_lets_a_job_in_progress_finish_beside_a_server";
     if std::env::var_os(ROLE).is_some() {

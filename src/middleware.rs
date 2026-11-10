@@ -301,8 +301,9 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     if let Some(policy) = &config.csp {
         router = router.layer(default_header(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_str(policy)
-                .map_err(|_| Error::string("HTTP_CSP is not a valid header value"))?,
+            HeaderValue::from_str(policy).map_err(|_| {
+                Error::string("HTTP_CONTENT_SECURITY_POLICY is not a valid header value")
+            })?,
         ));
     }
     Ok(router

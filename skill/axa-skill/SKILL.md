@@ -201,7 +201,7 @@ in tests, which takes the lookup as a function and leaves the process environmen
 
 Production fails closed, and these are the usual first-deploy surprises:
 
-- `DATABASE_URL` is required when a service has a database. It must set `sslmode` to
+- `DB_URL` is required when a service has a database. It must set `sslmode` to
   `require`, `verify-ca`, or `verify-full`, unless it stays on loopback or a socket.
   `DB_ALLOW_INSECURE=true` is the way out for a network that encrypts its own traffic.
 - A set but invalid value, such as `HTTP_HSTS=tru`, stops the boot and names the variable.

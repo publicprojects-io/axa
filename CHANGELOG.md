@@ -5,6 +5,33 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The database URL is read from `DB_URL`, not `DATABASE_URL`.** It sits with the
+  other `DB_` settings. A service that still sets only `DATABASE_URL` has no database
+  URL: production refuses to boot, naming `DB_URL`, and development falls back to its
+  default database. The `#[ignore]` suites read `AXA_TEST_DB_URL` in place of
+  `AXA_TEST_DATABASE_URL`. Rename both in every Dockerfile, deploy config, `.env`
+  file, and CI workflow.
+- **Two HTTP settings are renamed to say what they limit.** `BODY_LIMIT_BYTES` is now
+  `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, and `HEADER_READ_TIMEOUT_SECONDS` is now
+  `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS`. The old names are not read, so a service
+  that still sets one gets the default: `Defaults::body_limit` and 30 seconds. The
+  Rust constant `config::DEFAULT_HEADER_READ_TIMEOUT_SECONDS` keeps its name.
+- **`HTTP_CSP` is now `HTTP_CONTENT_SECURITY_POLICY`.** The old name is not read, so
+  a service that set it to allow its pages' scripts or styles gets production's
+  strict `default-src 'none'; frame-ancestors 'none'` instead, and its pages break.
+  One that set it empty to send no policy now sends the strict one.
+
+### Removed
+
+- **`APP_ENV` is the only variable that names the environment.** `axa` and
+  `axa-environment` no longer read Loco's environment variable as a fallback, and
+  `axa_environment::VARIABLES` is now `["APP_ENV"]`. A service that still sets only
+  the old variable runs as development in a debug build and production in a release
+  build, so set `APP_ENV` in every Dockerfile, deploy config, and test script, and
+  search your code for any guard that reads the old name itself.
+
 ## [0.10.0] - 2026-11-09
 
 This covers `axa` 0.10.0 and fourteen crates new to crates.io, thirteen renamed and one new:

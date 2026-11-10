@@ -78,7 +78,7 @@ not verification, so run all three test sets from section 5.
 **Clippy differs by version.** CI runs it on 1.97 and on stable, and a lint can pass on
 one and fail on the other.
 
-**`#[ignore]` tests need real services.** `AXA_TEST_DATABASE_URL` and
+**`#[ignore]` tests need real services.** `AXA_TEST_DB_URL` and
 `AXA_TEST_REDIS_URL` turn them on, and a plain `cargo test` skips them silently. Start
 a throwaway container on a random loopback port, or rely on CI, and say which you did.
 
@@ -105,7 +105,7 @@ closure type `&'a D`, and rustc then cannot prove the relay's future `Send`.
 is on, so a test that captures logs lives in its own file under `tests/`.
 
 **Production fixtures must pass production's rules.** A test using
-`Environment::Production` needs a `DATABASE_URL` that stays private, such as
+`Environment::Production` needs a `DB_URL` that stays private, such as
 `postgres://localhost/x`.
 
 **README examples are compiled.** `src/lib.rs` includes `README.md` as doctests when
