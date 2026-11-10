@@ -12,6 +12,31 @@
 - [Changelog](CHANGELOG.md): changes by version
 - [llms.json](llms.json): this index, machine-readable
 
+### Documentation Hub
+
+- [docs/README](docs/README.md): Documentation index
+- [docs/QUICKSTART](docs/QUICKSTART.md): Hands-on 5-minute tutorial
+- [docs/FEATURES](docs/FEATURES.md): Feature selection guide with decision tree
+- [docs/CONFIGURATION](docs/CONFIGURATION.md): Complete configuration reference
+- [docs/EXAMPLES](docs/EXAMPLES.md): Real-world patterns and recipes
+- [docs/ARCHITECTURE](docs/ARCHITECTURE.md): Visual architecture overview
+
+### Comparison Documents
+
+- [spec/compare](spec/compare/index.md): Comparisons with other frameworks
+- [spec/compare/actix-web](spec/compare/actix-web/index.md)
+- [spec/compare/atuin](spec/compare/atuin/index.md)
+- [spec/compare/crates-io](spec/compare/crates-io/index.md)
+- [spec/compare/kanidm](spec/compare/kanidm/index.md)
+- [spec/compare/loco](spec/compare/loco/index.md)
+- [spec/compare/poem](spec/compare/poem/index.md)
+- [spec/compare/rocket](spec/compare/rocket/index.md)
+- [spec/compare/sentry-relay](spec/compare/sentry-relay/index.md)
+- [spec/compare/svix](spec/compare/svix/index.md)
+- [spec/compare/topcoat](spec/compare/topcoat/index.md)
+- [spec/compare/tuwunel](spec/compare/tuwunel/index.md)
+- [spec/compare/windmill](spec/compare/windmill/index.md)
+
 ## Skills
 
 - [axa-skill](skill/axa-skill/SKILL.md): building a service with Axa
@@ -32,6 +57,7 @@
 - [Upgrading to 0.3](help/upgrading-to-0.3/index.md)
 - [The transactional outbox](help/transactional-outbox/index.md)
 - [Background jobs and schedules](help/background-jobs/index.md)
+- [Health checks](spec/health/index.md)
 
 ## Modules
 
@@ -47,45 +73,62 @@
 - [health](src/health.rs): Health routes
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`
 - [middleware](src/middleware.rs): The standard HTTP middleware stack
+- [model](src/model.rs): Model errors and validation
 - [prelude](src/prelude.rs): Common imports
 - [queue](src/queue.rs): The Postgres job queue, over `axa-postgres-job-queue` (feature `queue`)
 - [routes](src/routes.rs): Route tables that become an ordinary `Router`
 - [server](src/server.rs): Serving, connection limits, and graceful shutdown
 - [store](src/store.rs): Shared in-process store
 - [task](src/task.rs): Command-line tasks
+- [validation](src/validation.rs): Validation helpers
 - [worker](src/worker.rs): Background jobs
 
 ## Crates
 
-- [axa-postgres-diesel](crates/axa-postgres-diesel/README.md) (feature `postgres-diesel`): Diesel on PostgreSQL: pooling, migrations, and test resets for Axum services, in pure Rust.
-- [axa-postgres-toasty](crates/axa-postgres-toasty/README.md) (feature `postgres-toasty`): Toasty on PostgreSQL: connections, migrations, and test resets for Axum services.
-- [axa-mysql-sqlx](crates/axa-mysql-sqlx/README.md) (feature `mysql-sqlx`): MySQL pooling, migrations, and test resets over sqlx for Axum services.
-- [axa-mysql-seaorm](crates/axa-mysql-seaorm/README.md) (feature `mysql-seaorm`): SeaORM connections, migrations, schema helpers, and test resets for Axum services on MySQL.
-- [axa-mysql-diesel](crates/axa-mysql-diesel/README.md) (feature `mysql-diesel`): Diesel pooling, migrations, and test resets for Axum services on MySQL, in pure Rust.
-- [axa-mysql-toasty](crates/axa-mysql-toasty/README.md) (feature `mysql-toasty`): Toasty connections, migrations, and test resets for Axum services, on MySQL.
-- [axa-sqlite-sqlx](crates/axa-sqlite-sqlx/README.md) (feature `sqlite-sqlx`): SQLite pooling, migrations, and test resets over sqlx for Axum services.
-- [axa-sqlite-seaorm](crates/axa-sqlite-seaorm/README.md) (feature `sqlite-seaorm`): SeaORM connections, migrations, schema helpers, and test resets on SQLite for Axum services, with an easy path from Loco.
-- [axa-sqlite-diesel](crates/axa-sqlite-diesel/README.md) (feature `sqlite-diesel`): Diesel pooling, migrations, and test resets for Axum services on SQLite.
-- [axa-environment](crates/axa-environment/README.md) (always included): Which environment a service runs in, read one way, with no dependencies.
-- [axa-keycloak-auth](crates/axa-keycloak-auth/README.md) (feature `keycloak`): Keycloak bearer authentication and ABAC enforcement for Axum services.
-- [axa-openapi-docs](crates/axa-openapi-docs/README.md) (feature `openapi`): Serve OpenAPI documents and a pinned Swagger UI from Axum services.
-- [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services.
-- [axa-transactional-outbox](crates/axa-transactional-outbox/README.md) (feature `outbox`, and `outbox-encryption` to seal payloads at rest): A transactional outbox and relay on Postgres for Axum services, that keeps a record of what it delivered and refused.
-- [axa-postgres-job-queue](crates/axa-postgres-job-queue/README.md) (feature `queue`): A Postgres job queue, worker pool, and recurring schedules for Axum services.
-- [axa-mysql-job-queue](crates/axa-mysql-job-queue/README.md) (a crate on its own, not a feature): A MySQL job queue, worker pool, and recurring schedules for Axum services.
-- [axa-sqlite-job-queue](crates/axa-sqlite-job-queue/README.md) (a crate on its own, not a feature): A SQLite job queue, worker pool, and recurring schedules for Axum services.
-- [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.
-- [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
-- [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.
-- [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
-- [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services.
-- [axa-postgres-seaorm](crates/axa-postgres-seaorm/README.md) (feature `postgres-seaorm`): SeaORM on PostgreSQL: connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.
-- [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults.
-- [axa-postgres-sqlx](crates/axa-postgres-sqlx/README.md) (feature `postgres-sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
-- [axa-maud-templates](crates/axa-maud-templates/README.md) (feature `maud`): Maud compile-time HTML templates with safe escaping and generic errors for Axum services.
-- [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.
-- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test.
-- [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.
-- [axa-idempotency-key](crates/axa-idempotency-key/README.md) (feature `idempotency`): Idempotency-Key handling over Postgres for Axum services.
-- [axa-request-rate-limit](crates/axa-request-rate-limit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services.
-- [axa-accepts-version-negotiation](crates/axa-accepts-version-negotiation/README.md) (feature `versioning`): Header-based API version negotiation for Axum services.
+### Always included
+
+- [axa-environment](crates/axa-environment/README.md): Which environment a service runs in, read one way, with no dependencies
+- [axa-problem](crates/axa-problem/README.md): RFC 9457 problem details, as `axa::problem`
+
+### Data
+
+Each of these gives the same things for its library:
+
+| | sqlx | SeaORM | Diesel | Toasty |
+|---|---|---|---|---|
+| Postgres | [axa-postgres-sqlx](crates/axa-postgres-sqlx/README.md) | [axa-postgres-seaorm](crates/axa-postgres-seaorm/README.md) | [axa-postgres-diesel](crates/axa-postgres-diesel/README.md) | [axa-postgres-toasty](crates/axa-postgres-toasty/README.md) |
+| MySQL | [axa-mysql-sqlx](crates/axa-mysql-sqlx/README.md) | [axa-mysql-seaorm](crates/axa-mysql-seaorm/README.md) | [axa-mysql-diesel](crates/axa-mysql-diesel/README.md) | [axa-mysql-toasty](crates/axa-mysql-toasty/README.md) |
+| SQLite | [axa-sqlite-sqlx](crates/axa-sqlite-sqlx/README.md) | [axa-sqlite-seaorm](crates/axa-sqlite-seaorm/README.md) | [axa-sqlite-diesel](crates/axa-sqlite-diesel/README.md) | |
+
+- **sqlx** has no ORM: a service writes its own SQL. `AppContext::db` is the pool.
+- **SeaORM** adds models, schema helpers, and an easy path from Loco. `AppContext::db` is a `DatabaseConnection`.
+- **Diesel** needs no C database client library: no `libpq` or `libmysqlclient`. `AppContext::db` is a Diesel pool.
+- **Toasty** is before 1.0, and its migrations go forward only. `AppContext::db` is a `toasty::Db`. There is no SQLite Toasty crate.
+
+### Authentication
+
+- [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services
+- [axa-keycloak-auth](crates/axa-keycloak-auth/README.md) (feature `keycloak`): Keycloak bearer authentication and ABAC enforcement for Axum services, standing alone
+
+### Templates
+
+- [axa-maud-templates](crates/axa-maud-templates/README.md) (feature `maud`): Maud compile-time HTML templates with safe escaping and generic errors for Axum services
+- [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services
+
+### Other optional features
+
+- [axa-postgres-job-queue](crates/axa-postgres-job-queue/README.md) (feature `queue`): A Postgres job queue, worker pool, and recurring schedules for Axum services
+- [axa-mysql-job-queue](crates/axa-mysql-job-queue/README.md) (a crate on its own): A MySQL job queue, worker pool, and recurring schedules for Axum services
+- [axa-sqlite-job-queue](crates/axa-sqlite-job-queue/README.md) (a crate on its own): A SQLite job queue, worker pool, and recurring schedules for Axum services
+- [axa-transactional-outbox](crates/axa-transactional-outbox/README.md) (feature `outbox`, and `outbox-encryption` to seal payloads at rest): A transactional outbox and relay on Postgres for Axum services
+- [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services
+- [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition, and request durations by route template for Axum services
+- [axa-request-rate-limit](crates/axa-request-rate-limit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services
+- [axa-idempotency-key](crates/axa-idempotency-key/README.md) (feature `idempotency`): Idempotency-Key handling over Postgres for Axum services
+- [axa-accepts-version-negotiation](crates/axa-accepts-version-negotiation/README.md) (feature `versioning`): Header-based API version negotiation for Axum services
+- [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services
+- [axa-opentelemetry](crates/axa-opentelemetry/README.md) (feature `opentelemetry`): OTLP export of traces and request metrics for Axum services, off until an endpoint is set
+- [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services
+- [axa-openapi-docs](crates/axa-openapi-docs/README.md) (feature `openapi`): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks for Axum services
+- [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults
+- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test

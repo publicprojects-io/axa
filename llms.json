@@ -12,13 +12,43 @@
     "agents": "AGENTS.md",
     "specification": "spec/index.md",
     "changelog": "CHANGELOG.md",
+    "docs": [
+      "docs/README.md",
+      "docs/QUICKSTART.md",
+      "docs/FEATURES.md",
+      "docs/CONFIGURATION.md",
+      "docs/EXAMPLES.md",
+      "docs/ARCHITECTURE.md"
+    ],
     "guides": [
+      "help/axa-for-actix-users/index.md",
+      "help/axa-for-loco-users/index.md",
+      "help/axa-for-poem-users/index.md",
+      "help/axa-for-rocket-users/index.md",
+      "help/axa-for-topcoat-users/index.md",
       "help/from-loco-into-axa/index.md",
       "help/from-loco-seaorm-into-axa-seaorm/index.md",
       "help/idempotency-keys/index.md",
       "help/transactional-outbox/index.md",
       "help/background-jobs/index.md",
-      "help/upgrading-to-0.3/index.md"
+      "help/upgrading-to-0.3/index.md",
+      "help/upgrading-to-0.11/index.md",
+      "help/upgrading-to-0.12/index.md"
+    ],
+    "comparisons": [
+      "spec/compare/index.md",
+      "spec/compare/actix-web/index.md",
+      "spec/compare/atuin/index.md",
+      "spec/compare/crates-io/index.md",
+      "spec/compare/kanidm/index.md",
+      "spec/compare/loco/index.md",
+      "spec/compare/poem/index.md",
+      "spec/compare/rocket/index.md",
+      "spec/compare/sentry-relay/index.md",
+      "spec/compare/svix/index.md",
+      "spec/compare/topcoat/index.md",
+      "spec/compare/tuwunel/index.md",
+      "spec/compare/windmill/index.md"
     ],
     "skills": {
       "user": "skill/axa-skill/SKILL.md",
@@ -193,6 +223,10 @@
       "purpose": "The standard HTTP middleware stack"
     },
     {
+      "name": "model",
+      "purpose": "Model errors and validation"
+    },
+    {
       "name": "prelude",
       "purpose": "Common imports"
     },
@@ -215,6 +249,10 @@
     {
       "name": "task",
       "purpose": "Command-line tasks"
+    },
+    {
+      "name": "validation",
+      "purpose": "Validation helpers"
     },
     {
       "name": "worker",
