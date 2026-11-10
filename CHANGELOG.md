@@ -3,6 +3,8 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
 ## [0.12.0] - 2026-11-10
 
 This covers `axa` 0.12.0; the Postgres crates under their new names, `axa-postgres-sqlx`
