@@ -532,7 +532,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "axa"
-version = "0.12.0"
+version = "0.12.1"
 dependencies = [
  "async-trait",
  "axa-accepts-version-negotiation",
@@ -540,6 +540,7 @@ dependencies = [
  "axa-environment",
  "axa-idempotency-key",
  "axa-keycloak-auth",
+ "axa-maud-templates",
  "axa-mysql-diesel",
  "axa-mysql-seaorm",
  "axa-mysql-sqlx",
@@ -568,6 +569,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "maud",
  "sea-orm",
  "serde",
  "serde_json",
@@ -640,6 +642,16 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "axa-maud-templates"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "maud",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3508,6 +3520,28 @@ name = "matchit"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
+
+[[package]]
+name = "maud"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8156733e27020ea5c684db5beac5d1d611e1272ab17901a49466294b84fc217e"
+dependencies = [
+ "itoa",
+ "maud_macros",
+]
+
+[[package]]
+name = "maud_macros"
+version = "0.27.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7261b00f3952f617899bc012e3dbd56e4f0110a038175929fa5d18e5a19913ca"
+dependencies = [
+ "proc-macro2",
+ "proc-macro2-diagnostics",
+ "quote",
+ "syn 2.0.119",
+]
 
 [[package]]
 name = "md-5"

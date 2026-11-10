@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.12.0"
+version = "0.12.1"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -82,6 +82,7 @@ ratelimit = ["dep:axa-request-rate-limit"]
 redis = ["dep:axa-redis-cache"]
 session = ["dep:axa-web-session"]
 tera = ["dep:axa-tera-templates"]
+maud = ["dep:axa-maud-templates"]
 tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-accepts-version-negotiation"]
 
@@ -102,6 +103,7 @@ axa-postgres-seaorm = { version = "0.3.0", path = "crates/axa-postgres-seaorm", 
 axa-web-session = { version = "0.1.0", path = "crates/axa-web-session", optional = true }
 axa-postgres-sqlx = { version = "0.1.3", path = "crates/axa-postgres-sqlx", optional = true }
 axa-tera-templates = { version = "0.2.1", path = "crates/axa-tera-templates", optional = true }
+axa-maud-templates = { version = "0.1.0", path = "crates/axa-maud-templates", optional = true }
 axa-postgres-toasty = { version = "0.1.0", path = "crates/axa-postgres-toasty", optional = true }
 axa-mysql-sqlx = { version = "0.1.0", path = "crates/axa-mysql-sqlx", optional = true }
 axa-mysql-seaorm = { version = "0.1.0", path = "crates/axa-mysql-seaorm", optional = true }
@@ -138,6 +140,8 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 
 [dev-dependencies]
 validator = { version = "0.21", features = ["derive"] }
+# `html!` names the `maud` crate, so the `maud` feature's test depends on it as a service does.
+maud = { version = "0.27", default-features = false }
 tokio = { version = "1", features = ["io-util", "test-util"] }
 tower = { version = "0.5", features = ["util"] }
 

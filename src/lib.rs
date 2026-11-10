@@ -49,6 +49,7 @@
 //! | `postgres-diesel` | Diesel on Postgres in pure Rust, as `axa::postgres_diesel` |
 //! | `postgres-toasty` | Toasty on Postgres, as `axa::postgres_toasty` |
 //! | `tera` | Tera templates with safe escaping, as `axa::tera` |
+//! | `maud` | Maud compile-time templates with safe escaping, as `axa::maud` |
 //! | `tracing` | Redaction, request tracking, and asynchronous diagnostics, as `axa::tracing` |
 //! | `session` | Web sessions with safe defaults, as `axa::session` |
 //! | `postgres-sqlx` | sqlx on Postgres: pooling, migrations, and test resets, as `axa::postgres_sqlx` |
@@ -127,6 +128,8 @@ pub use axa_environment as environment;
 pub use axa_idempotency_key as idempotency;
 #[cfg(feature = "keycloak")]
 pub use axa_keycloak_auth as keycloak;
+#[cfg(feature = "maud")]
+pub use axa_maud_templates as maud;
 #[cfg(feature = "mysql-diesel")]
 pub use axa_mysql_diesel as mysql_diesel;
 #[cfg(feature = "mysql-seaorm")]

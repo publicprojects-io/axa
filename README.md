@@ -64,10 +64,14 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-paseto-auth`](crates/axa-paseto-auth): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
 - [`axa-keycloak-auth`](crates/axa-keycloak-auth): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
 
+### Templates
+
+- [`axa-maud-templates`](crates/axa-maud-templates): Maud compile-time HTML templates with safe escaping and generic errors, checked by the compiler
+- [`axa-tera-templates`](crates/axa-tera-templates): Tera templates with safe escaping and generic errors, loaded from files
+
 ### Other optional features
 
 - [`axa-postgres-job-queue`](crates/axa-postgres-job-queue): the Postgres job queue, worker pool, and schedules
-- [`axa-tera-templates`](crates/axa-tera-templates): Tera templates with safe escaping and generic errors
 - [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code
 - [`axa-redis-cache`](crates/axa-redis-cache): a Redis cache with mandatory expiry
 - [`axa-openapi-docs`](crates/axa-openapi-docs): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks

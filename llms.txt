@@ -2,7 +2,7 @@
 
 > Accessories library for Axum websites, databases, microservices, and more. A library, not a framework: `main.rs` stays ordinary Axum and
 > calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
-> the preferred way to reach a database. Version 0.12.0, Rust 1.97 or newer.
+> the preferred way to reach a database. Version 0.12.1, Rust 1.97 or newer.
 
 ## Docs
 
@@ -82,6 +82,7 @@
 - [axa-postgres-seaorm](crates/axa-postgres-seaorm/README.md) (feature `postgres-seaorm`): SeaORM on PostgreSQL: connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.
 - [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults.
 - [axa-postgres-sqlx](crates/axa-postgres-sqlx/README.md) (feature `postgres-sqlx`): PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.
+- [axa-maud-templates](crates/axa-maud-templates/README.md) (feature `maud`): Maud compile-time HTML templates with safe escaping and generic errors for Axum services.
 - [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services.
 - [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test.
 - [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services.

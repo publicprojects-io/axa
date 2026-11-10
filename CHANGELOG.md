@@ -5,6 +5,20 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-10
+
+This covers `axa` 0.12.1 and the new `axa-maud-templates` 0.1.0. As in 0.12.0, the
+`sqlite-*` features are left out of the published `axa` until the SQLite crates can be
+published.
+
+### Added
+
+- **`axa-maud-templates` 0.1.0, behind the `maud` feature, as `axa::maud`**: Maud
+  compile-time HTML templates, with what `axa-tera-templates` gives Tera. Values are
+  escaped unless wrapped in `PreEscaped`, a `Page` sends its own content security policy,
+  and a handler's `Error`, from any error through `?`, answers a generic `500`. Maud's
+  `html!` names the `maud` crate, so a service adds `maud = "0.27"` beside `axa`.
+
 ## [0.12.0] - 2026-11-10
 
 This covers `axa` 0.12.0; the Postgres crates under their new names, `axa-postgres-sqlx`

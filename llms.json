@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -137,6 +137,10 @@
     {
       "name": "sqlite-diesel",
       "crate": "axa-sqlite-diesel"
+    },
+    {
+      "name": "maud",
+      "crate": "axa-maud-templates"
     }
   ],
   "modules": [
@@ -434,6 +438,13 @@
       "description": "Diesel pooling, migrations, and test resets for Axum services on SQLite.",
       "feature": "sqlite-diesel",
       "readme": "crates/axa-sqlite-diesel/README.md"
+    },
+    {
+      "name": "axa-maud-templates",
+      "version": "0.1.0",
+      "description": "Maud compile-time HTML templates with safe escaping and generic errors for Axum services.",
+      "feature": "maud",
+      "readme": "crates/axa-maud-templates/README.md"
     }
   ]
 }

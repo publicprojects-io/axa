@@ -367,6 +367,9 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | TRA-3 | `axa-tera-templates` | A failed render is HTML, and shows the visitor nothing from the template. | `a_failed_render_shows_nothing_to_the_visitor` |
 | TRA-4 | `axa-tera-templates` | A template syntax error is found when templates load. | `a_syntax_error_is_found_at_boot` |
 | TRA-5 | `axa-tera-templates` | A page sends its own `content-security-policy`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy` |
+| MAU-1 | `axa-maud-templates` | Values spliced into `html!` are escaped in text and attributes, unless wrapped in `PreEscaped`. | `values_are_escaped_in_text_and_attributes`, `pre_escaped_turns_escaping_off` |
+| MAU-2 | `axa-maud-templates` | A `Page` answers as HTML with `PAGE_CSP`, which beats `axa`'s production default, so its stylesheets and images load. | `a_page_is_html_with_its_own_policy`, `a_maud_page_can_load_its_own_files_in_production`, `json_keeps_the_strict_policy_beside_maud` |
+| MAU-3 | `axa-maud-templates` | A handler's error, through `?` into `Error`, answers a generic `500` in HTML, and shows the visitor nothing of it. | `a_failed_page_shows_nothing_to_the_visitor`, `an_error_can_be_a_message` |
 | KCK-1 | `axa-keycloak-auth` | A missing, expired, forged, or unsigned token, or one with the wrong issuer or audience, is a `401`. | `bad_tokens_are_401s`, `a_changed_payload_fails_the_signature_check`, `an_unsigned_token_is_a_401` |
 | KCK-2 | `axa-keycloak-auth` | A token with an unverified email is a `401`. | `bad_tokens_are_401s` |
 | KCK-3 | `axa-keycloak-auth` | A role grants nothing unless the role map names it. | `mapped_roles_decide_what_a_caller_may_do`, `an_unmapped_role_grants_nothing` |
