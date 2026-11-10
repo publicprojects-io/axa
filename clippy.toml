@@ -1,0 +1,3 @@
+# Names clippy's `doc_markdown` lint takes as words, not code, on top of its own
+# list. Clippy 1.97, the minimum supported version, does not know these yet.
+doc-valid-idents = ["MySQL", "MariaDB", "PostgreSQL", "SQLite", ".."]
