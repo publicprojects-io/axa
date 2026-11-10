@@ -167,7 +167,8 @@ let cli = axa::cli::parse(
   path merge.
 - Give a slow route its own limit where it is declared, with `Routes::timeout` or
   `Routes::add_with_timeout`, rather than raising `REQUEST_TIMEOUT_SECONDS` for all.
-- Raise the body limit on one route with `middleware::body_limit`, not on all.
+- Raise the body limit on one route with `middleware::body_limit(post(upload), bytes)`,
+  not on all. It binds a handler that reads `Body` itself, as well as the extractors.
 
 ## Conditional requests
 

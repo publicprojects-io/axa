@@ -51,7 +51,11 @@ use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, Reload
 use axa_problem::Problem;
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION, request::Parts},
+    http::{
+        HeaderMap, HeaderValue, Method, StatusCode,
+        header::{AUTHORIZATION, WWW_AUTHENTICATE},
+        request::Parts,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -63,7 +67,9 @@ const INVALID_TOKEN: &str = "invalid token";
 const FORBIDDEN: &str = "forbidden";
 
 /// A refusal: the status and the text sent to the caller. It answers as an RFC 9457
-/// problem, with the text as `detail` and a `code` that says no more than the status.
+/// problem, with the text as `detail` and a `code` that says no more than the status. A
+/// `401` carries `WWW-Authenticate: Bearer`, as RFC 9110 requires, with no `error`
+/// parameter, which would say why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rejection(pub StatusCode, pub String);
 
@@ -74,10 +80,17 @@ impl IntoResponse for Rejection {
         } else {
             "unauthorized"
         };
-        Problem::new(self.0)
+        let challenge = self.0 == StatusCode::UNAUTHORIZED;
+        let mut response = Problem::new(self.0)
             .with_detail(self.1)
             .with_extension("code", code.into())
-            .into_response()
+            .into_response();
+        if challenge {
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        }
+        response
     }
 }
 
@@ -837,6 +850,14 @@ mod tests {
             response.headers()[axum::http::header::CONTENT_TYPE],
             axa_problem::PROBLEM_JSON
         );
+    }
+
+    #[test]
+    fn a_401_carries_a_bearer_challenge_and_a_403_does_not() {
+        let refused = invalid_token().into_response();
+        assert_eq!(refused.headers()[WWW_AUTHENTICATE], "Bearer");
+        let forbidden = Rejection(StatusCode::FORBIDDEN, FORBIDDEN.to_string()).into_response();
+        assert!(forbidden.headers().get(WWW_AUTHENTICATE).is_none());
     }
 
     #[tokio::test]

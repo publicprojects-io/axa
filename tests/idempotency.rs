@@ -46,6 +46,7 @@ fn http() -> Http {
         hsts: false,
         hsts_max_age: 0,
         csp: None,
+        permissions_policy: None,
         trusted_proxies: Vec::new(),
     }
 }

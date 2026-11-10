@@ -7,6 +7,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`server::Shutdown`**, an extractor that says when shutdown has begun, and waits for
+  it, so a WebSocket or a stream of server-sent events ends itself rather than being cut
+  off at `SHUTDOWN_TIMEOUT_SECONDS`.
+- **`SHUTDOWN_DRAIN_SECONDS`**, 0 by default: told to stop, the server keeps accepting for
+  that long while `/_health/ready` answers `503`, so that Kubernetes takes the pod out of
+  the Service before it stops listening. `SHUTDOWN_TIMEOUT_SECONDS` counts from its end.
+- **`RequestMetrics` in `axa-prometheus-metrics`**: request durations by method, route
+  template, and status, with one `unmatched` label for requests that match no route.
+- **`HTTP_PERMISSIONS_POLICY`**, the `permissions-policy` the stack sends.
+
 - **`axa-mysql-job-queue` 0.1.0**, the MySQL twin of `axa-postgres-job-queue`: the same
   job loops, limits, delays, priorities, status, schedules, and acts, on MySQL 8.4 or
   later, with the same API and tables. It is a crate on its own, and not yet a feature
@@ -36,6 +46,29 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **A `401` from `axa-paseto-auth` and `axa-keycloak-auth` carries
+  `WWW-Authenticate: Bearer`**, as RFC 9110 requires. It has no `error` parameter, which
+  would say why.
+- **`/_health/ready` answers `503`, `code` `shutting_down`, from the moment shutdown
+  begins**, whatever its checks say.
+- **The body limit binds a handler that reads the body itself**, not only the extractors.
+  `middleware::body_limit` now wraps a route, `body_limit(post(upload), bytes)`, in place
+  of `post(upload).layer(body_limit(bytes))`, and raises both.
+- **A database that cannot serve for now answers `503`**, `code` `unavailable`, with
+  `Retry-After: 5`, in place of `500`: a pool with no free connection, a lost connection,
+  or a read-only, shutting-down, or full server, through any of the four database crates.
+- **The stack sends `cross-origin-opener-policy` and `cross-origin-resource-policy` of
+  `same-origin`, and a `permissions-policy`** that turns off the camera, microphone,
+  location, payment, USB, sensors, and ad topics. A handler's own values win. A service
+  whose images or fonts another site loads sets its own `cross-origin-resource-policy`
+  on those routes.
+- **A response that sets a cookie is `no-store`** unless its handler said how to cache
+  it, and compression skips any response that sets a cookie or is `no-store`, against
+  BREACH.
+- **`authorization`, `proxy-authorization`, `cookie`, and `set-cookie` are marked
+  sensitive** in the standard stack, so no layer records them.
+- **`config::Server` has `shutdown_drain_seconds`, and `config::Http` has
+  `permissions_policy`**, so a service that builds either by hand adds the field.
 - **The health routes follow Kubernetes' three probes**: `/_health/live`,
   `/_health/ready`, and `/_health/startup`, in place of `/_ping`, `/_health`, and
   `/_readiness`, which now answer `404`. Point each liveness, readiness, and startup

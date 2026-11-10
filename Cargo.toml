@@ -98,13 +98,16 @@ async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }
 # Direct only so that `server` can limit reading headers, which `axum::serve` cannot.
+# Direct only so that the body limit binds a body a handler reads itself, with the error
+# `axum` answers as `413`. Already in every build, through `axum` and `hyper`.
+http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "service", "tokio"] }
 serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
-tower-http = { version = "0.7", features = ["catch-panic", "compression-full", "cors", "set-header", "trace"] }
+tower-http = { version = "0.7", features = ["catch-panic", "compression-full", "cors", "sensitive-headers", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }

@@ -3,7 +3,7 @@
 //! | Route | Probe | A failure means | Asks |
 //! |---|---|---|---|
 //! | [`LIVE`], `/_health/live` | Liveness | Kill and restart the container | Nothing: it answers once the server is running |
-//! | [`READY`], `/_health/ready` | Readiness | Send the pod no traffic | The database and queue axa holds, and the named checks in [`AppContext::health_checks`] |
+//! | [`READY`], `/_health/ready` | Readiness | Send the pod no traffic | The database and queue axa holds, and the named checks in [`AppContext::health_checks`]. It answers `503` from the moment shutdown begins |
 //! | [`STARTUP`], `/_health/startup` | Startup | Not booted yet: hold off the other two | The database axa holds. Once it passes, it passes for good |
 //!
 //! No route asks a third party. Restarting a container does not bring back a
@@ -47,7 +47,7 @@ use tokio::{
     time::{Instant, timeout},
 };
 
-use crate::{AppContext, routes::Routes};
+use crate::{AppContext, routes::Routes, server::Shutdown};
 
 /// The liveness route: `200` once the server is running, and nothing asked.
 pub const LIVE: &str = "/_health/live";
@@ -300,7 +300,17 @@ fn built_in(ctx: &AppContext, database_only: bool) -> Vec<Check> {
     checks
 }
 
-async fn readiness(State(ctx): State<AppContext>) -> Response {
+async fn readiness(State(ctx): State<AppContext>, shutdown: Shutdown) -> Response {
+    // A service shutting down takes itself out of rotation, whatever its checks say.
+    if shutdown.has_begun() {
+        return respond(
+            Answer {
+                ok: false,
+                failed: Vec::new(),
+            },
+            "shutting_down",
+        );
+    }
     let answer = ctx.health_checks.answer(built_in(&ctx, false)).await;
     respond(answer, "not_ready")
 }
@@ -420,6 +430,29 @@ mod tests {
         );
         assert_eq!(status_of(failing(), LIVE).await, StatusCode::OK);
         assert_eq!(status_of(failing(), STARTUP).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn readiness_refuses_once_shutdown_begins_and_liveness_does_not() {
+        let (announce, announced) = tokio::sync::watch::channel(true);
+        let shutdown = crate::server::Shutdown::from_receiver(announced);
+        let router = with_checks(Checks::new());
+        let ask = |path: &'static str| {
+            let mut request = Request::builder().uri(path).body(Body::empty()).unwrap();
+            request.extensions_mut().insert(shutdown.clone());
+            router.clone().oneshot(request)
+        };
+        let ready = ask(READY).await.unwrap();
+        assert_eq!(ready.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(ready.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert!(
+            String::from_utf8_lossy(&body).contains(r#""code":"shutting_down""#),
+            "{body:?}"
+        );
+        assert_eq!(ask(LIVE).await.unwrap().status(), StatusCode::OK);
+        drop(announce);
     }
 
     #[tokio::test]

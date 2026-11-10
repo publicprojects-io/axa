@@ -50,6 +50,33 @@ async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
     assert!(!body.contains("sex"), "{body}");
 }
 
+/// A database that refuses a write because it is read-only is the service's trouble,
+/// and passes: `503` with `Retry-After`, not a `500` and not the caller's mistake.
+#[cfg(any(feature = "queue", feature = "sqlx"))]
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_read_only_database_is_unavailable_not_a_failure() {
+    let pool = sqlx::PgPool::connect(&url()).await.unwrap();
+    // A table of its own, as the other tests here drop and make theirs.
+    sqlx::query("CREATE TABLE IF NOT EXISTS axa_read_only_probe (id INT)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION READ ONLY")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let error = sqlx::query("INSERT INTO axa_read_only_probe VALUES (1)")
+        .execute(&mut *transaction)
+        .await
+        .unwrap_err();
+    let response = Error::from(error).into_response();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(response.headers().contains_key(header::RETRY_AFTER));
+    assert_answers(response, StatusCode::SERVICE_UNAVAILABLE, "unavailable").await;
+}
+
 #[cfg(any(feature = "queue", feature = "sqlx"))]
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
