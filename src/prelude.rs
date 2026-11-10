@@ -7,15 +7,17 @@ pub use axum::{
     response::{IntoResponse, Response},
     routing::{delete, get, head, options, patch, post, put, trace},
 };
-#[cfg(feature = "sea-orm")]
+#[cfg(has_seaorm)]
 pub use sea_orm::prelude::{Date, DateTimeUtc, DateTimeWithTimeZone, Decimal, Uuid};
-#[cfg(feature = "sea-orm")]
+#[cfg(has_seaorm)]
 pub use sea_orm::{
     ActiveModelBehavior, ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait,
     DatabaseConnection, DbErr, EntityTrait, IntoActiveModel, ModelTrait, Order, PaginatorTrait,
     QueryFilter, QueryOrder, QuerySelect, Set, TransactionTrait,
 };
 
+#[cfg(has_seaorm)]
+pub use crate::query;
 pub use crate::{
     AppContext, Error, Result,
     error::{ErrorDetail, bad_request, not_found, unauthorized},
@@ -25,9 +27,8 @@ pub use crate::{
     task::{self, Task, TaskInfo},
     worker::BackgroundWorker,
 };
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "model")]
 pub use crate::{
     model::{ModelError, ModelResult},
-    query,
     validation::Validatable,
 };

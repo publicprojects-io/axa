@@ -1,7 +1,13 @@
 //! What a violated constraint answers, against a real Postgres, because a driver only
 //! reports a violation from a real database error.
 
-#![cfg(any(feature = "queue", feature = "sqlx", feature = "sea-orm"))]
+#![cfg(any(
+    feature = "queue",
+    feature = "postgres-sqlx",
+    feature = "postgres-seaorm",
+    feature = "postgres-diesel",
+    feature = "postgres-toasty"
+))]
 
 use axa::Error;
 use axum::{
@@ -26,7 +32,7 @@ const MISSING: &str = "INSERT INTO axa_constraint_parent (id, name) VALUES (4, N
 const NOT_A_CONSTRAINT: &str = "SELECT * FROM axa_constraint_no_such_table";
 
 fn url() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
@@ -44,9 +50,36 @@ async fn assert_answers(response: Response, status: StatusCode, reason: &str) {
     assert!(!body.contains("sex"), "{body}");
 }
 
-#[cfg(any(feature = "queue", feature = "sqlx"))]
+/// A database that refuses a write because it is read-only is the service's trouble,
+/// and passes: `503` with `Retry-After`, not a `500` and not the caller's mistake.
+#[cfg(any(feature = "queue", feature = "postgres-sqlx"))]
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_read_only_database_is_unavailable_not_a_failure() {
+    let pool = sqlx::PgPool::connect(&url()).await.unwrap();
+    // A table of its own, as the other tests here drop and make theirs.
+    sqlx::query("CREATE TABLE IF NOT EXISTS axa_read_only_probe (id INT)")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut transaction = pool.begin().await.unwrap();
+    sqlx::query("SET TRANSACTION READ ONLY")
+        .execute(&mut *transaction)
+        .await
+        .unwrap();
+    let error = sqlx::query("INSERT INTO axa_read_only_probe VALUES (1)")
+        .execute(&mut *transaction)
+        .await
+        .unwrap_err();
+    let response = Error::from(error).into_response();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(response.headers().contains_key(header::RETRY_AFTER));
+    assert_answers(response, StatusCode::SERVICE_UNAVAILABLE, "unavailable").await;
+}
+
+#[cfg(any(feature = "queue", feature = "postgres-sqlx"))]
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
     let pool = sqlx::PgPool::connect(&url()).await.unwrap();
     for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
@@ -72,9 +105,9 @@ async fn a_violated_constraint_through_sqlx_is_the_callers_mistake() {
     assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 }
 
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "postgres-seaorm")]
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
     use sea_orm::{ConnectionTrait, Database};
 
@@ -113,4 +146,79 @@ async fn a_violated_constraint_through_sea_orm_is_the_callers_mistake() {
         "unprocessable_entity",
     )
     .await;
+}
+
+#[cfg(feature = "postgres-diesel")]
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_violated_constraint_through_diesel_is_the_callers_mistake() {
+    use axa::postgres_diesel::{PoolConfig, connect, diesel, diesel_async::RunQueryDsl};
+
+    let pool = connect(&PoolConfig::new(url())).await.unwrap();
+    let mut connection = pool.get().await.unwrap();
+    for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
+        diesel::sql_query(statement)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    let mut fails = async |statement: &'static str| {
+        let error = diesel::sql_query(statement)
+            .execute(&mut connection)
+            .await
+            .unwrap_err();
+        Error::from(error).into_response()
+    };
+    assert_answers(fails(DUPLICATE).await, StatusCode::CONFLICT, "conflict").await;
+    assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let out_of_range = fails(OUT_OF_RANGE).await;
+    assert_answers(
+        out_of_range,
+        unprocessable,
+        "outside what this field allows",
+    )
+    .await;
+    let missing = fails(MISSING).await;
+    assert_answers(missing, unprocessable, "A required value is missing").await;
+    let other = fails(NOT_A_CONSTRAINT).await;
+    assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
+}
+
+#[cfg(feature = "postgres-toasty")]
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_violated_constraint_through_toasty_is_the_callers_mistake() {
+    use axa::postgres_toasty::{PoolConfig, connect, toasty};
+
+    let mut db = connect(&PoolConfig::new(url()), toasty::ModelSet::default())
+        .await
+        .unwrap();
+    for statement in SCHEMA.into_iter().chain([INSERT_PARENT]) {
+        toasty::sql::statement(statement)
+            .exec(&mut db)
+            .await
+            .unwrap();
+    }
+    let mut fails = async |statement: &'static str| {
+        let error = toasty::sql::statement(statement)
+            .exec(&mut db)
+            .await
+            .unwrap_err();
+        Error::from(error).into_response()
+    };
+    assert_answers(fails(DUPLICATE).await, StatusCode::CONFLICT, "conflict").await;
+    assert_answers(fails(NO_PARENT).await, StatusCode::CONFLICT, "conflict").await;
+    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let out_of_range = fails(OUT_OF_RANGE).await;
+    assert_answers(
+        out_of_range,
+        unprocessable,
+        "outside what this field allows",
+    )
+    .await;
+    let missing = fails(MISSING).await;
+    assert_answers(missing, unprocessable, "A required value is missing").await;
+    let other = fails(NOT_A_CONSTRAINT).await;
+    assert_answers(other, StatusCode::INTERNAL_SERVER_ERROR, "internal").await;
 }

@@ -183,7 +183,7 @@ pub struct AppRoutes {
 }
 
 impl AppRoutes {
-    /// Start with the `/_ping`, `/_health`, and `/_readiness` routes.
+    /// Start with the `/_health/live`, `/_health/ready`, and `/_health/startup` routes.
     #[must_use]
     pub fn with_default_routes() -> Self {
         Self::empty().add_route(health::routes())
@@ -266,7 +266,8 @@ impl AppRoutes {
     }
 }
 
-#[cfg(test)]
+// Toasty connects when its handle is made, so with it alone there is no context.
+#[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
 mod tests {
     use super::*;
     use crate::{Environment, config::Defaults};
@@ -290,14 +291,7 @@ mod tests {
         };
         let mut config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         config.http.timeout_seconds = seconds;
-        #[cfg(not(feature = "sea-orm"))]
-        return AppContext::for_test(Environment::Test, config);
-        #[cfg(feature = "sea-orm")]
-        return AppContext::new(
-            Environment::Test,
-            sea_orm::DatabaseConnection::default(),
-            config,
-        );
+        AppContext::for_test(Environment::Test, config)
     }
 
     async fn status(router: Router, method: &str, path: &str) -> StatusCode {
@@ -446,7 +440,7 @@ mod tests {
         let routes = AppRoutes::with_default_routes()
             .add_route(Routes::new().add("/hook", any(|| async { "" })));
         let all = routes.mounted();
-        assert!(all.contains(&("GET".to_string(), "/_readiness".to_string())));
+        assert!(all.contains(&("GET".to_string(), "/_health/ready".to_string())));
         assert!(all.contains(&("ANY".to_string(), "/hook".to_string())));
     }
 
@@ -508,7 +502,7 @@ mod tests {
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(
             response.headers()[axum::http::header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
     }
 

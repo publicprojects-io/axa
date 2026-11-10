@@ -1,6 +1,6 @@
 //! What reaches a log, against a real Postgres. It has its own binary because `tracing`
 //! caches per process whether a log site is on. Ignored by default: run it with
-//! `AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-transactional-outbox -- --ignored`.
+//! `AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox -- --ignored`.
 
 use std::{
     sync::{Arc, Mutex},
@@ -37,7 +37,7 @@ impl std::io::Write for Captured {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn no_log_line_holds_a_payload_a_key_or_a_failure_text() {
     let log = Captured::default();
     let writer = log.clone();
@@ -47,7 +47,7 @@ async fn no_log_line_holds_a_payload_a_key_or_a_failure_text() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
 
-    let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     let pool = PgPoolOptions::new().connect(&uri).await.unwrap();
     // The record refuses to be emptied, so this starts from new tables.
     sqlx::query(

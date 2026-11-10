@@ -13,7 +13,12 @@ use std::{
     time::Duration,
 };
 
-use axum::{Router, body::Body, extract::ConnectInfo, http::Request};
+use axum::{
+    Router,
+    body::Body,
+    extract::{ConnectInfo, FromRequestParts},
+    http::{Request, request::Parts},
+};
 use hyper::{
     body::{Body as HttpBody, Bytes, Frame, Incoming, SizeHint},
     server::conn::http1,
@@ -40,6 +45,72 @@ use crate::{
 /// The most connections a server holds open at once unless `MAX_CONNECTIONS` says
 /// otherwise. More wait to be accepted.
 pub const MAX_CONNECTIONS: usize = 10_000;
+
+/// Whether the server serving this request has begun to shut down, for a handler to
+/// take as an extractor. A long-lived response, such as a WebSocket or a stream of
+/// server-sent events, waits on [`Shutdown::begun`] and ends itself, rather than being
+/// cut off at the shutdown time limit. A request served other than by this module's
+/// server, as in a test, gets one that never begins.
+///
+/// ```
+/// use axa::server::Shutdown;
+///
+/// async fn events(shutdown: Shutdown) -> &'static str {
+///     tokio::select! {
+///         () = shutdown.begun() => "shutting down",
+///         () = std::future::pending::<()>() => unreachable!(),
+///     }
+/// }
+/// # let _ = events;
+/// ```
+#[derive(Clone, Debug)]
+pub struct Shutdown(watch::Receiver<bool>);
+
+impl Shutdown {
+    /// One that never begins.
+    #[must_use]
+    pub fn never() -> Self {
+        let (sender, receiver) = watch::channel(false);
+        // Kept, so that the receiver never sees its sender go.
+        std::mem::forget(sender);
+        Self(receiver)
+    }
+
+    /// One that begins when `begun` turns `true`, for a test.
+    #[cfg(all(test, axa_db = "none"))]
+    pub(crate) const fn from_receiver(begun: watch::Receiver<bool>) -> Self {
+        Self(begun)
+    }
+
+    /// Whether shutdown has begun.
+    #[must_use]
+    pub fn has_begun(&self) -> bool {
+        *self.0.borrow()
+    }
+
+    /// Wait until shutdown begins.
+    pub async fn begun(&self) {
+        let mut begun = self.0.clone();
+        // A sender dropped is a server gone, which is a shutdown too.
+        let _ = begun.wait_for(|begun| *begun).await;
+    }
+}
+
+impl<S: Send + Sync> FromRequestParts<S> for Shutdown {
+    type Rejection = Infallible;
+
+    fn from_request_parts(
+        parts: &mut Parts,
+        _state: &S,
+    ) -> impl Future<Output = Result<Self, Self::Rejection>> + Send {
+        let shutdown = parts
+            .extensions
+            .get::<Self>()
+            .cloned()
+            .unwrap_or_else(Self::never);
+        std::future::ready(Ok(shutdown))
+    }
+}
 
 /// Resolve when the process receives `SIGTERM` or Ctrl-C.
 ///
@@ -108,6 +179,8 @@ struct Limits {
     send_stall: Option<Duration>,
     /// Connections open at once.
     max_connections: usize,
+    /// How long to keep accepting once told to stop.
+    drain: Duration,
 }
 
 impl Limits {
@@ -125,18 +198,22 @@ impl Limits {
             keep_alive: seconds(keep_alive_seconds),
             send_stall: seconds(send_stall_seconds),
             max_connections: max_connections.clamp(1, Semaphore::MAX_PERMITS),
+            drain: Duration::ZERO,
         }
     }
 }
 
 impl From<&Server> for Limits {
     fn from(config: &Server) -> Self {
-        Self::new(
-            config.header_read_timeout_seconds,
-            config.keep_alive_timeout_seconds,
-            config.send_stall_timeout_seconds,
-            config.max_connections,
-        )
+        Self {
+            drain: Duration::from_secs(config.shutdown_drain_seconds),
+            ..Self::new(
+                config.header_read_timeout_seconds,
+                config.keep_alive_timeout_seconds,
+                config.send_stall_timeout_seconds,
+                config.max_connections,
+            )
+        }
     }
 }
 
@@ -410,52 +487,34 @@ async fn accept_until(
     let slots = Arc::new(Semaphore::new(limits.max_connections));
     // Each connection holds a receiver, so the sender sees when the last has gone.
     let (stop, stopping) = watch::channel(false);
+    // Every request holds one, so a handler and readiness can see shutdown begin.
+    let (announce, announced) = watch::channel(false);
+    let accept = |(stream, address, slot)| {
+        spawn_connection(
+            &builder,
+            &router,
+            limits,
+            Shutdown(announced.clone()),
+            stopping.clone(),
+            (stream, address, slot),
+        );
+    };
     let mut shutdown = pin!(shutdown);
     loop {
         tokio::select! {
-            (stream, address, slot) = next_connection(&listener, &slots) => {
-                let tracker = Tracker::new(limits);
-                let phase = tracker.phase.subscribe();
-                let router = TowerToHyperService::new(router.clone());
-                let serving = tracker.clone();
-                let service = service_fn(move |mut request: Request<Incoming>| {
-                    request.extensions_mut().insert(ConnectInfo::<SocketAddr>(address));
-                    serving.serving();
-                    let tracker = serving.clone();
-                    let response = router.call(request);
-                    async move {
-                        let response = response.await?;
-                        Ok::<_, Infallible>(response.map(|body| TrackedBody {
-                            body,
-                            _finished: Finished(tracker),
-                        }))
-                    }
-                });
-                let stream = TokioIo::new(Tracked { stream, tracker, _slot: slot });
-                let connection = builder.serve_connection(stream, service).with_upgrades();
-                let mut stopping = stopping.clone();
-                tokio::spawn(async move {
-                    let mut connection = pin!(connection);
-                    let stop = async {
-                        // A sender dropped is a server gone, and it is told first.
-                        let _ = stopping.wait_for(|stop| *stop).await;
-                    };
-                    tokio::select! {
-                        ended = connection.as_mut() => log_end(ended),
-                        () = overdue(phase.clone()) => {
-                            tracing::debug!("dropped a quiet connection");
-                        }
-                        () = stop => {
-                            connection.as_mut().graceful_shutdown();
-                            tokio::select! {
-                                ended = connection => log_end(ended),
-                                () = overdue(phase) => {}
-                            }
-                        }
-                    }
-                });
-            }
+            next = next_connection(&listener, &slots) => accept(next),
             () = &mut shutdown => break,
+        }
+    }
+    // Readiness answers `503` from here, while the drain keeps accepting, so that an
+    // orchestrator takes the service out of rotation before it stops listening.
+    let _ = announce.send(true);
+    let drain = tokio::time::sleep(limits.drain);
+    let mut drain = pin!(drain);
+    loop {
+        tokio::select! {
+            next = next_connection(&listener, &slots) => accept(next),
+            () = &mut drain => break,
         }
     }
     drop(listener);
@@ -463,6 +522,64 @@ async fn accept_until(
     let _ = stop.send(true);
     stop.closed().await;
     Ok(())
+}
+
+/// Serve one connection in a task of its own, until it ends, goes quiet past its
+/// limits, or is told to stop and finishes what it is doing.
+fn spawn_connection(
+    builder: &http1::Builder,
+    router: &Router,
+    limits: Limits,
+    shutdown: Shutdown,
+    mut stopping: watch::Receiver<bool>,
+    (stream, address, slot): (TcpStream, SocketAddr, OwnedSemaphorePermit),
+) {
+    let tracker = Tracker::new(limits);
+    let phase = tracker.phase.subscribe();
+    let router = TowerToHyperService::new(router.clone());
+    let serving = tracker.clone();
+    let service = service_fn(move |mut request: Request<Incoming>| {
+        request
+            .extensions_mut()
+            .insert(ConnectInfo::<SocketAddr>(address));
+        request.extensions_mut().insert(shutdown.clone());
+        serving.serving();
+        let tracker = serving.clone();
+        let response = router.call(request);
+        async move {
+            let response = response.await?;
+            Ok::<_, Infallible>(response.map(|body| TrackedBody {
+                body,
+                _finished: Finished(tracker),
+            }))
+        }
+    });
+    let stream = TokioIo::new(Tracked {
+        stream,
+        tracker,
+        _slot: slot,
+    });
+    let connection = builder.serve_connection(stream, service).with_upgrades();
+    tokio::spawn(async move {
+        let mut connection = pin!(connection);
+        let stop = async {
+            // A sender dropped is a server gone, and it is told first.
+            let _ = stopping.wait_for(|stop| *stop).await;
+        };
+        tokio::select! {
+            ended = connection.as_mut() => log_end(ended),
+            () = overdue(phase.clone()) => {
+                tracing::debug!("dropped a quiet connection");
+            }
+            () = stop => {
+                connection.as_mut().graceful_shutdown();
+                tokio::select! {
+                    ended = connection => log_end(ended),
+                    () = overdue(phase) => {}
+                }
+            }
+        }
+    });
 }
 
 /// A connection ending badly is the client's business, so it is only worth a trace.
@@ -502,7 +619,8 @@ async fn bind_and_serve(
         served = accept_until(router, listener, config.into(), signal) => served,
         () = async {
             stopping.notified().await;
-            grace(config, Instant::now()).await;
+            let drained = Instant::now() + Duration::from_secs(config.shutdown_drain_seconds);
+            grace(config, drained).await;
         } => {
             tracing::warn!("requests were still running at the shutdown time limit");
             Ok(())
@@ -622,6 +740,103 @@ mod tests {
         assert!(response.contains("200 OK"), "{response}");
         assert!(response.ends_with("finished"), "{response}");
         server.await.unwrap().unwrap();
+    }
+
+    /// One request on a new connection, and the response, or `None` when nothing
+    /// accepts the connection.
+    async fn ask(address: SocketAddr, path: &str) -> Option<String> {
+        let mut stream = TcpStream::connect(address).await.ok()?;
+        let request = format!("GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+        stream.write_all(request.as_bytes()).await.ok()?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response).await.ok()?;
+        Some(response)
+    }
+
+    /// A router that says whether shutdown has begun.
+    fn begun() -> Router {
+        Router::new().route(
+            "/begun",
+            get(|shutdown: Shutdown| async move { shutdown.has_begun().to_string() }),
+        )
+    }
+
+    #[tokio::test]
+    async fn the_drain_keeps_accepting_and_tells_handlers_shutdown_has_begun() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let limits = Limits {
+            drain: Duration::from_millis(400),
+            ..Limits::new(0, 0, 0, 16)
+        };
+        let (stop_tx, stop_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(accept_until(begun(), listener, limits, async {
+            let _ = stop_rx.await;
+        }));
+        assert!(ask(address, "/begun").await.unwrap().ends_with("false"));
+        stop_tx.send(()).unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        // Still accepting, and a handler sees shutdown has begun.
+        let during = ask(address, "/begun")
+            .await
+            .expect("accepted during the drain");
+        assert!(during.ends_with("true"), "{during}");
+        server.await.unwrap().unwrap();
+        // Once drained, nothing listens.
+        assert!(ask(address, "/begun").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn with_no_drain_the_listener_closes_at_once() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop_tx, stop_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(serve_until(begun(), listener, async {
+            let _ = stop_rx.await;
+        }));
+        stop_tx.send(()).unwrap();
+        server.await.unwrap().unwrap();
+        assert!(ask(address, "/begun").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_stream_waiting_on_shutdown_ends_itself() {
+        let app = Router::new().route(
+            "/events",
+            get(|shutdown: Shutdown| async move {
+                shutdown.begun().await;
+                "stream ended"
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop_tx, stop_rx) = oneshot::channel::<()>();
+        let server = tokio::spawn(serve_until(app, listener, async {
+            let _ = stop_rx.await;
+        }));
+        let response = tokio::spawn(ask(address, "/events"));
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        stop_tx.send(()).unwrap();
+        let response = tokio::time::timeout(Duration::from_secs(5), response)
+            .await
+            .expect("the stream ended at shutdown")
+            .unwrap()
+            .unwrap();
+        assert!(response.ends_with("stream ended"), "{response}");
+        server.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_request_outside_this_server_never_sees_shutdown() {
+        use tower::ServiceExt;
+        let response = begun()
+            .oneshot(Request::get("/begun").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 64)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"false");
     }
 
     /// Whether a server closes on a client that starts its headers and stalls.
@@ -1027,6 +1242,7 @@ mod tests {
             } else {
                 max_connections
             },
+            drain: Duration::ZERO,
         }
     }
 
@@ -1238,6 +1454,7 @@ mod tests {
             binding: "256.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds: 0,
+            shutdown_drain_seconds: 0,
             header_read_timeout_seconds: 0,
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
@@ -1253,6 +1470,7 @@ mod tests {
             binding: "127.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds: 0,
+            shutdown_drain_seconds: 0,
             header_read_timeout_seconds: 0,
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
@@ -1268,6 +1486,7 @@ mod tests {
             binding: "127.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds,
+            shutdown_drain_seconds: 0,
             header_read_timeout_seconds: 0,
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,

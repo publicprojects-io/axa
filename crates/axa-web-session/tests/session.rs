@@ -1,7 +1,7 @@
 //! Real requests through the layer. The Postgres test is ignored by default. Run it with:
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored
 //! ```
 
 use std::net::SocketAddr;
@@ -404,9 +404,9 @@ mod postgres {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn anonymous_visitors_add_no_rows() {
-        let url = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
         let pool = sqlx::PgPool::connect(&url).await.unwrap();
         let options = production().table_name("axa_test_anonymous");
         let app = pg_app(&pool, &options).await;
@@ -426,9 +426,9 @@ mod postgres {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn postgres_sessions_are_encrypted_and_survive_a_restart() {
-        let url = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
         let pool = sqlx::PgPool::connect(&url).await.unwrap();
         let options = production().table_name("axa_test_sessions");
         let app = pg_app(&pool, &options).await;

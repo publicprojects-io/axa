@@ -79,7 +79,7 @@
 //! # Readiness
 //!
 //! Until the realm's keys arrive, the service runs and refuses every token. Add
-//! [`KeycloakVerifier::ready`] to `/_readiness` so that traffic waits for them.
+//! [`KeycloakVerifier::ready`] to `/_health/ready` so that traffic waits for them.
 //!
 //! # Keycloak and PASETO together
 //!

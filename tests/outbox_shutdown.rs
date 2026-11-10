@@ -34,7 +34,7 @@ const WORK: Duration = Duration::from_millis(1500);
 const SETTLE: Duration = Duration::from_millis(300);
 
 fn uri() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 fn config() -> Server {
@@ -43,6 +43,7 @@ fn config() -> Server {
         binding: "127.0.0.1".to_string(),
         host: String::new(),
         shutdown_timeout_seconds: 10,
+        shutdown_drain_seconds: 0,
         header_read_timeout_seconds: 0,
         keep_alive_timeout_seconds: 0,
         send_stall_timeout_seconds: 0,
@@ -87,7 +88,7 @@ async fn outcomes(pool: &PgPool, event: &Event) -> Vec<String> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn sigterm_lets_a_publish_in_progress_finish_beside_a_server() {
     const TEST: &str = "sigterm_lets_a_publish_in_progress_finish_beside_a_server";
     if std::env::var_os(ROLE).is_some() {

@@ -1,0 +1,5 @@
+CREATE TABLE notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER NOT NULL REFERENCES items (id),
+    body TEXT NOT NULL
+);

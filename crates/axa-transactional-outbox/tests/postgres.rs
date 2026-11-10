@@ -1,5 +1,5 @@
 //! The outbox against a real Postgres. These are ignored by default. Run them with
-//! `AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored`.
+//! `AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored`.
 //!
 //! An event's record is the point of most of these, so each one reads the tables rather
 //! than trusting what the API says. They share the tables, and each starts by dropping
@@ -38,7 +38,7 @@ const TABLES: &str = "DROP TABLE IF EXISTS axa_outbox_attempts, axa_outbox_paylo
     axa_outbox_owed, axa_outbox_leases, axa_outbox_events, axa_outbox_test_audit CASCADE";
 
 fn uri() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 /// Quick to poll, and retrying at once.
@@ -326,7 +326,7 @@ impl Relay {
 // OBX-1: an event commits or rolls back with the change.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_event_rolls_back_with_its_transaction() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -345,7 +345,7 @@ async fn an_event_rolls_back_with_its_transaction() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_event_commits_with_its_transaction() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -362,7 +362,7 @@ async fn an_event_commits_with_its_transaction() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_repeated_event_id_fails_the_write() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -371,9 +371,9 @@ async fn a_repeated_event_id_fails_the_write() {
     assert!(write(&mut transaction, &event).await.is_err());
 }
 
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "seaorm")]
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_seaorm_transaction_carries_an_event_too() {
     use sea_orm::{Database, TransactionTrait};
     let _table = TABLE.lock().await;
@@ -416,7 +416,7 @@ async fn a_seaorm_transaction_carries_an_event_too() {
 // OBX-2 and OBX-3: nothing committed is lost, and delivered means the broker has it.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_event_committed_before_a_crash_is_still_published() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -432,7 +432,7 @@ async fn an_event_committed_before_a_crash_is_still_published() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_failed_publish_is_not_delivered() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -501,7 +501,7 @@ async fn relay_until_killed() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_relay_killed_mid_batch_loses_nothing() {
     const TEST: &str = "a_relay_killed_mid_batch_loses_nothing";
     if std::env::var_os(ROLE).is_some() {
@@ -602,7 +602,7 @@ async fn a_relay_killed_mid_batch_loses_nothing() {
 // OBX-4: several relays.
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn several_relays_publish_each_event_once() {
     let _table = TABLE.lock().await;
     let options = OutboxOptions {
@@ -653,7 +653,7 @@ async fn several_relays_publish_each_event_once() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn two_claims_at_once_share_nothing() {
     let _table = TABLE.lock().await;
     let options = OutboxOptions {
@@ -682,7 +682,7 @@ async fn two_claims_at_once_share_nothing() {
 // OBX-5: a claim whose relay died is recovered from its attempts.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_claim_not_heard_from_comes_back() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -702,7 +702,7 @@ async fn a_claim_not_heard_from_comes_back() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_event_that_keeps_killing_relays_is_abandoned() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -726,7 +726,7 @@ async fn an_event_that_keeps_killing_relays_is_abandoned() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_slow_publish_that_reports_in_is_not_taken_for_lost() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -756,7 +756,7 @@ async fn a_slow_publish_that_reports_in_is_not_taken_for_lost() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_batch_of_quick_publishes_reports_in_too() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -797,7 +797,7 @@ async fn a_batch_of_quick_publishes_reports_in_too() {
 // OBX-6: stale work.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_late_failure_changes_nothing() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -816,7 +816,7 @@ async fn a_late_failure_changes_nothing() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_late_return_changes_nothing() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -831,7 +831,7 @@ async fn a_late_return_changes_nothing() {
 // OBX-29: every attempt names its relay and its claim.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_late_success_is_kept_as_its_own_attempt() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -870,7 +870,7 @@ async fn a_late_success_is_kept_as_its_own_attempt() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn each_attempt_names_its_relay_and_claim() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -906,7 +906,7 @@ async fn each_attempt_names_its_relay_and_claim() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_outcome_must_match_its_claim() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -937,7 +937,7 @@ async fn an_outcome_must_match_its_claim() {
 // OBX-7: a poison event.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_poison_event_does_not_hold_up_other_keys() {
     let _table = TABLE.lock().await;
     // Its retry is far off, so it never finishes during the test, and a round that
@@ -982,7 +982,7 @@ async fn a_poison_event_does_not_hold_up_other_keys() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_event_out_of_attempts_is_kept_and_frees_its_key() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1025,7 +1025,7 @@ async fn an_event_out_of_attempts_is_kept_and_frees_its_key() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_failed_event_can_be_released_by_a_named_person() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1077,7 +1077,7 @@ async fn a_failed_event_can_be_released_by_a_named_person() {
 // OBX-8: order.
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_key_goes_out_in_order_across_relays() {
     let _table = TABLE.lock().await;
     let options = OutboxOptions {
@@ -1124,7 +1124,7 @@ async fn a_key_goes_out_in_order_across_relays() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn one_topic_and_key_is_one_line() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -1139,7 +1139,7 @@ async fn one_topic_and_key_is_one_line() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_retry_holds_back_only_its_own_key() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1161,7 +1161,7 @@ async fn a_retry_holds_back_only_its_own_key() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_recovered_event_goes_before_those_behind_it() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -1180,7 +1180,7 @@ async fn a_recovered_event_goes_before_those_behind_it() {
 // OBX-37: a topic with no order.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_topic_with_no_order_is_not_held_back() {
     let _table = TABLE.lock().await;
     let mut options = OutboxOptions {
@@ -1220,7 +1220,7 @@ async fn a_topic_with_no_order_is_not_held_back() {
 // OBX-9: an outage.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_outage_charges_nothing_and_stops_the_round() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1265,7 +1265,7 @@ async fn an_outage_charges_nothing_and_stops_the_round() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_events_go_out_once_the_broker_is_back() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -1295,7 +1295,7 @@ async fn the_events_go_out_once_the_broker_is_back() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_refusal_called_an_outage_holds_up_only_its_key() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1339,7 +1339,7 @@ async fn a_refusal_called_an_outage_holds_up_only_its_key() {
 // OBX-10: retries.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_retry_waits_for_its_backoff() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1365,7 +1365,7 @@ async fn a_retry_waits_for_its_backoff() {
 // OBX-32: a reason is a code.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_long_reason_is_kept_as_a_code() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -1403,7 +1403,7 @@ async fn a_long_reason_is_kept_as_a_code() {
 // OBX-11: a panic.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_publisher_that_panics_fails_that_event_and_the_loop_carries_on() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1430,7 +1430,7 @@ async fn a_publisher_that_panics_fails_that_event_and_the_loop_carries_on() {
 // OBX-12: a hang.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_publish_past_its_limit_is_charged_and_stops_the_round() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1467,7 +1467,7 @@ async fn a_publish_past_its_limit_is_charged_and_stops_the_round() {
 // OBX-15 and OBX-22: the tables.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn relays_booting_together_all_connect() {
     let _table = TABLE.lock().await;
     let pool = admin().await;
@@ -1486,7 +1486,7 @@ async fn relays_booting_together_all_connect() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn connecting_to_existing_tables_changes_no_schema() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -1510,7 +1510,7 @@ async fn connecting_to_existing_tables_changes_no_schema() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn connect_makes_the_triggers() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -1545,7 +1545,7 @@ async fn connect_makes_the_triggers() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_missing_trigger_stops_the_relay() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -1610,7 +1610,7 @@ async fn a_missing_trigger_stops_the_relay() {
 // OBX-23: the record is only ever added to.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_tables_refuse_every_change() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -1658,7 +1658,7 @@ async fn the_tables_refuse_every_change() {
 type OwedRow = (Uuid, String, Option<Uuid>, i32, Option<String>);
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_owed_table_changes_only_with_the_record() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1743,7 +1743,7 @@ async fn the_owed_table_changes_only_with_the_record() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_changed_lease_can_only_bring_a_recovery_which_is_recorded() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -1778,7 +1778,7 @@ async fn a_changed_lease_can_only_bring_a_recovery_which_is_recorded() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn rebuilding_owed_restores_it_from_the_record() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1891,7 +1891,7 @@ async fn rebuilding_owed_restores_it_from_the_record() {
 // OBX-24: state is read from the attempts.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn state_is_read_from_the_attempts() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -1946,7 +1946,7 @@ async fn state_is_read_from_the_attempts() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn stats_count_every_outcome() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -2027,7 +2027,7 @@ async fn refuse_no(event: &Claimed, _: &mut PgConnection) -> Result<Decision, sq
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_refusal_is_final() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2049,7 +2049,7 @@ async fn a_refusal_is_final() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_refusal_cannot_be_released() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2074,7 +2074,7 @@ async fn a_refusal_cannot_be_released() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_refusal_frees_its_key() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2105,7 +2105,7 @@ async fn a_refusal_frees_its_key() {
 // OBX-26: a hold.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_hold_charges_nothing() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -2132,7 +2132,7 @@ async fn a_hold_charges_nothing() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_hold_lasts_as_long_as_it_is_given() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2175,7 +2175,7 @@ async fn a_hold_lasts_as_long_as_it_is_given() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_hold_holds_back_only_its_key() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -2205,7 +2205,7 @@ async fn a_hold_holds_back_only_its_key() {
 // OBX-27: the decision comes before the publisher.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_refused_event_never_reaches_the_publisher() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2228,7 +2228,7 @@ async fn a_refused_event_never_reaches_the_publisher() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_failed_decision_leaves_the_event_as_it_was() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -2259,7 +2259,7 @@ async fn a_failed_decision_leaves_the_event_as_it_was() {
 // OBX-28: an outcome commits with its audit.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_outcome_and_its_audit_commit_together() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {
@@ -2302,7 +2302,7 @@ async fn an_outcome_and_its_audit_commit_together() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_failed_record_rolls_back_the_outcome() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2352,7 +2352,7 @@ async fn a_failed_record_rolls_back_the_outcome() {
 // OBX-30: nothing is swept, and an erasure is a recorded act.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn nothing_is_swept() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2400,7 +2400,7 @@ async fn fingerprint_of(pool: &PgPool, event: &Event) -> String {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_erasure_blanks_only_the_payload_and_is_kept() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2476,7 +2476,7 @@ async fn an_erasure_blanks_only_the_payload_and_is_kept() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn nothing_else_can_blank_a_payload() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -2521,7 +2521,7 @@ async fn nothing_else_can_blank_a_payload() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_erased_event_is_not_published_and_is_not_tampered() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2572,7 +2572,7 @@ async fn tamper(pool: &PgPool, table: &str, trigger: &str, change: &str, event: 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_changed_row_is_never_published() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2628,7 +2628,7 @@ async fn a_changed_row_is_never_published() {
 // OBX-33 and OBX-35: what a payload may be.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_large_payload_fails_the_write() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -2657,7 +2657,7 @@ async fn a_large_payload_fails_the_write() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_denied_field_fails_the_write() {
     let _table = TABLE.lock().await;
     let (_outbox, pool) = fresh(quick()).await;
@@ -2705,7 +2705,7 @@ mod sealed {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_sealed_payload_is_stored_encrypted_and_published_plain() {
         let _table = TABLE.lock().await;
         let (outbox, pool) = fresh(quick()).await;
@@ -2740,7 +2740,7 @@ mod sealed {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_relay_without_the_key_leaves_sealed_events_alone() {
         let _table = TABLE.lock().await;
         let (outbox, pool) = fresh(quick()).await;
@@ -2760,7 +2760,7 @@ mod sealed {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_sealed_payload_moved_to_another_event_is_tampered() {
         let _table = TABLE.lock().await;
         let (outbox, pool) = fresh(quick()).await;
@@ -2814,7 +2814,7 @@ async fn fresh_inbox(pool: &PgPool) {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_inbox_says_what_was_seen() {
     let _table = TABLE.lock().await;
     let pool = admin().await;
@@ -2834,7 +2834,7 @@ async fn the_inbox_says_what_was_seen() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_rolled_back_note_is_not_seen() {
     let _table = TABLE.lock().await;
     let pool = admin().await;
@@ -2850,7 +2850,7 @@ async fn a_rolled_back_note_is_not_seen() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_inbox_refuses_every_change() {
     let _table = TABLE.lock().await;
     let pool = admin().await;
@@ -2893,7 +2893,7 @@ const OLD_TABLE: &str = "CREATE TABLE axa_outbox (
 )";
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_old_table_imports_with_its_states() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -2978,7 +2978,7 @@ async fn the_old_table_imports_with_its_states() {
 // OBX-16: the size of the record.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn what_is_owed_is_found_without_reading_delivered_events() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -3045,7 +3045,7 @@ async fn what_is_owed_is_found_without_reading_delivered_events() {
 // OBX-17: shutdown.
 
 #[tokio::test(flavor = "multi_thread")]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_publish_in_progress_finishes_and_the_rest_go_back() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
@@ -3074,7 +3074,7 @@ async fn a_publish_in_progress_finishes_and_the_rest_go_back() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_relay_stops_while_waiting_for_work() {
     let _table = TABLE.lock().await;
     let (outbox, _pool) = fresh(OutboxOptions {
@@ -3089,7 +3089,7 @@ async fn a_relay_stops_while_waiting_for_work() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_relay_nobody_can_stop_stops() {
     let _table = TABLE.lock().await;
     let (outbox, _pool) = fresh(OutboxOptions {
@@ -3115,7 +3115,7 @@ async fn a_relay_nobody_can_stop_stops() {
 // OBX-19: a service's own loop.
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_service_can_drive_the_outbox_from_its_own_loop() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(OutboxOptions {

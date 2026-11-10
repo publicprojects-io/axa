@@ -104,7 +104,16 @@ impl Tasks {
     }
 }
 
-#[cfg(all(test, not(feature = "sea-orm")))]
+#[cfg(all(
+    test,
+    not(any(
+        axa_db = "postgres_seaorm",
+        axa_db = "mysql_seaorm",
+        axa_db = "sqlite_seaorm",
+        axa_db = "postgres_toasty",
+        axa_db = "mysql_toasty"
+    ))
+))]
 mod tests {
     use super::*;
     use crate::{

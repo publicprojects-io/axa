@@ -42,17 +42,29 @@ Publish only from a commit where everything in section 5 of `spec/index.md` has 
    workspace members in this mode:
 
 ```sh
-cargo publish --dry-run -p axa-environment -p axa-sqlx -p axa -p ...
+cargo publish --dry-run -p axa-environment -p axa-postgres-sqlx -p axa -p ...
 ```
 
 ## 4. Publish
 
 Subcrates publish before `axa`, because it depends on them by version. `axa-postgres-job-queue` is
-one of them, as the `queue` feature needs it. `axa-problem-details-for-http-apis` goes before `axa-idempotency-key`, `axa-paseto-auth`, `axa-request-rate-limit`, and `axa-accepts-version-negotiation`, which
+one of them, as the `queue` feature needs it. `axa-problem` goes before `axa-idempotency-key`, `axa-paseto-auth`, `axa-request-rate-limit`, and `axa-accepts-version-negotiation`, which
 depend on it. No other subcrate depends on another, so the rest can go in any order.
 `axa-test` is the one crate that depends on `axa`, so it publishes after `axa`.
 
-`axa-pagination` and `axa-offset-pagination` are retired, as axa 0.9 removed offset
+The SQLite crates are held: `axa-sqlite-job-queue`, `axa-sqlite-sqlx`, `axa-sqlite-seaorm`,
+and `axa-sqlite-diesel`. Do not publish them until sqlx releases the raised cap on
+`libsqlite3-sys` (sqlx PR #4502), `cargo update -p libsqlite3-sys` brings in 0.39 or
+later, and the RUSTSEC-2026-0459 ignore in `.cargo/audit.toml` is gone.
+
+crates.io refuses a crate whose dependencies, optional ones too, are not published, so
+`axa` cannot be published while its `sqlite-*` features name a held crate. Until the SQLite
+crates go out, publish `axa` from the tagged commit with those features and their
+dependencies taken out of its `Cargo.toml` in the working tree only, with
+`cargo publish -p axa --allow-dirty`, then restore the file. The commit keeps them, so CI
+and the repository still build them, and the CHANGELOG says the published crate lacks them.
+
+`axa-pagination` and `axa-offset-pagination` are retired, as Axa 0.9 removed offset
 paging. Never publish either again.
 
 **crates.io limits new crates.** After a small burst, each new name waits about ten
@@ -61,6 +73,11 @@ partial publish is a normal state to recover from:
 
 - Publish the existing crates first where you can, then the new ones.
 - Run a loop that retries on a 429 and stops on any other error, with `axa` last.
+- A new crate that depends on `axa`, such as `axa-test` was in 0.10.0, must not wait
+  behind it. Hold `axa` until the 429's retry time has passed, then publish `axa` and
+  that crate back to back. In 0.10.0, `axa` went out nine minutes before `axa-test`,
+  and a service following the upgrade path in the CHANGELOG found no `axa-test`.
+- Tell other sessions only once every crate is in the index.
 - Do not treat the shell's exit code as the result. Read cargo's output, and check the
   crates.io index for each crate.
 

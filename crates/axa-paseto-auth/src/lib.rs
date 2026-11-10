@@ -36,7 +36,7 @@
 //!     .public_prefix("/swagger-ui")
 //!     .destructive_post_suffix("/merge");
 //!
-//! assert!(config.is_public("/_health"));
+//! assert!(config.is_public("/_health/live"));
 //! assert!(config.is_public("/swagger-ui/index.html"));
 //! assert!(!config.is_public("/api/places"));
 //!
@@ -48,10 +48,14 @@
 use std::{future::Future, net::IpAddr, sync::Arc};
 
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     extract::{FromRequestParts, Request, State},
-    http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION, request::Parts},
+    http::{
+        HeaderMap, HeaderValue, Method, StatusCode,
+        header::{AUTHORIZATION, WWW_AUTHENTICATE},
+        request::Parts,
+    },
     middleware::Next,
     response::{IntoResponse, Response},
 };
@@ -63,7 +67,9 @@ const INVALID_TOKEN: &str = "invalid token";
 const FORBIDDEN: &str = "forbidden";
 
 /// A refusal: the status and the text sent to the caller. It answers as an RFC 9457
-/// problem, with the text as `detail` and a `code` that says no more than the status.
+/// problem, with the text as `detail` and a `code` that says no more than the status. A
+/// `401` carries `WWW-Authenticate: Bearer`, as RFC 9110 requires, with no `error`
+/// parameter, which would say why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rejection(pub StatusCode, pub String);
 
@@ -74,10 +80,17 @@ impl IntoResponse for Rejection {
         } else {
             "unauthorized"
         };
-        Problem::new(self.0)
+        let challenge = self.0 == StatusCode::UNAUTHORIZED;
+        let mut response = Problem::new(self.0)
             .with_detail(self.1)
             .with_extension("code", code.into())
-            .into_response()
+            .into_response();
+        if challenge {
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        }
+        response
     }
 }
 
@@ -108,7 +121,7 @@ impl GuardConfig {
         Self {
             entity: entity.into(),
             require_auth: true,
-            public_paths: ["/_ping", "/_health", "/_readiness"]
+            public_paths: ["/_health/live", "/_health/ready", "/_health/startup"]
                 .map(str::to_string)
                 .to_vec(),
             public_prefixes: Vec::new(),
@@ -555,7 +568,7 @@ mod tests {
 
     fn app(require_auth: bool) -> Router {
         Router::new()
-            .route("/_health", get(|| async { "ok" }))
+            .route("/_health/live", get(|| async { "ok" }))
             .route(
                 "/api/places",
                 get(|| async { "ok" }).post(|| async { "ok" }),
@@ -646,8 +659,19 @@ mod tests {
     #[test]
     fn health_routes_are_public_by_default() {
         let config = GuardConfig::new("x");
-        assert!(config.is_public("/_health"));
-        assert!(!config.is_public("/metrics.prom"));
+        for probe in ["/_health/live", "/_health/ready", "/_health/startup"] {
+            assert!(config.is_public(probe), "{probe}");
+        }
+        // Only the three probes: nothing else under `/_health`, and no old path.
+        for closed in [
+            "/_health",
+            "/_health/other",
+            "/_ping",
+            "/_readiness",
+            "/metrics.prom",
+        ] {
+            assert!(!config.is_public(closed), "{closed}");
+        }
     }
 
     #[test]
@@ -772,7 +796,7 @@ mod tests {
     #[tokio::test]
     async fn public_paths_need_no_token() {
         assert_eq!(
-            status(app(true), "GET", "/_health", None).await,
+            status(app(true), "GET", "/_health/live", None).await,
             StatusCode::OK
         );
     }
@@ -824,8 +848,16 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             response.headers()[axum::http::header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
+    }
+
+    #[test]
+    fn a_401_carries_a_bearer_challenge_and_a_403_does_not() {
+        let refused = invalid_token().into_response();
+        assert_eq!(refused.headers()[WWW_AUTHENTICATE], "Bearer");
+        let forbidden = Rejection(StatusCode::FORBIDDEN, FORBIDDEN.to_string()).into_response();
+        assert!(forbidden.headers().get(WWW_AUTHENTICATE).is_none());
     }
 
     #[tokio::test]

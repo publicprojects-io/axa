@@ -6,25 +6,29 @@
 
 use std::{
     any::Any,
+    pin::Pin,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
+    task::{Context, Poll},
     time::Duration,
 };
 
 use axum::{
     Router,
+    body::{Body, Bytes, HttpBody},
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{HeaderName, HeaderValue, Method, header},
+    http::{Extensions, HeaderMap, HeaderName, HeaderValue, Method, header},
     middleware::{Next, from_fn, from_fn_with_state},
     response::Response,
     routing::MethodRouter,
 };
 use tower_http::{
     catch_panic::CatchPanicLayer,
-    compression::CompressionLayer,
+    compression::{CompressionLayer, DefaultPredicate, Predicate},
     cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
+    sensitive_headers::SetSensitiveHeadersLayer,
     set_header::SetResponseHeaderLayer,
     trace::{DefaultOnResponse, TraceLayer},
 };
@@ -174,7 +178,8 @@ async fn shape_refusals(request: Request, next: Next) -> Response {
     Response::from_parts(parts, body)
 }
 
-/// A body limit for one route, replacing the service-wide limit there.
+/// `method` with a body limit of its own, replacing the service-wide limit there, for
+/// the extractors and for a handler that reads the body itself.
 ///
 /// Keep the service-wide limit small and raise it only on the routes that need
 /// it, rather than accepting large bodies everywhere:
@@ -185,10 +190,83 @@ async fn shape_refusals(request: Request, next: Next) -> Response {
 ///
 /// async fn upload() {}
 ///
-/// let route: MethodRouter = post(upload).layer(body_limit(70_000_000));
+/// let route: MethodRouter = body_limit(post(upload), 70_000_000);
 /// ```
-pub fn body_limit(bytes: usize) -> DefaultBodyLimit {
-    DefaultBodyLimit::max(bytes)
+pub fn body_limit<S>(method: MethodRouter<S>, bytes: usize) -> MethodRouter<S>
+where
+    S: Clone + Send + Sync + 'static,
+{
+    method.layer(DefaultBodyLimit::max(bytes)).layer(from_fn(
+        move |request: Request, next: Next| raise_body_limit(bytes, request, next),
+    ))
+}
+
+/// The limit on the body of one request, set by the stack and raised by a route's own
+/// [`body_limit`] before anything reads the body.
+#[derive(Clone)]
+struct BodyLimit(Arc<AtomicUsize>);
+
+/// Bind every request's body to the service-wide limit, or to a route's own, so that a
+/// handler reading the body itself, past the extractors' `DefaultBodyLimit`, is bound
+/// too. The limit is read when the body is first read, by which time a route has set its
+/// own.
+async fn limit_body(State(bytes): State<usize>, request: Request, next: Next) -> Response {
+    let limit = BodyLimit(Arc::new(AtomicUsize::new(bytes)));
+    let (mut parts, body) = request.into_parts();
+    parts.extensions.insert(limit.clone());
+    let body = Body::new(LimitedLater::Waiting(Some(body), limit));
+    next.run(Request::from_parts(parts, body)).await
+}
+
+/// A route's own limit, in place of the service-wide one.
+async fn raise_body_limit(bytes: usize, request: Request, next: Next) -> Response {
+    if let Some(limit) = request.extensions().get::<BodyLimit>() {
+        limit.0.store(bytes, Ordering::SeqCst);
+    }
+    next.run(request).await
+}
+
+/// A body bound by `http_body_util::Limited`, whose error `axum` answers as `413`, made
+/// when it is first read.
+enum LimitedLater {
+    Waiting(Option<Body>, BodyLimit),
+    Reading(http_body_util::Limited<Body>),
+}
+
+impl HttpBody for LimitedLater {
+    type Data = Bytes;
+    type Error = axum::BoxError;
+
+    fn poll_frame(
+        mut self: Pin<&mut Self>,
+        context: &mut Context<'_>,
+    ) -> Poll<Option<std::result::Result<hyper::body::Frame<Bytes>, Self::Error>>> {
+        if let Self::Waiting(body, limit) = &mut *self {
+            let bytes = limit.0.load(Ordering::SeqCst);
+            let body = body.take().unwrap_or_default();
+            *self = Self::Reading(http_body_util::Limited::new(body, bytes));
+        }
+        match &mut *self {
+            Self::Reading(limited) => Pin::new(limited).poll_frame(context),
+            Self::Waiting(..) => Poll::Ready(None),
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        match self {
+            Self::Waiting(Some(body), _) => body.is_end_stream(),
+            Self::Waiting(None, _) => true,
+            Self::Reading(limited) => limited.is_end_stream(),
+        }
+    }
+
+    fn size_hint(&self) -> hyper::body::SizeHint {
+        match self {
+            Self::Waiting(Some(body), _) => body.size_hint(),
+            Self::Waiting(None, _) => hyper::body::SizeHint::with_exact(0),
+            Self::Reading(limited) => limited.size_hint(),
+        }
+    }
 }
 
 /// The timeout for `path`, or `None` for no timeout.
@@ -278,10 +356,16 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     let mut router = router
         .layer(CatchPanicLayer::custom(panicked))
         .layer(DefaultBodyLimit::max(config.body_limit))
+        .layer(from_fn_with_state(config.body_limit, limit_body))
         .layer(from_fn(shape_refusals));
     if config.compression {
-        router = router.layer(CompressionLayer::new());
+        // Never a response holding a secret, which compression can leak (BREACH).
+        let predicate = DefaultPredicate::new()
+            .and(|_, _, headers: &HeaderMap, _: &Extensions| !holds_a_secret(headers));
+        router = router.layer(CompressionLayer::new().compress_when(predicate));
     }
+    // Outside compression, so that it sees what a handler set and compression sees it.
+    router = router.layer(from_fn(no_store_secrets));
     // Outside compression, so that a `304` has the `vary` the `200` would have had, and
     // nothing is compressed only to be dropped.
     router = router.layer(from_fn(crate::conditional::not_modified));
@@ -298,11 +382,20 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
             HeaderValue::from_str(&value).map_err(|_| Error::string("invalid HSTS max age"))?,
         ));
     }
+    if let Some(policy) = &config.permissions_policy {
+        router = router.layer(default_header(
+            PERMISSIONS_POLICY,
+            HeaderValue::from_str(policy).map_err(|_| {
+                Error::string("HTTP_PERMISSIONS_POLICY is not a valid header value")
+            })?,
+        ));
+    }
     if let Some(policy) = &config.csp {
         router = router.layer(default_header(
             header::CONTENT_SECURITY_POLICY,
-            HeaderValue::from_str(policy)
-                .map_err(|_| Error::string("HTTP_CSP is not a valid header value"))?,
+            HeaderValue::from_str(policy).map_err(|_| {
+                Error::string("HTTP_CONTENT_SECURITY_POLICY is not a valid header value")
+            })?,
         ));
     }
     Ok(router
@@ -312,6 +405,14 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         ))
         .layer(set_default_header(header::X_FRAME_OPTIONS, "DENY"))
         .layer(set_default_header(header::REFERRER_POLICY, "no-referrer"))
+        .layer(set_default_header(
+            CROSS_ORIGIN_OPENER_POLICY,
+            "same-origin",
+        ))
+        .layer(set_default_header(
+            CROSS_ORIGIN_RESOURCE_POLICY,
+            "same-origin",
+        ))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request| request_span(request))
@@ -321,7 +422,48 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
             Arc::new(config.trusted_proxies.clone()),
             crate::client::record,
         ))
-        .layer(from_fn(request_id)))
+        .layer(from_fn(request_id))
+        // Outermost, so that no layer, the trace above all, records a credential.
+        .layer(SetSensitiveHeadersLayer::new([
+            header::AUTHORIZATION,
+            header::PROXY_AUTHORIZATION,
+            header::COOKIE,
+            header::SET_COOKIE,
+        ])))
+}
+
+/// `permissions-policy`, which `http` does not name.
+const PERMISSIONS_POLICY: HeaderName = HeaderName::from_static("permissions-policy");
+/// `cross-origin-opener-policy`, which `http` does not name.
+const CROSS_ORIGIN_OPENER_POLICY: HeaderName =
+    HeaderName::from_static("cross-origin-opener-policy");
+/// `cross-origin-resource-policy`, which `http` does not name.
+const CROSS_ORIGIN_RESOURCE_POLICY: HeaderName =
+    HeaderName::from_static("cross-origin-resource-policy");
+
+/// Whether a response holds a secret: it sets a cookie, or it says not to store it.
+fn holds_a_secret(headers: &HeaderMap) -> bool {
+    headers.contains_key(header::SET_COOKIE)
+        || headers
+            .get_all(header::CACHE_CONTROL)
+            .iter()
+            .filter_map(|value| value.to_str().ok())
+            .any(|value| {
+                value
+                    .split(',')
+                    .any(|directive| directive.trim().eq_ignore_ascii_case("no-store"))
+            })
+}
+
+/// Mark a response that sets a cookie `no-store`, unless its handler said how to cache
+/// it, so that no cache keeps a session or a token.
+async fn no_store_secrets(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    if headers.contains_key(header::SET_COOKIE) && !headers.contains_key(header::CACHE_CONTROL) {
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
+    response
 }
 
 #[cfg(test)]
@@ -340,6 +482,7 @@ mod tests {
             hsts: true,
             hsts_max_age: 31_536_000,
             csp: Some("default-src 'none'".to_string()),
+            permissions_policy: Some(crate::config::DEFAULT_PERMISSIONS_POLICY.to_string()),
             trusted_proxies: Vec::new(),
         }
     }
@@ -605,6 +748,139 @@ mod tests {
         assert_eq!(response.headers()[header::REFERRER_POLICY], "no-referrer");
     }
 
+    #[tokio::test]
+    async fn the_cross_origin_and_permissions_headers_are_set_unless_a_handler_sets_its_own() {
+        let response = app_with_defaults().await;
+        assert_eq!(
+            response.headers()[CROSS_ORIGIN_OPENER_POLICY],
+            "same-origin"
+        );
+        assert_eq!(
+            response.headers()[CROSS_ORIGIN_RESOURCE_POLICY],
+            "same-origin"
+        );
+        assert_eq!(
+            response.headers()[PERMISSIONS_POLICY],
+            crate::config::DEFAULT_PERMISSIONS_POLICY
+        );
+        let router = Router::new().route(
+            "/",
+            get(|| async { ([(CROSS_ORIGIN_RESOURCE_POLICY, "cross-origin")], "ok") }),
+        );
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert_eq!(
+            response.headers()[CROSS_ORIGIN_RESOURCE_POLICY],
+            "cross-origin"
+        );
+        let none = Http {
+            permissions_policy: None,
+            ..config()
+        };
+        let router = Router::new().route("/", get(|| async { "ok" }));
+        let response = apply(router, &none)
+            .unwrap()
+            .oneshot(get_request("/"))
+            .await
+            .unwrap();
+        assert!(response.headers().get(PERMISSIONS_POLICY).is_none());
+    }
+
+    /// A router whose `/cookie` sets a cookie, and whose `/cached` sets one with its own
+    /// caching, both with a body long enough to compress.
+    fn cookies() -> Router {
+        let long = "a cookie and a body long enough to compress ".repeat(20);
+        let cached = long.clone();
+        Router::new()
+            .route(
+                "/cookie",
+                get(move || async move { ([(header::SET_COOKIE, "id=secret")], long) }),
+            )
+            .route(
+                "/cached",
+                get(move || async move {
+                    (
+                        [
+                            (header::SET_COOKIE, "id=secret"),
+                            (header::CACHE_CONTROL, "private, max-age=60"),
+                        ],
+                        cached,
+                    )
+                }),
+            )
+    }
+
+    fn gzip_request(path: &str) -> http::Request<Body> {
+        http::Request::builder()
+            .uri(path)
+            .header(header::ACCEPT_ENCODING, "gzip")
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_response_setting_a_cookie_is_not_stored_or_compressed() {
+        let app = apply(cookies(), &compressing()).unwrap();
+        let response = app.clone().oneshot(gzip_request("/cookie")).await.unwrap();
+        assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
+        assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
+        // A handler's own caching stands, and it is still not compressed.
+        let response = app.oneshot(gzip_request("/cached")).await.unwrap();
+        assert_eq!(
+            response.headers()[header::CACHE_CONTROL],
+            "private, max-age=60"
+        );
+        assert!(response.headers().get(header::CONTENT_ENCODING).is_none());
+        // Anything else is still compressed.
+        let response = apply(Router::new().route("/", get(an_error)), &compressing())
+            .unwrap()
+            .oneshot(accepting_gzip())
+            .await
+            .unwrap();
+        assert_eq!(response.headers()[header::CONTENT_ENCODING], "gzip");
+    }
+
+    #[test]
+    fn no_store_is_read_as_a_directive_among_others() {
+        let headers = |value: &'static str| {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(value));
+            headers
+        };
+        assert!(holds_a_secret(&headers("private, No-Store")));
+        assert!(!holds_a_secret(&headers("no-cache, max-age=0")));
+        assert!(!holds_a_secret(&HeaderMap::new()));
+    }
+
+    #[tokio::test]
+    async fn credential_headers_are_marked_sensitive() {
+        let router = Router::new().route(
+            "/",
+            get(|headers: HeaderMap| async move {
+                let sensitive = |name| headers.get(name).is_some_and(HeaderValue::is_sensitive);
+                (sensitive(header::AUTHORIZATION) && sensitive(header::COOKIE)).to_string()
+            }),
+        );
+        let request = http::Request::builder()
+            .uri("/")
+            .header(header::AUTHORIZATION, "Bearer secret")
+            .header(header::COOKIE, "id=secret")
+            .body(Body::empty())
+            .unwrap();
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(request)
+            .await
+            .unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 64)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"true");
+    }
+
     async fn app_with_defaults() -> Response {
         app().oneshot(get_request("/")).await.unwrap()
     }
@@ -644,7 +920,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -721,7 +997,7 @@ mod tests {
             )
             .route(
                 "/large",
-                axum::routing::post(|body: String| async move { body }).layer(body_limit(64)),
+                body_limit(axum::routing::post(|body: String| async move { body }), 64),
             );
         let app = apply(router, &config()).unwrap();
         let post = |path: &str| {
@@ -735,6 +1011,65 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let response = app.oneshot(post("/small")).await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// A handler that reads the body itself, past every extractor, and says how much
+    /// it read, or `413` when the limit stopped it.
+    async fn read_raw(body: Body) -> (StatusCode, String) {
+        match axum::body::to_bytes(body, usize::MAX).await {
+            Ok(bytes) => (StatusCode::OK, bytes.len().to_string()),
+            Err(error) => {
+                // `axum` wraps a body's error in its own, once for each body around it.
+                let mut inner = error.into_inner();
+                loop {
+                    match inner.downcast::<axum::Error>() {
+                        Ok(wrapped) => inner = wrapped.into_inner(),
+                        Err(unwrapped) => {
+                            inner = unwrapped;
+                            break;
+                        }
+                    }
+                }
+                assert!(inner.is::<http_body_util::LengthLimitError>(), "{inner}");
+                (StatusCode::PAYLOAD_TOO_LARGE, String::new())
+            }
+        }
+    }
+
+    /// A body of `length` bytes, with no `content-length` header.
+    fn streamed(path: &str, length: usize) -> http::Request<Body> {
+        http::Request::builder()
+            .method("POST")
+            .uri(path)
+            .body(Body::from(vec![b'a'; length]))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_handler_reading_the_body_itself_is_bound_by_the_limit() {
+        let limit = config().body_limit;
+        let router = Router::new()
+            .route("/raw", axum::routing::post(read_raw))
+            .route(
+                "/large",
+                body_limit(axum::routing::post(read_raw), limit * 2),
+            );
+        let app = apply(router, &config()).unwrap();
+        let status = |path: &'static str, length| {
+            let app = app.clone();
+            async move { app.oneshot(streamed(path, length)).await.unwrap().status() }
+        };
+        assert_eq!(status("/raw", limit).await, StatusCode::OK);
+        assert_eq!(
+            status("/raw", limit + 1).await,
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
+        // A route's own limit binds a handler reading the body itself too.
+        assert_eq!(status("/large", limit + 1).await, StatusCode::OK);
+        assert_eq!(
+            status("/large", limit * 2 + 1).await,
+            StatusCode::PAYLOAD_TOO_LARGE
+        );
     }
 
     #[tokio::test]
@@ -775,7 +1110,7 @@ mod tests {
         let response = app().oneshot(get_request("/panic")).await.unwrap();
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -845,7 +1180,7 @@ mod tests {
     async fn problem_of(response: Response) -> serde_json::Value {
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -1007,7 +1342,7 @@ mod tests {
         assert_eq!(response.headers()[header::CONTENT_ENCODING], "gzip");
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         assert!(!response.headers().contains_key(header::CONTENT_LENGTH));
     }

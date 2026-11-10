@@ -1,7 +1,7 @@
 {
   "name": "axa",
-  "version": "0.10.0",
-  "description": "Small shared library for services built directly on Axum.",
+  "version": "0.12.1",
+  "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
   "language": "Rust",
@@ -27,16 +27,20 @@
   },
   "features": [
     {
-      "name": "sea-orm",
-      "crate": "axa-seaorm"
+      "name": "postgres-seaorm",
+      "crate": "axa-postgres-seaorm"
     },
     {
       "name": "queue",
       "crate": null
     },
     {
-      "name": "diesel",
-      "crate": "axa-diesel"
+      "name": "postgres-diesel",
+      "crate": "axa-postgres-diesel"
+    },
+    {
+      "name": "postgres-toasty",
+      "crate": "axa-postgres-toasty"
     },
     {
       "name": "keycloak",
@@ -68,7 +72,7 @@
     },
     {
       "name": "problem",
-      "crate": "axa-problem-details-for-http-apis"
+      "crate": "axa-problem"
     },
     {
       "name": "prometheus",
@@ -83,8 +87,8 @@
       "crate": "axa-web-session"
     },
     {
-      "name": "sqlx",
-      "crate": "axa-sqlx"
+      "name": "postgres-sqlx",
+      "crate": "axa-postgres-sqlx"
     },
     {
       "name": "tera",
@@ -105,6 +109,38 @@
     {
       "name": "versioning",
       "crate": "axa-accepts-version-negotiation"
+    },
+    {
+      "name": "mysql-sqlx",
+      "crate": "axa-mysql-sqlx"
+    },
+    {
+      "name": "mysql-seaorm",
+      "crate": "axa-mysql-seaorm"
+    },
+    {
+      "name": "mysql-diesel",
+      "crate": "axa-mysql-diesel"
+    },
+    {
+      "name": "mysql-toasty",
+      "crate": "axa-mysql-toasty"
+    },
+    {
+      "name": "sqlite-sqlx",
+      "crate": "axa-sqlite-sqlx"
+    },
+    {
+      "name": "sqlite-seaorm",
+      "crate": "axa-sqlite-seaorm"
+    },
+    {
+      "name": "sqlite-diesel",
+      "crate": "axa-sqlite-diesel"
+    },
+    {
+      "name": "maud",
+      "crate": "axa-maud-templates"
     }
   ],
   "modules": [
@@ -187,22 +223,29 @@
   ],
   "crates": [
     {
-      "name": "axa-diesel",
-      "version": "0.2.0",
-      "description": "Diesel pooling, migrations, and test resets for Axum services, in pure Rust.",
-      "feature": "diesel",
-      "readme": "crates/axa-diesel/README.md"
+      "name": "axa-postgres-diesel",
+      "version": "0.2.1",
+      "description": "Diesel on PostgreSQL: pooling, migrations, and test resets for Axum services, in pure Rust.",
+      "feature": "postgres-diesel",
+      "readme": "crates/axa-postgres-diesel/README.md"
+    },
+    {
+      "name": "axa-postgres-toasty",
+      "version": "0.1.0",
+      "description": "Toasty on PostgreSQL: connections, migrations, and test resets for Axum services.",
+      "feature": "postgres-toasty",
+      "readme": "crates/axa-postgres-toasty/README.md"
     },
     {
       "name": "axa-environment",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "description": "Which environment a service runs in, read one way, with no dependencies.",
       "feature": null,
       "readme": "crates/axa-environment/README.md"
     },
     {
       "name": "axa-keycloak-auth",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
       "readme": "crates/axa-keycloak-auth/README.md"
@@ -223,7 +266,7 @@
     },
     {
       "name": "axa-transactional-outbox",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "A transactional outbox and relay on Postgres for Axum services, that keeps a record of what it delivered and refused.",
       "feature": "outbox",
       "readme": "crates/axa-transactional-outbox/README.md"
@@ -236,6 +279,20 @@
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
+      "name": "axa-mysql-job-queue",
+      "version": "0.1.0",
+      "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
+      "feature": null,
+      "readme": "crates/axa-mysql-job-queue/README.md"
+    },
+    {
+      "name": "axa-sqlite-job-queue",
+      "version": "0.1.0",
+      "description": "A SQLite job queue, worker pool, and recurring schedules for Axum services.",
+      "feature": null,
+      "readme": "crates/axa-sqlite-job-queue/README.md"
+    },
+    {
       "name": "axa-cursor-pagination",
       "version": "0.1.1",
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
@@ -244,21 +301,21 @@
     },
     {
       "name": "axa-paseto-auth",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto-auth/README.md"
     },
     {
-      "name": "axa-problem-details-for-http-apis",
-      "version": "0.1.0",
+      "name": "axa-problem",
+      "version": "0.2.0",
       "description": "RFC 9457 problem details responses for Axum services.",
       "feature": null,
-      "readme": "crates/axa-problem-details-for-http-apis/README.md"
+      "readme": "crates/axa-problem/README.md"
     },
     {
       "name": "axa-prometheus-metrics",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Prometheus text exposition for Axum services.",
       "feature": "prometheus",
       "readme": "crates/axa-prometheus-metrics/README.md"
@@ -271,11 +328,11 @@
       "readme": "crates/axa-redis-cache/README.md"
     },
     {
-      "name": "axa-seaorm",
-      "version": "0.2.1",
-      "description": "SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.",
-      "feature": "sea-orm",
-      "readme": "crates/axa-seaorm/README.md"
+      "name": "axa-postgres-seaorm",
+      "version": "0.3.0",
+      "description": "SeaORM on PostgreSQL: connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.",
+      "feature": "postgres-seaorm",
+      "readme": "crates/axa-postgres-seaorm/README.md"
     },
     {
       "name": "axa-web-session",
@@ -285,16 +342,16 @@
       "readme": "crates/axa-web-session/README.md"
     },
     {
-      "name": "axa-sqlx",
-      "version": "0.1.2",
+      "name": "axa-postgres-sqlx",
+      "version": "0.1.3",
       "description": "PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.",
-      "feature": "sqlx",
-      "readme": "crates/axa-sqlx/README.md"
+      "feature": "postgres-sqlx",
+      "readme": "crates/axa-postgres-sqlx/README.md"
     },
     {
       "name": "axa-test",
-      "version": "0.1.0",
-      "description": "Request-level test helpers for axa services, built on axum-test.",
+      "version": "0.3.0",
+      "description": "Request-level test helpers for Axa services, built on axum-test.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
     },
@@ -314,24 +371,80 @@
     },
     {
       "name": "axa-idempotency-key",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "description": "Idempotency-Key handling over Postgres for Axum services.",
       "feature": "idempotency",
       "readme": "crates/axa-idempotency-key/README.md"
     },
     {
       "name": "axa-request-rate-limit",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "In-process request limits, per client or per key, and failed-login lockout for Axum services.",
       "feature": "ratelimit",
       "readme": "crates/axa-request-rate-limit/README.md"
     },
     {
       "name": "axa-accepts-version-negotiation",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Header-based API version negotiation for Axum services.",
       "feature": "versioning",
       "readme": "crates/axa-accepts-version-negotiation/README.md"
+    },
+    {
+      "name": "axa-mysql-sqlx",
+      "version": "0.1.0",
+      "description": "MySQL pooling, migrations, and test resets over sqlx for Axum services.",
+      "feature": "mysql-sqlx",
+      "readme": "crates/axa-mysql-sqlx/README.md"
+    },
+    {
+      "name": "axa-mysql-seaorm",
+      "version": "0.1.0",
+      "description": "SeaORM connections, migrations, schema helpers, and test resets for Axum services on MySQL.",
+      "feature": "mysql-seaorm",
+      "readme": "crates/axa-mysql-seaorm/README.md"
+    },
+    {
+      "name": "axa-mysql-diesel",
+      "version": "0.1.0",
+      "description": "Diesel pooling, migrations, and test resets for Axum services on MySQL, in pure Rust.",
+      "feature": "mysql-diesel",
+      "readme": "crates/axa-mysql-diesel/README.md"
+    },
+    {
+      "name": "axa-mysql-toasty",
+      "version": "0.1.0",
+      "description": "Toasty connections, migrations, and test resets for Axum services, on MySQL.",
+      "feature": "mysql-toasty",
+      "readme": "crates/axa-mysql-toasty/README.md"
+    },
+    {
+      "name": "axa-sqlite-sqlx",
+      "version": "0.1.0",
+      "description": "SQLite pooling, migrations, and test resets over sqlx for Axum services.",
+      "feature": "sqlite-sqlx",
+      "readme": "crates/axa-sqlite-sqlx/README.md"
+    },
+    {
+      "name": "axa-sqlite-seaorm",
+      "version": "0.1.0",
+      "description": "SeaORM connections, migrations, schema helpers, and test resets on SQLite for Axum services, with an easy path from Loco.",
+      "feature": "sqlite-seaorm",
+      "readme": "crates/axa-sqlite-seaorm/README.md"
+    },
+    {
+      "name": "axa-sqlite-diesel",
+      "version": "0.1.0",
+      "description": "Diesel pooling, migrations, and test resets for Axum services on SQLite.",
+      "feature": "sqlite-diesel",
+      "readme": "crates/axa-sqlite-diesel/README.md"
+    },
+    {
+      "name": "axa-maud-templates",
+      "version": "0.1.0",
+      "description": "Maud compile-time HTML templates with safe escaping and generic errors for Axum services.",
+      "feature": "maud",
+      "readme": "crates/axa-maud-templates/README.md"
     }
   ]
 }

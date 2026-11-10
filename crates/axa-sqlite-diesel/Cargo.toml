@@ -1,0 +1,26 @@
+[package]
+name = "axa-sqlite-diesel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
+description = "Diesel pooling, migrations, and test resets for Axum services on SQLite."
+readme = "README.md"
+repository = "https://github.com/publicprojects-io/axa/"
+license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+
+[dependencies]
+diesel = { version = "2.3", default-features = false, features = ["sqlite"] }
+deadpool = { version = "0.13", default-features = false, features = ["managed", "rt_tokio_1"] }
+diesel-async = { version = "0.9", features = ["sqlite", "deadpool", "migrations"] }
+diesel_migrations = "2.3"
+# The version sqlx pins, so that one SQLite is linked, built from source.
+libsqlite3-sys = { version = "0.37", features = ["bundled"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+
+[lints]
+workspace = true

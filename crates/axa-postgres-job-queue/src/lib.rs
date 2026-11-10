@@ -225,7 +225,7 @@ const SETUP: &str = "CREATE TABLE IF NOT EXISTS axa_queue (
 )";
 const SETUP_INDEX: &str =
     "CREATE INDEX IF NOT EXISTS axa_queue_ready ON axa_queue (run_at) WHERE status = 'queued'";
-/// Tables created by axa 0.1.0 have no `attempts` column.
+/// Tables created by Axa 0.1.0 have no `attempts` column.
 const SETUP_ATTEMPTS: &str =
     "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0";
 /// A job's own limit on tries, when it has one.

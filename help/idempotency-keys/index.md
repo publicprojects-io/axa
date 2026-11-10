@@ -12,6 +12,13 @@ layers that matter here, then whatever refuses a caller, and call `apply` last:
 use axa::idempotency::{Idempotency, idempotent};
 use axa::paseto::{self, Allowed};
 use axum::middleware::from_fn_with_state;
+# use std::sync::Arc;
+# async fn example(
+#     pool: sqlx::PgPool,
+#     ctx: axa::AppContext,
+#     routes: axa::routes::AppRoutes,
+#     guard: Arc<paseto::Guard>,
+# ) -> axa::Result<axum::Router> {
 
 let keys = Idempotency::new(pool, |request| {
     request.extensions().get::<Allowed>().map(|allowed| allowed.claims.sub.clone())
@@ -23,6 +30,9 @@ let router = routes
     .layer(from_fn_with_state(keys, idempotent))           // inside the guards
     .layer(from_fn_with_state(guard, paseto::middleware)); // the guards
 let app = axa::middleware::apply(router, &ctx.config.http)?; // last, and outermost
+# Ok(app)
+# }
+
 ```
 
 From the outside in, a request then meets:
@@ -71,8 +81,10 @@ taken for lost. The lease is the `ttl` unless you choose a shorter one, and choo
 lets the write run a second time:
 
 ```rust
+# fn example(keys: axa::idempotency::Idempotency) {
 // Only for a handler that is safe to run twice, such as one with a unique constraint.
 let keys = keys.rerun_abandoned_after(std::time::Duration::from_mins(1));
+# }
 ```
 
 Once a run has not reported in for that long, a retry of the same request takes the key
@@ -91,6 +103,9 @@ If finding the caller needs an `await`, write a small layer of your own that doe
 and leaves the answer in an extension, and read that in the closure:
 
 ```rust
+# use axum::{extract::Request, middleware::Next, response::Response};
+# struct Claims { sub: String }
+# async fn request_claims(_: &axum::http::HeaderMap) -> Result<Claims, ()> { Err(()) }
 #[derive(Clone)]
 struct Caller(String);
 
@@ -100,6 +115,7 @@ async fn name_the_caller(mut request: Request, next: Next) -> Response {
     }
     next.run(request).await
 }
+
 ```
 
 With tenants, return a text that names both, such as `format!("{tenant}:{subject}")`.
@@ -113,11 +129,13 @@ it for routes that keep idempotency of their own, or that answer with something 
 should not sit in a table, such as a token:
 
 ```rust
+# fn example(keys: axa::idempotency::Idempotency) {
 let keys = keys.only(|method, path| {
     method == axum::http::Method::POST
         && path.starts_with("/api/")
         && path != "/api/plans/import"
 });
+# }
 ```
 
 A route that accepts more than 1 MiB needs this too, or `max_request_bytes`, because the
@@ -128,9 +146,12 @@ layer holds the whole request to compare it. A larger keyed request is a `413`.
 Put the SQL in a migration. `axa` does not own your schema:
 
 ```rust
+# async fn example(pool: sqlx::PgPool) -> Result<(), sqlx::Error> {
 for statement in axa::idempotency::SETUP_STATEMENTS {
     sqlx::query(statement).execute(&pool).await?;
 }
+# Ok(())
+# }
 ```
 
 A service whose role may change the schema can call `axa::idempotency::setup(&pool)` at
@@ -142,7 +163,9 @@ boot instead. `Idempotency::new` takes a `PgPool`. On SeaORM that is
 A key is optional by default. To refuse a write that has none, name the routes:
 
 ```rust
+# fn example(keys: axa::idempotency::Idempotency) {
 let keys = keys.required(|_, path| path == "/payments");
+# }
 ```
 
 A request with no key then gets a `400` with the `code` `idempotency_key_required`.
@@ -169,6 +192,7 @@ was lost is deleted too, once its lease ends. Without a schedule
 the answers are kept for ever. Call `sweep`:
 
 ```rust
+# fn example(keys: axa::idempotency::Idempotency) {
 tokio::spawn(async move {
     let mut every_hour = tokio::time::interval(std::time::Duration::from_secs(3600));
     loop {
@@ -178,6 +202,7 @@ tokio::spawn(async move {
         }
     }
 });
+# }
 ```
 
 ## Personal data

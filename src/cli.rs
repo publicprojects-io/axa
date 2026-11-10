@@ -365,10 +365,7 @@ mod tests {
     #[test]
     fn check_prints_the_effective_settings() {
         let text = report(
-            &[
-                ("DATABASE_URL", "postgres://localhost/db"),
-                ("PORT", "8000"),
-            ],
+            &[("DB_URL", "postgres://localhost/db"), ("PORT", "8000")],
             &Environment::Production,
         )
         .unwrap();
@@ -390,7 +387,7 @@ mod tests {
         let text = report(
             &[
                 (
-                    "DATABASE_URL",
+                    "DB_URL",
                     "postgres://me:hunter2@localhost/db?sslpassword=abc",
                 ),
                 ("HOST", "https://me:hunter3@example.org"),
@@ -410,11 +407,8 @@ mod tests {
     #[test]
     fn check_refuses_what_a_start_would_refuse() {
         let error = report(&[], &Environment::Production).unwrap_err();
-        assert!(error.to_string().contains("DATABASE_URL"));
-        let pairs = [
-            ("DATABASE_URL", "postgres://localhost/db"),
-            ("HTTP_HSTS", "tru"),
-        ];
+        assert!(error.to_string().contains("DB_URL"));
+        let pairs = [("DB_URL", "postgres://localhost/db"), ("HTTP_HSTS", "tru")];
         let error = report(&pairs, &Environment::Production).unwrap_err();
         assert!(error.to_string().contains("HTTP_HSTS"));
     }

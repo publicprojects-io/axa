@@ -1,11 +1,11 @@
 ---
 name: axa-maintainer-skill
-description: Maintain the axa codebase itself. Use this whenever working directly in the publicprojects-io/axa repository, including changing `src/` or any `crates/axa-*` subcrate, editing `spec/index.md`, adding a subcrate or feature, updating dependencies or Dependabot PRs, changing CI, verifying a change, or preparing and publishing a release, even if the user only says "fix this in axa" or "release axa". Not for a service that merely depends on axa; use axa-skill for that.
+description: Maintain the Axa codebase itself. Use this whenever working directly in the publicprojects-io/axa repository, including changing `src/` or any `crates/axa-*` subcrate, editing `spec/index.md`, adding a subcrate or feature, updating dependencies or Dependabot PRs, changing CI, verifying a change, or preparing and publishing a release, even if the user only says "fix this in Axa" or "release Axa". Not for a service that merely depends on Axa; use axa-skill for that.
 ---
 
-# Maintaining axa
+# Maintaining Axa
 
-axa is a small shared library for services built directly on Axum, written to be
+Axa is an accessories library for Axum websites, databases, microservices, and more, written to be
 audited: the SQL, the middleware, and the startup path are all visible, with no
 framework between the reader and the behaviour. Judge a change by whether an auditor
 can still read the whole path.
@@ -49,7 +49,7 @@ and the test edit. Each spec requirement has an id and names the test that prove
 | Behaviour | `spec/index.md`, and `CHANGELOG.md` under `[Unreleased]` |
 | A setting | The table in `README.md`, and `Config::settings` so `check` prints it |
 | A feature, subcrate, or module | `README.md`, the table in `src/lib.rs`, `Cargo.toml`, `llms.txt`, `llms.json` |
-| Anything a service must act on | The upgrade guide in `help/upgrading-to-0.3/index.md` |
+| Anything a service must act on | The upgrade guide for the release, such as `help/upgrading-to-0.11/index.md` |
 | Anything a service sees | `skill/axa-skill/SKILL.md` |
 | How this repository works | `AGENTS.md` and this skill |
 
@@ -71,14 +71,14 @@ These come from the principles in section 3 of the spec, and each is a reason to
 
 ## Traps
 
-**The feature sets are not interchangeable.** Some tests compile only without `sea-orm`,
+**The feature sets are not interchangeable.** Some tests compile only without `postgres-seaorm`,
 and the worker tests only without `queue` as well. A single `--all-features` run is
 not verification, so run all three test sets from section 5.
 
 **Clippy differs by version.** CI runs it on 1.97 and on stable, and a lint can pass on
 one and fail on the other.
 
-**`#[ignore]` tests need real services.** `AXA_TEST_DATABASE_URL` and
+**`#[ignore]` tests need real services.** `AXA_TEST_DB_URL` and
 `AXA_TEST_REDIS_URL` turn them on, and a plain `cargo test` skips them silently. Start
 a throwaway container on a random loopback port, or rely on CI, and say which you did.
 
@@ -105,7 +105,7 @@ closure type `&'a D`, and rustc then cannot prove the relay's future `Send`.
 is on, so a test that captures logs lives in its own file under `tests/`.
 
 **Production fixtures must pass production's rules.** A test using
-`Environment::Production` needs a `DATABASE_URL` that stays private, such as
+`Environment::Production` needs a `DB_URL` that stays private, such as
 `postgres://localhost/x`.
 
 **README examples are compiled.** `src/lib.rs` includes `README.md` as doctests when
@@ -132,7 +132,7 @@ because its version detection has no limit and `http1_only` does nothing on its 
 path.
 
 **`axa-keycloak-auth` stands alone.** It depends on neither `authentication-verifier` nor any
-other axa crate, and states the source of each copy. A fix to the original does not
+other Axa crate, and states the source of each copy. A fix to the original does not
 reach a copy, so check both ways, including `axa-paseto-auth`, which shares its shape.
 
 ## Dependencies

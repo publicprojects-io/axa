@@ -366,7 +366,7 @@ impl Queue {
     }
 
     /// A queue on a pool nothing listens to, for testing what depends on it.
-    #[cfg(all(test, not(feature = "sea-orm")))]
+    #[cfg(all(test, axa_db = "none"))]
     pub(crate) fn unreachable() -> Self {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .acquire_timeout(Duration::from_millis(50))
@@ -453,8 +453,17 @@ impl Queue {
 }
 
 /// These need a real Postgres, so they are ignored by default. Run them with
-/// `AXA_TEST_DATABASE_URL=postgres://... cargo test --all-features -- --ignored`.
-#[cfg(all(test, not(feature = "sea-orm")))]
+/// `AXA_TEST_DB_URL=postgres://... cargo test --all-features -- --ignored`.
+#[cfg(all(
+    test,
+    not(any(
+        axa_db = "postgres_seaorm",
+        axa_db = "mysql_seaorm",
+        axa_db = "sqlite_seaorm",
+        axa_db = "postgres_toasty",
+        axa_db = "mysql_toasty"
+    ))
+))]
 mod tests {
     use super::*;
     use crate::{
@@ -550,7 +559,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_job_that_panics_fails_and_its_loop_carries_on() {
         let _table = TABLE.lock().await;
         let mut queue = queue().await;
@@ -579,7 +588,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_long_job_that_reports_in_is_not_taken_for_lost() {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
@@ -612,7 +621,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_job_given_up_on_cannot_overwrite_its_replacement() {
         let _table = TABLE.lock().await;
         let mut queue = queue().await;
@@ -638,7 +647,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_persons_act_through_axa_is_kept_with_who_and_why() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -692,7 +701,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_worker_alone_stops_when_told() {
         let _table = TABLE.lock().await;
         let queue = Arc::new(queue().await);
@@ -702,7 +711,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn the_job_loops_stop_when_the_server_cannot_start() {
         let _table = TABLE.lock().await;
         let queue = Arc::new(queue().await);
@@ -723,6 +732,7 @@ mod tests {
             binding: "127.0.0.1".to_string(),
             host: String::new(),
             shutdown_timeout_seconds: 0,
+            shutdown_drain_seconds: 0,
             header_read_timeout_seconds: 0,
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
@@ -745,7 +755,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_hung_job_cannot_hold_shutdown_past_its_limit() {
         let _table = TABLE.lock().await;
         let mut queue = queue().await;
@@ -757,6 +767,7 @@ mod tests {
             .unwrap();
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
+            shutdown_drain_seconds: 0,
             header_read_timeout_seconds: 0,
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
@@ -777,7 +788,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn requests_and_jobs_share_one_limit_and_no_job_starts_during_it() {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
@@ -798,6 +809,7 @@ mod tests {
         drop(listener);
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
+            shutdown_drain_seconds: 0,
             header_read_timeout_seconds: 0,
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
@@ -845,7 +857,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_job_in_progress_finishes_before_shutdown() {
         let _table = TABLE.lock().await;
         let mut queue = queue().await;
@@ -870,7 +882,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_worker_can_allow_more_tries_than_the_queue() {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
@@ -896,7 +908,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_lost_job_uses_its_workers_limit_too() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -912,7 +924,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_job_queued_in_a_transaction_rolls_back_with_it() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -939,7 +951,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn the_max_attempts_column_is_added_to_an_older_table() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -956,7 +968,7 @@ mod tests {
     }
 
     async fn queue() -> Queue {
-        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
         let mut queue = Queue::connect(&uri, QueueOptions::default()).await.unwrap();
         sqlx::query("DELETE FROM axa_queue")
             .execute(queue.pool())
@@ -976,7 +988,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn queue_behaviour_against_postgres() {
         let _table = TABLE.lock().await;
         let queue = Arc::new(queue().await);
@@ -1060,10 +1072,10 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn services_booting_together_all_connect() {
         let _table = TABLE.lock().await;
-        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
         let admin = PgPoolOptions::new().connect(&uri).await.unwrap();
         // Setup only races when the table is really missing.
         for _ in 0..5 {
@@ -1107,7 +1119,7 @@ mod tests {
     }
 
     async fn queue_with(options: QueueOptions) -> Queue {
-        let uri = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
         let mut queue = Queue::connect(&uri, options).await.unwrap();
         sqlx::query("DELETE FROM axa_queue")
             .execute(queue.pool())
@@ -1132,7 +1144,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_failing_job_retries_up_to_its_limit() {
         let _table = TABLE.lock().await;
         let queue = queue_with(QueueOptions {
@@ -1157,7 +1169,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_retry_waits_for_its_backoff() {
         let _table = TABLE.lock().await;
         let queue = queue_with(QueueOptions {
@@ -1175,7 +1187,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn by_default_a_failed_job_is_not_repeated() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -1188,7 +1200,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_job_that_keeps_killing_workers_ends_as_failed() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -1204,7 +1216,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_stale_job_with_attempts_left_runs_again() {
         let _table = TABLE.lock().await;
         let queue = queue_with(QueueOptions {
@@ -1222,7 +1234,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn old_finished_rows_are_deleted_and_nothing_else() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -1257,11 +1269,11 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn connecting_to_an_existing_table_changes_no_schema() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
-        let uri = std::env::var("AXA_TEST_DATABASE_URL").unwrap();
+        let uri = std::env::var("AXA_TEST_DB_URL").unwrap();
         assert!(
             Queue::connect_existing(&uri, QueueOptions::default())
                 .await
@@ -1290,7 +1302,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn the_attempts_column_is_added_to_an_older_table() {
         let _table = TABLE.lock().await;
         let queue = queue().await;
@@ -1307,7 +1319,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn a_service_with_a_queue_and_no_worker_is_warned() {
         let _table = TABLE.lock().await;
         let defaults = Defaults {
@@ -1322,7 +1334,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn perform_later_enqueues_in_queue_mode() {
         let _table = TABLE.lock().await;
         let defaults = Defaults {
@@ -1361,7 +1373,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore = "needs AXA_TEST_DATABASE_URL"]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn perform_in_delays_a_queued_job_and_carries_its_workers_timeout() {
         let _table = TABLE.lock().await;
         let defaults = Defaults {

@@ -5,6 +5,213 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-11-10
+
+This covers `axa` 0.12.1 and the new `axa-maud-templates` 0.1.0. As in 0.12.0, the
+`sqlite-*` features are left out of the published `axa` until the SQLite crates can be
+published.
+
+### Added
+
+- **`axa-maud-templates` 0.1.0, behind the `maud` feature, as `axa::maud`**: Maud
+  compile-time HTML templates, with what `axa-tera-templates` gives Tera. Values are
+  escaped unless wrapped in `PreEscaped`, a `Page` sends its own content security policy,
+  and a handler's `Error`, from any error through `?`, answers a generic `500`. Maud's
+  `html!` names the `maud` crate, so a service adds `maud = "0.27"` beside `axa`.
+
+## [0.12.0] - 2026-11-10
+
+This covers `axa` 0.12.0; the Postgres crates under their new names, `axa-postgres-sqlx`
+0.1.3, `axa-postgres-seaorm` 0.3.0, `axa-postgres-diesel` 0.2.1, and `axa-postgres-toasty`
+0.1.0; the new `axa-mysql-sqlx`, `axa-mysql-seaorm`, `axa-mysql-diesel`, and
+`axa-mysql-toasty`, all 0.1.0; and new versions of `axa-transactional-outbox` 0.3.0 and
+`axa-test` 0.3.0. `axa-sqlx` 0.1.4, `axa-seaorm` 0.3.1, `axa-diesel` 0.2.2, and
+`axa-toasty` 0.1.1 are the last under those names, published only to say where each went.
+
+The SQLite crates are in the repository and not published, and the `sqlite-sqlx`,
+`sqlite-seaorm`, and `sqlite-diesel` features are left out of the published `axa`
+0.12.0, as crates.io takes no feature that names an unpublished crate. Both come once sqlx
+releases its fix for RUSTSEC-2026-0459.
+
+Read [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md): for a service on Postgres,
+the upgrade is renaming.
+
+### Added
+
+- **Database crates for MySQL and SQLite**, each with the shape of its Postgres sibling:
+  `axa-mysql-sqlx`, `axa-mysql-seaorm`, `axa-mysql-diesel`, `axa-mysql-toasty`,
+  `axa-sqlite-sqlx`, `axa-sqlite-seaorm`, and `axa-sqlite-diesel`, all 0.1.0, each behind
+  the `axa` feature of its own name. Each makes `AppContext::db` its pool, and a violated
+  constraint and a database that cannot serve for now answer as they do on Postgres.
+  `axa-mysql-diesel` is pure Rust, with no `libmysqlclient`, and every MySQL crate reads
+  TLS from the URL's `ssl-mode`. There is no SQLite Toasty crate, as Toasty's SQLite
+  driver needs a newer `libsqlite3-sys` than sqlx allows in one build. The SQLite crates
+  build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459, so they are not published
+  until sqlx raises its cap on it.
+- **Production checks a MySQL `DB_URL` for TLS too**: `ssl-mode` of `REQUIRED`,
+  `VERIFY_CA`, or `VERIFY_IDENTITY`, unless it stays on this machine. A SQLite `DB_URL`
+  is a file on this machine, and a database `axa` does not know fails closed.
+- **A development build with no `DB_URL` uses a local database of the kind
+  `AppContext::db` holds**: Postgres, MySQL, or a SQLite file.
+
+### Changed
+
+- **The Postgres database crates are named for their database**: `axa-sqlx` is
+  `axa-postgres-sqlx`, `axa-seaorm` is `axa-postgres-seaorm`, `axa-diesel` is
+  `axa-postgres-diesel`, and `axa-toasty` is `axa-postgres-toasty`, each at the version
+  it had. Rename them in `Cargo.toml`, and `axa_sqlx::` and the like in code.
+- **The database features are named for their database and library**: `sqlx` is
+  `postgres-sqlx`, `sea-orm` is `postgres-seaorm`, `diesel` is `postgres-diesel`, and
+  `toasty` is `postgres-toasty`, and their modules are `axa::postgres_sqlx` and the like.
+  `axa-transactional-outbox` 0.3.0's `sea-orm` feature is `seaorm`, and `axa-test` 0.3.0
+  is for `axa` 0.12. With more than one
+  database feature on, Postgres wins, then MySQL, then SQLite, and for each, sqlx, then
+  SeaORM, Diesel, and Toasty.
+- **`axa::Error::Diesel` holds a `DieselError`**, the same for each database's Diesel
+  crate, with `Query`, `Pool`, and `Other`. `?` still turns a Diesel crate's error, and
+  Diesel's own query error, into it.
+- **A SeaORM feature builds sqlx too**, which SeaORM builds anyway, so that its errors are
+  read as sqlx's are, on every database.
+- **The crate description is "Accessories library for Axum websites, databases,
+  microservices, and more."**
+
+
+This covers `axa` 0.11.0, `axa-problem` 0.2.0 under its old name again, the new
+`axa-mysql-job-queue` 0.1.0 and `axa-toasty` 0.1.0, and new versions of `axa-seaorm`
+0.3.0, `axa-environment` 0.2.0, `axa-paseto-auth` 0.6.0, `axa-keycloak-auth` 0.4.0,
+`axa-request-rate-limit` 0.3.0, `axa-test` 0.2.0, `axa-sqlx` 0.1.3, `axa-diesel` 0.2.1,
+`axa-idempotency-key` 0.2.2, `axa-accepts-version-negotiation` 0.2.1, and
+`axa-prometheus-metrics` 0.1.1. `axa-sqlite-job-queue` 0.1.0 is in the repository and
+not yet published. It breaks 0.10 in its settings, health routes, and more, so read
+[Upgrading to Axa 0.11](help/upgrading-to-0.11/index.md) before deploying it.
+
+### Added
+
+- **`server::Shutdown`**, an extractor that says when shutdown has begun, and waits for
+  it, so a WebSocket or a stream of server-sent events ends itself rather than being cut
+  off at `SHUTDOWN_TIMEOUT_SECONDS`.
+- **`SHUTDOWN_DRAIN_SECONDS`**, 0 by default: told to stop, the server keeps accepting for
+  that long while `/_health/ready` answers `503`, so that Kubernetes takes the pod out of
+  the Service before it stops listening. `SHUTDOWN_TIMEOUT_SECONDS` counts from its end.
+- **`RequestMetrics` in `axa-prometheus-metrics`**: request durations by method, route
+  template, and status, with one `unmatched` label for requests that match no route.
+- **`HTTP_PERMISSIONS_POLICY`**, the `permissions-policy` the stack sends.
+
+- **`axa-mysql-job-queue` 0.1.0**, the MySQL twin of `axa-postgres-job-queue`: the same
+  job loops, limits, delays, priorities, status, schedules, and acts, on MySQL 8.4 or
+  later, with the same API and tables. It is a crate on its own, and not yet a feature
+  of `axa`. Setup creates two triggers, which with binary logging on needs `SUPER` or
+  `log_bin_trust_function_creators`, so run `SETUP_STATEMENTS` in a migration as such a
+  role. MySQL has no `TRUNCATE` trigger, so give the service's role no `DROP` on
+  `axa_job_acts`.
+- **`axa-sqlite-job-queue` 0.1.0**, the SQLite twin of `axa-postgres-job-queue`, for a
+  service on one machine: the same API, tables, and states, on a file. A claim is one
+  `UPDATE ... RETURNING`, and a schedule's tick a `BEGIN IMMEDIATE` transaction, so
+  each job and each due time goes out once across processes. Its tests need no server.
+  It is not published until sqlx releases the raised cap on `libsqlite3-sys`, as the
+  copy sqlx 0.9.0 builds has CVE-2026-119375.
+- **`axa-toasty` 0.1.0 and the `toasty` feature**, for Postgres over
+  [Toasty](https://github.com/tokio-rs/toasty) 0.11. `AppContext::db` becomes a
+  `toasty::Db`, and `axa::db::connect` takes the models as well as the configuration.
+  Toasty migrations go forward only, so there is no `revert`.
+- **The four database crates have the same shape**: `Pool`, `Error`, `PoolConfig`,
+  `connect`, `ping`, `migrate`, `pending`, `truncate`, `dangerously_recreate`,
+  `is_unique_violation`, and `quote_identifier`, and `revert` but for Toasty.
+  `axa-sqlx` gains `Pool`, `Error`, and `pending`. `axa-seaorm` gains `Pool`, `Error`,
+  `ping`, `migrate`, `revert`, `pending`, `truncate`, `dangerously_recreate`,
+  `is_unique_violation`, and `quote_identifier`. `axa-diesel` makes `web_tls` public.
+- **The `diesel` feature makes `AppContext::db` a Diesel pool**, which readiness
+  checks, and `axa::db::connect` opens from configuration. `axa::Error` takes a Diesel
+  error with `?`, and a broken constraint answers `409` or `422` as it does for sqlx.
+
+### Changed
+
+- **A `401` from `axa-paseto-auth` and `axa-keycloak-auth` carries
+  `WWW-Authenticate: Bearer`**, as RFC 9110 requires. It has no `error` parameter, which
+  would say why.
+- **`/_health/ready` answers `503`, `code` `shutting_down`, from the moment shutdown
+  begins**, whatever its checks say.
+- **The body limit binds a handler that reads the body itself**, not only the extractors.
+  `middleware::body_limit` now wraps a route, `body_limit(post(upload), bytes)`, in place
+  of `post(upload).layer(body_limit(bytes))`, and raises both.
+- **A database that cannot serve for now answers `503`**, `code` `unavailable`, with
+  `Retry-After: 5`, in place of `500`: a pool with no free connection, a lost connection,
+  or a read-only, shutting-down, or full server, through any of the four database crates.
+- **The stack sends `cross-origin-opener-policy` and `cross-origin-resource-policy` of
+  `same-origin`, and a `permissions-policy`** that turns off the camera, microphone,
+  location, payment, USB, sensors, and ad topics. A handler's own values win. A service
+  whose images or fonts another site loads sets its own `cross-origin-resource-policy`
+  on those routes.
+- **A response that sets a cookie is `no-store`** unless its handler said how to cache
+  it, and compression skips any response that sets a cookie or is `no-store`, against
+  BREACH.
+- **`authorization`, `proxy-authorization`, `cookie`, and `set-cookie` are marked
+  sensitive** in the standard stack, so no layer records them.
+- **`config::Server` has `shutdown_drain_seconds`, and `config::Http` has
+  `permissions_policy`**, so a service that builds either by hand adds the field.
+- **The health routes follow Kubernetes' three probes**: `/_health/live`,
+  `/_health/ready`, and `/_health/startup`, in place of `/_ping`, `/_health`, and
+  `/_readiness`, which now answer `404`. Point each liveness, readiness, and startup
+  probe, load balancer, and uptime check at its new route before upgrading.
+  `/_health/live` asks nothing. `/_health/ready` asks what `/_readiness` asked: the
+  database, the queue, and the named checks. `/_health/startup` is new, asks only the
+  database, and once it passes, passes for good, answering `not_started` until then.
+  `axa-paseto-auth` and `axa-keycloak-auth` leave the three paths public, and
+  `axa-request-rate-limit` exempts them, in place of the old ones.
+- **`axa::model` and `axa::validation` work with every database**, and come with any
+  of `sqlx`, `sea-orm`, `diesel`, or `toasty`, through a new `model` feature they turn
+  on. `ModelError` has a variant for each database's error: `DbErr`, as before, and
+  `Sqlx`, `Diesel`, and `Toasty`. Code that names `axa::model` or `axa::validation`
+  does not change.
+- **`axa-seaorm` 0.3.0 no longer has `model` or `validation`**, which moved to `axa`.
+  A service that depends on `axa-seaorm` alone and names `axa_seaorm::model` or
+  `axa_seaorm::validation` uses `axa::model` and `axa::validation` instead.
+- **With both `sqlx` and `sea-orm` on, `AppContext::db` is now the `PgPool`**, not the
+  SeaORM connection, because sqlx is not an ORM. With more than one database feature
+  on, `sqlx` wins, then `sea-orm`, `diesel`, and `toasty`. A service that turns on
+  both and uses `ctx.db` as a `DatabaseConnection` turns off `sqlx`, or keeps its own
+  SeaORM connection.
+- **`axa-diesel`'s `PoolConfig` leaves the connection string out of its `Debug`
+  text**, as the sqlx and SeaORM ones do. It printed the password before.
+- **`AppContext`'s `Debug` text names the database by its type**, as a Diesel pool has
+  no `Debug` text of its own.
+- **`axa-problem-details-for-http-apis` is `axa-problem` again**, at 0.2.0, with the
+  same code as `axa-problem-details-for-http-apis` 0.1.0. `axa::problem` is unchanged.
+  A service that depends on the crate directly renames it in `Cargo.toml` and its
+  `use axa_problem_details_for_http_apis` lines to `axa-problem` and `axa_problem`.
+- **The database URL is read from `DB_URL`, not `DATABASE_URL`.** It sits with the
+  other `DB_` settings. A service that still sets only `DATABASE_URL` has no database
+  URL: production refuses to boot, naming `DB_URL`, and development falls back to its
+  default database. The `#[ignore]` suites read `AXA_TEST_DB_URL` in place of
+  `AXA_TEST_DATABASE_URL`. Rename both in every Dockerfile, deploy config, `.env`
+  file, and CI workflow.
+- **Two HTTP settings are renamed to say what they limit.** `BODY_LIMIT_BYTES` is now
+  `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, and `HEADER_READ_TIMEOUT_SECONDS` is now
+  `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS`. The old names are not read, so a service
+  that still sets one gets the default: `Defaults::body_limit` and 30 seconds. The
+  Rust constant `config::DEFAULT_HEADER_READ_TIMEOUT_SECONDS` keeps its name.
+- **`HTTP_CSP` is now `HTTP_CONTENT_SECURITY_POLICY`.** The old name is not read, so
+  a service that set it to allow its pages' scripts or styles gets production's
+  strict `default-src 'none'; frame-ancestors 'none'` instead, and its pages break.
+  One that set it empty to send no policy now sends the strict one.
+
+### Removed
+
+- **`APP_ENV` is the only variable that names the environment.** `axa` and
+  `axa-environment` no longer read Loco's environment variable as a fallback, and
+  `axa_environment::VARIABLES` is now `["APP_ENV"]`. A service that still sets only
+  the old variable runs as development in a debug build and production in a release
+  build, so set `APP_ENV` in every Dockerfile, deploy config, and test script, and
+  search your code for any guard that reads the old name itself.
+
+### Fixed
+
+- The Rust examples in the background jobs and idempotency keys guides, and in the
+  `axa` skill, are now compiled as doctests, so they cannot drift from the API. CI
+  gains a step, `cargo test --doc --features idempotency,paseto`, for the ones that
+  need those features. Two examples stay unchecked, as they need `axa-test` or a
+  database feature. The skill no longer calls idempotency keys unreleased.
+
 ## [0.10.0] - 2026-11-09
 
 This covers `axa` 0.10.0 and fourteen crates new to crates.io, thirteen renamed and one new:
@@ -28,7 +235,12 @@ name. It breaks 0.9 in one place: the `testing` feature is now `axa-test`.
   under `[dev-dependencies]`, and changes `axa::testing::prelude` to
   `axa_test::prelude` and `axa::TestServer` to `axa_test::TestServer`. The prelude
   holds the same names, `request`, `boot_test`, `TestApp`, `BootResult`, and
-  `TestServer`, and `axa::prelude` no longer brings them in.
+  `TestServer`.
+
+  `axa::prelude` no longer brings them in. With `testing` on, it re-exported them, so
+  a test file that imports only `use axa::prelude::*;` and calls `request`,
+  `boot_test`, or `TestServer` now fails with E0425 or E0433. Add
+  `use axa_test::prelude::*;` to each such file.
 
 - The README no longer says which features no service uses yet, and spec P-2 and
   `AGENTS.md` no longer ask for that mark. P-2 itself stands: two consumers, or one
@@ -110,7 +322,7 @@ break; see [Upgrading to 0.9](help/upgrading-to-0.3/index.md#upgrading-to-09).
 - **Offset paging, with `axa-offset-pagination`, breaking (P-10).** `axa` has no
   `offset-pagination` or `pagination` feature, and no `axa::offset_pagination` or
   `axa::pagination`. Its total could count rows a record policy hides. Page with
-  `cursor-pagination`. The crate stays on crates.io for axa 0.8 and earlier, and is not
+  `cursor-pagination`. The crate stays on crates.io for Axa 0.8 and earlier, and is not
   published again. See
   [Upgrading to 0.9](help/upgrading-to-0.3/index.md#upgrading-to-09).
 
@@ -220,7 +432,7 @@ This covers `axa` 0.7.0, `axa-ratelimit` 0.2.0, and five new crates: `axa-worker
 0.1.0, `axa-idempotency` 0.1.0, `axa-outbox` 0.1.0, `axa-cursor-pagination` 0.1.0, and
 `axa-offset-pagination` 0.1.0. `axa-offset-pagination` supersedes `axa-pagination`
 0.1.1. Some changes break; see
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.7 says what
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.7 says what
 to change.
 
 ### Added
@@ -344,7 +556,7 @@ to change.
 
 This covers `axa` 0.6.2. No subcrate changes. A write that breaks a check or not-null
 constraint answers `422`, not `500`; see
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.2 says what
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.2 says what
 to check.
 
 ### Fixed
@@ -360,7 +572,7 @@ to check.
 
 This covers `axa` 0.6.1. No subcrate changes. A rejected JSON body's `code` changes at
 `413`, `415`, and `422`; see
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.1 says what
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6.1 says what
 to check.
 
 ### Fixed
@@ -386,7 +598,7 @@ to check.
 This covers `axa` 0.6.0, `axa-keycloak` 0.3.0, `axa-pagination` 0.1.1, `axa-paseto` 0.5.0,
 `axa-ratelimit` 0.1.0, `axa-tera` 0.2.1, and `axa-versioning` 0.2.0. It breaks 0.5: every
 error's body changes, and `config::Server` has a new field. See
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what a
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what a
 service changes.
 
 ### Added
@@ -418,7 +630,7 @@ service changes.
   say `detail`. Successes stay bare JSON. The body used to be `{error, description,
   errors}`: `error` is now the `code` extension member, `description` is `detail`, and
   `errors` is an extension member as before. See
-  [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what
+  [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.6 lists what
   a service changes.
 - **Breaking: `ErrorDetail`'s fields are `code` and `detail`**, in place of `error` and
   `description`. `ErrorDetail::new` and `with_reason` take what they took.
@@ -467,7 +679,7 @@ This covers `axa` 0.5.0, `axa-diesel` 0.2.0, `axa-keycloak` 0.2.0, `axa-opentele
 0.1.1, `axa-paseto` 0.4.0, `axa-redis` 0.1.1, `axa-seaorm` 0.2.1, `axa-sqlx` 0.1.2, and `axa-versioning` 0.1.1. It breaks 0.4 for
 code that builds `config::Http`, `config::Server`, or `axa_diesel::PoolConfig` without
 `..`, because each has a new field. See
-[Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.5 also shows
+[Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose section on 0.5 also shows
 how to add `axa-tracing` and `axa-opentelemetry`.
 
 ### Added
@@ -513,8 +725,8 @@ turned on by another dependency now speaks HTTP/1 only.
 ### Added
 
 - `DbCommand::destroys_data` and `cli::DESTROY_DATA_VAR`.
-- Two AI agent skills: `skill/axa-skill` for building a service with axa, and
-  `skill/axa-maintainer-skill` for working on axa itself.
+- Two AI agent skills: `skill/axa-skill` for building a service with Axa, and
+  `skill/axa-maintainer-skill` for working on Axa itself.
 
 ### Fixed
 
@@ -543,7 +755,7 @@ turned on by another dependency now speaks HTTP/1 only.
 This covers `axa` 0.4.0, `axa-paseto` 0.3.0, `axa-seaorm` 0.2.0, `axa-sqlx` 0.1.1,
 `axa-environment` 0.1.1, and the first releases of `axa-keycloak`, `axa-tracing`, and
 `axa-opentelemetry`, each 0.1.0. It breaks 0.3.0 where noted: `Defaults` has new fields, and the default database
-timeouts are longer. See [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md), whose
+timeouts are longer. See [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md), whose
 last section covers 0.4.
 
 ### Added
@@ -634,7 +846,7 @@ last section covers 0.4.
 ## [0.3.0] - 2026-11-06
 
 This covers `axa` 0.3.0, `axa-tera` 0.2.0, and `axa-session` 0.1.0. It breaks 0.2.0:
-see [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
+see [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md).
 
 ### Added
 
@@ -722,7 +934,7 @@ have new fields, and `axa-paseto` now enforces by default.
   A service on sqlx adds its pool this way. The route answers `{"ok":true}` as
   before when all is well.
 - A `check` command, with `cli::check`, `Config::settings`, and `config::redact`.
-  It reads the settings axa knows about and connects to nothing, so it says
+  It reads the settings Axa knows about and connects to nothing, so it says
   nothing about a service's own settings or whether the database answers.
 - `Config::apply_cli`, for the `start --binding` and `--port` overrides.
 - `Routes::timeout` and `Routes::add_with_timeout`, for a time limit stated where

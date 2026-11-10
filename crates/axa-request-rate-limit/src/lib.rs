@@ -128,7 +128,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     extract::{Request, State},
     http::{Extensions, HeaderName, HeaderValue, StatusCode, header},
@@ -137,7 +137,7 @@ use axum::{
 };
 
 /// Paths never limited. A refused probe would restart a healthy service.
-pub const EXEMPT: [&str; 3] = ["/_ping", "/_health", "/_readiness"];
+pub const EXEMPT: [&str; 3] = ["/_health/live", "/_health/ready", "/_health/startup"];
 
 /// The most keys held at once, so that many clients cost a bounded amount of memory.
 pub const MAX_KEYS: usize = 100_000;
@@ -791,7 +791,7 @@ mod tests {
     fn limited(limiter: Limiter) -> Router {
         Router::new()
             .route("/", get(|| async { "ok" }))
-            .route("/_ping", get(|| async { "ok" }))
+            .route("/_health/live", get(|| async { "ok" }))
             .layer(from_fn_with_state(limiter, by_client))
     }
 
@@ -815,7 +815,7 @@ mod tests {
         assert!((1..=60).contains(&wait.parse::<u64>().unwrap()));
         assert_eq!(
             second.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let body = axum::body::to_bytes(second.into_body(), usize::MAX).await;
         let body: serde_json::Value = serde_json::from_slice(&body.unwrap()).unwrap();
@@ -828,7 +828,11 @@ mod tests {
         let limiter = limiter(1, 60);
         let app = limited(limiter.clone());
         for _ in 0..3 {
-            let response = app.clone().oneshot(request("/_ping", None)).await.unwrap();
+            let response = app
+                .clone()
+                .oneshot(request("/_health/live", None))
+                .await
+                .unwrap();
             assert_eq!(response.status(), StatusCode::OK);
             assert!(response.headers().get("ratelimit-limit").is_none());
         }
@@ -902,7 +906,7 @@ mod tests {
             limiter.key(|request: &Request| request.extensions().get::<Subject>().map(|s| s.0));
         Router::new()
             .route("/", get(|| async { "ok" }))
-            .route("/_ping", get(|| async { "ok" }))
+            .route("/_health/live", get(|| async { "ok" }))
             .layer(from_fn_with_state(keyed, by_key))
     }
 
@@ -953,7 +957,10 @@ mod tests {
         let limiter = limiter(1, 60);
         let app = by_subject(limiter.clone());
         for _ in 0..3 {
-            let response = app.clone().oneshot(as_subject("/_ping", Some("ana"))).await;
+            let response = app
+                .clone()
+                .oneshot(as_subject("/_health/live", Some("ana")))
+                .await;
             assert_eq!(response.unwrap().status(), StatusCode::OK);
         }
         assert_eq!(limiter.held(), 0);

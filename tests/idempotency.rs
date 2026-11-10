@@ -3,7 +3,7 @@
 //! cuts a request off.
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
 //! ```
 
 #![cfg(feature = "idempotency")]
@@ -46,12 +46,13 @@ fn http() -> Http {
         hsts: false,
         hsts_max_age: 0,
         csp: None,
+        permissions_policy: None,
         trusted_proxies: Vec::new(),
     }
 }
 
 async fn pool() -> PgPool {
-    let url = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     let pool = PgPool::connect(&url).await.expect("connect");
     setup(&pool).await.expect("setup");
     sqlx::query("TRUNCATE axa_idempotency")
@@ -145,7 +146,7 @@ async fn stored_body(pool: &PgPool) -> Option<Vec<u8>> {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn inside_compression_the_plain_body_is_stored_and_each_caller_gets_what_it_asked_for() {
     let pool = pool().await;
     let runs = Arc::new(AtomicUsize::new(0));
@@ -177,7 +178,7 @@ async fn inside_compression_the_plain_body_is_stored_and_each_caller_gets_what_i
 /// The defect one service shipped: mounted outside the stack, the layer read gzip, and
 /// replayed it to a caller that never asked for gzip, with no header to say what it was.
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn outside_compression_a_compressed_answer_is_never_stored_or_replayed() {
     let pool = pool().await;
     let runs = Arc::new(AtomicUsize::new(0));
@@ -203,7 +204,7 @@ async fn outside_compression_a_compressed_answer_is_never_stored_or_replayed() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_refusal_gets_the_standard_headers() {
     let pool = pool().await;
     let runs = Arc::new(AtomicUsize::new(0));
@@ -221,7 +222,7 @@ async fn a_refusal_gets_the_standard_headers() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_guard_outside_the_layer_refuses_before_a_replay_can_answer() {
     let pool = pool().await;
     let runs = Arc::new(AtomicUsize::new(0));
@@ -237,7 +238,7 @@ async fn a_guard_outside_the_layer_refuses_before_a_replay_can_answer() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_service_body_limit_still_applies_and_its_refusal_frees_the_key() {
     let pool = pool().await;
     let runs = Arc::new(AtomicUsize::new(0));
@@ -285,7 +286,7 @@ fn routes_ending_badly(keys: Idempotency, http: &Http, panics: bool) -> Router {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_panic_is_answered_and_its_key_comes_free_after_the_lease() {
     let pool = pool().await;
     let lease = Duration::from_millis(200);
@@ -301,7 +302,7 @@ async fn a_panic_is_answered_and_its_key_comes_free_after_the_lease() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn by_default_a_panic_holds_its_key_and_a_retry_is_told_to_wait() {
     let pool = pool().await;
     let app = routes_ending_badly(keys(&pool), &http(), true);
@@ -324,7 +325,7 @@ async fn by_default_a_panic_holds_its_key_and_a_retry_is_told_to_wait() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_request_the_stack_cuts_off_frees_its_key_after_the_lease() {
     let pool = pool().await;
     let lease = Duration::from_millis(200);
@@ -343,7 +344,7 @@ async fn a_request_the_stack_cuts_off_frees_its_key_after_the_lease() {
 }
 
 /// A service on `SeaORM` reaches the store through the pool under its connection.
-#[cfg(feature = "sea-orm")]
+#[cfg(feature = "postgres-seaorm")]
 #[test]
 fn a_sea_orm_connection_gives_a_pool_this_takes() {
     fn pool(connection: &sea_orm::DatabaseConnection) -> PgPool {

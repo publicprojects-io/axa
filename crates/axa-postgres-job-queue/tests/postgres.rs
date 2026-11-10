@@ -3,7 +3,7 @@
 //! starts by dropping it.
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
 //! ```
 
 use std::{
@@ -24,7 +24,7 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 fn uri() -> String {
-    std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL")
+    std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL")
 }
 
 fn quick() -> QueueOptions {
@@ -147,7 +147,7 @@ impl Gauge {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_process_runs_no_more_jobs_at_once_than_its_loops() {
     let mut queue = fresh(QueueOptions {
         workers: 3,
@@ -174,7 +174,7 @@ async fn a_process_runs_no_more_jobs_at_once_than_its_loops() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_limit_holds_one_job_type_and_the_rest_keep_the_loops() {
     let mut queue = fresh(quick()).await;
     let limited = Gauge::default();
@@ -205,7 +205,7 @@ async fn a_limit_holds_one_job_type_and_the_rest_keep_the_loops() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn two_processes_run_each_job_once() {
     let mut first = fresh(quick()).await;
     let mut second = replica(quick()).await;
@@ -240,7 +240,7 @@ async fn two_processes_run_each_job_once() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn jobs_in_flight_finish_at_shutdown_and_dropping_the_run_stops_them() {
     let mut queue = fresh(quick()).await;
     let gauge = Gauge::default();
@@ -274,7 +274,7 @@ async fn jobs_in_flight_finish_at_shutdown_and_dropping_the_run_stops_them() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_delayed_job_is_not_claimed_before_its_time() {
     let mut queue = fresh(quick()).await;
     queue.handle("Job", |_| async { Ok::<(), String>(()) });
@@ -319,7 +319,7 @@ async fn chrono_past(
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_higher_priority_runs_first() {
     let mut queue = fresh(quick()).await;
     let order = Arc::new(Mutex::new(Vec::new()));
@@ -344,7 +344,7 @@ async fn a_higher_priority_runs_first() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_job_status_follows_it_and_leaves_out_its_arguments() {
     let mut queue = fresh(quick()).await;
     let gate = Arc::new(tokio::sync::Notify::new());
@@ -408,7 +408,7 @@ async fn a_job_status_follows_it_and_leaves_out_its_arguments() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled() {
     let mut queue = fresh(quick()).await;
     let gauge = Gauge::default();
@@ -438,7 +438,7 @@ async fn a_cancelled_job_never_runs_and_a_running_one_cannot_be_cancelled() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both() {
     let mut queue = fresh(quick()).await;
     let ran = Arc::new(Mutex::new(HashSet::new()));
@@ -477,7 +477,7 @@ async fn cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_it() {
     let mut queue = fresh(quick()).await;
     let fail = Arc::new(std::sync::atomic::AtomicBool::new(true));
@@ -525,7 +525,7 @@ async fn a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_batch_is_queued_whole_or_not_at_all() {
     let queue = fresh(quick()).await;
     let jobs: Vec<_> = (0..3)
@@ -549,7 +549,7 @@ async fn a_batch_is_queued_whole_or_not_at_all() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn connecting_to_tables_without_the_new_columns_fails_and_changes_nothing() {
     let queue = fresh(quick()).await;
     sqlx::query("DROP TABLE axa_schedule")
@@ -610,7 +610,7 @@ async fn due(pool: &PgPool, name: &str) -> (f64, f64) {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn replicas_ticking_together_queue_each_due_time_once() {
     let mut replicas = Vec::new();
     replicas.push(fresh(quick()).await);
@@ -661,7 +661,7 @@ async fn replicas_ticking_together_queue_each_due_time_once() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn missed_times_queue_one_job_and_the_schedule_keeps_its_place() {
     let mut queue = fresh(quick()).await;
     every(&mut queue, "missed", Duration::from_secs(10));
@@ -693,7 +693,7 @@ async fn missed_times_queue_one_job_and_the_schedule_keeps_its_place() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_due_time_is_skipped_while_the_last_job_has_not_finished() {
     let mut queue = fresh(quick()).await;
     every(&mut queue, "busy", Duration::from_secs(1));
@@ -735,7 +735,7 @@ async fn a_due_time_is_skipped_while_the_last_job_has_not_finished() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn due_times_count_from_the_first_and_do_not_drift() {
     let mut queue = fresh(quick()).await;
     every(&mut queue, "steady", Duration::from_secs(1));
@@ -770,7 +770,7 @@ async fn due_times_count_from_the_first_and_do_not_drift() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_first_time_applies_only_when_the_row_is_made() {
     let mut queue = fresh(quick()).await;
     let first: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
@@ -812,7 +812,7 @@ async fn a_first_time_applies_only_when_the_row_is_made() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks() {
     let mut queue = fresh(quick()).await;
     every(&mut queue, "report", Duration::from_secs(1));
@@ -847,7 +847,7 @@ async fn a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_run_that_loses_its_claim_is_stopped_and_waits_for_review() {
     let mut queue = fresh(QueueOptions {
         heartbeat_interval: Duration::from_millis(30),
@@ -910,7 +910,7 @@ async fn a_run_that_loses_its_claim_is_stopped_and_waits_for_review() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_run_that_finishes_after_losing_its_claim_waits_for_review() {
     let mut queue = fresh(quick()).await;
     queue.handle("Quick", |_| async {
@@ -936,7 +936,7 @@ async fn a_run_that_finishes_after_losing_its_claim_waits_for_review() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_job_has_no_time_limit_unless_it_is_given_one() {
     let mut queue = fresh(quick()).await;
     queue.handle("Sleep", |millis: serde_json::Value| async move {
@@ -981,7 +981,7 @@ async fn archived(pool: &PgPool, name: &str) -> Option<bool> {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns() {
     let mut old = fresh(quick()).await;
     every(&mut old, "retired", Duration::from_secs(1));
@@ -1079,7 +1079,7 @@ async fn failed_job(queue: &mut Queue) -> Uuid {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn each_act_is_kept_with_who_and_why_and_a_refused_one_is_not() {
     let mut queue = fresh(quick()).await;
     let queued = queue
@@ -1129,7 +1129,7 @@ async fn each_act_is_kept_with_who_and_why_and_a_refused_one_is_not() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_act_commits_with_its_change_and_the_callers_audit() {
     let queue = fresh(quick()).await;
     sqlx::query("CREATE TABLE IF NOT EXISTS service_audit (job UUID NOT NULL)")
@@ -1188,7 +1188,7 @@ async fn an_act_commits_with_its_change_and_the_callers_audit() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn an_act_needs_a_short_code_for_who_and_why() {
     let queue = fresh(quick()).await;
     let id = queue
@@ -1232,7 +1232,7 @@ async fn an_act_needs_a_short_code_for_who_and_why() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn the_acts_table_refuses_every_change() {
     let queue = fresh(quick()).await;
     let id = queue
@@ -1273,7 +1273,7 @@ async fn the_acts_table_refuses_every_change() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn acts_are_kept_when_their_job_is_swept() {
     let queue = fresh(quick()).await;
     let id = queue
@@ -1296,7 +1296,7 @@ async fn acts_are_kept_when_their_job_is_swept() {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_missing_or_turned_off_acts_trigger_stops_the_queue() {
     let queue = fresh(quick()).await;
     let setup = async || {

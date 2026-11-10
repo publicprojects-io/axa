@@ -2,7 +2,7 @@
 //! whether a log site is on.
 //!
 //! ```sh
-//! AXA_TEST_DATABASE_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
+//! AXA_TEST_DB_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
 //! ```
 
 use std::sync::{Arc, Mutex};
@@ -51,9 +51,9 @@ fn write() -> Request {
 }
 
 #[tokio::test]
-#[ignore = "needs AXA_TEST_DATABASE_URL"]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_log_line_holds_no_key_caller_or_body() {
-    let url = std::env::var("AXA_TEST_DATABASE_URL").expect("AXA_TEST_DATABASE_URL");
+    let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     let pool = PgPool::connect(&url).await.expect("connect");
     setup(&pool).await.expect("setup");
     sqlx::query("TRUNCATE axa_idempotency")

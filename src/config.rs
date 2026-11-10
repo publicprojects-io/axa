@@ -2,7 +2,7 @@
 //!
 //! There are no config files. A service states its defaults in code with
 //! [`Defaults`], and the environment overrides them. Production has no
-//! default database, so a missing `DATABASE_URL` fails at boot.
+//! default database, so a missing `DB_URL` fails at boot.
 //!
 //! A setting that is set but makes no sense is a mistake, and a silent default
 //! would hide it: `HTTP_HSTS=tru` must not turn HSTS off. So in a
@@ -27,9 +27,14 @@ pub const DEFAULT_PORT: u16 = 1241;
 /// How long browsers keep to HTTPS unless `HSTS_MAX_AGE_SECONDS` says otherwise: one year.
 pub const DEFAULT_HSTS_MAX_AGE: u64 = 31_536_000;
 
-/// Production's policy unless `HTTP_CSP` says otherwise. It suits a JSON API: a service that
+/// Production's policy unless `HTTP_CONTENT_SECURITY_POLICY` says otherwise. It suits a JSON API: a service that
 /// serves pages must name what they load.
 pub const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
+
+/// The `permissions-policy` unless `HTTP_PERMISSIONS_POLICY` says otherwise: no camera,
+/// microphone, location, payment, USB, sensors, or ad topics, for any origin.
+pub const DEFAULT_PERMISSIONS_POLICY: &str = "accelerometer=(), browsing-topics=(), camera=(), \
+     geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
 
 /// How long to wait for a database connection, unless a service or
 /// `DB_CONNECT_TIMEOUT` says otherwise: five seconds, in milliseconds.
@@ -90,8 +95,13 @@ pub struct Server {
     /// Public base URL.
     pub host: String,
     /// How long, once told to stop, to wait for requests and jobs to finish. `0`
-    /// waits for as long as they take.
+    /// waits for as long as they take. For requests, it counts from the end of the
+    /// drain.
     pub shutdown_timeout_seconds: u64,
+    /// How long, once told to stop, to keep accepting connections while
+    /// `/_health/ready` answers `503`, so that an orchestrator takes the service out of
+    /// rotation before it stops listening. `0`, the default, stops listening at once.
+    pub shutdown_drain_seconds: u64,
     /// How long a client has to send a request's headers. `0` allows for ever.
     pub header_read_timeout_seconds: u64,
     /// How long an idle connection is kept for a next request. Keep this longer than
@@ -107,7 +117,7 @@ pub struct Server {
 }
 
 /// How long a client has to send a request's headers unless
-/// `HEADER_READ_TIMEOUT_SECONDS` says otherwise.
+/// `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS` says otherwise.
 pub const DEFAULT_HEADER_READ_TIMEOUT_SECONDS: u64 = 30;
 
 /// How long an idle connection is kept unless `KEEP_ALIVE_TIMEOUT_SECONDS` says
@@ -189,6 +199,8 @@ pub struct Http {
     pub hsts_max_age: u64,
     /// The `content-security-policy`, if any.
     pub csp: Option<String>,
+    /// The `permissions-policy`, if any.
+    pub permissions_policy: Option<String>,
     /// Proxies whose `X-Forwarded-For` entries are believed. Empty ignores the header.
     pub trusted_proxies: Vec<ProxyNet>,
 }
@@ -207,7 +219,7 @@ impl fmt::Debug for Database {
             dangerously_truncate,
         } = self;
         f.debug_struct("Database")
-            .field("uri", &redact("DATABASE_URL", uri))
+            .field("uri", &redact("DB_URL", uri))
             .field("min_connections", min_connections)
             .field("max_connections", max_connections)
             .field("connect_timeout", connect_timeout)
@@ -312,7 +324,7 @@ fn redact_pairs(value: &str) -> String {
 ///
 /// assert_eq!(redact("API_TOKEN", "abc"), "[redacted]");
 /// assert_eq!(
-///     redact("DATABASE_URL", "postgres://me:hunter2@db/app"),
+///     redact("DB_URL", "postgres://me:hunter2@db/app"),
 ///     "postgres://me:[redacted]@db/app"
 /// );
 /// assert_eq!(redact("PORT", "8000"), "8000");
@@ -418,12 +430,28 @@ fn worker_mode(name: &str) -> Option<WorkerMode> {
 }
 
 /// Whether a connection string keeps its traffic private: it demands TLS, or it goes
-/// no further than this machine. An address that cannot be read counts as neither.
-/// `sslmode=require` counts, though it encrypts without checking who answers. Only
-/// `verify-full` checks that.
+/// no further than this machine. An address that cannot be read, or a database this
+/// does not know, counts as neither, so it fails closed.
+///
+/// Postgres demands TLS with `sslmode` of `require`, `verify-ca`, or `verify-full`, and
+/// MySQL and MariaDB with `ssl-mode` of `REQUIRED`, `VERIFY_CA`, or `VERIFY_IDENTITY`.
+/// `require` and `REQUIRED` count, though they encrypt without checking who answers:
+/// only `verify-full` and `VERIFY_IDENTITY` check that. A SQLite database is a file on
+/// this machine, so it always stays private.
 fn stays_private(uri: &str) -> bool {
-    let Some((_, rest)) = uri.split_once("://") else {
+    if uri
+        .get(..7)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("sqlite:"))
+    {
+        return true;
+    }
+    let Some((scheme, rest)) = uri.split_once("://") else {
         return false;
+    };
+    let demanding: &[&str] = match scheme.to_ascii_lowercase().as_str() {
+        "postgres" | "postgresql" => &["require", "verify-ca", "verify-full"],
+        "mysql" | "mariadb" => &["required", "verify_ca", "verify_identity"],
+        _ => return false,
     };
     let (location, query) = rest.split_once('?').unwrap_or((rest, ""));
     // The last of a repeated parameter wins, as it does in the driver.
@@ -435,11 +463,9 @@ fn stays_private(uri: &str) -> bool {
             .map(|(_, value)| value)
             .next_back()
     };
-    if parameter(&["sslmode", "ssl-mode"]).is_some_and(|mode| {
-        ["require", "verify-ca", "verify-full"]
-            .iter()
-            .any(|safe| mode.eq_ignore_ascii_case(safe))
-    }) {
+    if parameter(&["sslmode", "ssl-mode"])
+        .is_some_and(|mode| demanding.iter().any(|safe| mode.eq_ignore_ascii_case(safe)))
+    {
         return true;
     }
     let authority = location.split('/').next().unwrap_or_default();
@@ -461,26 +487,45 @@ fn database_uri<F: Fn(&str) -> Option<String>>(
     environment: &Environment,
     defaults: &Defaults,
 ) -> Result<String> {
-    match vars.set("DATABASE_URL") {
+    match vars.set("DB_URL") {
         Some(uri)
             if environment.is_production_like()
                 && !stays_private(&uri)
                 && !vars.flag("DB_ALLOW_INSECURE", false) =>
         {
             Err(Error::string(
-                "DATABASE_URL must set sslmode to require, verify-ca, or verify-full in \
-                 production, unless DB_ALLOW_INSECURE is set",
+                "DB_URL must demand TLS in production, with sslmode set to require, \
+                 verify-ca, or verify-full for Postgres, or ssl-mode set to REQUIRED, \
+                 VERIFY_CA, or VERIFY_IDENTITY for MySQL, unless DB_ALLOW_INSECURE is set",
             ))
         }
         Some(uri) => Ok(uri),
         None if defaults.database.is_empty() => Ok(String::new()),
         None if environment.is_production_like() => {
-            Err(Error::string("DATABASE_URL is required in production"))
+            Err(Error::string("DB_URL is required in production"))
         }
-        None => Ok(format!(
-            "postgres://postgres:postgres@localhost:5432/{}_{environment}",
-            defaults.database
-        )),
+        None => Ok(local_database_uri(defaults.database, environment)),
+    }
+}
+
+/// The database a development or test build uses when `DB_URL` is unset: one on this
+/// machine, for the database `AppContext::db` holds.
+fn local_database_uri(database: &str, environment: &Environment) -> String {
+    if cfg!(any(
+        axa_db = "mysql_sqlx",
+        axa_db = "mysql_seaorm",
+        axa_db = "mysql_diesel",
+        axa_db = "mysql_toasty"
+    )) {
+        format!("mysql://root@localhost:3306/{database}_{environment}")
+    } else if cfg!(any(
+        axa_db = "sqlite_sqlx",
+        axa_db = "sqlite_seaorm",
+        axa_db = "sqlite_diesel"
+    )) {
+        format!("sqlite://{database}_{environment}.sqlite3?mode=rwc")
+    } else {
+        format!("postgres://postgres:postgres@localhost:5432/{database}_{environment}")
     }
 }
 
@@ -561,13 +606,26 @@ fn pool_size<F: Fn(&str) -> Option<String>>(
     (min, max)
 }
 
-/// The policy from `HTTP_CSP`, where blank means none, or production's default when unset.
-fn content_security_policy(setting: Option<String>, production: bool) -> Option<String> {
-    match setting {
+/// The policy from `HTTP_CONTENT_SECURITY_POLICY`, where blank means none, or production's default when unset.
+fn content_security_policy<F: Fn(&str) -> Option<String>>(
+    vars: &Vars<F>,
+    production: bool,
+) -> Option<String> {
+    match (vars.lookup)("HTTP_CONTENT_SECURITY_POLICY") {
         Some(policy) if policy.trim().is_empty() => None,
         Some(policy) => Some(policy),
         None if production => Some(DEFAULT_CSP.to_string()),
         None => None,
+    }
+}
+
+/// The policy from `HTTP_PERMISSIONS_POLICY`, where blank means none, or the deny-list
+/// when unset.
+fn permissions_policy<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> Option<String> {
+    match (vars.lookup)("HTTP_PERMISSIONS_POLICY") {
+        Some(policy) if policy.trim().is_empty() => None,
+        Some(policy) => Some(policy),
+        None => Some(DEFAULT_PERMISSIONS_POLICY.to_string()),
     }
 }
 
@@ -602,7 +660,7 @@ impl Config {
     ///
     /// # Errors
     ///
-    /// Fails in a production-like environment when there is no `DATABASE_URL`
+    /// Fails in a production-like environment when there is no `DB_URL`
     /// and the service has a database, when `*` is given as a CORS origin, or
     /// when any setting is set but invalid. The error names the variable and
     /// its value, unless the name is secret-shaped.
@@ -648,8 +706,9 @@ impl Config {
                 host: vars.text("HOST", "http://localhost"),
                 shutdown_timeout_seconds: vars
                     .parsed("SHUTDOWN_TIMEOUT_SECONDS", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS),
+                shutdown_drain_seconds: vars.parsed("SHUTDOWN_DRAIN_SECONDS", 0),
                 header_read_timeout_seconds: vars.parsed(
-                    "HEADER_READ_TIMEOUT_SECONDS",
+                    "HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS",
                     DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
                 ),
                 keep_alive_timeout_seconds: vars.parsed(
@@ -688,7 +747,7 @@ impl Config {
                 dangerously_truncate: test,
             },
             http: Http {
-                body_limit: vars.parsed("BODY_LIMIT_BYTES", defaults.body_limit),
+                body_limit: vars.parsed("HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT", defaults.body_limit),
                 compression: vars.flag("HTTP_COMPRESSION", production),
                 timeout_seconds: vars
                     .parsed("REQUEST_TIMEOUT_SECONDS", if production { 60 } else { 0 }),
@@ -697,7 +756,8 @@ impl Config {
                 trusted_proxies: trusted_proxies(&vars),
                 hsts: vars.flag("HTTP_HSTS", production),
                 hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
-                csp: content_security_policy((vars.lookup)("HTTP_CSP"), production),
+                csp: content_security_policy(&vars, production),
+                permissions_policy: permissions_policy(&vars),
             },
             workers: vars.named("WORKER_MODE", workers, worker_mode),
         };
@@ -746,7 +806,7 @@ impl Config {
             ("BINDING", server.binding.clone()),
             ("HOST", server.host.clone()),
             (
-                "HEADER_READ_TIMEOUT_SECONDS",
+                "HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS",
                 self.server.header_read_timeout_seconds.to_string(),
             ),
             ("MAX_CONNECTIONS", self.server.max_connections.to_string()),
@@ -763,6 +823,10 @@ impl Config {
                 "SHUTDOWN_TIMEOUT_SECONDS",
                 server.shutdown_timeout_seconds.to_string(),
             ),
+            (
+                "SHUTDOWN_DRAIN_SECONDS",
+                server.shutdown_drain_seconds.to_string(),
+            ),
             ("LOG_ENABLE", logger.enable.to_string()),
             ("LOG_LEVEL", logger.level.to_string()),
             ("LOG_FORMAT", logger.format.to_string()),
@@ -770,7 +834,7 @@ impl Config {
                 "LOG_FILTER",
                 logger.override_filter.clone().unwrap_or_default(),
             ),
-            ("DATABASE_URL", database.uri.clone()),
+            ("DB_URL", database.uri.clone()),
             ("DB_MIN_CONNECTIONS", database.min_connections.to_string()),
             ("DB_MAX_CONNECTIONS", database.max_connections.to_string()),
             ("DB_CONNECT_TIMEOUT", database.connect_timeout.to_string()),
@@ -781,7 +845,10 @@ impl Config {
                 "dangerously_truncate",
                 database.dangerously_truncate.to_string(),
             ),
-            ("BODY_LIMIT_BYTES", http.body_limit.to_string()),
+            (
+                "HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT",
+                http.body_limit.to_string(),
+            ),
             ("HTTP_COMPRESSION", http.compression.to_string()),
             ("REQUEST_TIMEOUT_SECONDS", http.timeout_seconds.to_string()),
             (
@@ -803,7 +870,14 @@ impl Config {
             ),
             ("HTTP_HSTS", http.hsts.to_string()),
             ("HSTS_MAX_AGE_SECONDS", http.hsts_max_age.to_string()),
-            ("HTTP_CSP", http.csp.clone().unwrap_or_default()),
+            (
+                "HTTP_CONTENT_SECURITY_POLICY",
+                http.csp.clone().unwrap_or_default(),
+            ),
+            (
+                "HTTP_PERMISSIONS_POLICY",
+                http.permissions_policy.clone().unwrap_or_default(),
+            ),
             ("WORKER_MODE", format!("{workers:?}")),
         ]
         .map(|(name, value)| (name, redact(name, &value)))
@@ -832,7 +906,7 @@ mod tests {
     fn axa_reads_the_environment_through_the_lighter_crate() {
         let environment: axa_environment::Environment = Environment::Test;
         assert_eq!(environment, crate::environment::Environment::Test);
-        assert_eq!(crate::environment::VARIABLES, ["APP_ENV", "LOCO_ENV"]);
+        assert_eq!(crate::environment::VARIABLES, ["APP_ENV"]);
     }
 
     #[test]
@@ -844,24 +918,45 @@ mod tests {
     #[test]
     fn development_and_test_get_a_local_database_named_for_the_environment() {
         let dev = with(&[], &Environment::Development).unwrap();
-        assert!(dev.database.uri.ends_with("/svc_development"));
+        assert!(
+            dev.database.uri.contains("svc_development"),
+            "{}",
+            dev.database.uri
+        );
         let test = with(&[], &Environment::Test).unwrap();
-        assert!(test.database.uri.ends_with("/svc_test"));
+        assert!(
+            test.database.uri.contains("svc_test"),
+            "{}",
+            test.database.uri
+        );
     }
 
     #[test]
-    fn the_local_database_user_names_no_framework() {
-        let dev = with(&[], &Environment::Development).unwrap();
-        assert_eq!(
-            dev.database.uri,
+    fn the_local_database_is_the_database_the_context_holds_and_names_no_framework() {
+        let expected = if cfg!(any(
+            axa_db = "mysql_sqlx",
+            axa_db = "mysql_seaorm",
+            axa_db = "mysql_diesel",
+            axa_db = "mysql_toasty"
+        )) {
+            "mysql://root@localhost:3306/svc_development"
+        } else if cfg!(any(
+            axa_db = "sqlite_sqlx",
+            axa_db = "sqlite_seaorm",
+            axa_db = "sqlite_diesel"
+        )) {
+            "sqlite://svc_development.sqlite3?mode=rwc"
+        } else {
             "postgres://postgres:postgres@localhost:5432/svc_development"
-        );
+        };
+        let dev = with(&[], &Environment::Development).unwrap();
+        assert_eq!(dev.database.uri, expected);
     }
 
     #[test]
     fn production_refuses_to_boot_without_a_database_url() {
         let error = with(&[], &Environment::Production).unwrap_err();
-        assert!(error.to_string().contains("DATABASE_URL"));
+        assert!(error.to_string().contains("DB_URL"));
     }
 
     #[test]
@@ -877,18 +972,18 @@ mod tests {
             "postgres:///app",
             "not a url",
         ] {
-            let error = with(&[("DATABASE_URL", uri)], &Environment::Production).unwrap_err();
+            let error = with(&[("DB_URL", uri)], &Environment::Production).unwrap_err();
             assert!(error.to_string().contains("sslmode"), "{uri}");
             assert!(!error.to_string().contains("pw"), "{uri}");
-            let allowed = [("DATABASE_URL", uri), ("DB_ALLOW_INSECURE", "true")];
+            let allowed = [("DB_URL", uri), ("DB_ALLOW_INSECURE", "true")];
             assert!(with(&allowed, &Environment::Production).is_ok(), "{uri}");
-            assert!(with(&[("DATABASE_URL", uri)], &Environment::Development).is_ok());
+            assert!(with(&[("DB_URL", uri)], &Environment::Development).is_ok());
         }
     }
 
     #[test]
     fn trusted_proxies_are_read_and_a_bad_list_trusts_none() {
-        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let url = ("DB_URL", "postgres://localhost/x");
         let config = with(
             &[url, ("TRUSTED_PROXIES", "10.0.0.0/8, 192.168.1.1")],
             &Environment::Production,
@@ -907,7 +1002,7 @@ mod tests {
 
     #[test]
     fn the_connection_limit_is_a_setting_and_cannot_be_zero() {
-        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let url = ("DB_URL", "postgres://localhost/x");
         let config = with(&[url, ("MAX_CONNECTIONS", "500")], &Environment::Production).unwrap();
         assert_eq!(config.server.max_connections, 500);
         let config = with(&[url], &Environment::Production).unwrap();
@@ -920,7 +1015,7 @@ mod tests {
 
     #[test]
     fn the_send_stall_limit_is_a_setting() {
-        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let url = ("DB_URL", "postgres://localhost/x");
         let config = with(&[url], &Environment::Production).unwrap();
         assert_eq!(config.server.send_stall_timeout_seconds, 60);
         let set = [url, ("SEND_STALL_TIMEOUT_SECONDS", "0")];
@@ -939,7 +1034,7 @@ mod tests {
             "postgres://me:hunter2@db.internal/app",
             "postgres://db.internal/app?password=hunter2",
         ] {
-            let config = with(&[("DATABASE_URL", uri)], &Environment::Development).unwrap();
+            let config = with(&[("DB_URL", uri)], &Environment::Development).unwrap();
             let printed = format!("{config:?}");
             assert!(!printed.contains("hunter2"), "{printed}");
             assert!(printed.contains("db.internal"), "{printed}");
@@ -959,16 +1054,47 @@ mod tests {
             "postgres://db.internal/app?hostaddr=127.0.0.1",
         ] {
             assert!(
-                with(&[("DATABASE_URL", uri)], &Environment::Production).is_ok(),
+                with(&[("DB_URL", uri)], &Environment::Production).is_ok(),
                 "{uri}"
             );
         }
     }
 
     #[test]
+    fn production_asks_each_database_for_its_own_tls_setting() {
+        for uri in [
+            "mysql://me:pw@db.internal/app?ssl-mode=REQUIRED",
+            "mysql://me:pw@db.internal/app?ssl-mode=verify_identity",
+            "mariadb://db.internal/app?ssl-mode=VERIFY_CA",
+            "mysql://me:pw@localhost:3306/app",
+            "sqlite://var/lib/app/data.sqlite3",
+            "sqlite::memory:",
+            "SQLITE://app.db",
+        ] {
+            assert!(
+                with(&[("DB_URL", uri)], &Environment::Production).is_ok(),
+                "{uri}"
+            );
+        }
+        for uri in [
+            "mysql://me:pw@db.internal/app",
+            "mysql://me:pw@db.internal/app?ssl-mode=PREFERRED",
+            "mysql://me:pw@db.internal/app?ssl-mode=DISABLED",
+            // Postgres's spelling means nothing to MySQL, and MySQL's nothing to Postgres.
+            "mysql://me:pw@db.internal/app?sslmode=require",
+            "postgres://me:pw@db.internal/app?sslmode=REQUIRED",
+            "oracle://me:pw@db.internal/app?sslmode=require",
+        ] {
+            let error = with(&[("DB_URL", uri)], &Environment::Production).unwrap_err();
+            assert!(error.to_string().contains("ssl-mode"), "{uri}");
+            assert!(!error.to_string().contains("pw"), "{uri}");
+        }
+    }
+
+    #[test]
     fn production_refuses_a_blank_database_url() {
-        let error = with(&[("DATABASE_URL", " ")], &Environment::Production).unwrap_err();
-        assert!(error.to_string().contains("DATABASE_URL"));
+        let error = with(&[("DB_URL", " ")], &Environment::Production).unwrap_err();
+        assert!(error.to_string().contains("DB_URL"));
     }
 
     #[test]
@@ -983,7 +1109,7 @@ mod tests {
 
     #[test]
     fn only_tests_ever_truncate() {
-        let url = [("DATABASE_URL", "postgres://localhost/x")];
+        let url = [("DB_URL", "postgres://localhost/x")];
         assert!(
             with(&[], &Environment::Test)
                 .unwrap()
@@ -1007,7 +1133,7 @@ mod tests {
     #[test]
     fn production_does_not_migrate_at_boot_by_default() {
         let config = with(
-            &[("DATABASE_URL", "postgres://localhost/x")],
+            &[("DB_URL", "postgres://localhost/x")],
             &Environment::Production,
         )
         .unwrap();
@@ -1017,7 +1143,7 @@ mod tests {
     #[test]
     fn the_database_timeouts_suit_a_real_database() {
         let config = with(
-            &[("DATABASE_URL", "postgres://localhost/x")],
+            &[("DB_URL", "postgres://localhost/x")],
             &Environment::Production,
         )
         .unwrap();
@@ -1056,7 +1182,7 @@ mod tests {
     #[test]
     fn a_small_largest_pool_size_carries_the_smallest_with_it() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
+            ("DB_URL", "postgres://localhost/x"),
             ("DB_MAX_CONNECTIONS", "1"),
         ];
         let config = with(&pairs, &Environment::Production).unwrap();
@@ -1066,7 +1192,7 @@ mod tests {
 
     #[test]
     fn a_pool_that_cannot_exist_is_refused() {
-        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let url = ("DB_URL", "postgres://localhost/x");
         let pairs = [
             url,
             ("DB_MIN_CONNECTIONS", "9"),
@@ -1089,12 +1215,36 @@ mod tests {
     #[test]
     fn production_sends_a_strict_policy_by_default() {
         let config = with(
-            &[("DATABASE_URL", "postgres://localhost/x")],
+            &[("DB_URL", "postgres://localhost/x")],
             &Environment::Production,
         )
         .unwrap();
         assert_eq!(config.http.csp.as_deref(), Some(DEFAULT_CSP));
         assert_eq!(config.http.hsts_max_age, DEFAULT_HSTS_MAX_AGE);
+    }
+
+    #[test]
+    fn the_permissions_policy_is_a_deny_list_unless_named_or_blanked() {
+        let config = with(&[], &Environment::Development).unwrap();
+        assert_eq!(
+            config.http.permissions_policy.as_deref(),
+            Some(DEFAULT_PERMISSIONS_POLICY)
+        );
+        let named = with(
+            &[("HTTP_PERMISSIONS_POLICY", "camera=(self)")],
+            &Environment::Development,
+        )
+        .unwrap();
+        assert_eq!(
+            named.http.permissions_policy.as_deref(),
+            Some("camera=(self)")
+        );
+        let blank = with(
+            &[("HTTP_PERMISSIONS_POLICY", " ")],
+            &Environment::Development,
+        )
+        .unwrap();
+        assert_eq!(blank.http.permissions_policy, None);
     }
 
     #[test]
@@ -1106,14 +1256,14 @@ mod tests {
     #[test]
     fn a_service_can_name_its_own_policy_or_none() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
-            ("HTTP_CSP", "default-src 'self'"),
+            ("DB_URL", "postgres://localhost/x"),
+            ("HTTP_CONTENT_SECURITY_POLICY", "default-src 'self'"),
         ];
         let config = with(&pairs, &Environment::Production).unwrap();
         assert_eq!(config.http.csp.as_deref(), Some("default-src 'self'"));
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
-            ("HTTP_CSP", " "),
+            ("DB_URL", "postgres://localhost/x"),
+            ("HTTP_CONTENT_SECURITY_POLICY", " "),
         ];
         assert_eq!(
             with(&pairs, &Environment::Production).unwrap().http.csp,
@@ -1124,7 +1274,7 @@ mod tests {
     #[test]
     fn the_hsts_max_age_can_be_set() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
+            ("DB_URL", "postgres://localhost/x"),
             ("HSTS_MAX_AGE_SECONDS", "63072000"),
         ];
         let config = with(&pairs, &Environment::Production).unwrap();
@@ -1134,7 +1284,7 @@ mod tests {
     #[test]
     fn production_refuses_a_wildcard_cors_origin() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
+            ("DB_URL", "postgres://localhost/x"),
             ("CORS_ALLOWED_ORIGINS", "*"),
         ];
         let error = with(&pairs, &Environment::Production).unwrap_err();
@@ -1143,7 +1293,7 @@ mod tests {
 
     #[test]
     fn production_sends_no_cors_headers_until_origins_are_listed() {
-        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let url = ("DB_URL", "postgres://localhost/x");
         let none = with(&[url], &Environment::Production).unwrap();
         assert_eq!(none.http.cors_origins, Vec::<String>::new());
         let listed = with(
@@ -1171,8 +1321,7 @@ mod tests {
             database: "svc",
             ..Defaults::default()
         };
-        let lookup =
-            |name: &str| (name == "DATABASE_URL").then(|| "postgres://localhost/x".to_string());
+        let lookup = |name: &str| (name == "DB_URL").then(|| "postgres://localhost/x".to_string());
         let dev = Config::from_lookup(&Environment::Development, &defaults, lookup).unwrap();
         assert_eq!(dev.server.port, 5150);
         let prod = Config::from_lookup(&Environment::Production, &defaults, lookup).unwrap();
@@ -1191,11 +1340,11 @@ mod tests {
     fn production_refuses_an_unparsable_number() {
         for name in [
             "PORT",
-            "BODY_LIMIT_BYTES",
+            "HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT",
             "REQUEST_TIMEOUT_SECONDS",
             "DB_MAX_CONNECTIONS",
         ] {
-            let pairs = [("DATABASE_URL", "postgres://localhost/x"), (name, "12x")];
+            let pairs = [("DB_URL", "postgres://localhost/x"), (name, "12x")];
             let error = with(&pairs, &Environment::Production).unwrap_err();
             let text = error.to_string();
             assert!(text.contains(name) && text.contains("12x"), "{text}");
@@ -1204,17 +1353,14 @@ mod tests {
 
     #[test]
     fn a_number_out_of_range_is_refused() {
-        let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
-            ("PORT", "70000"),
-        ];
+        let pairs = [("DB_URL", "postgres://localhost/x"), ("PORT", "70000")];
         assert!(with(&pairs, &Environment::Production).is_err());
     }
 
     #[test]
     fn every_problem_is_named_at_once() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
+            ("DB_URL", "postgres://localhost/x"),
             ("PORT", "x"),
             ("HTTP_HSTS", "tru"),
         ];
@@ -1245,7 +1391,7 @@ mod tests {
     #[test]
     fn a_blank_value_counts_as_unset() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
+            ("DB_URL", "postgres://localhost/x"),
             ("PORT", ""),
             ("HTTP_HSTS", " "),
         ];
@@ -1260,7 +1406,7 @@ mod tests {
             let config = with(&[("HTTP_COMPRESSION", value)], &Environment::Development).unwrap();
             assert!(config.http.compression, "{value}");
         }
-        let url = ("DATABASE_URL", "postgres://localhost/x");
+        let url = ("DB_URL", "postgres://localhost/x");
         for value in ["0", "false", "NO", " off "] {
             let pairs = [url, ("HTTP_HSTS", value)];
             let config = with(&pairs, &Environment::Production).unwrap();
@@ -1271,10 +1417,7 @@ mod tests {
 
     #[test]
     fn production_refuses_a_flag_it_does_not_know() {
-        let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
-            ("HTTP_HSTS", "tru"),
-        ];
+        let pairs = [("DB_URL", "postgres://localhost/x"), ("HTTP_HSTS", "tru")];
         let text = with(&pairs, &Environment::Production)
             .unwrap_err()
             .to_string();
@@ -1295,10 +1438,7 @@ mod tests {
     #[test]
     fn production_refuses_a_name_it_does_not_know() {
         for name in ["LOG_LEVEL", "LOG_FORMAT", "WORKER_MODE"] {
-            let pairs = [
-                ("DATABASE_URL", "postgres://localhost/x"),
-                (name, "nonsense"),
-            ];
+            let pairs = [("DB_URL", "postgres://localhost/x"), (name, "nonsense")];
             let error = with(&pairs, &Environment::Production).unwrap_err();
             assert!(error.to_string().contains(name), "{name}");
         }
@@ -1307,7 +1447,7 @@ mod tests {
     #[test]
     fn a_bad_log_filter_is_refused_and_never_reaches_the_logger() {
         let pairs = [
-            ("DATABASE_URL", "postgres://localhost/x"),
+            ("DB_URL", "postgres://localhost/x"),
             ("LOG_FILTER", "a=b=c"),
         ];
         let error = with(&pairs, &Environment::Production).unwrap_err();
@@ -1356,7 +1496,7 @@ mod tests {
             ("http://localhost", "http://localhost"),
         ];
         for (value, want) in cases {
-            assert_eq!(redact("DATABASE_URL", value), want);
+            assert_eq!(redact("DB_URL", value), want);
         }
     }
 
@@ -1375,7 +1515,7 @@ mod tests {
             ("sslmode=require", "sslmode=require"),
         ];
         for (value, want) in cases {
-            assert_eq!(redact("DATABASE_URL", value), want);
+            assert_eq!(redact("DB_URL", value), want);
         }
     }
 
@@ -1383,7 +1523,7 @@ mod tests {
     fn every_setting_passes_through_redaction() {
         let config = with(
             &[
-                ("DATABASE_URL", "postgres://me:hunter2@h/db"),
+                ("DB_URL", "postgres://me:hunter2@h/db"),
                 ("HOST", "https://me:hunter3@example.org"),
                 ("LOG_FILTER", "svc=info"),
             ],

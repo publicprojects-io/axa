@@ -63,7 +63,7 @@ async fn whoami(AuthUser(claims): AuthUser) -> Json<Value> {
 
 fn app(guard: Guard) -> Router {
     Router::new()
-        .route("/_health", get(|| async { "ok" }))
+        .route("/_health/live", get(|| async { "ok" }))
         .route(
             "/api/places",
             get(|| async { "ok" }).post(|| async { "ok" }),
@@ -133,7 +133,10 @@ async fn a_valid_token_reaches_the_handler_with_its_claims() {
 async fn health_stays_public_and_everything_else_needs_a_token() {
     let idp = TestIdp::start().await;
     let app = app(guard(settings(&idp), true));
-    assert_eq!(status(&app, "GET", "/_health", None).await, StatusCode::OK);
+    assert_eq!(
+        status(&app, "GET", "/_health/live", None).await,
+        StatusCode::OK
+    );
     assert_eq!(
         status(&app, "GET", "/api/places", None).await,
         StatusCode::UNAUTHORIZED

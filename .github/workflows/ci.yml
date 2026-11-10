@@ -30,6 +30,21 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      mysql:
+        image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+        env:
+          MYSQL_ROOT_PASSWORD: axa
+          MYSQL_USER: axa
+          MYSQL_PASSWORD: axa
+          MYSQL_DATABASE: axa_test
+        # 3307 on the runner, which has a MySQL of its own installed.
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uaxa -paxa --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
       redis:
         image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
         ports:
@@ -60,13 +75,26 @@ jobs:
       - name: Clippy, queue
         run: cargo clippy --all-targets --features queue -- -D warnings
       - name: Clippy, sqlx
-        run: cargo clippy --all-targets --features sqlx -- -D warnings
+        run: cargo clippy --all-targets --features postgres-sqlx -- -D warnings
+      # Each database feature alone, as each makes `AppContext::db` its own handle.
+      - name: Clippy, each database alone
+        run: |
+          cargo clippy --all-targets --features postgres-seaorm -- -D warnings
+          cargo clippy --all-targets --features postgres-diesel -- -D warnings
+          cargo clippy --all-targets --features postgres-toasty -- -D warnings
+          cargo clippy --all-targets --features mysql-sqlx -- -D warnings
+          cargo clippy --all-targets --features mysql-seaorm -- -D warnings
+          cargo clippy --all-targets --features mysql-diesel -- -D warnings
+          cargo clippy --all-targets --features mysql-toasty -- -D warnings
+          cargo clippy --all-targets --features sqlite-sqlx -- -D warnings
+          cargo clippy --all-targets --features sqlite-seaorm -- -D warnings
+          cargo clippy --all-targets --features sqlite-diesel -- -D warnings
       # Each outbox feature alone, as a service turns it on: code behind one
       # feature can lint clean only beside the other.
       - name: Clippy, outbox features one at a time
         run: |
           cargo clippy -p axa-transactional-outbox --all-targets --features encryption -- -D warnings
-          cargo clippy -p axa-transactional-outbox --all-targets --features sea-orm -- -D warnings
+          cargo clippy -p axa-transactional-outbox --all-targets --features seaorm -- -D warnings
       - name: Clippy, all features
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
@@ -82,33 +110,51 @@ jobs:
       - name: Test, queue
         run: cargo test --features queue
       - name: Test, sqlx
-        run: cargo test --features sqlx
+        run: cargo test --features postgres-sqlx
+      - name: Doctests, idempotency and paseto
+        run: cargo test --doc --features idempotency,paseto
       - name: Test, all features
         run: cargo test --workspace --all-features
 
       - name: Docs
         run: cargo doc --workspace --no-deps --all-features
 
-      - name: No C database library in axa-diesel
+      - name: No C database client library in the Diesel crates
         run: |
-          cargo tree -p axa-diesel --all-features -e normal > diesel-tree.txt
-          if grep -E 'pq-sys|libpq|openssl' diesel-tree.txt; then exit 1; fi
+          cargo tree -p axa-postgres-diesel --all-features -e normal > diesel-tree.txt
+          cargo tree -p axa-mysql-diesel --all-features -e normal >> diesel-tree.txt
+          if grep -E 'pq-sys|libpq|mysqlclient|openssl|native-tls' diesel-tree.txt; then exit 1; fi
 
       - name: Postgres tests
         env:
-          AXA_TEST_DATABASE_URL: postgres://axa:axa@localhost:5432/axa_test
+          AXA_TEST_DB_URL: postgres://axa:axa@localhost:5432/axa_test
         run: |
           cargo test --features queue -- --ignored
           cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
           cargo test --features outbox --test outbox_shutdown -- --ignored
           cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
           cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
-          cargo test -p axa-sqlx -- --ignored --test-threads=1
-          cargo test -p axa-seaorm -- --ignored --test-threads=1
-          cargo test -p axa-diesel -- --ignored --test-threads=1
+          cargo test -p axa-postgres-sqlx -- --ignored --test-threads=1
+          cargo test -p axa-postgres-seaorm -- --ignored --test-threads=1
+          cargo test -p axa-postgres-diesel -- --ignored --test-threads=1
+          cargo test -p axa-postgres-toasty -- --ignored --test-threads=1
           cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
           cargo test -p axa-idempotency-key -- --ignored --test-threads=1
           cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
+
+      - name: MySQL tests
+        env:
+          AXA_TEST_MYSQL_URL: mysql://axa:axa@127.0.0.1:3307/axa_test
+        # Binary logging is on, so only SUPER may create the queue's triggers unless
+        # this is set. A service's migration runs as such a role instead.
+        run: |
+          mysql -h127.0.0.1 -P3307 -uroot -paxa -e "SET GLOBAL log_bin_trust_function_creators = 1"
+          cargo test -p axa-mysql-job-queue -- --ignored --test-threads=1
+          cargo test -p axa-mysql-sqlx -- --ignored --test-threads=1
+          cargo test -p axa-mysql-seaorm -- --ignored --test-threads=1
+          cargo test -p axa-mysql-diesel -- --ignored --test-threads=1
+          cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
+          cargo test --all-features --test other_databases -- --ignored --test-threads=1
 
       - name: Redis tests
         env:
