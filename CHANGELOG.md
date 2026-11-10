@@ -3,7 +3,16 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.11.0] - 2026-11-10
+
+This covers `axa` 0.11.0, `axa-problem` 0.2.0 under its old name again, the new
+`axa-mysql-job-queue` 0.1.0 and `axa-toasty` 0.1.0, and new versions of `axa-seaorm`
+0.3.0, `axa-environment` 0.2.0, `axa-paseto-auth` 0.6.0, `axa-keycloak-auth` 0.4.0,
+`axa-request-rate-limit` 0.3.0, `axa-test` 0.2.0, `axa-sqlx` 0.1.3, `axa-diesel` 0.2.1,
+`axa-idempotency-key` 0.2.2, `axa-accepts-version-negotiation` 0.2.1, and
+`axa-prometheus-metrics` 0.1.1. `axa-sqlite-job-queue` 0.1.0 is in the repository and
+not yet published. It breaks 0.10 in its settings, health routes, and more, so read
+[Upgrading to axa 0.11](help/upgrading-to-0.11/index.md) before deploying it.
 
 ### Added
 

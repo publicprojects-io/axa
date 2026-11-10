@@ -49,7 +49,7 @@ and the test edit. Each spec requirement has an id and names the test that prove
 | Behaviour | `spec/index.md`, and `CHANGELOG.md` under `[Unreleased]` |
 | A setting | The table in `README.md`, and `Config::settings` so `check` prints it |
 | A feature, subcrate, or module | `README.md`, the table in `src/lib.rs`, `Cargo.toml`, `llms.txt`, `llms.json` |
-| Anything a service must act on | The upgrade guide in `help/upgrading-to-0.3/index.md` |
+| Anything a service must act on | The upgrade guide for the release, such as `help/upgrading-to-0.11/index.md` |
 | Anything a service sees | `skill/axa-skill/SKILL.md` |
 | How this repository works | `AGENTS.md` and this skill |
 

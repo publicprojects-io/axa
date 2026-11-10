@@ -17,7 +17,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.10"
+axa = "0.11"
 ```
 
 ### Always included
@@ -623,7 +623,8 @@ carries a spec edit, a code edit, and a test edit together.
 
 ## Relationship to Loco
 
-To upgrade from an earlier version, read [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
+To upgrade from 0.10, read [Upgrading to axa 0.11](help/upgrading-to-0.11/index.md), and
+from earlier versions, [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
 
 To move a project across, follow
 [Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and
