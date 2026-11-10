@@ -23,7 +23,7 @@
 use axa_problem::Problem;
 use axum::{
     extract::rejection::{JsonRejection, PathRejection, QueryRejection},
-    http::StatusCode,
+    http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::Serialize;
@@ -363,6 +363,107 @@ fn broken_by_code(code: &str) -> Option<Broken> {
     }
 }
 
+/// How long a client is told to wait before trying again, when the database cannot
+/// serve for now.
+pub const RETRY_AFTER_SECONDS: u64 = 5;
+
+/// The Postgres codes for a database that cannot serve for now, rather than one that
+/// refused this request: a read-only transaction, a lost connection, a server shutting
+/// down or not yet up, or too many connections.
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm",
+    feature = "toasty"
+))]
+fn unavailable_by_code(code: &str) -> bool {
+    code == "25006" || code == "53300" || code.starts_with("08") || code.starts_with("57P")
+}
+
+/// Whether a sqlx error is a database that cannot serve for now: a pool with no free
+/// connection or one closed, a connection lost, or a code from [`unavailable_by_code`].
+#[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+fn sqlx_unavailable(error: &sqlx::Error) -> bool {
+    match error {
+        sqlx::Error::PoolTimedOut
+        | sqlx::Error::PoolClosed
+        | sqlx::Error::Io(_)
+        | sqlx::Error::WorkerCrashed => true,
+        sqlx::Error::Database(error) => error.code().is_some_and(|code| unavailable_by_code(&code)),
+        _ => false,
+    }
+}
+
+/// Whether `error` is the database unable to serve for now, which is the service's
+/// trouble, and passes, so it answers `503` with `Retry-After`.
+#[cfg(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
+))]
+fn unavailable(error: &Error) -> bool {
+    match error {
+        #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+        Error::Sqlx(error) => sqlx_unavailable(error),
+        #[cfg(feature = "sqlx")]
+        Error::Model(crate::model::ModelError::Sqlx(error)) => sqlx_unavailable(error),
+        #[cfg(feature = "sea-orm")]
+        Error::DB(error) | Error::Model(crate::model::ModelError::DbErr(error)) => {
+            use sea_orm::{DbErr, RuntimeErr, sqlx::Error as Driver};
+            match error {
+                DbErr::ConnectionAcquire(_) | DbErr::Conn(_) => true,
+                DbErr::Exec(RuntimeErr::SqlxError(error))
+                | DbErr::Query(RuntimeErr::SqlxError(error)) => match error.as_ref() {
+                    Driver::PoolTimedOut | Driver::PoolClosed | Driver::Io(_) => true,
+                    Driver::Database(error) => {
+                        error.code().is_some_and(|code| unavailable_by_code(&code))
+                    }
+                    _ => false,
+                },
+                _ => false,
+            }
+        }
+        #[cfg(feature = "diesel")]
+        Error::Diesel(error) | Error::Model(crate::model::ModelError::Diesel(error)) => {
+            use axa_diesel::diesel::result::{DatabaseErrorKind, Error as QueryError};
+            matches!(
+                error,
+                axa_diesel::Error::Pool(_)
+                    | axa_diesel::Error::Query(QueryError::DatabaseError(
+                        DatabaseErrorKind::ReadOnlyTransaction
+                            | DatabaseErrorKind::ClosedConnection,
+                        _
+                    ))
+            )
+        }
+        #[cfg(feature = "toasty")]
+        Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
+            error.is_connection_pool()
+                || error.is_connection_lost()
+                || error.is_read_only_transaction()
+                || axa_toasty::sql_state(error).is_some_and(unavailable_by_code)
+        }
+        _ => false,
+    }
+}
+
+/// With no database, nothing can be unavailable.
+#[cfg(not(any(
+    feature = "idempotency",
+    feature = "queue",
+    feature = "sqlx",
+    feature = "sea-orm",
+    feature = "diesel",
+    feature = "toasty"
+)))]
+fn unavailable(_error: &Error) -> bool {
+    false
+}
+
 /// What a sqlx error that broke a constraint answers.
 #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
 fn broken_sqlx(error: &sqlx::Error) -> Option<Broken> {
@@ -470,6 +571,17 @@ impl IntoResponse for Error {
         self.log();
         if let Some((status, code, description)) = broken(&self) {
             return problem(status, ErrorDetail::new(code, description)).into_response();
+        }
+        if unavailable(&self) {
+            let detail = ErrorDetail::new(
+                "unavailable",
+                "The service cannot reach its database. Try again shortly",
+            );
+            let mut response = problem(StatusCode::SERVICE_UNAVAILABLE, detail).into_response();
+            response
+                .headers_mut()
+                .insert(header::RETRY_AFTER, HeaderValue::from(RETRY_AFTER_SECONDS));
+            return response;
         }
         let (status, detail) = match self {
             Self::NotFound => resource_not_found(),
@@ -588,6 +700,87 @@ mod tests {
         let body: Value = serde_json::from_str(&body_text(response).await).unwrap();
         assert_eq!(body["status"], status.as_u16());
         (status, body)
+    }
+
+    #[cfg(any(
+        feature = "idempotency",
+        feature = "queue",
+        feature = "sqlx",
+        feature = "sea-orm",
+        feature = "diesel",
+        feature = "toasty"
+    ))]
+    /// The answer to a database that cannot serve for now: a `503` problem with the
+    /// `code` `unavailable` and a `retry-after`, quoting none of the driver's text.
+    async fn assert_unavailable(error: Error) {
+        let response = error.into_response();
+        assert_eq!(
+            response.headers()[axum::http::header::RETRY_AFTER],
+            RETRY_AFTER_SECONDS.to_string()
+        );
+        let (status, body) = problem_of_response(response).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["code"], "unavailable");
+        assert!(!body.to_string().contains("secret"), "{body}");
+    }
+
+    #[cfg(any(
+        feature = "idempotency",
+        feature = "queue",
+        feature = "sqlx",
+        feature = "sea-orm",
+        feature = "diesel",
+        feature = "toasty"
+    ))]
+    async fn problem_of_response(response: Response) -> (StatusCode, Value) {
+        let status = response.status();
+        assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
+        let body: Value = serde_json::from_str(&body_text(response).await).unwrap();
+        (status, body)
+    }
+
+    #[cfg(any(feature = "idempotency", feature = "queue", feature = "sqlx"))]
+    #[tokio::test]
+    async fn a_sqlx_pool_with_no_connection_is_unavailable() {
+        for error in [
+            sqlx::Error::PoolTimedOut,
+            sqlx::Error::PoolClosed,
+            sqlx::Error::Io(std::io::Error::other("secret host refused")),
+        ] {
+            assert_unavailable(error.into()).await;
+        }
+        let (status, _) = problem_of(sqlx::Error::RowNotFound.into()).await;
+        assert_eq!(
+            status,
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "a bug, not an outage"
+        );
+    }
+
+    #[cfg(feature = "sea-orm")]
+    #[tokio::test]
+    async fn a_sea_orm_pool_with_no_connection_is_unavailable() {
+        let error = sea_orm::DbErr::ConnectionAcquire(sea_orm::error::ConnAcquireErr::Timeout);
+        assert_unavailable(error.into()).await;
+    }
+
+    #[cfg(feature = "diesel")]
+    #[tokio::test]
+    async fn a_read_only_diesel_database_is_unavailable() {
+        use axa_diesel::diesel::result::{DatabaseErrorKind, Error as QueryError};
+        for kind in [
+            DatabaseErrorKind::ReadOnlyTransaction,
+            DatabaseErrorKind::ClosedConnection,
+        ] {
+            let error = QueryError::DatabaseError(kind, Box::new("secret".to_string()));
+            assert_unavailable(error.into()).await;
+        }
+    }
+
+    #[cfg(feature = "toasty")]
+    #[tokio::test]
+    async fn a_read_only_toasty_database_is_unavailable() {
+        assert_unavailable(axa_toasty::Error::read_only_transaction("secret").into()).await;
     }
 
     #[tokio::test]

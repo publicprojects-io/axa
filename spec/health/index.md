@@ -26,6 +26,13 @@ ready is pulled from the Service, so every visitor gets a `503`. A pod that stay
 while a third party is down can still serve cached pages, show a "payments are offline"
 banner, or queue the work for later.
 
+From the moment the service is told to stop, readiness answers `503` with the `code`
+`shutting_down`, whatever its checks say. Kubernetes takes a few seconds after `SIGTERM`
+to take a pod out of the Service, so `SHUTDOWN_DRAIN_SECONDS` keeps the server accepting
+for that long while readiness refuses, and only then stops listening and lets requests
+finish. Set it to a little more than the time the cluster takes, with
+`terminationGracePeriodSeconds` above it plus `SHUTDOWN_TIMEOUT_SECONDS`.
+
 ## Startup: `/_health/startup`
 
 It checks only that the service's code has started and its primary database answers,
@@ -46,3 +53,4 @@ boots. Once it has passed it passes for good, as Kubernetes asks it no more afte
 | HLT-8 | `/_health/live` asks nothing, and a failing named check holds back only readiness, never liveness or startup. | `liveness_asks_nothing`, `a_failing_named_check_holds_back_only_readiness` |
 | HLT-9 | `/_health/startup` asks only the database `axa` holds. It answers `503` with the `code` `not_started` until the database answers, and once it has passed, it passes for good. | `readiness_fails_when_the_database_does_not_answer`, `startup_once_passed_stays_passed` |
 | HLT-10 | The three paths stay open without a token in `axa-paseto-auth` and `axa-keycloak-auth`, and uncounted in `axa-request-rate-limit`, and only those three: nothing else under `/_health/` is let through. | `health_routes_are_public_by_default` in both auth crates, `health_stays_public_and_everything_else_needs_a_token`, `the_probes_are_never_refused_or_counted` |
+| HLT-11 | From the moment shutdown begins, `/_health/ready` answers `503` with the `code` `shutting_down` and asks nothing, while `/_health/live` still passes. | `readiness_refuses_once_shutdown_begins_and_liveness_does_not` |

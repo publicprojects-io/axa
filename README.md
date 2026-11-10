@@ -17,7 +17,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.10"
+axa = "0.11"
 ```
 
 ### Always included
@@ -57,7 +57,7 @@ Turn on one. With more than one, `sqlx` wins, then `sea-orm`, `diesel`, and `toa
 - [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
-- [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition
+- [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition, and request durations by route template
 - [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process
 - [`axa-idempotency-key`](crates/axa-idempotency-key): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
 - [`axa-accepts-version-negotiation`](crates/axa-accepts-version-negotiation): `Accepts-version` negotiation
@@ -203,12 +203,13 @@ From the outside in:
 | Request id | Keeps a caller's `x-request-id` after removing unsafe characters, or mints a UUID. Always returned |
 | Tracing | Logs each finished request, and puts the request id, method, and route template on every log line written while serving it. The real path and query string are left out, because either can hold a token or personal data |
 | Panic catching | Turns a handler panic into a `500` |
-| Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, and optionally HSTS. A handler's own value wins |
+| Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, `cross-origin-opener-policy` and `cross-origin-resource-policy` of `same-origin`, `permissions-policy`, and optionally HSTS. A handler's own value wins |
+| No store | `cache-control: no-store` on a response that sets a cookie, unless its handler said how to cache it |
 | CORS | Off unless origins are configured |
 | Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
 | Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
-| Compression | Gzip, Brotli, and Zstd when enabled |
-| Body limit | Answers `413` over `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`. `middleware::body_limit` raises it on one route |
+| Compression | Gzip, Brotli, and Zstd when enabled, but never a response that sets a cookie or is `no-store`, which compression can leak (BREACH) |
+| Body limit | Answers `413` over `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, for the extractors and for a handler that reads the body itself. `middleware::body_limit(route, bytes)` raises it on one route |
 
 ### Conditional requests
 
@@ -328,9 +329,11 @@ place.
 | `SEND_STALL_TIMEOUT_SECONDS` | How long a client that has stopped reading may hold up a response before it is dropped. Any write that goes through starts this again. 60 by default, and `0` waits for ever |
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
-| `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take |
+| `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take. For requests, it counts from the end of the drain |
+| `SHUTDOWN_DRAIN_SECONDS` | How long, once told to stop, to keep accepting while `/_health/ready` answers `503`, so the orchestrator takes the service out of rotation first. 0 by default. On Kubernetes, a little more than the cluster takes to remove a pod |
 | `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |
 | `HTTP_CONTENT_SECURITY_POLICY` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |
+| `HTTP_PERMISSIONS_POLICY` | The `permissions-policy`. Unless this is set, it turns off the camera, microphone, location, payment, USB, sensors, and ad topics for every origin, and it sends none if it is empty |
 | `REQUEST_TIMEOUT_SECONDS` | Per-request timeout. `0` turns it off |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins |
 | `WORKER_MODE` | `BackgroundQueue`, `BackgroundAsync`, or `ForegroundBlocking` |
@@ -584,7 +587,7 @@ use axa_test::prelude::*;
 #[tokio::test]
 async fn health_answers() {
     request::<App, _, _>(|server, _ctx| async move {
-        assert_eq!(server.get("/_health").await.status_code(), 200);
+        assert_eq!(server.get("/_health/live").await.status_code(), 200);
     })
     .await;
 }
@@ -618,9 +621,22 @@ working on axa itself.
 Read [`AGENTS.md`](AGENTS.md) before changing the crate. A change in behaviour
 carries a spec edit, a code edit, and a test edit together.
 
+## Coming from another framework
+
+Each of these explains axa in the terms of a framework you know: a map of its concepts
+onto axa and Axum, a first service written both ways, what is different on purpose, and
+how to move a service across.
+
+- [axa for Loco users](help/axa-for-loco-users/index.md)
+- [axa for actix-web users](help/axa-for-actix-users/index.md)
+- [axa for Rocket users](help/axa-for-rocket-users/index.md)
+- [axa for Poem users](help/axa-for-poem-users/index.md)
+- [axa for Topcoat users](help/axa-for-topcoat-users/index.md)
+
 ## Relationship to Loco
 
-To upgrade from an earlier version, read [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
+To upgrade from 0.10, read [Upgrading to axa 0.11](help/upgrading-to-0.11/index.md), and
+from earlier versions, [Upgrading to axa 0.3](help/upgrading-to-0.3/index.md).
 
 To move a project across, follow
 [Converting a project from Loco to axa](help/from-loco-into-axa/index.md), and

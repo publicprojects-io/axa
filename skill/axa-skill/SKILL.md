@@ -29,6 +29,7 @@ Read these rather than guessing at an API:
 | Everything axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
+| Upgrading to 0.11 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.11/index.md) |
 | Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
 | Leaving Loco | [From Loco into axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
 | Leaving Loco but keeping SeaORM | [From Loco SeaORM into axa-seaorm](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-seaorm-into-axa-seaorm/index.md) |
@@ -38,7 +39,7 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.10", features = ["sqlx", "queue"] }
+axa = { version = "0.11", features = ["sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
@@ -167,7 +168,8 @@ let cli = axa::cli::parse(
   path merge.
 - Give a slow route its own limit where it is declared, with `Routes::timeout` or
   `Routes::add_with_timeout`, rather than raising `REQUEST_TIMEOUT_SECONDS` for all.
-- Raise the body limit on one route with `middleware::body_limit`, not on all.
+- Raise the body limit on one route with `middleware::body_limit(post(upload), bytes)`,
+  not on all. It binds a handler that reads `Body` itself, as well as the extractors.
 
 ## Conditional requests
 
@@ -426,7 +428,7 @@ use axa_test::prelude::*;
 #[tokio::test]
 async fn health_answers() {
     request::<App, _, _>(|server, _ctx| async move {
-        assert_eq!(server.get("/_health").await.status_code(), 200);
+        assert_eq!(server.get("/_health/live").await.status_code(), 200);
     })
     .await;
 }

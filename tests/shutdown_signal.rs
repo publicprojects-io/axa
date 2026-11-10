@@ -154,6 +154,7 @@ fn config() -> Server {
         binding: "127.0.0.1".to_string(),
         host: String::new(),
         shutdown_timeout_seconds: 10,
+        shutdown_drain_seconds: 0,
         header_read_timeout_seconds: 10,
         keep_alive_timeout_seconds: 0,
         send_stall_timeout_seconds: 0,

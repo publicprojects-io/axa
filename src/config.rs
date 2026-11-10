@@ -31,6 +31,11 @@ pub const DEFAULT_HSTS_MAX_AGE: u64 = 31_536_000;
 /// serves pages must name what they load.
 pub const DEFAULT_CSP: &str = "default-src 'none'; frame-ancestors 'none'";
 
+/// The `permissions-policy` unless `HTTP_PERMISSIONS_POLICY` says otherwise: no camera,
+/// microphone, location, payment, USB, sensors, or ad topics, for any origin.
+pub const DEFAULT_PERMISSIONS_POLICY: &str = "accelerometer=(), browsing-topics=(), camera=(), \
+     geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()";
+
 /// How long to wait for a database connection, unless a service or
 /// `DB_CONNECT_TIMEOUT` says otherwise: five seconds, in milliseconds.
 pub const DEFAULT_CONNECT_TIMEOUT: u64 = 5_000;
@@ -90,8 +95,13 @@ pub struct Server {
     /// Public base URL.
     pub host: String,
     /// How long, once told to stop, to wait for requests and jobs to finish. `0`
-    /// waits for as long as they take.
+    /// waits for as long as they take. For requests, it counts from the end of the
+    /// drain.
     pub shutdown_timeout_seconds: u64,
+    /// How long, once told to stop, to keep accepting connections while
+    /// `/_health/ready` answers `503`, so that an orchestrator takes the service out of
+    /// rotation before it stops listening. `0`, the default, stops listening at once.
+    pub shutdown_drain_seconds: u64,
     /// How long a client has to send a request's headers. `0` allows for ever.
     pub header_read_timeout_seconds: u64,
     /// How long an idle connection is kept for a next request. Keep this longer than
@@ -189,6 +199,8 @@ pub struct Http {
     pub hsts_max_age: u64,
     /// The `content-security-policy`, if any.
     pub csp: Option<String>,
+    /// The `permissions-policy`, if any.
+    pub permissions_policy: Option<String>,
     /// Proxies whose `X-Forwarded-For` entries are believed. Empty ignores the header.
     pub trusted_proxies: Vec<ProxyNet>,
 }
@@ -562,12 +574,25 @@ fn pool_size<F: Fn(&str) -> Option<String>>(
 }
 
 /// The policy from `HTTP_CONTENT_SECURITY_POLICY`, where blank means none, or production's default when unset.
-fn content_security_policy(setting: Option<String>, production: bool) -> Option<String> {
-    match setting {
+fn content_security_policy<F: Fn(&str) -> Option<String>>(
+    vars: &Vars<F>,
+    production: bool,
+) -> Option<String> {
+    match (vars.lookup)("HTTP_CONTENT_SECURITY_POLICY") {
         Some(policy) if policy.trim().is_empty() => None,
         Some(policy) => Some(policy),
         None if production => Some(DEFAULT_CSP.to_string()),
         None => None,
+    }
+}
+
+/// The policy from `HTTP_PERMISSIONS_POLICY`, where blank means none, or the deny-list
+/// when unset.
+fn permissions_policy<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> Option<String> {
+    match (vars.lookup)("HTTP_PERMISSIONS_POLICY") {
+        Some(policy) if policy.trim().is_empty() => None,
+        Some(policy) => Some(policy),
+        None => Some(DEFAULT_PERMISSIONS_POLICY.to_string()),
     }
 }
 
@@ -648,6 +673,7 @@ impl Config {
                 host: vars.text("HOST", "http://localhost"),
                 shutdown_timeout_seconds: vars
                     .parsed("SHUTDOWN_TIMEOUT_SECONDS", DEFAULT_SHUTDOWN_TIMEOUT_SECONDS),
+                shutdown_drain_seconds: vars.parsed("SHUTDOWN_DRAIN_SECONDS", 0),
                 header_read_timeout_seconds: vars.parsed(
                     "HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS",
                     DEFAULT_HEADER_READ_TIMEOUT_SECONDS,
@@ -697,10 +723,8 @@ impl Config {
                 trusted_proxies: trusted_proxies(&vars),
                 hsts: vars.flag("HTTP_HSTS", production),
                 hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
-                csp: content_security_policy(
-                    (vars.lookup)("HTTP_CONTENT_SECURITY_POLICY"),
-                    production,
-                ),
+                csp: content_security_policy(&vars, production),
+                permissions_policy: permissions_policy(&vars),
             },
             workers: vars.named("WORKER_MODE", workers, worker_mode),
         };
@@ -766,6 +790,10 @@ impl Config {
                 "SHUTDOWN_TIMEOUT_SECONDS",
                 server.shutdown_timeout_seconds.to_string(),
             ),
+            (
+                "SHUTDOWN_DRAIN_SECONDS",
+                server.shutdown_drain_seconds.to_string(),
+            ),
             ("LOG_ENABLE", logger.enable.to_string()),
             ("LOG_LEVEL", logger.level.to_string()),
             ("LOG_FORMAT", logger.format.to_string()),
@@ -812,6 +840,10 @@ impl Config {
             (
                 "HTTP_CONTENT_SECURITY_POLICY",
                 http.csp.clone().unwrap_or_default(),
+            ),
+            (
+                "HTTP_PERMISSIONS_POLICY",
+                http.permissions_policy.clone().unwrap_or_default(),
             ),
             ("WORKER_MODE", format!("{workers:?}")),
         ]
@@ -1104,6 +1136,30 @@ mod tests {
         .unwrap();
         assert_eq!(config.http.csp.as_deref(), Some(DEFAULT_CSP));
         assert_eq!(config.http.hsts_max_age, DEFAULT_HSTS_MAX_AGE);
+    }
+
+    #[test]
+    fn the_permissions_policy_is_a_deny_list_unless_named_or_blanked() {
+        let config = with(&[], &Environment::Development).unwrap();
+        assert_eq!(
+            config.http.permissions_policy.as_deref(),
+            Some(DEFAULT_PERMISSIONS_POLICY)
+        );
+        let named = with(
+            &[("HTTP_PERMISSIONS_POLICY", "camera=(self)")],
+            &Environment::Development,
+        )
+        .unwrap();
+        assert_eq!(
+            named.http.permissions_policy.as_deref(),
+            Some("camera=(self)")
+        );
+        let blank = with(
+            &[("HTTP_PERMISSIONS_POLICY", " ")],
+            &Environment::Development,
+        )
+        .unwrap();
+        assert_eq!(blank.http.permissions_policy, None);
     }
 
     #[test]

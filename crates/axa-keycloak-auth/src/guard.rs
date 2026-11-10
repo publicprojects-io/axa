@@ -12,7 +12,7 @@ use axum::{
     extract::{FromRequestParts, Request, State},
     http::{
         HeaderMap, HeaderValue, Method, StatusCode,
-        header::{AUTHORIZATION, CONTENT_TYPE},
+        header::{AUTHORIZATION, CONTENT_TYPE, WWW_AUTHENTICATE},
         request::Parts,
     },
     middleware::Next,
@@ -39,7 +39,9 @@ const FORBIDDEN: &str = "forbidden";
 const PROBLEM_JSON: &str = "application/problem+json";
 
 /// A refusal: the status and the reason sent to the caller. It answers as an RFC 9457
-/// problem, with the reason as `detail` and a `code` that says no more than the status.
+/// problem, with the reason as `detail` and a `code` that says no more than the status. A
+/// `401` carries `WWW-Authenticate: Bearer`, as RFC 9110 requires, with no `error`
+/// parameter, which would say why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rejection(pub StatusCode, pub String);
 
@@ -72,6 +74,11 @@ impl IntoResponse for Rejection {
         response
             .headers_mut()
             .insert(CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));
+        if status == StatusCode::UNAUTHORIZED {
+            response
+                .headers_mut()
+                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
+        }
         response
     }
 }
@@ -541,6 +548,14 @@ mod tests {
         let response = invalid_token().into_response();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
+    }
+
+    #[test]
+    fn a_401_carries_a_bearer_challenge_and_a_403_does_not() {
+        let refused = invalid_token().into_response();
+        assert_eq!(refused.headers()[WWW_AUTHENTICATE], "Bearer");
+        let forbidden = Rejection(StatusCode::FORBIDDEN, FORBIDDEN.to_string()).into_response();
+        assert!(forbidden.headers().get(WWW_AUTHENTICATE).is_none());
     }
 
     #[test]
