@@ -88,7 +88,7 @@ pub struct AppContext {
     pub config: Arc<Config>,
     /// Values shared across handlers.
     pub shared_store: Arc<Store>,
-    /// What `/_readiness` asks, besides the database and queue that axa
+    /// What `/_health/ready` asks, besides the database and queue that axa
     /// knows about. Set this once, before building the routes.
     pub health_checks: Checks,
     /// The job queue, when one is configured.

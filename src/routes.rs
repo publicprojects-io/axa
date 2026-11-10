@@ -183,7 +183,7 @@ pub struct AppRoutes {
 }
 
 impl AppRoutes {
-    /// Start with the `/_ping`, `/_health`, and `/_readiness` routes.
+    /// Start with the `/_health/live`, `/_health/ready`, and `/_health/startup` routes.
     #[must_use]
     pub fn with_default_routes() -> Self {
         Self::empty().add_route(health::routes())
@@ -440,7 +440,7 @@ mod tests {
         let routes = AppRoutes::with_default_routes()
             .add_route(Routes::new().add("/hook", any(|| async { "" })));
         let all = routes.mounted();
-        assert!(all.contains(&("GET".to_string(), "/_readiness".to_string())));
+        assert!(all.contains(&("GET".to_string(), "/_health/ready".to_string())));
         assert!(all.contains(&("ANY".to_string(), "/hook".to_string())));
     }
 

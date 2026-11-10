@@ -99,7 +99,7 @@ impl GuardConfig {
         Self {
             entity: entity.into(),
             require_auth: true,
-            public_paths: ["/_ping", "/_health", "/_readiness"]
+            public_paths: ["/_health/live", "/_health/ready", "/_health/startup"]
                 .map(str::to_string)
                 .to_vec(),
             public_prefixes: Vec::new(),
@@ -506,8 +506,19 @@ mod tests {
     #[test]
     fn health_routes_are_public_by_default() {
         let config = GuardConfig::new("x");
-        assert!(config.is_public("/_health"));
-        assert!(!config.is_public("/metrics.prom"));
+        for probe in ["/_health/live", "/_health/ready", "/_health/startup"] {
+            assert!(config.is_public(probe), "{probe}");
+        }
+        // Only the three probes: nothing else under `/_health`, and no old path.
+        for closed in [
+            "/_health",
+            "/_health/other",
+            "/_ping",
+            "/_readiness",
+            "/metrics.prom",
+        ] {
+            assert!(!config.is_public(closed), "{closed}");
+        }
     }
 
     #[test]

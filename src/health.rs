@@ -1,8 +1,16 @@
-//! The `/_ping`, `/_health`, and `/_readiness` routes.
+//! The three health routes, one for each of the probes Kubernetes gives a container:
 //!
-//! `/_readiness` asks the database and the queue, when axa holds them, and any
-//! named checks in [`AppContext::health_checks`]. A check is an ordinary async
-//! closure, so it can ask anything:
+//! | Route | Probe | A failure means | Asks |
+//! |---|---|---|---|
+//! | [`LIVE`], `/_health/live` | Liveness | Kill and restart the container | Nothing: it answers once the server is running |
+//! | [`READY`], `/_health/ready` | Readiness | Send the pod no traffic | The database and queue axa holds, and the named checks in [`AppContext::health_checks`] |
+//! | [`STARTUP`], `/_health/startup` | Startup | Not booted yet: hold off the other two | The database axa holds. Once it passes, it passes for good |
+//!
+//! No route asks a third party. Restarting a container does not bring back a
+//! payment provider, and a pod that is not ready gets no traffic at all, so every
+//! visitor sees a `503` where the service could have shown a cached page or a
+//! "payments are offline" banner. A named check is for something the service owns,
+//! such as its Redis or its search index. A check is an ordinary async closure:
 //!
 //! ```
 //! use axa::health::Checks;
@@ -41,6 +49,15 @@ use tokio::{
 
 use crate::{AppContext, routes::Routes};
 
+/// The liveness route: `200` once the server is running, and nothing asked.
+pub const LIVE: &str = "/_health/live";
+
+/// The readiness route: `200` when what the service owns answers.
+pub const READY: &str = "/_health/ready";
+
+/// The startup route: `200` once the service has booted and its database answers.
+pub const STARTUP: &str = "/_health/startup";
+
 /// How long one answer is reused, unless [`Checks::reuse_for`] says otherwise.
 pub const DEFAULT_REUSE: Duration = Duration::from_secs(5);
 
@@ -74,7 +91,7 @@ impl Check {
     }
 }
 
-/// What `/_readiness` says.
+/// What `/_health/ready` or `/_health/startup` says.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 struct Answer {
     ok: bool,
@@ -83,15 +100,21 @@ struct Answer {
     failed: Vec<String>,
 }
 
-/// The named checks behind `/_readiness`, and its last answer.
+/// The last answer of one route, and when it was given.
+type Last = Arc<Mutex<Option<(Instant, Answer)>>>;
+
+/// The named checks behind `/_health/ready`, and the last answers of the readiness
+/// and startup routes. A named check is for something the service owns, never a
+/// third party: see [the module](self).
 ///
-/// Clones share the last answer, so a clone in each request reuses it.
+/// Clones share the last answers, so a clone in each request reuses them.
 #[derive(Clone)]
 pub struct Checks {
     named: Vec<Check>,
     reuse_for: Duration,
     time_limit: Duration,
-    last: Arc<Mutex<Option<(Instant, Answer)>>>,
+    last: Last,
+    startup: Last,
 }
 
 impl Default for Checks {
@@ -101,6 +124,7 @@ impl Default for Checks {
             reuse_for: DEFAULT_REUSE,
             time_limit: DEFAULT_TIME_LIMIT,
             last: Arc::default(),
+            startup: Arc::default(),
         }
     }
 }
@@ -124,8 +148,10 @@ impl Checks {
     }
 
     /// Add a named check. Each round calls `check` once, and `Ok` means the
-    /// dependency answered. The name is sent to whoever calls `/_readiness`,
-    /// so make it a label, not an address. The error text is only logged.
+    /// dependency answered. The name is sent to whoever calls `/_health/ready`,
+    /// so make it a label, not an address. The error text is only logged. Check
+    /// only what the service owns: a third party that is down must not take the
+    /// service out of rotation.
     #[must_use]
     pub fn add<F, Fut, E>(mut self, name: &str, check: F) -> Self
     where
@@ -157,15 +183,35 @@ impl Checks {
     /// it and leave nothing to reuse. The lock is what stops two rounds
     /// overlapping: callers that arrive during a round wait for its answer.
     async fn answer(&self, built_in: Vec<Check>) -> Answer {
+        self.answer_in(&self.last, built_in, true, false).await
+    }
+
+    /// The startup answer: the built-in checks only, reused while it fails, and kept
+    /// for good once it passes.
+    async fn startup_answer(&self, built_in: Vec<Check>) -> Answer {
+        self.answer_in(&self.startup, built_in, false, true).await
+    }
+
+    /// The answer kept in `slot`, or a new round of `built_in`, and of the named
+    /// checks when `named`, once it has gone stale. With `keep_passing`, a passing
+    /// answer never goes stale.
+    async fn answer_in(
+        &self,
+        slot: &Last,
+        built_in: Vec<Check>,
+        named: bool,
+        keep_passing: bool,
+    ) -> Answer {
         let checks = self.clone();
+        let slot = slot.clone();
         tokio::spawn(async move {
-            let mut last = checks.last.lock().await;
+            let mut last = slot.lock().await;
             if let Some((at, answer)) = last.as_ref()
-                && at.elapsed() < checks.reuse_for
+                && ((keep_passing && answer.ok) || at.elapsed() < checks.reuse_for)
             {
                 return answer.clone();
             }
-            let answer = checks.round(built_in).await;
+            let answer = checks.round(built_in, named).await;
             *last = Some((Instant::now(), answer.clone()));
             answer
         })
@@ -181,11 +227,9 @@ impl Checks {
 
     /// Run every check at once. Each runs in its own task, so a check that
     /// panics is a failed check. Anything that does not report success failed.
-    async fn round(&self, built_in: Vec<Check>) -> Answer {
-        let checks: Vec<Check> = built_in
-            .into_iter()
-            .chain(self.named.iter().cloned())
-            .collect();
+    async fn round(&self, built_in: Vec<Check>, named: bool) -> Answer {
+        let named = if named { self.named.as_slice() } else { &[] };
+        let checks: Vec<Check> = built_in.into_iter().chain(named.iter().cloned()).collect();
         let mut running = JoinSet::new();
         for (index, check) in checks.iter().enumerate() {
             let (run, limit) = (check.run.clone(), self.time_limit);
@@ -226,8 +270,9 @@ async fn ok() -> Json<Health> {
     Json(Health { ok: true })
 }
 
-/// The checks axa can write itself: the database and queue it holds.
-fn built_in(ctx: &AppContext) -> Vec<Check> {
+/// The checks axa can write itself: the database it holds, and the queue too unless
+/// `database_only`.
+fn built_in(ctx: &AppContext, database_only: bool) -> Vec<Check> {
     #[cfg_attr(
         all(axa_db = "none", not(feature = "queue")),
         allow(unused_mut, clippy::let_and_return)
@@ -242,36 +287,48 @@ fn built_in(ctx: &AppContext) -> Vec<Check> {
         }));
     }
     #[cfg(feature = "queue")]
-    if let Some(queue) = &ctx.queue_provider {
+    if let Some(queue) = &ctx.queue_provider
+        && !database_only
+    {
         let queue = queue.clone();
         checks.push(Check::new("queue", move || {
             let queue = queue.clone();
             async move { queue.ping().await }
         }));
     }
-    let _ = ctx;
+    let _ = (ctx, database_only);
     checks
 }
 
 async fn readiness(State(ctx): State<AppContext>) -> Response {
-    let answer = ctx.health_checks.answer(built_in(&ctx)).await;
+    let answer = ctx.health_checks.answer(built_in(&ctx, false)).await;
+    respond(answer, "not_ready")
+}
+
+async fn startup(State(ctx): State<AppContext>) -> Response {
+    let answer = ctx.health_checks.startup_answer(built_in(&ctx, true)).await;
+    respond(answer, "not_started")
+}
+
+/// Bare JSON when `answer` passed, and otherwise a `503` problem with `code`.
+fn respond(answer: Answer, code: &'static str) -> Response {
     if answer.ok {
         return Json(answer).into_response();
     }
     Problem::new(StatusCode::SERVICE_UNAVAILABLE)
-        .with_extension("code", "not_ready".into())
+        .with_extension("code", code.into())
         .with_extension("failed", answer.failed.into())
         .with_extension("ok", false.into())
         .into_response()
 }
 
-/// The health routes.
+/// The health routes: [`LIVE`], [`READY`], and [`STARTUP`].
 #[must_use]
 pub fn routes() -> Routes {
     Routes::new()
-        .add("/_ping", get(ok))
-        .add("/_health", get(ok))
-        .add("/_readiness", get(readiness))
+        .add(LIVE, get(ok))
+        .add(READY, get(readiness))
+        .add(STARTUP, get(startup))
 }
 
 // With a database in the context, a context that was never opened fails readiness.
@@ -297,10 +354,7 @@ mod tests {
     }
 
     async fn answer(router: axum::Router) -> (StatusCode, String) {
-        let request = Request::builder()
-            .uri("/_readiness")
-            .body(Body::empty())
-            .unwrap();
+        let request = Request::builder().uri(READY).body(Body::empty()).unwrap();
         let response = router.oneshot(request).await.unwrap();
         let status = response.status();
         let body = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -344,11 +398,52 @@ mod tests {
     #[tokio::test]
     async fn every_health_route_answers_ok() {
         let router = AppRoutes::with_default_routes().into_router(context());
-        for path in ["/_ping", "/_health", "/_readiness"] {
+        for path in [LIVE, READY, STARTUP] {
             let request = Request::builder().uri(path).body(Body::empty()).unwrap();
             let response = router.clone().oneshot(request).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK, "{path}");
         }
+    }
+
+    /// The status `path` answers with `checks`.
+    async fn status_of(checks: Checks, path: &str) -> StatusCode {
+        let request = Request::builder().uri(path).body(Body::empty()).unwrap();
+        with_checks(checks).oneshot(request).await.unwrap().status()
+    }
+
+    #[tokio::test]
+    async fn a_failing_named_check_holds_back_only_readiness() {
+        let failing = || Checks::new().add("cache", fails);
+        assert_eq!(
+            status_of(failing(), READY).await,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+        assert_eq!(status_of(failing(), LIVE).await, StatusCode::OK);
+        assert_eq!(status_of(failing(), STARTUP).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn liveness_asks_nothing() {
+        let (calls, checks) = counted();
+        assert_eq!(status_of(checks, LIVE).await, StatusCode::OK);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn startup_once_passed_stays_passed() {
+        let up = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let database = |up: Arc<std::sync::atomic::AtomicBool>| {
+            vec![Check::new("database", move || {
+                let up = up.load(Ordering::SeqCst);
+                async move { if up { Ok(()) } else { Err("down") } }
+            })]
+        };
+        let checks = Checks::new().reuse_for(Duration::ZERO);
+        assert!(checks.startup_answer(database(up.clone())).await.ok);
+        up.store(false, Ordering::SeqCst);
+        assert!(checks.startup_answer(database(up.clone())).await.ok);
+        // Readiness asks again each round, and sees it.
+        assert!(!checks.answer(database(up)).await.ok);
     }
 
     #[tokio::test]
@@ -374,10 +469,7 @@ mod tests {
     #[tokio::test]
     async fn only_a_failing_answer_is_a_problem() {
         let call = |checks| async move {
-            let request = Request::builder()
-                .uri("/_readiness")
-                .body(Body::empty())
-                .unwrap();
+            let request = Request::builder().uri(READY).body(Body::empty()).unwrap();
             let response = with_checks(checks).oneshot(request).await.unwrap();
             response.headers()[axum::http::header::CONTENT_TYPE].clone()
         };
@@ -524,17 +616,22 @@ mod database_tests {
         // A connection that was never opened cannot answer a ping.
         let ctx = AppContext::for_test(Environment::Test, config);
         let router = AppRoutes::with_default_routes().into_router(ctx);
-        let request = Request::builder()
-            .uri("/_readiness")
-            .body(Body::empty())
-            .unwrap();
+        let request = Request::builder().uri(READY).body(Body::empty()).unwrap();
         let response = router.clone().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-        // Liveness still passes: the process is up.
-        let request = Request::builder()
-            .uri("/_ping")
-            .body(Body::empty())
+        // Nor has it started: startup asks for the primary database too.
+        let request = Request::builder().uri(STARTUP).body(Body::empty()).unwrap();
+        let response = router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
             .unwrap();
+        assert!(
+            String::from_utf8_lossy(&body).contains(r#""code":"not_started""#),
+            "{body:?}"
+        );
+        // Liveness still passes: the process is up.
+        let request = Request::builder().uri(LIVE).body(Body::empty()).unwrap();
         let response = router.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -556,7 +653,7 @@ mod named_database_tests {
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         let ctx = AppContext::for_test(Environment::Test, config);
-        let answer = ctx.health_checks.answer(built_in(&ctx)).await;
+        let answer = ctx.health_checks.answer(built_in(&ctx, false)).await;
         assert_eq!(answer.failed, ["database"]);
     }
 }
@@ -579,7 +676,7 @@ mod sqlx_tests {
             crate::config::Config::from_lookup(&crate::Environment::Test, &defaults, |_| None)
                 .unwrap();
         let ctx = AppContext::for_test(crate::Environment::Test, config);
-        let answer = ctx.health_checks.answer(built_in(&ctx)).await;
+        let answer = ctx.health_checks.answer(built_in(&ctx, false)).await;
         assert_eq!(answer.failed, ["database"]);
     }
 

@@ -36,6 +36,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The health routes follow Kubernetes' three probes**: `/_health/live`,
+  `/_health/ready`, and `/_health/startup`, in place of `/_ping`, `/_health`, and
+  `/_readiness`, which now answer `404`. Point each liveness, readiness, and startup
+  probe, load balancer, and uptime check at its new route before upgrading.
+  `/_health/live` asks nothing. `/_health/ready` asks what `/_readiness` asked: the
+  database, the queue, and the named checks. `/_health/startup` is new, asks only the
+  database, and once it passes, passes for good, answering `not_started` until then.
+  `axa-paseto-auth` and `axa-keycloak-auth` leave the three paths public, and
+  `axa-request-rate-limit` exempts them, in place of the old ones.
 - **`axa::model` and `axa::validation` work with every database**, and come with any
   of `sqlx`, `sea-orm`, `diesel`, or `toasty`, through a new `model` feature they turn
   on. `ModelError` has a variant for each database's error: `DbErr`, as before, and

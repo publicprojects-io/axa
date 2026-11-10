@@ -29,7 +29,7 @@ axa = "0.10"
 
 Each of these gives the same things for its library, so a service can move between
 them: `AppContext::db` becomes its pool, `axa::db::connect` opens it from configuration,
-`/_readiness` checks it, and each has `migrate`, `pending`, `truncate` and
+`/_health/ready` checks it, and each has `migrate`, `pending`, `truncate` and
 `dangerously_recreate` for tests, `is_unique_violation`, and `quote_identifier`. With
 any of them, `axa::model` and `axa::validation` give model errors and validation, and a
 broken constraint answers `409` or `422`.
@@ -109,8 +109,8 @@ async fn run() -> Result<()> {
 }
 ```
 
-It listens on port 1241 and serves `/api/hello`, `/_ping`, `/_health`, and
-`/_readiness` under the standard middleware. It stops cleanly on `SIGTERM` or
+It listens on port 1241 and serves `/api/hello`, `/_health/live`, `/_health/ready`,
+and `/_health/startup` under the standard middleware. It stops cleanly on `SIGTERM` or
 Ctrl-C, letting requests in flight finish.
 
 The default port spells the name: a=1, x=24, a=1.
@@ -375,14 +375,31 @@ assert_eq!(config.server.port, 8000);
 
 ### Health checks
 
-| Route | Meaning |
-|---|---|
-| `/_ping`, `/_health` | The process is up |
-| `/_readiness` | The database, the queue, and any named checks also answer. `503` if not, as a problem whose `failed` names them |
+There is one route for each probe Kubernetes gives a container. Point each probe at its
+own route:
 
-The route knows the database and queue only when axa holds them, which includes
-`AppContext::db` with any database feature. Anything else is a named check, which is
-an ordinary async closure:
+| Route | Probe | A failure means | It asks |
+|---|---|---|---|
+| `/_health/live` | Liveness | Kill and restart the container | Nothing: it answers `200` once the server is running |
+| `/_health/ready` | Readiness | Take the pod out of the Service, so it gets no traffic | The database and queue axa holds, and your named checks. `503` if one fails, as a problem whose `failed` names them |
+| `/_health/startup` | Startup | Not booted yet: hold off the other two | The database axa holds. Once it passes, it passes for good |
+
+```yaml
+livenessProbe:
+  httpGet: { path: /_health/live, port: 1241 }
+readinessProbe:
+  httpGet: { path: /_health/ready, port: 1241 }
+startupProbe:
+  httpGet: { path: /_health/startup, port: 1241 }
+  failureThreshold: 30
+  periodSeconds: 2
+```
+
+None of them asks a third party. If a payment provider goes down, restarting the
+container does not bring it back, and taking the pod out of the Service gives every
+visitor a `503`, where a ready pod could still serve cached pages or show a "payments
+are offline" banner. So add a named check only for something the service owns, such as
+its Redis or search index. A named check is an ordinary async closure:
 
 ```rust,ignore
 ctx.health_checks = Checks::new().add("search", || async { search::ping().await });

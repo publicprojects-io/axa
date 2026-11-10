@@ -10,7 +10,7 @@
 //! #[tokio::test]
 //! async fn health_answers() {
 //!     request::<App, _, _>(|server, _ctx| async move {
-//!         assert_eq!(server.get("/_health").await.status_code(), 200);
+//!         assert_eq!(server.get("/_health/live").await.status_code(), 200);
 //!     })
 //!     .await;
 //! }

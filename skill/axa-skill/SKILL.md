@@ -113,15 +113,20 @@ async fn run() -> Result<()> {
 }
 ```
 
-It serves `/api/hello`, `/_ping`, `/_health`, and `/_readiness` on port 1241 under the
-standard middleware, and stops cleanly on `SIGTERM` or Ctrl-C.
+It serves `/api/hello`, `/_health/live`, `/_health/ready`, and `/_health/startup` on
+port 1241 under the standard middleware, and stops cleanly on `SIGTERM` or Ctrl-C.
+
+Point each Kubernetes probe at its own route: liveness at `/_health/live`, which asks
+nothing; readiness at `/_health/ready`, which asks the database, the queue, and the named
+checks; startup at `/_health/startup`, which asks only the database. Never add a named
+check for a third-party API: a pod that is not ready gets no traffic at all.
 
 With layers of your own, such as an auth guard, call `into_router`, add them, and then
 call `middleware::apply`. Added after `into_app`, a layer sits outside the standard
 stack: its refusals have no request id, security headers, or CORS headers, and it has no
 panic or timeout protection.
 
-With the `sqlx` feature, pass a pool where this passes `()`. Then `/_readiness` asks it
+With the `sqlx` feature, pass a pool where this passes `()`. Then `/_health/ready` asks it
 as `database`, so do not add it again as a named check:
 
 ```rust
@@ -392,7 +397,7 @@ With `axa-keycloak-auth`:
 - Roles grant nothing unless `role_map` names them, so a realm with no role map yields
   read-only callers under the default policy.
 - Until discovery succeeds every token is refused, and the service still boots. Use
-  `KeycloakVerifier::ready` for `/_readiness`.
+  `KeycloakVerifier::ready` for `/_health/ready`.
 
 With `axa-paseto-auth` 0.3 and later, `parse_bool` returns `Option<bool>`. `None` is a word it does not
 know, so refuse to start on it, because a typo read as off could turn enforcement off.

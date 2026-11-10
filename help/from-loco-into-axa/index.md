@@ -410,9 +410,12 @@ Jobs queued in `pg_loco_queue` are not moved. Drain that table before you deploy
 
 ### 9. Readiness
 
-`/_readiness` asks the database with the `sea-orm` feature, and the queue when
-there is one. Anything else your service needs goes in as a named check, set in
-`App::context` before building the routes:
+Loco's `/_ping` and `/_health` become three routes, one per Kubernetes probe:
+`/_health/live`, `/_health/ready`, and `/_health/startup`. Update your probes, load
+balancer, and uptime checks. `/_health/ready` asks the database with any database
+feature, and the queue when there is one. Anything else your service owns goes in as a
+named check, set in `App::context` before building the routes. Never a third-party
+API: a pod that is not ready gets no traffic at all.
 
 ```rust,ignore
 ctx.health_checks = axa::health::Checks::new().add("search", move || {
