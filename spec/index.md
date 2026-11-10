@@ -314,7 +314,7 @@ move.
 Each subcrate is optional, is enabled by a feature of `axa`, and is re-exported
 under that feature's name. Each can also be used alone. Their requirements are
 stated here and proved by their own tests. There are two exceptions.
-`axa-environment` (ENV-6) and `axa-problem-details-for-http-apis` are always included, and `axa::problem`
+`axa-environment` (ENV-6) and `axa-problem` are always included, and `axa::problem`
 always exists, as `axa::Error` answers with it. The `problem` feature adds nothing,
 and stays so that a service naming it still builds.
 
@@ -407,8 +407,8 @@ still on axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | SES-8 | `axa-web-session` | In Postgres, session data is encrypted at rest and survives a restart of the store. | `postgres_sessions_are_encrypted_and_survive_a_restart` |
 | SES-9 | `axa-web-session` | `sign_in` makes an identifier from before it worthless, keeps the session stored, and replaces the form token. | `sign_in_makes_an_identifier_from_before_it_worthless`, `sign_in_replaces_the_form_token` |
 | SES-10 | `axa-web-session` | A form token is stable within a session, passes only for that session, and a session with none refuses every post. | `a_form_token_is_stable_and_only_it_passes`, `a_form_token_belongs_to_one_session`, `a_session_with_no_token_refuses_every_post`, `only_the_same_text_is_the_same` |
-| PRB-1 | `axa-problem-details-for-http-apis` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
-| PRB-2 | `axa-problem-details-for-http-apis` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
+| PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
+| PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus-metrics` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
 | VER-1 | `axa-accepts-version-negotiation` | No header means the current version, and a bare major is an alias. | `no_header_means_the_current_version`, `a_bare_major_is_an_alias` |
 | VER-2 | `axa-accepts-version-negotiation` | An unsupported version on an `/api` path is a `406` problem, with the `code` `unsupported_api_version` and the `requested` and `supported` extension members. | `an_unsupported_version_is_a_406` |
@@ -697,7 +697,7 @@ gitleaks detect --source . --redact --no-banner
 
 Subcrates publish before `axa`, because it depends on them by version.
 `axa-environment` has no dependencies, so it can go first. `axa-postgres-job-queue` goes before
-`axa`, which its `queue` feature needs. `axa-problem-details-for-http-apis` goes before
+`axa`, which its `queue` feature needs. `axa-problem` goes before
 `axa-idempotency-key`, `axa-paseto-auth`, `axa-request-rate-limit`, and `axa-accepts-version-negotiation`, which depend on it.
 `axa-test` depends on `axa`, so it goes after it.
 

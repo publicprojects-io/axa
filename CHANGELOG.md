@@ -7,6 +7,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`axa-problem-details-for-http-apis` is `axa-problem` again**, at 0.2.0, with the
+  same code as `axa-problem-details-for-http-apis` 0.1.0. `axa::problem` is unchanged.
+  A service that depends on the crate directly renames it in `Cargo.toml` and its
+  `use axa_problem_details_for_http_apis` lines to `axa-problem` and `axa_problem`.
 - **The database URL is read from `DB_URL`, not `DATABASE_URL`.** It sits with the
   other `DB_` settings. A service that still sets only `DATABASE_URL` has no database
   URL: production refuses to boot, naming `DB_URL`, and development falls back to its

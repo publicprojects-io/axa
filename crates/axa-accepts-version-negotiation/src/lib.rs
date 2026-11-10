@@ -17,7 +17,7 @@
 //! assert!(resolve_version(Some("9.9")).is_err());
 //! ```
 
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     extract::{Request, State},
     http::{HeaderName, HeaderValue, StatusCode},
@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::NOT_ACCEPTABLE);
         assert_eq!(
             response.headers()[http::header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await

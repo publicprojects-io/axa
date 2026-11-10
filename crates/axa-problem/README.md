@@ -1,4 +1,4 @@
-# axa-problem-details-for-http-apis
+# axa-problem
 
 RFC 9457 problem details for Axum services, from the [axa](https://github.com/publicprojects-io/axa) family.
 

@@ -4,7 +4,7 @@
 //! `application/problem+json`:
 //!
 //! ```
-//! use axa_problem_details_for_http_apis::Problem;
+//! use axa_problem::Problem;
 //! use axum::http::StatusCode;
 //!
 //! let problem = Problem::new(StatusCode::NOT_FOUND)

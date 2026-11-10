@@ -114,7 +114,7 @@ pub use axa_openapi_docs as openapi;
 pub use axa_opentelemetry as opentelemetry;
 #[cfg(feature = "paseto")]
 pub use axa_paseto_auth as paseto;
-pub use axa_problem_details_for_http_apis as problem;
+pub use axa_problem as problem;
 #[cfg(feature = "prometheus")]
 pub use axa_prometheus_metrics as prometheus;
 #[cfg(feature = "redis")]

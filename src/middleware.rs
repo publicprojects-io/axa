@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -776,7 +776,7 @@ mod tests {
         let response = app().oneshot(get_request("/panic")).await.unwrap();
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -846,7 +846,7 @@ mod tests {
     async fn problem_of(response: Response) -> serde_json::Value {
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
@@ -1008,7 +1008,7 @@ mod tests {
         assert_eq!(response.headers()[header::CONTENT_ENCODING], "gzip");
         assert_eq!(
             response.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         assert!(!response.headers().contains_key(header::CONTENT_LENGTH));
     }

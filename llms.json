@@ -68,7 +68,7 @@
     },
     {
       "name": "problem",
-      "crate": "axa-problem-details-for-http-apis"
+      "crate": "axa-problem"
     },
     {
       "name": "prometheus",
@@ -250,11 +250,11 @@
       "readme": "crates/axa-paseto-auth/README.md"
     },
     {
-      "name": "axa-problem-details-for-http-apis",
-      "version": "0.1.0",
+      "name": "axa-problem",
+      "version": "0.2.0",
       "description": "RFC 9457 problem details responses for Axum services.",
       "feature": null,
-      "readme": "crates/axa-problem-details-for-http-apis/README.md"
+      "readme": "crates/axa-problem/README.md"
     },
     {
       "name": "axa-prometheus-metrics",

@@ -54,7 +54,7 @@ outbox-encryption = ["outbox", "axa-transactional-outbox/encryption"]
 # Signed cursor pages with no total, as `axa::cursor_pagination`.
 cursor-pagination = ["dep:axa-cursor-pagination"]
 paseto = ["dep:axa-paseto-auth"]
-# `axa::error` answers with `axa-problem-details-for-http-apis`, so this adds
+# `axa::error` answers with `axa-problem`, so this adds
 # nothing, and stays so that a service naming it still builds.
 problem = []
 prometheus = ["dep:axa-prometheus-metrics"]
@@ -75,7 +75,7 @@ axa-transactional-outbox = { version = "0.2.0", path = "crates/axa-transactional
 axa-cursor-pagination = { version = "0.1.1", path = "crates/axa-cursor-pagination", optional = true }
 axa-keycloak-auth = { version = "0.3.0", path = "crates/axa-keycloak-auth", optional = true }
 axa-paseto-auth = { version = "0.5.0", path = "crates/axa-paseto-auth", optional = true }
-axa-problem-details-for-http-apis = { version = "0.1.0", path = "crates/axa-problem-details-for-http-apis" }
+axa-problem = { version = "0.2.0", path = "crates/axa-problem" }
 axa-prometheus-metrics = { version = "0.1.0", path = "crates/axa-prometheus-metrics", optional = true }
 axa-request-rate-limit = { version = "0.2.0", path = "crates/axa-request-rate-limit", optional = true }
 axa-redis-cache = { version = "0.1.1", path = "crates/axa-redis-cache", optional = true }

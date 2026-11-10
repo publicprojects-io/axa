@@ -539,7 +539,7 @@ dependencies = [
  "axa-opentelemetry",
  "axa-paseto-auth",
  "axa-postgres-job-queue",
- "axa-problem-details-for-http-apis",
+ "axa-problem",
  "axa-prometheus-metrics",
  "axa-redis-cache",
  "axa-request-rate-limit",
@@ -570,7 +570,7 @@ dependencies = [
 name = "axa-accepts-version-negotiation"
 version = "0.2.0"
 dependencies = [
- "axa-problem-details-for-http-apis",
+ "axa-problem",
  "axum",
  "serde_json",
  "tokio",
@@ -612,7 +612,7 @@ version = "0.1.1"
 name = "axa-idempotency-key"
 version = "0.2.1"
 dependencies = [
- "axa-problem-details-for-http-apis",
+ "axa-problem",
  "axum",
  "serde_json",
  "sha2 0.11.1",
@@ -678,7 +678,7 @@ name = "axa-paseto-auth"
 version = "0.5.0"
 dependencies = [
  "authentication-verifier",
- "axa-problem-details-for-http-apis",
+ "axa-problem",
  "axum",
  "base64 0.23.1",
  "ed25519-dalek 3.0.0",
@@ -703,8 +703,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "axa-problem-details-for-http-apis"
-version = "0.1.0"
+name = "axa-problem"
+version = "0.2.0"
 dependencies = [
  "axum",
  "serde",
@@ -738,7 +738,7 @@ dependencies = [
 name = "axa-request-rate-limit"
 version = "0.2.0"
 dependencies = [
- "axa-problem-details-for-http-apis",
+ "axa-problem",
  "axum",
  "serde_json",
  "tokio",

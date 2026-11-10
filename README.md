@@ -20,30 +20,40 @@ Add it from crates.io:
 axa = "0.10"
 ```
 
-- [`axa-postgres-job-queue`](crates/axa-postgres-job-queue): the Postgres job queue, worker pool, and schedules
-- [`axa-test`](crates/axa-test): request-level test helpers, built on `axum-test`. Add it as a dev-dependency
+### Always included
+
+- [`axa-environment`](crates/axa-environment): which environment a service runs in. It has no dependencies, so a migration crate can read the environment the same way without depending on `axa`
+- [`axa-problem`](crates/axa-problem): RFC 9457 problem details, as `axa::problem`
+
+### Data
+
+- [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
 - [`axa-seaorm`](crates/axa-seaorm): a SeaORM-backed `AppContext`, connections, migration helpers, and model errors, with an easy path from Loco
 - [`axa-diesel`](crates/axa-diesel): Diesel pooling, migrations, and test resets, with no `libpq`
+
+### Authentication
+
+- [`axa-paseto-auth`](crates/axa-paseto-auth): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
+- [`axa-keycloak-auth`](crates/axa-keycloak-auth): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
+
+### Other optional features
+
+- [`axa-postgres-job-queue`](crates/axa-postgres-job-queue): the Postgres job queue, worker pool, and schedules
 - [`axa-tera-templates`](crates/axa-tera-templates): Tera templates with safe escaping and generic errors
 - [`axa-tracing`](crates/axa-tracing): redaction, request tracking across spawned tasks and peers, and diagnostics for blocked or stalled async code
 - [`axa-redis-cache`](crates/axa-redis-cache): a Redis cache with mandatory expiry
 - [`axa-openapi-docs`](crates/axa-openapi-docs): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks
 - [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set
 - [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
-- [`axa-sqlx`](crates/axa-sqlx): pooling, migrations, and test resets. `AppContext::db` becomes a `PgPool`
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
-- [`axa-keycloak-auth`](crates/axa-keycloak-auth): Keycloak bearer authentication and ABAC enforcement, standing alone so it can be audited alone
-- [`axa-paseto-auth`](crates/axa-paseto-auth): PASETO bearer authentication and ABAC enforcement. Enforcement is on unless turned off
-- [`axa-problem-details-for-http-apis`](crates/axa-problem-details-for-http-apis): RFC 9457 problem details. Always included, as `axa::problem`
 - [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition
 - [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process
 - [`axa-idempotency-key`](crates/axa-idempotency-key): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
 - [`axa-accepts-version-negotiation`](crates/axa-accepts-version-negotiation): `Accepts-version` negotiation
 
-`Environment` lives in [`axa-environment`](crates/axa-environment), which has no
-dependencies and is always included, so a migration crate can read the environment
-the same way without depending on `axa`.
+For tests, add [`axa-test`](crates/axa-test) as a dev-dependency. It has request-level
+test helpers, built on `axum-test`, and is not a feature of `axa`.
 
 ## Quick start
 

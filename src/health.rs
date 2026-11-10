@@ -24,7 +24,7 @@
 
 use std::{fmt, future::Future, pin::Pin, sync::Arc, time::Duration};
 
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     Json,
     extract::State,
@@ -392,10 +392,7 @@ mod tests {
         let passing = Checks::new().add("a", passes);
         assert_eq!(call(passing).await, "application/json");
         let failing = Checks::new().add("a", fails);
-        assert_eq!(
-            call(failing).await,
-            axa_problem_details_for_http_apis::PROBLEM_JSON
-        );
+        assert_eq!(call(failing).await, axa_problem::PROBLEM_JSON);
     }
 
     #[tokio::test]

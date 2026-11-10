@@ -128,7 +128,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     extract::{Request, State},
     http::{Extensions, HeaderName, HeaderValue, StatusCode, header},
@@ -815,7 +815,7 @@ mod tests {
         assert!((1..=60).contains(&wait.parse::<u64>().unwrap()));
         assert_eq!(
             second.headers()[header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
         let body = axum::body::to_bytes(second.into_body(), usize::MAX).await;
         let body: serde_json::Value = serde_json::from_slice(&body.unwrap()).unwrap();

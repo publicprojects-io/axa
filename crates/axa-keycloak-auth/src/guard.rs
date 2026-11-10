@@ -2,8 +2,8 @@
 //!
 //! [`GuardConfig`], [`derive_action`], and [`bearer_token`] are copied from
 //! `axa-paseto-auth` 0.2.0, so that this crate does not depend on it. The shape of the
-//! body [`Rejection`] answers with is copied from `axa-problem` 0.1.0, now
-//! `axa-problem-details-for-http-apis`, for the same reason.
+//! body [`Rejection`] answers with is copied from `axa-problem` 0.1.0, for the
+//! same reason.
 
 use std::{net::IpAddr, sync::Arc};
 

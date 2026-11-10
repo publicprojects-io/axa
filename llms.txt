@@ -59,7 +59,7 @@
 - [axa-postgres-job-queue](crates/axa-postgres-job-queue/README.md) (feature `queue`): A Postgres job queue, worker pool, and recurring schedules for Axum services.
 - [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.
 - [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services.
-- [axa-problem-details-for-http-apis](crates/axa-problem-details-for-http-apis/README.md) (always included): RFC 9457 problem details responses for Axum services.
+- [axa-problem](crates/axa-problem/README.md) (always included): RFC 9457 problem details responses for Axum services.
 - [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition for Axum services.
 - [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services.
 - [axa-seaorm](crates/axa-seaorm/README.md) (feature `sea-orm`): SeaORM connections, migration helpers, and model errors for Axum services, with an easy path from Loco.

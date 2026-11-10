@@ -136,7 +136,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     body::{Body, HttpBody, to_bytes},
     extract::{Request, State},

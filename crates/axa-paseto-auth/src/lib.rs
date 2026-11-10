@@ -48,7 +48,7 @@
 use std::{future::Future, net::IpAddr, sync::Arc};
 
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     extract::{FromRequestParts, Request, State},
     http::{HeaderMap, Method, StatusCode, header::AUTHORIZATION, request::Parts},
@@ -824,7 +824,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         assert_eq!(
             response.headers()[axum::http::header::CONTENT_TYPE],
-            axa_problem_details_for_http_apis::PROBLEM_JSON
+            axa_problem::PROBLEM_JSON
         );
     }
 

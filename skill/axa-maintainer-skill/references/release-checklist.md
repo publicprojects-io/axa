@@ -48,7 +48,7 @@ cargo publish --dry-run -p axa-environment -p axa-sqlx -p axa -p ...
 ## 4. Publish
 
 Subcrates publish before `axa`, because it depends on them by version. `axa-postgres-job-queue` is
-one of them, as the `queue` feature needs it. `axa-problem-details-for-http-apis` goes before `axa-idempotency-key`, `axa-paseto-auth`, `axa-request-rate-limit`, and `axa-accepts-version-negotiation`, which
+one of them, as the `queue` feature needs it. `axa-problem` goes before `axa-idempotency-key`, `axa-paseto-auth`, `axa-request-rate-limit`, and `axa-accepts-version-negotiation`, which
 depend on it. No other subcrate depends on another, so the rest can go in any order.
 `axa-test` is the one crate that depends on `axa`, so it publishes after `axa`.
 

@@ -20,7 +20,7 @@
 //! assert_eq!(response.status(), StatusCode::NOT_FOUND);
 //! ```
 
-use axa_problem_details_for_http_apis::Problem;
+use axa_problem::Problem;
 use axum::{
     extract::rejection::{JsonRejection, PathRejection, QueryRejection},
     http::StatusCode,
@@ -503,7 +503,7 @@ pub fn bad_request<T>(message: &str) -> Result<T> {
 mod tests {
     use super::*;
 
-    use axa_problem_details_for_http_apis::PROBLEM_JSON;
+    use axa_problem::PROBLEM_JSON;
     use axum::{
         Json,
         extract::{FromRequest, Request},
