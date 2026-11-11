@@ -2,7 +2,7 @@
 
 This document explains the architectural principles and design of axa.
 
-**Visual Diagrams**: See [ARCHITECTURE-DIAGRAM.md](./ARCHITECTURE-DIAGRAM.md) for Mermaid-based visual architecture diagrams.
+**Visual Diagrams**: See [architecture-diagram](../architecture-diagram/index.md) for Mermaid-based visual architecture diagrams.
 
 ---
 
@@ -563,11 +563,18 @@ axa/
 │   └── axa-test/              # Test helpers
 │
 ├── docs/
-│   ├── QUICKSTART.md           # This file
-│   ├── FEATURES.md             # Feature selection guide
-│   ├── CONFIGURATION.md        # Configuration reference
-│   ├── EXAMPLES.md             # Examples and recipes
-│   └── ARCHITECTURE.md          # Architecture overview
+│   ├── quickstart/             # Hands-on tutorial
+│   │   └── index.md
+│   ├── features/               # Feature selection guide
+│   │   └── index.md
+│   ├── configuration/          # Configuration reference
+│   │   └── index.md
+│   ├── examples/               # Examples and recipes
+│   │   └── index.md
+│   ├── architecture/           # Architecture overview
+│   │   └── index.md
+│   └── architecture-diagram/   # Visual diagrams
+│       └── index.md
 │
 ├── spec/
 │   └── index.md                # Single source of truth
@@ -637,8 +644,8 @@ axa deliberately excludes certain features to maintain auditability:
 
 ## See Also
 
-- [Quick Start](QUICKSTART.md) - Get started in 5 minutes
-- [Feature Selection](FEATURES.md) - Choose the right features
-- [Configuration](CONFIGURATION.md) - All configuration options
-- [Examples](EXAMPLES.md) - Real-world patterns
+- [quickstart](../quickstart/index.md) - Get started in 5 minutes
+- [features](../features/index.md) - Choose the right features
+- [configuration](../configuration/index.md) - All configuration options
+- [examples](../examples/index.md) - Real-world patterns
 - [Full API Docs](../README.md) - Complete reference

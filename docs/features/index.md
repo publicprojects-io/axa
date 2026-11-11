@@ -430,7 +430,7 @@ See [Converting a project from Loco to Axa](help/from-loco-into-axa/index.md) fo
 
 ## See Also
 
-- [Quick Start](QUICKSTART.md) - Get started in 5 minutes
-- [Configuration](CONFIGURATION.md) - All environment variables
-- [Examples](EXAMPLES.md) - Real-world patterns
+- [Quick Start](../quickstart/index.md) - Get started in 5 minutes
+- [Configuration](../configuration/index.md) - All environment variables
+- [Examples](../examples/index.md) - Real-world patterns
 - [Full API Docs](../README.md) - Complete reference

@@ -15,12 +15,12 @@
 ### Documentation Hub
 
 - [docs/README](docs/README.md): Documentation index
-- [docs/QUICKSTART](docs/QUICKSTART.md): Hands-on 5-minute tutorial
-- [docs/FEATURES](docs/FEATURES.md): Feature selection guide with decision tree
-- [docs/CONFIGURATION](docs/CONFIGURATION.md): Complete configuration reference
-- [docs/EXAMPLES](docs/EXAMPLES.md): Real-world patterns and recipes
-- [docs/ARCHITECTURE](docs/ARCHITECTURE.md): Architecture principles and design
-- [docs/ARCHITECTURE-DIAGRAM](docs/ARCHITECTURE-DIAGRAM.md): Visual architecture diagrams (Mermaid)
+- [docs/quickstart/](docs/quickstart/index.md): Hands-on 5-minute tutorial
+- [docs/features/](docs/features/index.md): Feature selection guide with decision tree
+- [docs/configuration/](docs/configuration/index.md): Complete configuration reference
+- [docs/examples/](docs/examples/index.md): Real-world patterns and recipes
+- [docs/architecture/](docs/architecture/index.md): Architecture principles and design
+- [docs/architecture-diagram/](docs/architecture-diagram/index.md): Visual architecture diagrams (Mermaid)
 
 ### Comparison Documents
 

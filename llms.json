@@ -14,12 +14,12 @@
     "changelog": "CHANGELOG.md",
     "docs": [
       "docs/README.md",
-      "docs/QUICKSTART.md",
-      "docs/FEATURES.md",
-      "docs/CONFIGURATION.md",
-      "docs/EXAMPLES.md",
-      "docs/ARCHITECTURE.md",
-      "docs/ARCHITECTURE-DIAGRAM.md"
+      "docs/quickstart/index.md",
+      "docs/features/index.md",
+      "docs/configuration/index.md",
+      "docs/examples/index.md",
+      "docs/architecture/index.md",
+      "docs/architecture-diagram/index.md"
     ],
     "guides": [
       "help/axa-for-actix-users/index.md",

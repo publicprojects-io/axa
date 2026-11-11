@@ -95,7 +95,7 @@
 **Action Items**:
 - [x] Split README into multiple pages (overview, installation, examples) - **Complete** (see docs/ directory)
 - [ ] Add a "Choosing Features" guide
-- [x] Create a visual architecture diagram - **Complete** (see [ARCHITECTURE-DIAGRAM.md](../../ARCHITECTURE-DIAGRAM.md))
+- [x] Create a visual architecture diagram - **Complete** (see [architecture-diagram](../architecture-diagram/index.md))
 - [ ] Add more real-world examples (not just snippets)
 
 ### 2. Test Infrastructure (Priority: High)
@@ -256,7 +256,7 @@ services:
 1. Create dev container configuration - **✓ Complete** (see .devcontainer/ directory)
 2. Add metrics feature for observability
 3. Launch community Discord
-4. Add visual architecture diagram - **✓ Complete** (see [ARCHITECTURE-DIAGRAM.md](../../ARCHITECTURE-DIAGRAM.md))
+4. Add visual architecture diagram - **✓ Complete** (see [architecture-diagram](../architecture-diagram/index.md))
 
 ### Phase 3: Medium-term (Next 6 Months)
 

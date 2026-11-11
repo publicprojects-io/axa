@@ -156,7 +156,7 @@ HTTP_COMPRESSION=true cargo run
 BINDING=0.0.0.0 cargo run
 ```
 
-See [Configuration](CONFIGURATION.md) for all available options.
+See [Configuration](../configuration/index.md) for all available options.
 
 ---
 
@@ -271,9 +271,9 @@ let app = middleware::apply(router, &ctx.config.http)?;
 
 You now have a working Axa service! Here's what to explore next:
 
-- [Choosing Features](FEATURES.md) - Which crates to use for your use case
-- [Configuration Guide](CONFIGURATION.md) - All environment variables and defaults
-- [Examples](EXAMPLES.md) - Real-world patterns and recipes
+- [Choosing Features](../features/index.md) - Which crates to use for your use case
+- [Configuration Guide](../configuration/index.md) - All environment variables and defaults
+- [Examples](../examples/index.md) - Real-world patterns and recipes
 - [Full Documentation](../README.md) - Complete feature reference
 
 ---

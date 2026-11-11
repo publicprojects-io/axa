@@ -1,7 +1,7 @@
 # axa Visual Architecture Diagram
 
 This document provides visual representations of axa's architecture using Mermaid diagrams.
-These diagrams complement the textual descriptions in [ARCHITECTURE.md](./ARCHITECTURE.md).
+These diagrams complement the textual descriptions in [architecture](../architecture/index.md).
 
 ---
 
@@ -433,7 +433,7 @@ flowchart TB
 
 ## See Also
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md) - Detailed architectural principles and design
-- [FEATURES.md](./FEATURES.md) - Complete list of all available features
-- [QUICKSTART.md](./QUICKSTART.md) - Quick start guide for using axa
-- [EXAMPLES.md](./EXAMPLES.md) - Usage examples and recipes
+- [architecture](../architecture/index.md) - Detailed architectural principles and design
+- [features](../features/index.md) - Complete list of all available features
+- [quickstart](../quickstart/index.md) - Quick start guide for using axa
+- [examples](../examples/index.md) - Usage examples and recipes

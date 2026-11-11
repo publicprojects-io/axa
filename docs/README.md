@@ -8,7 +8,7 @@ Welcome to the axa documentation hub. This directory contains detailed guides, r
 
 **New to axa?** Start here:
 
-- [Quick Start Guide](QUICKSTART.md) - Get a working service in 5 minutes
+- [Quick Start Guide](quickstart/index.md) - Get a working service in 5 minutes
 
 ---
 
@@ -16,10 +16,10 @@ Welcome to the axa documentation hub. This directory contains detailed guides, r
 
 Learn how to use axa effectively:
 
-- [Feature Selection Guide](FEATURES.md) - Choose the right features for your project
-- [Configuration Reference](CONFIGURATION.md) - All configuration options explained
-- [Examples and Recipes](EXAMPLES.md) - Real-world patterns and solutions
-- [Architecture Overview](ARCHITECTURE.md) - Understand how axa works under the hood
+- [Feature Selection Guide](features/index.md) - Choose the right features for your project
+- [Configuration Reference](configuration/index.md) - All configuration options explained
+- [Examples and Recipes](examples/index.md) - Real-world patterns and solutions
+- [Architecture Overview](architecture/index.md) - Understand how axa works under the hood
 
 ---
 
@@ -29,11 +29,11 @@ Learn how to use axa effectively:
 
 | Document | Purpose | Audience |
 |----------|---------|----------|
-| [QUICKSTART.md](QUICKSTART.md) | Hands-on introduction | Beginners |
-| [FEATURES.md](FEATURES.md) | Feature selection & comparison | All users |
-| [CONFIGURATION.md](CONFIGURATION.md) | Configuration reference | All users |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Design & architecture | Advanced users |
-| [EXAMPLES.md](EXAMPLES.md) | Patterns & recipes | Intermediate users |
+| [quickstart/](quickstart/index.md) | Hands-on introduction | Beginners |
+| [features/](features/index.md) | Feature selection & comparison | All users |
+| [configuration/](configuration/index.md) | Configuration reference | All users |
+| [architecture/](architecture/index.md) | Design & architecture | Advanced users |
+| [examples/](examples/index.md) | Patterns & recipes | Intermediate users |
 
 ### Reference Documentation
 

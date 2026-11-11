@@ -967,6 +967,6 @@ async fn tracked_handler(
 
 ## See Also
 
-- [Quick Start](QUICKSTART.md) - Get started in 5 minutes
-- [Feature Selection](FEATURES.md) - Choose the right features
-- [Configuration](CONFIGURATION.md) - All configuration options
+- [Quick Start](../quickstart/index.md) - Get started in 5 minutes
+- [Feature Selection](../features/index.md) - Choose the right features
+- [Configuration](../configuration/index.md) - All configuration options
