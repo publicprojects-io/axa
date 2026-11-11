@@ -234,7 +234,7 @@ services:
 
 **Action Items**:
 - [x] Create a ROADMAP.md with planned features - **Complete** (see ROADMAP.md)
-- [ ] Add a "Request for Comments" (RFC) process
+- [x] Add a "Request for Comments" (RFC) process - **Complete** (see [RFC Process](../rfc/index.md))
 - [x] Document the vision for axa 1.0 - **Complete** (see ROADMAP.md)
 
 ---
@@ -276,15 +276,15 @@ services:
 ### Phase 3: Medium-term (Next 6 Months)
 
 1. Create template repository for new services - **✓ Complete** (see templates/ directory)
-2. Implement Testcontainers integration
-3. Launch "Powered by axa" page
-4. Start monthly office hours
+2. Add RFC process - **✓ Complete** (see docs/rfc/)
+3. Implement Testcontainers integration
+4. Launch "Powered by axa" page
+5. Start monthly office hours
 
 ### Phase 4: Long-term (6+ Months)
 
-1. Develop RFC process for major changes
-2. Create ecosystem showcase
-3. Publish roadmap to 1.0
+1. Create ecosystem showcase
+2. Publish roadmap to 1.0
 
 ---
 

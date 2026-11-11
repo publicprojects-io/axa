@@ -24,7 +24,9 @@
       "docs/configuration/index.md",
       "docs/examples/index.md",
       "docs/architecture/index.md",
-      "docs/architecture-diagram/index.md"
+      "docs/architecture-diagram/index.md",
+      "docs/rfc/index.md",
+      "docs/rfc/text/0000-rfc-process.md"
     ],
     "examples": [
       "examples/README.md",

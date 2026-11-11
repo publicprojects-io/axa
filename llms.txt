@@ -16,6 +16,11 @@
 - [Makefile](Makefile): common development commands
 - [justfile](justfile): alternative common development commands
 
+### RFC Process
+
+- [docs/rfc/](docs/rfc/index.md): Request for Comments process
+- [docs/rfc/text/0000-rfc-process.md](docs/rfc/text/0000-rfc-process.md): RFC 0000 - The RFC process itself
+
 ### Documentation Hub
 
 - [docs/README](docs/README.md): Documentation index
