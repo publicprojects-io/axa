@@ -160,6 +160,9 @@ From the outside in: request id, tracing, security headers, CORS, timeout,
 | MID-20 | Responses carry `cross-origin-opener-policy: same-origin`, `cross-origin-resource-policy: same-origin`, and a `permissions-policy`, a deny-list unless `HTTP_PERMISSIONS_POLICY` names another, or none when it is blank, without replacing a handler's own values. | `the_cross_origin_and_permissions_headers_are_set_unless_a_handler_sets_its_own`, `the_permissions_policy_is_a_deny_list_unless_named_or_blanked` |
 | MID-21 | A response that sets a cookie is `cache-control: no-store` unless its handler set its own caching, and compression never touches a response that sets a cookie or is `no-store`, against BREACH. | `a_response_setting_a_cookie_is_not_stored_or_compressed`, `no_store_is_read_as_a_directive_among_others` |
 | MID-22 | `authorization`, `proxy-authorization`, `cookie`, and `set-cookie` are marked sensitive outside every other layer, so none records them. | `credential_headers_are_marked_sensitive` |
+| MID-23 | An unsafe method (not `GET`, `HEAD`, or `OPTIONS`) or a WebSocket upgrade with `sec-fetch-site: cross-site` is refused with `403` and code `cross_site_write_refused`. | `a_cross_site_unsafe_method_is_refused`, `a_cross_site_websocket_upgrade_is_refused` |
+| MID-24 | With no `sec-fetch-site`, an unsafe method or WebSocket upgrade checks `origin`: if it is present and not a case-insensitive match for the `host`, it is refused with `403` and code `origin_mismatch`. | `an_unsafe_method_with_a_mismatched_origin_is_refused`, `a_websocket_upgrade_with_a_mismatched_origin_is_refused` |
+| MID-25 | An unsafe method or WebSocket upgrade with neither `sec-fetch-site` nor `origin` is let through, for non-browser clients. | `an_unsafe_method_with_no_browser_headers_passes` |
 
 ### 4.5 Errors
 

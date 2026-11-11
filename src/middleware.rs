@@ -1,8 +1,9 @@
 //! The standard middleware stack.
 //!
-//! From the outside in: request id, tracing, security headers, CORS, timeout,
-//! `304`s, compression, refusal shaping, body limit, panic catching. A panic is caught
-//! last in, so that its answer gets everything any other answer gets.
+//! From the outside in: cross-site guard, request id, tracing, client address,
+//! security headers, CORS, timeout, `304`s, compression, refusal shaping,
+//! body limit, panic catching. A panic is caught last in, so that its answer
+//! gets everything any other answer gets.
 
 use std::{
     any::Any,
@@ -19,9 +20,9 @@ use axum::{
     Router,
     body::{Body, Bytes, HttpBody},
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{Extensions, HeaderMap, HeaderName, HeaderValue, Method, header},
+    http::{Extensions, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
     middleware::{Next, from_fn, from_fn_with_state},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::MethodRouter,
 };
 use tower_http::{
@@ -35,10 +36,13 @@ use tower_http::{
 use tracing::Level;
 use uuid::Uuid;
 
-use crate::{AppContext, Error, Result, config::Http};
+use crate::{AppContext, Error, Result, config::Http, error::ErrorDetail};
 
 /// The request id header.
 pub const X_REQUEST_ID: HeaderName = HeaderName::from_static("x-request-id");
+
+/// `sec-fetch-site` header name.
+const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 
 const MAX_REQUEST_ID_LEN: usize = 255;
 
@@ -422,6 +426,7 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
             Arc::new(config.trusted_proxies.clone()),
             crate::client::record,
         ))
+        .layer(from_fn(cross_site_guard))
         .layer(from_fn(request_id))
         // Outermost, so that no layer, the trace above all, records a credential.
         .layer(SetSensitiveHeadersLayer::new([
@@ -466,10 +471,89 @@ async fn no_store_secrets(request: Request, next: Next) -> Response {
     response
 }
 
+/// An unsafe method or WebSocket upgrade with `sec-fetch-site: cross-site` is refused
+/// as `403 Forbidden` with code `cross_site_write_refused`. With no `sec-fetch-site`,
+/// it checks `origin`: if present and not a case-insensitive match for the `host`,
+/// it is refused with `403` and code `origin_mismatch`. With neither header, the
+/// request is let through, for non-browser clients.
+async fn cross_site_guard(request: Request, next: Next) -> Response {
+    let method = request.method();
+    let headers = request.headers();
+
+    // Check if this is an unsafe method or WebSocket upgrade
+    let is_unsafe = is_unsafe_method(method) || is_websocket_upgrade(headers);
+    if !is_unsafe {
+        return next.run(request).await;
+    }
+
+    // Check sec-fetch-site first
+    if let Some(sec_fetch_site) = headers.get(&SEC_FETCH_SITE) {
+        if let Ok(value) = sec_fetch_site.to_str() && value.eq_ignore_ascii_case("cross-site") {
+            let detail = ErrorDetail::with_reason("cross_site_write_refused");
+            return Error::CustomError(StatusCode::FORBIDDEN, detail).into_response();
+        }
+        // Other sec-fetch-site values (same-origin, same-site, none) are allowed
+        return next.run(request).await;
+    }
+
+    // Fall back to origin check
+    if let (Some(origin), Some(host)) = (headers.get(header::ORIGIN), headers.get(header::HOST)) {
+        if let (Ok(origin_str), Ok(host_str)) = (origin.to_str(), host.to_str()) {
+            // Compare origin with host (case-insensitive)
+            // Origin is typically "https://example.com:1234" or just "https://example.com"
+            // Host is typically "example.com:1234" or just "example.com"
+            let origin_host = extract_host_from_origin(origin_str);
+            if !origin_host.eq_ignore_ascii_case(host_str) {
+                let detail = ErrorDetail::with_reason("origin_mismatch");
+                return Error::CustomError(StatusCode::FORBIDDEN, detail).into_response();
+            }
+        }
+        // If origin matches or we can't parse, let it through
+        return next.run(request).await;
+    }
+
+    // Neither sec-fetch-site nor origin: let non-browser clients through
+    next.run(request).await
+}
+
+/// Returns true for methods that are not safe (GET, HEAD, OPTIONS) or idempotent.
+fn is_unsafe_method(method: &Method) -> bool {
+    !matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS)
+}
+
+/// Returns true if this is a WebSocket upgrade request.
+fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
+    headers
+        .get(header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+}
+
+/// Extracts the host:port from an Origin header value.
+/// Origin format: scheme "://" host [ ":" port ]
+fn extract_host_from_origin(origin: &str) -> &str {
+    // Find the scheme end (://)
+    if let Some(pos) = origin.find("://") {
+        // Skip past ://
+        let rest = &origin[pos + 3..];
+        // Return everything after :// (this is host:port or just host)
+        rest
+    } else {
+        // No scheme, just return as-is
+        origin
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http, http::StatusCode, response::IntoResponse, routing::get};
+    use axum::{
+        body::Body,
+        http,
+        http::StatusCode,
+        response::IntoResponse,
+        routing::{get, post},
+    };
     use tower::ServiceExt;
 
     fn config() -> Http {
@@ -1371,5 +1455,200 @@ mod tests {
                 .is_some()
         );
         assert!(cors(&["bad\norigin".to_string()]).is_err());
+    }
+
+    // Tests for cross-site guard (T-13)
+
+    fn cross_site_request(path: &str, method: &str) -> http::Request<Body> {
+        http::Request::builder()
+            .uri(path)
+            .method(method)
+            .header(SEC_FETCH_SITE, "cross-site")
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    fn origin_request(path: &str, method: &str, origin: &str, host: &str) -> http::Request<Body> {
+        http::Request::builder()
+            .uri(path)
+            .method(method)
+            .header(header::ORIGIN, origin)
+            .header(header::HOST, host)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    fn websocket_request(path: &str, sec_fetch_site: Option<&str>) -> http::Request<Body> {
+        let mut builder = http::Request::builder()
+            .uri(path)
+            .method("GET")
+            .header(header::UPGRADE, "websocket")
+            .header(header::CONNECTION, "Upgrade");
+        if let Some(sfs) = sec_fetch_site {
+            builder = builder.header(SEC_FETCH_SITE, sfs);
+        }
+        builder.body(Body::empty()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_cross_site_unsafe_method_is_refused() {
+        let router = Router::new()
+            .route("/test", get(|| async { "ok" }))
+            .route("/test", post(|| async { "created" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(cross_site_request("/test", "POST"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body_str.contains("cross_site_write_refused"));
+    }
+
+    #[tokio::test]
+    async fn a_cross_site_websocket_upgrade_is_refused() {
+        let router = Router::new().route("/ws", get(|| async { "ok" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(websocket_request("/ws", Some("cross-site")))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body_str.contains("cross_site_write_refused"));
+    }
+
+    #[tokio::test]
+    async fn an_unsafe_method_with_a_mismatched_origin_is_refused() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(origin_request(
+                "/test",
+                "POST",
+                "https://evil.com",
+                "good.com:1241",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body_str.contains("origin_mismatch"));
+    }
+
+    #[tokio::test]
+    async fn a_websocket_upgrade_with_a_mismatched_origin_is_refused() {
+        // Create a websocket request with origin that doesn't match host
+        let request = http::Request::builder()
+            .uri("/ws")
+            .method("GET")
+            .header(header::UPGRADE, "websocket")
+            .header(header::CONNECTION, "Upgrade")
+            .header(header::ORIGIN, "https://evil.com")
+            .header(header::HOST, "good.com:1241")
+            .body(Body::empty())
+            .unwrap();
+        let router = Router::new().route("/ws", get(|| async { "ok" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_str = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body_str.contains("origin_mismatch"));
+    }
+
+    #[tokio::test]
+    async fn an_unsafe_method_with_no_browser_headers_passes() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(
+                http::Request::builder()
+                    .uri("/test")
+                    .method("POST")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_same_origin_unsafe_method_passes() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(origin_request(
+                "/test",
+                "POST",
+                "https://good.com:1241",
+                "good.com:1241",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_same_site_unsafe_method_passes() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(
+                http::Request::builder()
+                    .uri("/test")
+                    .method("POST")
+                    .header(SEC_FETCH_SITE, "same-site")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_websocket_upgrade_with_no_browser_headers_passes() {
+        // WebSocket without sec-fetch-site or origin should pass (non-browser client)
+        let request = http::Request::builder()
+            .uri("/ws")
+            .method("GET")
+            .header(header::UPGRADE, "websocket")
+            .header(header::CONNECTION, "Upgrade")
+            .body(Body::empty())
+            .unwrap();
+        let router = Router::new().route("/ws", get(|| async { "ok" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_safe_method_with_cross_site_passes() {
+        let router = Router::new().route("/test", get(|| async { "ok" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(cross_site_request("/test", "GET"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
     }
 }
