@@ -12,6 +12,8 @@
     "agents": "AGENTS.md",
     "specification": "spec/index.md",
     "changelog": "CHANGELOG.md",
+    "contributing": "CONTRIBUTING.md",
+    "roadmap": "ROADMAP.md",
     "docs": [
       "docs/README.md",
       "docs/quickstart/index.md",

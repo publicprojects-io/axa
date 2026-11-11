@@ -11,6 +11,8 @@
 - [Specification](spec/index.md): the single source of truth, each requirement naming its test
 - [Changelog](CHANGELOG.md): changes by version
 - [llms.json](llms.json): this index, machine-readable
+- [CONTRIBUTING](CONTRIBUTING.md): development setup and contribution guidelines
+- [ROADMAP](ROADMAP.md): development roadmap and planned features
 
 ### Documentation Hub
 

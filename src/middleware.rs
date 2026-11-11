@@ -488,7 +488,9 @@ async fn cross_site_guard(request: Request, next: Next) -> Response {
 
     // Check sec-fetch-site first
     if let Some(sec_fetch_site) = headers.get(&SEC_FETCH_SITE) {
-        if let Ok(value) = sec_fetch_site.to_str() && value.eq_ignore_ascii_case("cross-site") {
+        if let Ok(value) = sec_fetch_site.to_str()
+            && value.eq_ignore_ascii_case("cross-site")
+        {
             let detail = ErrorDetail::with_reason("cross_site_write_refused");
             return Error::CustomError(StatusCode::FORBIDDEN, detail).into_response();
         }
