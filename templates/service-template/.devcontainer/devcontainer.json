@@ -1,0 +1,45 @@
+{
+  "name": "Service Template",
+  "dockerComposeFile": [
+    "podman-compose.yml",
+    "podman-compose.devcontainer.yml"
+  ],
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "1.97"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "mt-hamster.xml-tools",
+        "redhat.vscode-yaml",
+        "tamasfe.even-better-toml",
+        "ms-azuretools.vscode-docker",
+        "ms-vscode.cpptools"
+      ],
+      "settings": {
+        "rust-analyzer.rustc.source": "discover",
+        "rust-analyzer.checkOnSave.command": "clippy",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Application",
+      "onAutoForward": "notify"
+    }
+  },
+  "postCreateCommand": "cargo check",
+  "postStartCommand": "echo 'Dev container started. Run with: cargo run'",
+  "remoteUser": "vscode",
+  "runArgs": ["--privileged"],
+  "containerUser": "vscode"
+}

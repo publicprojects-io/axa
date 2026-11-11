@@ -1,0 +1,53 @@
+repos:
+  - repo: local
+    hooks:
+      # Format check
+      - id: rustfmt
+        name: Rust Format Check
+        entry: cargo fmt --all --check
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+      # Clippy lint
+      - id: clippy
+        name: Clippy Lint
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+      # Documentation
+      - id: doc
+        name: Documentation
+        entry: cargo doc --no-deps --all-features
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+      # Tests
+      - id: test
+        name: Tests
+        entry: cargo test --all-targets
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+      # Check for todo comments
+      - id: todo-check
+        name: TODO Check
+        entry: grep -r "TODO\|FIXME\|XXX\|HACK" src/ --include="*.rs" || true
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+  # Optional: Use cargo-deny for supply chain security
+  # - repo: https://github.com/EmbarkStudios/cargo-deny
+  #   rev: master
+  #   hooks:
+  #     - id: deny-check
+  #       name: Cargo Deny Check
+  #       entry: cargo deny check --all-features advisories bans licenses sources
+  #       language: system
+  #       pass_filenames: false
+  #       types: [rust]

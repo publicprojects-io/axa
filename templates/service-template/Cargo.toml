@@ -1,0 +1,95 @@
+[package]
+name = "service-template"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "A service built with axa"
+license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+repository = "https://github.com/your-org/service-template"
+readme = "README.md"
+rust-version = "1.97"
+publish = false
+
+[dependencies]
+# Core web framework
+axum = "0.8"
+
+# axa - Accessories library for Axum
+axa = { version = "0.12", features = ["health"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Environment variables
+dotenvy = "0.15"
+
+# Logging
+ tracing = "0.1"
+ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Timeouts and graceful shutdown
+tokio = { version = "1.0", features = ["full"] }
+
+[dev-dependencies]
+# HTTP client for tests
+hyper = "1.0"
+tower = { version = "0.4", features = ["util"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release-with-debug]
+inherits = "release"
+debug = true
+strip = false
+
+[lints.clippy]
+# Deny all warnings
+all = ["deny"]
+pedantic = ["deny"]
+
+[lints.rust]
+# Deny all warnings
+all = ["deny"]
+missing_docs = "warn"
+
+[features]
+default = []
+
+# Database features
+postgres-sqlx = ["axa/postgres-sqlx"]
+postgres-seaorm = ["axa/postgres-seaorm"]
+mysql-sqlx = ["axa/mysql-sqlx"]
+mysql-seaorm = ["axa/mysql-seaorm"]
+
+# Authentication features
+db = ["axa/db"]
+auth = ["axa/auth"]
+paseto = ["axa/paseto", "dep:axa-paseto-auth"]
+keycloak = ["axa/keycloak", "dep:axa-keycloak-auth"]
+
+# Other features
+queue = ["axa/queue"]
+outbox = ["axa/outbox"]
+metrics = ["axa/prometheus", "dep:axa-prometheus-metrics"]
+ratelimit = ["axa/ratelimit"]
+idempotency = ["axa/idempotency"]
+tracing = ["axa/tracing"]
+opentelemetry = ["axa/opentelemetry"]
+
+[dependencies.axa-paseto-auth]
+version = "0.12"
+optional = true
+
+[dependencies.axa-keycloak-auth]
+version = "0.12"
+optional = true
+
+[dependencies.axa-prometheus-metrics]
+version = "0.12"
+optional = true

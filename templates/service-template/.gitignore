@@ -1,0 +1,42 @@
+# Compiled binary
+/target/
+
+# Cargo artifacts
+**/Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# Build artifacts
+dist/
+build/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Docker / Podman
+.docker/
+
+# Rust
+rust-toolchain

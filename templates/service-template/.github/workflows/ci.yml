@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+# Cancel previous runs for the same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build and test job
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.97
+          profile: minimal
+          components: rustfmt, clippy
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt --all --check
+
+      - name: Clippy lint
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-targets
+
+      - name: Documentation
+        run: cargo doc --no-deps --all-features
+
+  # Database tests (optional, requires self-hosted runner with databases)
+  # Uncomment and configure if you have database services
+  # db-test:
+  #   name: Database Tests
+  #   runs-on: ubuntu-latest
+  #   services:
+  #     postgres:
+  #       image: postgres:18-alpine
+  #       env:
+  #         POSTGRES_USER: service
+  #         POSTGRES_PASSWORD: service
+  #         POSTGRES_DB: service_test
+  #       ports:
+  #         - 5432:5432
+  #       options: --health-cmd pg_isready -U service -d service_test --health-interval 10s --health-timeout 5s --health-retries 5
+  #   steps:
+  #     - name: Checkout repository
+  #       uses: actions/checkout@v4
+  #     
+  #     - name: Install Rust
+  #       uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         toolchain: 1.97
+  #         profile: minimal
+  #     
+  #     - name: Cache dependencies
+  #       uses: Swatinem/rust-cache@v2
+  #     
+  #     - name: Run database tests
+  #       env:
+  #         DATABASE_URL: postgres://service:service@localhost:5432/service_test
+  #       run: cargo test --all-features -- --ignored
+
+  # Security audit
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.97
+          profile: minimal
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Run security audit
+        run: cargo audit
+
+  # Supply chain check
+  supply-chain:
+    name: Supply Chain Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.97
+          profile: minimal
+
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-deny
+        run: cargo install cargo-deny
+
+      - name: Run supply chain checks
+        run: cargo deny --all-features check advisories bans licenses sources
+
+  # Release
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, audit, supply-chain]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: 1.97
+          profile: minimal
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: target/release/service-template
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
