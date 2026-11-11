@@ -168,7 +168,7 @@ services:
 - [x] Create pre-commit hooks (rustfmt, clippy) - **Complete** (see .pre-commit-config.yaml)
 - [x] Add a `justfile` for common commands - **Complete** (see justfile)
 - [x] Add a Makefile for common commands - **Complete** (see Makefile)
-- [ ] Create a template repository for new axa services
+- [x] Create a template repository for new axa services - **Complete** (see [templates](../../../templates/))
 
 ### 4. Performance & Observability (Priority: Medium)
 
@@ -269,7 +269,7 @@ services:
 
 ### Phase 3: Medium-term (Next 6 Months)
 
-1. Create template repository for new services
+1. Create template repository for new services - **✓ Complete** (see templates/ directory)
 2. Implement Testcontainers integration
 3. Launch "Powered by axa" page
 4. Start monthly office hours

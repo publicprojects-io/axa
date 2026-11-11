@@ -32,6 +32,10 @@
       "examples/todo-api/README.md",
       "examples/multi-tenant/README.md"
     ],
+    "templates": [
+      "templates/README.md",
+      "templates/service-template/README.md"
+    ],
     "guides": [
       "help/axa-for-actix-users/index.md",
       "help/axa-for-loco-users/index.md",

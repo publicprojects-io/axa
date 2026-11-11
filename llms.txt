@@ -55,6 +55,11 @@
 - [axa-skill](skill/axa-skill/SKILL.md): building a service with Axa
 - [axa-maintainer-skill](skill/axa-maintainer-skill/SKILL.md): working on the Axa codebase
 
+## Templates
+
+- [templates/README](templates/README.md): Templates index
+- [templates/service-template/](templates/service-template/README.md): Service template for new projects
+
 ## Guides
 
 - [axa for Loco users](help/axa-for-loco-users/index.md)
