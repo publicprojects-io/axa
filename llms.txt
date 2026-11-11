@@ -19,7 +19,8 @@
 - [docs/FEATURES](docs/FEATURES.md): Feature selection guide with decision tree
 - [docs/CONFIGURATION](docs/CONFIGURATION.md): Complete configuration reference
 - [docs/EXAMPLES](docs/EXAMPLES.md): Real-world patterns and recipes
-- [docs/ARCHITECTURE](docs/ARCHITECTURE.md): Visual architecture overview
+- [docs/ARCHITECTURE](docs/ARCHITECTURE.md): Architecture principles and design
+- [docs/ARCHITECTURE-DIAGRAM](docs/ARCHITECTURE-DIAGRAM.md): Visual architecture diagrams (Mermaid)
 
 ### Comparison Documents
 

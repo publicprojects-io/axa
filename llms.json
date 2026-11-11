@@ -18,7 +18,8 @@
       "docs/FEATURES.md",
       "docs/CONFIGURATION.md",
       "docs/EXAMPLES.md",
-      "docs/ARCHITECTURE.md"
+      "docs/ARCHITECTURE.md",
+      "docs/ARCHITECTURE-DIAGRAM.md"
     ],
     "guides": [
       "help/axa-for-actix-users/index.md",

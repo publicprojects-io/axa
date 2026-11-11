@@ -2,6 +2,8 @@
 
 This document explains the architectural principles and design of axa.
 
+**Visual Diagrams**: See [ARCHITECTURE-DIAGRAM.md](./ARCHITECTURE-DIAGRAM.md) for Mermaid-based visual architecture diagrams.
+
 ---
 
 ## Core Principles
