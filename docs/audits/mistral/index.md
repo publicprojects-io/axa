@@ -94,7 +94,7 @@
 
 **Action Items**:
 - [x] Split README into multiple pages (overview, installation, examples) - **Complete** (see docs/ directory)
-- [ ] Add a "Choosing Features" guide
+- [x] Add a "Choosing Features" guide - **Complete** (see [choosing-features](../choosing-features/index.md))
 - [x] Create a visual architecture diagram - **Complete** (see [architecture-diagram](../architecture-diagram/index.md))
 - [ ] Add more real-world examples (not just snippets)
 

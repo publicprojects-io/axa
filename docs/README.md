@@ -16,6 +16,8 @@ Welcome to the axa documentation hub. This directory contains detailed guides, r
 
 Learn how to use axa effectively:
 
+- [Quick Start Guide](quickstart/index.md) - Get a working service in 5 minutes
+- [Choosing Features](choosing-features/index.md) - Decision tree for feature selection
 - [Feature Selection Guide](features/index.md) - Choose the right features for your project
 - [Configuration Reference](configuration/index.md) - All configuration options explained
 - [Examples and Recipes](examples/index.md) - Real-world patterns and solutions
@@ -30,6 +32,7 @@ Learn how to use axa effectively:
 | Document | Purpose | Audience |
 |----------|---------|----------|
 | [quickstart/](quickstart/index.md) | Hands-on introduction | Beginners |
+| [choosing-features/](choosing-features/index.md) | Feature decision tree | All users |
 | [features/](features/index.md) | Feature selection & comparison | All users |
 | [configuration/](configuration/index.md) | Configuration reference | All users |
 | [architecture/](architecture/index.md) | Design & architecture | Advanced users |

@@ -17,6 +17,7 @@
     "docs": [
       "docs/README.md",
       "docs/quickstart/index.md",
+      "docs/choosing-features/index.md",
       "docs/features/index.md",
       "docs/configuration/index.md",
       "docs/examples/index.md",

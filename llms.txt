@@ -18,6 +18,7 @@
 
 - [docs/README](docs/README.md): Documentation index
 - [docs/quickstart/](docs/quickstart/index.md): Hands-on 5-minute tutorial
+- [docs/choosing-features/](docs/choosing-features/index.md): Feature selection decision tree
 - [docs/features/](docs/features/index.md): Feature selection guide with decision tree
 - [docs/configuration/](docs/configuration/index.md): Complete configuration reference
 - [docs/examples/](docs/examples/index.md): Real-world patterns and recipes
