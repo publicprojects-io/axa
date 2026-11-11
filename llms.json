@@ -14,6 +14,8 @@
     "changelog": "CHANGELOG.md",
     "contributing": "CONTRIBUTING.md",
     "roadmap": "ROADMAP.md",
+    "makefile": "Makefile",
+    "justfile": "justfile",
     "docs": [
       "docs/README.md",
       "docs/quickstart/index.md",
@@ -23,6 +25,12 @@
       "docs/examples/index.md",
       "docs/architecture/index.md",
       "docs/architecture-diagram/index.md"
+    ],
+    "examples": [
+      "examples/README.md",
+      "examples/basic-service/README.md",
+      "examples/todo-api/README.md",
+      "examples/multi-tenant/README.md"
     ],
     "guides": [
       "help/axa-for-actix-users/index.md",

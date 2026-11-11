@@ -13,6 +13,8 @@
 - [llms.json](llms.json): this index, machine-readable
 - [CONTRIBUTING](CONTRIBUTING.md): development setup and contribution guidelines
 - [ROADMAP](ROADMAP.md): development roadmap and planned features
+- [Makefile](Makefile): common development commands
+- [justfile](justfile): alternative common development commands
 
 ### Documentation Hub
 
@@ -24,6 +26,13 @@
 - [docs/examples/](docs/examples/index.md): Real-world patterns and recipes
 - [docs/architecture/](docs/architecture/index.md): Architecture principles and design
 - [docs/architecture-diagram/](docs/architecture-diagram/index.md): Visual architecture diagrams (Mermaid)
+
+### Examples
+
+- [examples/README](examples/README.md): Examples index
+- [examples/basic-service/](examples/basic-service/README.md): Minimal axa service
+- [examples/todo-api/](examples/todo-api/README.md): RESTful Todo API with database
+- [examples/multi-tenant/](examples/multi-tenant/README.md): Multi-tenant service with schema isolation
 
 ### Comparison Documents
 
