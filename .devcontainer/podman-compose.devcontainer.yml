@@ -1,13 +1,13 @@
 version: '3.8'
 
 # Development container override for VS Code Dev Containers
-# This file extends docker-compose.yml to add the application service
+# This file extends podman-compose.yml to add the application service
 
 services:
   app:
     build:
       context: .
-      dockerfile: .devcontainer/Dockerfile
+      dockerfile: .devcontainer/Containerfile
     container_name: axa-dev
     volumes:
       - ..:/workspace:cached

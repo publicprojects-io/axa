@@ -1,4 +1,4 @@
-# Dev container Dockerfile for Axa development
+# Dev container Containerfile for Axa development
 # Based on the official Rust image
 
 FROM rust:1.97-slim

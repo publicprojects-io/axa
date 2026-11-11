@@ -1,8 +1,8 @@
 version: '3.8'
 
-# Docker Compose configuration for local development with Axa
-# Run with: docker-compose up -d
-# Stop with: docker-compose down
+# Podman Compose configuration for local development with Axa
+# Run with: podman-compose up -d
+# Stop with: podman-compose down
 #
 # Services:
 # - PostgreSQL: localhost:5432, user=axa, password=axa, database=axa_development

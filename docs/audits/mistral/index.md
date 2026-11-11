@@ -111,7 +111,7 @@
 **Recommendations**:
 
 ```yaml
-# docker-compose.yml (NEW)
+# podman-compose.yml (NEW)
 services:
   postgres:
     image: postgres:18-alpine
@@ -126,7 +126,7 @@ services:
 ```
 
 **Action Items**:
-- [x] Add docker-compose.yml for local testing - **Complete** (see docker-compose.yml)
+- [x] Add podman-compose.yml for local testing - **Complete** (see podman-compose.yml)
 - [ ] Create a `test-util` crate for shared test infrastructure
 - [ ] Document how to run full test suite locally
 - [ ] Consider Testcontainers integration for easier setup
@@ -147,7 +147,7 @@ services:
 # .devcontainer/devcontainer.json (NEW)
 {
   "name": "axa",
-  "dockerComposeFile": ["docker-compose.yml", "docker-compose.dev.yml"],
+  "dockerComposeFile": ["podman-compose.yml", "podman-compose.devcontainer.yml"],
   "service": "app",
   "workspaceFolder": "/workspace",
   "features": {
@@ -159,7 +159,7 @@ services:
 ```
 
 **Action Items**:
-- [x] Add dev container configuration - **Complete** (see .devcontainer/ directory)
+- [x] Add dev container configuration - **Complete** (see .devcontainer/ directory, using Podman)
 - [x] Create pre-commit hooks (rustfmt, clippy) - **Complete** (see .pre-commit-config.yaml)
 - [ ] Add a `justfile` or `Makefile` for common commands
 - [ ] Create a template repository for new axa services
@@ -246,7 +246,7 @@ services:
 
 ### Phase 1: Immediate (Next 30 Days)
 
-1. Add docker-compose.yml for local development - **✓ Complete**
+1. Add podman-compose.yml for local development - **✓ Complete**
 2. Split README into multiple focused documents - **✓ Complete** (see docs/ directory)
 3. Remove untracked src/main.rs
 4. Add pre-commit hooks - **✓ Complete** (see .pre-commit-config.yaml)

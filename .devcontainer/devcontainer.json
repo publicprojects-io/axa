@@ -1,6 +1,6 @@
 {
     "name": "Axa Development",
-    "dockerComposeFile": ["../docker-compose.yml", "docker-compose.devcontainer.yml"],
+    "dockerComposeFile": ["../podman-compose.yml", "podman-compose.devcontainer.yml"],
     "service": "app",
     "workspaceFolder": "/workspace",
     "shutdownAction": "stopCompose",
