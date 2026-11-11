@@ -1,8 +1,8 @@
 # Quick Start Guide
 
-**axa** is a shared library for web services built with Axum. It provides route tables, middleware, health checks, configuration, logging, and more — all while keeping your `main.rs` as ordinary Rust.
+**Axa** is a shared library for web services built with Axum. It provides route tables, middleware, health checks, configuration, logging, and more — all while keeping your `main.rs` as ordinary Rust.
 
-This guide gets you from zero to a working axa service in 5 minutes.
+This guide gets you from zero to a working Axa service in 5 minutes.
 
 ---
 
@@ -32,7 +32,7 @@ cd hello-axa
 
 ---
 
-## Step 2: Add axa to Your Dependencies
+## Step 2: Add Axa to Your Dependencies
 
 Edit `Cargo.toml`:
 
@@ -43,18 +43,20 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axa = "0.10"
+axa = "0.12.1"
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-For a service with a database, add the `sqlx` feature:
+For a service with a PostgreSQL database using sqlx, add the `postgres-sqlx` feature:
 ```toml
 [dependencies]
-axa = { version = "0.10", features = ["sqlx"] }
+axa = { version = "0.12.1", features = ["postgres-sqlx"] }
 ```
+
+For other databases, use `postgres-seaorm`, `postgres-diesel`, `postgres-toasty`, `mysql-sqlx`, `mysql-seaorm`, `mysql-diesel`, `mysql-toasty`, `sqlite-sqlx`, `sqlite-seaorm`, or `sqlite-diesel`.
 
 ---
 
@@ -73,7 +75,7 @@ use axa::{
 
 async fn hello() -> Result<Response> {
     format::json(serde_json::json!({
-        "message": "Hello from axa!",
+        "message": "Hello from Axa!",
         "timestamp": chrono::Utc::now().to_rfc3339()
     }))
 }
@@ -127,21 +129,21 @@ Open another terminal and test your endpoints:
 curl http://localhost:1241/api/hello
 
 # Built-in health checks
-curl http://localhost:1241/_ping
-curl http://localhost:1241/_health
-curl http://localhost:1241/_readiness
+curl http://localhost:1241/_health/live
+curl http://localhost:1241/_health/ready
+curl http://localhost:1241/_health/startup
 ```
 
 You should see:
 ```json
-{"message":"Hello from axa!","timestamp":"2026-11-09T10:00:00Z"}
+{"message":"Hello from Axa!","timestamp":"2026-11-09T10:00:00Z"}
 ```
 
 ---
 
 ## Step 6: Add Configuration (Optional)
 
-axa reads configuration from environment variables. Try these:
+Axa reads configuration from environment variables. Try these:
 
 ```bash
 # Change the port
@@ -160,7 +162,7 @@ See [Configuration](CONFIGURATION.md) for all available options.
 
 ## Step 7: Add a Database (Optional)
 
-If you added the `sqlx` feature, you can connect to PostgreSQL:
+If you added a database feature (e.g., `postgres-sqlx`), you can connect to PostgreSQL:
 
 ```rust
 use axa::db;
@@ -185,7 +187,7 @@ async fn main() -> Result<()> {
 }
 ```
 
-In development, axa will automatically connect to `postgres://postgres:postgres@localhost:5432/hello_axa_development`.
+In development, Axa will automatically connect to `postgres://postgres:postgres@localhost:5432/hello_axa_development`.
 
 ---
 
@@ -221,7 +223,7 @@ let router = AppRoutes::with_default_routes()
 
 ## Step 9: Use Error Handling
 
-axa provides convenient error helpers:
+Axa provides convenient error helpers:
 
 ```rust
 use axa::{not_found, bad_request};
@@ -245,7 +247,7 @@ All errors automatically return RFC 9457 problem details with appropriate HTTP s
 
 ## Step 10: Add Middleware
 
-axa applies a standard middleware stack automatically. You can customize it:
+Axa applies a standard middleware stack automatically. You can customize it:
 
 ```rust
 use axa::middleware;
@@ -267,7 +269,7 @@ let app = middleware::apply(router, &ctx.config.http)?;
 
 ## Next Steps
 
-You now have a working axa service! Here's what to explore next:
+You now have a working Axa service! Here's what to explore next:
 
 - [Choosing Features](FEATURES.md) - Which crates to use for your use case
 - [Configuration Guide](CONFIGURATION.md) - All environment variables and defaults
@@ -279,5 +281,5 @@ You now have a working axa service! Here's what to explore next:
 ## Need Help?
 
 - Check the [specification](../spec/index.md) for exact behavior
-- Review the [upgrade guide](../help/upgrading-to-0.3/index.md) if migrating from an older version
-- See [From Loco into axa](../help/from-loco-into-axa/index.md) if converting from Loco
+- Review the [upgrade guide](../help/upgrading-to-0.12/index.md) if migrating from an older version
+- See [Converting a project from Loco to Axa](../help/from-loco-into-axa/index.md) if converting from Loco

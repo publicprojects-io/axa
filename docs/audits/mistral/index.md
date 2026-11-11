@@ -2,14 +2,14 @@
 
 **Date**: 2026-11-09  
 **Auditor**: Mistral Vibe  
-**Version**: 0.10.0  
+**Version**: 0.12.1  
 **Status**: Complete
 
 ---
 
 ## Executive Summary
 
-**axa** is a mature, well-architected Rust library (v0.10.0) that provides shared infrastructure for Axum-based web services. It successfully achieves its core mission: enabling auditable services where the entire code path is readable without framework indirection. The project demonstrates exceptional engineering discipline with its spec-first approach, comprehensive testing, and security-focused defaults.
+**axa** is a mature, well-architected Rust library (v0.12.1) that provides shared infrastructure for Axum-based web services. It successfully achieves its core mission: enabling auditable services where the entire code path is readable without framework indirection. The project demonstrates exceptional engineering discipline with its spec-first approach, comprehensive testing, and security-focused defaults.
 
 **Overall Health: 8.5/10** - Excellent foundation with room for strategic improvements
 

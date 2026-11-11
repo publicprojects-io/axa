@@ -8,6 +8,14 @@ This guide helps you choose which axa features and crates to use for your projec
 
 axa follows a **modular design**: the main `axa` crate provides core functionality, while optional features add specific capabilities through separate crates.
 
+Each feature is named for its database and library:
+
+| | sqlx | SeaORM | Diesel | Toasty |
+|---|---|---|---|---|
+| Postgres | `postgres-sqlx` | `postgres-seaorm` | `postgres-diesel` | `postgres-toasty` |
+| MySQL | `mysql-sqlx` | `mysql-seaorm` | `mysql-diesel` | `mysql-toasty` |
+| SQLite | `sqlite-sqlx` | `sqlite-seaorm` | `sqlite-diesel` | |
+
 ```
 ┌─────────────────────────────────────────┐
 │              axa (core)                 │
@@ -19,7 +27,7 @@ axa follows a **modular design**: the main `axa` crate provides core functionali
     ┌─────────────┼─────────────┐
     ▼             ▼             ▼
 ┌─────────┐   ┌─────────┐   ┌─────────┐
-│  sqlx   │   │  queue  │   │ session │
+│ postgres|   │  queue  │   │ session │
 │ (DB)    │   │ (Jobs)  │   │ (Auth)  │
 └─────────┘   └─────────┘   └─────────┘
     ...         ...         ...
@@ -34,11 +42,19 @@ axa follows a **modular design**: the main `axa` crate provides core functionali
 **Do you need a database?**
 
 - **No database needed** → Use core `axa` only
-- **PostgreSQL with sqlx (RECOMMENDED)** → Add `axa = { version = "0.10", features = ["sqlx"] }`
-- **PostgreSQL with SeaORM** → Add `axa = { version = "0.10", features = ["sea-orm"] }`
-- **PostgreSQL with Diesel (no native libpq)** → Add `axa = { version = "0.10", features = ["diesel"] }`
+- **PostgreSQL with sqlx (RECOMMENDED)** → Add `axa = { version = "0.12.1", features = ["postgres-sqlx"] }`
+- **PostgreSQL with SeaORM** → Add `axa = { version = "0.12.1", features = ["postgres-seaorm"] }`
+- **PostgreSQL with Diesel (no native libpq)** → Add `axa = { version = "0.12.1", features = ["postgres-diesel"] }`
+- **PostgreSQL with Toasty** → Add `axa = { version = "0.12.1", features = ["postgres-toasty"] }`
+- **MySQL with sqlx** → Add `axa = { version = "0.12.1", features = ["mysql-sqlx"] }`
+- **MySQL with SeaORM** → Add `axa = { version = "0.12.1", features = ["mysql-seaorm"] }`
+- **MySQL with Diesel (no native libmysqlclient)** → Add `axa = { version = "0.12.1", features = ["mysql-diesel"] }`
+- **MySQL with Toasty** → Add `axa = { version = "0.12.1", features = ["mysql-toasty"] }`
+- **SQLite with sqlx** → Add `axa = { version = "0.12.1", features = ["sqlite-sqlx"] }`
+- **SQLite with SeaORM** → Add `axa = { version = "0.12.1", features = ["sqlite-seaorm"] }`
+- **SQLite with Diesel** → Add `axa = { version = "0.12.1", features = ["sqlite-diesel"] }`
 
-**Recommendation**: Use `sqlx` unless you have existing SeaORM code. Diesel is for environments where you cannot link `libpq`.
+**Recommendation**: Use `postgres-sqlx` unless you have existing code in another library. SeaORM adds models and schema helpers. Diesel needs no C database client library. Toasty is before 1.0, and its migrations go forward only. For SQLite, only sqlx and SeaORM are published: the Diesel and Toasty crates are in the repository but not on crates.io.
 
 ---
 
@@ -47,14 +63,18 @@ axa follows a **modular design**: the main `axa` crate provides core functionali
 **Do you need to run background jobs?**
 
 - **No** → Skip
-- **Yes, with PostgreSQL-backed queue** → Add `axa = { version = "0.10", features = ["queue"] }`
+- **Yes, with Postgres queue** → Add `axa = { version = "0.12.1", features = ["queue"] }`
+- **Yes, with MySQL queue** → Add `axa-mysql-job-queue` crate (not a feature)
+- **Yes, with SQLite queue** → Add `axa-sqlite-job-queue` crate (not a feature)
 - **Yes, with in-process execution** → Use `BackgroundAsync` worker mode (built into core)
 
-The `queue` feature provides:
-- Job persistence in PostgreSQL
+The `queue` feature (for Postgres) provides:
+- Job persistence in Postgres
 - Worker pool management
 - Retry with exponential backoff
 - Scheduled jobs with `Queue::every()`
+
+The MySQL and SQLite job queues are separate crates with the same API.
 
 ---
 
@@ -63,8 +83,8 @@ The `queue` feature provides:
 **Do you need reliable event publishing?**
 
 - **No** → Skip
-- **Yes, basic outbox** → Add `axa = { version = "0.10", features = ["outbox"] }`
-- **Yes, with encrypted payloads** → Add `axa = { version = "0.10", features = ["outbox-encryption"] }`
+- **Yes, basic outbox** → Add `axa = { version = "0.12.1", features = ["outbox"] }`
+- **Yes, with encrypted payloads** → Add `axa = { version = "0.12.1", features = ["outbox-encryption"] }`
 
 The outbox feature provides:
 - Transactional event storage
@@ -72,7 +92,7 @@ The outbox feature provides:
 - Relay process that publishes to your broker
 - Complete audit trail of deliveries and failures
 
-**Note**: You must provide your own broker client.
+**Note**: You must provide your own broker client. Works with Postgres only.
 
 ---
 
@@ -81,8 +101,8 @@ The outbox feature provides:
 **What authentication method do you need?**
 
 - **None / Custom** → Skip
-- **PASETO tokens (RECOMMENDED for new projects)** → Add `axa = { version = "0.10", features = ["paseto"] }`
-- **Keycloak OAuth2 / OIDC** → Add `axa = { version = "0.10", features = ["keycloak"] }`
+- **PASETO tokens (RECOMMENDED for new projects)** → Add `axa = { version = "0.12.1", features = ["paseto"] }`
+- **Keycloak OAuth2 / OIDC** → Add `axa = { version = "0.12.1", features = ["keycloak"] }`
 - **Both PASETO and Keycloak** → Add both features
 
 **Comparison**:
@@ -99,7 +119,7 @@ The outbox feature provides:
 **Do you need browser-based sessions?**
 
 - **No (API only)** → Skip
-- **Yes, with cookies** → Add `axa = { version = "0.10", features = ["session"] }`
+- **Yes, with cookies** → Add `axa = { version = "0.12.1", features = ["session"] }`
 
 The `session` feature provides:
 - Secure, encrypted sessions
@@ -114,7 +134,7 @@ The `session` feature provides:
 **Do you need API versioning?**
 
 - **No** → Skip
-- **Yes, header-based** → Add `axa = { version = "0.10", features = ["versioning"] }`
+- **Yes, header-based** → Add `axa = { version = "0.12.1", features = ["versioning"] }`
 
 The `versioning` feature provides:
 - `Accepts-Version` header negotiation
@@ -128,7 +148,7 @@ The `versioning` feature provides:
 **Do you need caching?**
 
 - **No** → Skip
-- **Yes, Redis cache** → Add `axa = { version = "0.10", features = ["redis"] }`
+- **Yes, Redis cache** → Add `axa = { version = "0.12.1", features = ["redis"] }`
 
 The `redis` feature provides:
 - Mandatory TTL on all entries
@@ -143,7 +163,7 @@ The `redis` feature provides:
 **Do you need request rate limiting?**
 
 - **No** → Skip
-- **Yes, in-process** → Add `axa = { version = "0.10", features = ["ratelimit"] }`
+- **Yes, in-process** → Add `axa = { version = "0.12.1", features = ["ratelimit"] }`
 
 The `ratelimit` feature provides:
 - Per-client limits
@@ -159,7 +179,7 @@ The `ratelimit` feature provides:
 **Do you need to paginate collections?**
 
 - **No** → Skip
-- **Yes, cursor-based** → Add `axa = { version = "0.10", features = ["cursor-pagination"] }`
+- **Yes, cursor-based** → Add `axa = { version = "0.12.1", features = ["cursor-pagination"] }`
 
 The `cursor-pagination` feature provides:
 - Opaque, signed cursors
@@ -176,12 +196,18 @@ The `cursor-pagination` feature provides:
 **Do you need HTML templates?**
 
 - **No** → Skip
-- **Yes, Tera templates** → Add `axa = { version = "0.10", features = ["tera"] }`
+- **Yes, Tera templates** → Add `axa = { version = "0.12.1", features = ["tera"] }`
+- **Yes, Maud templates** → Add `axa = { version = "0.12.1", features = ["maud"] }`
 
 The `tera` feature provides:
 - Safe HTML escaping by default
 - Custom error handling
 - Template inheritance
+
+The `maud` feature provides:
+- Compile-time HTML templates
+- Safe escaping by default
+- Generic errors
 
 ---
 
@@ -190,9 +216,9 @@ The `tera` feature provides:
 **Do you need observability?**
 
 - **No** → Skip
-- **Yes, Prometheus metrics** → Add `axa = { version = "0.10", features = ["prometheus"] }`
-- **Yes, OpenTelemetry tracing** → Add `axa = { version = "0.10", features = ["opentelemetry"] }`
-- **Yes, advanced tracing** → Add `axa = { version = "0.10", features = ["tracing"] }`
+- **Yes, Prometheus metrics** → Add `axa = { version = "0.12.1", features = ["prometheus"] }`
+- **Yes, OpenTelemetry tracing** → Add `axa = { version = "0.12.1", features = ["opentelemetry"] }`
+- **Yes, advanced tracing** → Add `axa = { version = "0.12.1", features = ["tracing"] }`
 
 | Feature | Purpose |
 |---------|---------|
@@ -207,7 +233,7 @@ The `tera` feature provides:
 **Do you need API documentation?**
 
 - **No** → Skip
-- **Yes, OpenAPI docs** → Add `axa = { version = "0.10", features = ["openapi"] }`
+- **Yes, OpenAPI docs** → Add `axa = { version = "0.12.1", features = ["openapi"] }`
 
 The `openapi` feature provides:
 - OpenAPI document serving
@@ -221,13 +247,15 @@ The `openapi` feature provides:
 **Do you need idempotent writes?**
 
 - **No** → Skip
-- **Yes, idempotency keys** → Add `axa = { version = "0.10", features = ["idempotency"] }`
+- **Yes, idempotency keys** → Add `axa = { version = "0.12.1", features = ["idempotency"] }`
 
 The `idempotency` feature provides:
 - `Idempotency-Key` header handling
 - 24-hour TTL by default
 - At-most-once semantics
 - Sweeper for expired keys
+
+**Note**: Works with Postgres only.
 
 ---
 
@@ -237,7 +265,7 @@ The `idempotency` feature provides:
 
 ```toml
 [dependencies]
-axa = { version = "0.10", features = ["sqlx", "cursor-pagination", "ratelimit"] }
+axa = { version = "0.12.1", features = ["postgres-sqlx", "cursor-pagination", "ratelimit"] }
 ```
 
 Perfect for: JSON APIs, microservices, internal tools
@@ -249,9 +277,9 @@ Perfect for: JSON APIs, microservices, internal tools
 ```toml
 [dependencies]
 axa = { 
-    version = "0.10", 
+    version = "0.12.1", 
     features = [
-        "sqlx",
+        "postgres-sqlx",
         "session", 
         "tera",
         "cursor-pagination",
@@ -270,8 +298,8 @@ Perfect for: User-facing applications, admin panels
 ```toml
 [dependencies]
 axa = { 
-    version = "0.10", 
-    features = ["sqlx", "queue", "outbox"] 
+    version = "0.12.1", 
+    features = ["postgres-sqlx", "queue", "outbox"] 
 }
 ```
 
@@ -284,9 +312,9 @@ Perfect for: CQRS, event sourcing, reliable messaging
 ```toml
 [dependencies]
 axa = { 
-    version = "0.10", 
+    version = "0.12.1", 
     features = [
-        "sqlx",
+        "postgres-sqlx",
         "paseto",
         "idempotency",
         "outbox-encryption",
@@ -303,9 +331,17 @@ Perfect for: Financial services, healthcare, government
 
 | Feature | DB | Jobs | Auth | Sessions | Cache | Rate Limit | Versioning | Docs | Templates | Tracing | Metrics | Outbox |
 |---------|----|------|------|----------|-------|------------|-----------|------|----------|---------|---------|--------|
-| `sqlx` | ✅ | | | | | | | | | | | |
-| `sea-orm` | ✅ | | | | | | | | | | | |
-| `diesel` | ✅ | | | | | | | | | | | |
+| `postgres-sqlx` | ✅ | | | | | | | | | | | |
+| `postgres-seaorm` | ✅ | | | | | | | | | | | |
+| `postgres-diesel` | ✅ | | | | | | | | | | | |
+| `postgres-toasty` | ✅ | | | | | | | | | | | |
+| `mysql-sqlx` | ✅ | | | | | | | | | | | |
+| `mysql-seaorm` | ✅ | | | | | | | | | | | |
+| `mysql-diesel` | ✅ | | | | | | | | | | | |
+| `mysql-toasty` | ✅ | | | | | | | | | | | |
+| `sqlite-sqlx` | ✅ | | | | | | | | | | | |
+| `sqlite-seaorm` | ✅ | | | | | | | | | | | |
+| `sqlite-diesel` | ✅ | | | | | | | | | | | |
 | `queue` | ✅ | ✅ | | | | | | | | | | |
 | `outbox` | ✅ | ✅ | | | | | | | | | | ✅ |
 | `outbox-encryption` | ✅ | ✅ | | | | | | | | | | ✅ |
@@ -317,6 +353,7 @@ Perfect for: Financial services, healthcare, government
 | `versioning` | | | | | | | ✅ | | | | | |
 | `openapi` | | | | | | | | ✅ | | | | |
 | `tera` | | | | | | | | | ✅ | | | |
+| `maud` | | | | | | | | | ✅ | | | |
 | `tracing` | | | | | | | | | | ✅ | | |
 | `prometheus` | | | | | | | | | | | ✅ | |
 | `opentelemetry` | | | | | | | | | | ✅ | ✅ | |
@@ -331,9 +368,17 @@ Each feature adds dependencies. Here's the impact of each:
 
 | Feature | Additional Dependencies | Notes |
 |---------|------------------------|-------|
-| `sqlx` | sqlx | Heavy, but well-maintained |
-| `sea-orm` | sea-orm | Large dependency tree |
-| `diesel` | diesel | No native libpq |
+| `postgres-sqlx` | sqlx, axa-postgres-sqlx | PostgreSQL support |
+| `postgres-seaorm` | sea-orm, axa-postgres-seaorm | PostgreSQL with SeaORM |
+| `postgres-diesel` | diesel, axa-postgres-diesel | PostgreSQL with Diesel, no libpq |
+| `postgres-toasty` | toasty, axa-postgres-toasty | PostgreSQL with Toasty |
+| `mysql-sqlx` | sqlx, axa-mysql-sqlx | MySQL support |
+| `mysql-seaorm` | sea-orm, axa-mysql-seaorm | MySQL with SeaORM |
+| `mysql-diesel` | diesel, axa-mysql-diesel | MySQL with Diesel, no libmysqlclient |
+| `mysql-toasty` | toasty, axa-mysql-toasty | MySQL with Toasty |
+| `sqlite-sqlx` | sqlx, axa-sqlite-sqlx | SQLite support |
+| `sqlite-seaorm` | sea-orm, axa-sqlite-seaorm | SQLite with SeaORM |
+| `sqlite-diesel` | diesel, axa-sqlite-diesel | SQLite with Diesel |
 | `queue` | axa-postgres-job-queue | Requires PostgreSQL |
 | `outbox` | axa-transactional-outbox | Requires PostgreSQL |
 | `paseto` | axa-paseto-auth | Minimal dependencies |
@@ -344,6 +389,7 @@ Each feature adds dependencies. Here's the impact of each:
 | `versioning` | axa-accepts-version-negotiation | |
 | `openapi` | axa-openapi-docs | |
 | `tera` | axa-tera-templates | |
+| `maud` | axa-maud-templates, maud | Compile-time templates |
 | `tracing` | axa-tracing | |
 | `prometheus` | axa-prometheus-metrics | |
 | `opentelemetry` | axa-opentelemetry | |
@@ -356,17 +402,19 @@ Each feature adds dependencies. Here's the impact of each:
 
 ## Migration Notes
 
-### Upgrading from axa 0.9
+### Upgrading from axa 0.9 or earlier
 
-See [UPGRADING.md](../help/upgrading-to-0.3/index.md) for details.
+See [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md) for details.
 
 **Key changes**:
 - The `testing` feature is now the `axa-test` crate
-- Thirteen crates were renamed (e.g., `axa-ratelimit` → `axa-request-rate-limit`)
+- Thirteen crates were renamed to include their database: `axa-sqlx` → `axa-postgres-sqlx`, `axa-seaorm` → `axa-postgres-seaorm`, etc.
+- MySQL and SQLite support was added
+- The health routes changed: `/_health/live`, `/_health/ready`, `/_health/startup`
 
 ### From Loco
 
-See [FROM_LOCO.md](../help/from-loco-into-axa/index.md) for a complete migration guide.
+See [Converting a project from Loco to Axa](help/from-loco-into-axa/index.md) for a complete migration guide.
 
 ---
 
@@ -374,7 +422,7 @@ See [FROM_LOCO.md](../help/from-loco-into-axa/index.md) for a complete migration
 
 1. **Start small**: Begin with core `axa` only
 2. **Add features as needed**: Don't enable everything at once
-3. **Test each feature**: Some features require PostgreSQL or other services
+3. **Test each feature**: Some features require PostgreSQL, MySQL, SQLite, or other services
 4. **Monitor dependencies**: Use `cargo tree` to understand what you're pulling in
 5. **Review security**: Each feature has its own security considerations
 
