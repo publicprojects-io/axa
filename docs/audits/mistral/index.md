@@ -96,7 +96,10 @@
 - [x] Split README into multiple pages (overview, installation, examples) - **Complete** (see docs/ directory)
 - [x] Add a "Choosing Features" guide - **Complete** (see [choosing-features](../choosing-features/index.md))
 - [x] Create a visual architecture diagram - **Complete** (see [architecture-diagram](../architecture-diagram/index.md))
-- [ ] Add more real-world examples (not just snippets)
+- [x] Add more real-world examples - **Complete** (see [examples](../../../examples/)):
+  - basic-service: Minimal axa service
+  - todo-api: RESTful API with database
+  - multi-tenant: Schema-per-tenant isolation
 
 ### 2. Test Infrastructure (Priority: High)
 
@@ -127,6 +130,8 @@ services:
 
 **Action Items**:
 - [x] Add podman-compose.yml for local testing - **Complete** (see podman-compose.yml)
+- [x] Create a `justfile` for common commands - **Complete** (see justfile)
+- [x] Add Makefile for common commands - **Complete** (see Makefile)
 - [ ] Create a `test-util` crate for shared test infrastructure
 - [ ] Document how to run full test suite locally
 - [ ] Consider Testcontainers integration for easier setup
@@ -161,7 +166,8 @@ services:
 **Action Items**:
 - [x] Add dev container configuration - **Complete** (see .devcontainer/ directory, using Podman)
 - [x] Create pre-commit hooks (rustfmt, clippy) - **Complete** (see .pre-commit-config.yaml)
-- [ ] Add a `justfile` or `Makefile` for common commands
+- [x] Add a `justfile` for common commands - **Complete** (see justfile)
+- [x] Add a Makefile for common commands - **Complete** (see Makefile)
 - [ ] Create a template repository for new axa services
 
 ### 4. Performance & Observability (Priority: Medium)
@@ -253,10 +259,13 @@ services:
 
 ### Phase 2: Short-term (Next 90 Days)
 
-1. Create dev container configuration - **✓ Complete** (see .devcontainer/ directory)
-2. Add metrics feature for observability
-3. Launch community Discord
-4. Add visual architecture diagram - **✓ Complete** (see [architecture-diagram](../architecture-diagram/index.md))
+1. Create dev container configuration - **✓ Complete** (see .devcontainer/ directory, using Podman)
+2. Add justfile for common commands - **✓ Complete** (see justfile)
+3. Add Makefile for common commands - **✓ Complete** (see Makefile)
+4. Add real-world examples - **✓ Complete** (see examples/ directory)
+5. Add metrics feature for observability
+6. Launch community Discord
+7. Add visual architecture diagram - **✓ Complete** (see [architecture-diagram](../architecture-diagram/index.md))
 
 ### Phase 3: Medium-term (Next 6 Months)
 
