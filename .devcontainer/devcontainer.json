@@ -1,0 +1,61 @@
+{
+    "name": "Axa Development",
+    "dockerComposeFile": ["../docker-compose.yml", "docker-compose.devcontainer.yml"],
+    "service": "app",
+    "workspaceFolder": "/workspace",
+    "shutdownAction": "stopCompose",
+    
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {}
+    },
+    
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer",
+                "tamasfe.even-better-toml",
+                "ms-vscode.cpptools",
+                "redhat.vscode-yaml",
+                "esbenp.prettier-vscode"
+            ],
+            "settings": {
+                "[rust]": {
+                    "editor.defaultFormatter": "rust-lang.rust-analyzer"
+                },
+                "editor.formatOnSave": true,
+                "rust-analyzer.checkOnSave.command": "clippy"
+            }
+        }
+    },
+    
+    "forwardPorts": [1241, 8000, 5432, 3307, 6379],
+    "portsAttributes": {
+        "1241": {
+            "label": "Axa Server",
+            "onAutoForward": "notify"
+        },
+        "8000": {
+            "label": "Alternate Port",
+            "onAutoForward": "silent"
+        },
+        "5432": {
+            "label": "PostgreSQL",
+            "onAutoForward": "silent"
+        },
+        "3307": {
+            "label": "MySQL",
+            "onAutoForward": "silent"
+        },
+        "6379": {
+            "label": "Redis",
+            "onAutoForward": "silent"
+        }
+    },
+    
+    "postCreateCommand": "cargo build --workspace",
+    "postStartCommand": "echo 'Dev container started. Run: cargo run --bin example_service'",
+    
+    "remoteUser": "vscode",
+    "containerUser": "vscode"
+}

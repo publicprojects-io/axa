@@ -1,0 +1,47 @@
+# Pre-commit hooks for Axa
+# Install with: pre-commit install
+# Run manually with: pre-commit run --all-files
+#
+# These hooks run the verification commands from AGENTS.md
+# to ensure code quality before commits.
+
+repos:
+  # Format check
+  - repo: local
+    hooks:
+      - id: fmt-check
+        name: Format check
+        entry: cargo fmt --all --check
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+  # Clippy lint
+  - repo: local
+    hooks:
+      - id: clippy
+        name: Clippy
+        entry: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+  # Documentation build
+  - repo: local
+    hooks:
+      - id: doc
+        name: Documentation
+        entry: cargo doc --workspace --no-deps --all-features
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+  # Unit tests
+  - repo: local
+    hooks:
+      - id: test
+        name: Unit tests
+        entry: cargo test --workspace --all-features --lib
+        language: system
+        pass_filenames: false
+        stages: [commit]

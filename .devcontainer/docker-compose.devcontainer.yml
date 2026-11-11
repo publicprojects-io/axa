@@ -1,0 +1,34 @@
+version: '3.8'
+
+# Development container override for VS Code Dev Containers
+# This file extends docker-compose.yml to add the application service
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    container_name: axa-dev
+    volumes:
+      - ..:/workspace:cached
+      - cargo-cache:/usr/local/cargo/registry
+      - target-cache:/workspace/target
+    command: sleep infinity
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgres://axa:axa@postgres:5432/axa_development
+      - AXA_TEST_DATABASE_URL=postgres://axa:axa@postgres:5432/axa_test
+      - AXA_TEST_MYSQL_URL=mysql://axa:axa@mysql:3306/axa_test
+    networks:
+      - default
+
+volumes:
+  cargo-cache:
+  target-cache:

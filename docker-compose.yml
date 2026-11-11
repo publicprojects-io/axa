@@ -1,0 +1,69 @@
+version: '3.8'
+
+# Docker Compose configuration for local development with Axa
+# Run with: docker-compose up -d
+# Stop with: docker-compose down
+#
+# Services:
+# - PostgreSQL: localhost:5432, user=axa, password=axa, database=axa_development
+# - MySQL: localhost:3307, user=axa, password=axa, database=axa_development
+# - Redis: localhost:6379
+# - SQLite: files created locally in ./data.sqlite
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: axa-postgres
+    environment:
+      POSTGRES_USER: axa
+      POSTGRES_PASSWORD: axa
+      POSTGRES_DB: axa_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axa -d axa_development"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    container_name: axa-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: axa
+      MYSQL_USER: axa
+      MYSQL_PASSWORD: axa
+      MYSQL_DATABASE: axa_development
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uaxa", "-paxa", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    command: --ssl-mode=DISABLED
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    container_name: axa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  mysql_data:
+  redis_data:

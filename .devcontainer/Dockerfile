@@ -1,0 +1,35 @@
+# Dev container Dockerfile for Axa development
+# Based on the official Rust image
+
+FROM rust:1.97-slim
+
+# Install common dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    build-essential \
+    cmake \
+    libssl-dev \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install cargo tools
+RUN cargo install \
+    cargo-audit \
+    cargo-deny \
+    pre-commit-hook
+
+# Create workspace directory
+RUN mkdir -p /workspace
+WORKDIR /workspace
+
+# Install pre-commit
+RUN pip install pre-commit
+
+# Set up pre-commit hooks
+COPY .pre-commit-config.yaml /workspace/
+RUN cd /workspace && pre-commit install --install-hooks
+
+# Verify installation
+RUN cargo --version
+RUN rustc --version
