@@ -132,8 +132,8 @@ services:
 - [x] Add podman-compose.yml for local testing - **Complete** (see podman-compose.yml)
 - [x] Create a `justfile` for common commands - **Complete** (see justfile)
 - [x] Add Makefile for common commands - **Complete** (see Makefile)
-- [ ] Create a `test-util` crate for shared test infrastructure
-- [ ] Document how to run full test suite locally
+- [x] Create a `test-util` crate for shared test infrastructure - **Complete** (see crates/axa-test)
+- [x] Document how to run full test suite locally - **Complete** (see CONTRIBUTING.md)
 - [ ] Consider Testcontainers integration for easier setup
 
 ### 3. Developer Experience (Priority: Medium)
@@ -172,18 +172,24 @@ services:
 
 ### 4. Performance & Observability (Priority: Medium)
 
-**Current State**: Good observability but limited performance metrics.
+**Current State**: Good observability with request metrics already implemented.
+
+**Features**:
+- Request duration metrics by route template (implemented in axa-prometheus-metrics)
+- Request count metrics
+- Prometheus text exposition
+- Standard `/metrics.prom` endpoint
 
 **Issues**:
-- No built-in request duration metrics
 - No health check for memory/CPU usage
 - Limited visibility into queue performance
 
 **Recommendations**:
 
 **Action Items**:
-- [ ] Add optional `metrics` feature with request duration, queue size, etc.
+- [x] Add optional `metrics` feature with request duration, queue size, etc. - **Complete** (see crates/axa-prometheus-metrics)
 - [ ] Consider integrating with `metrics` crate for standardized metrics
+- [ ] Add health check for memory/CPU usage
 - [ ] Add health check for system resources (memory, CPU)
 
 ### 5. Community & Adoption (Priority: Medium)
@@ -263,7 +269,7 @@ services:
 2. Add justfile for common commands - **✓ Complete** (see justfile)
 3. Add Makefile for common commands - **✓ Complete** (see Makefile)
 4. Add real-world examples - **✓ Complete** (see examples/ directory)
-5. Add metrics feature for observability
+5. Add metrics feature for observability - **✓ Complete** (see crates/axa-prometheus-metrics)
 6. Launch community Discord
 7. Add visual architecture diagram - **✓ Complete** (see [architecture-diagram](../architecture-diagram/index.md))
 
