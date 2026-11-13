@@ -33,11 +33,11 @@ use diesel::{
     migration::MigrationSource,
     pg::Pg,
     result::{DatabaseErrorKind, Error as QueryError},
-    sql_types::Text,
+    sql_types::{Bool, Text},
 };
 pub use diesel_async;
 use diesel_async::{
-    AsyncMigrationHarness, AsyncPgConnection, RunQueryDsl,
+    AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, RunQueryDsl, TransactionManager,
     pooled_connection::{
         AsyncDieselConnectionManager, ManagerConfig,
         deadpool::{BuildError, Object, Pool as DeadPool, PoolError},
@@ -319,6 +319,161 @@ pub async fn truncate<S: AsRef<str>>(pool: &Pool, tables: &[S]) -> Result<(), Er
         .execute(&mut connection)
         .await?;
     Ok(())
+}
+
+/// Whether `name` is a custom setting a service may set for row-level security: two or
+/// more parts of lower-case ASCII letters, digits, and underscores, joined by dots, such
+/// as `app.tenant`. A name with no dot is Postgres's own, such as `role` or
+/// `search_path`, which this never sets.
+///
+/// ```
+/// assert!(axa_postgres_diesel::is_custom_setting("app.tenant"));
+/// assert!(!axa_postgres_diesel::is_custom_setting("search_path"));
+/// ```
+#[must_use]
+pub fn is_custom_setting(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('.').collect();
+    name.len() <= 63
+        && parts.len() >= 2
+        && parts.iter().all(|part| {
+            part.chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_lowercase() || first == '_')
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        })
+}
+
+/// Set each `(name, value)` for the rest of the open transaction only, such as
+/// `("app.tenant", tenant.as_str())` for a row-level security policy that reads
+/// `current_setting('app.tenant', true)`. Call it first inside the service's own
+/// transaction, so every query after it on `connection` sees the setting:
+///
+/// ```no_run
+/// # use axa_postgres_diesel::diesel_async::{AsyncConnection, AsyncPgConnection};
+/// # async fn example(connection: &mut AsyncPgConnection) -> Result<(), diesel::result::Error> {
+/// connection
+///     .transaction(async |connection| {
+///         axa_postgres_diesel::set_local(connection, &[("app.tenant", "acme")]).await?;
+///         // The tenant's queries, on `connection`.
+///         Ok::<_, diesel::result::Error>(())
+///     })
+///     .await
+/// # }
+/// ```
+///
+/// Each pair is set with `set_config($1, $2, true)`: bound, never formatted into the
+/// SQL, and gone when the transaction commits or rolls back, so a pooled connection
+/// never carries one request's tenant into the next.
+///
+/// A policy sees nothing unless the role the service connects as is subject to it: not
+/// a superuser, without `BYPASSRLS`, and, if it owns the table, with
+/// `FORCE ROW LEVEL SECURITY` on it. [`row_security`] checks.
+///
+/// # Errors
+///
+/// [`QueryError::NotInTransaction`] with no transaction open, as the setting would then
+/// last for one statement only. [`QueryError::QueryBuilderError`] for a name
+/// [`is_custom_setting`] refuses. Both come before anything is sent. Then any error from
+/// setting a value.
+pub async fn set_local(
+    connection: &mut AsyncPgConnection,
+    settings: &[(&str, &str)],
+) -> Result<(), QueryError> {
+    let depth =
+        <AsyncPgConnection as AsyncConnection>::TransactionManager::transaction_manager_status_mut(
+            connection,
+        )
+        .transaction_depth()?;
+    if depth.is_none() {
+        return Err(QueryError::NotInTransaction);
+    }
+    if let Some((name, _)) = settings.iter().find(|(name, _)| !is_custom_setting(name)) {
+        return Err(QueryError::QueryBuilderError(
+            format!("not a custom setting: {name}").into(),
+        ));
+    }
+    for (name, value) in settings {
+        diesel::sql_query("SELECT set_config($1, $2, true)")
+            .bind::<Text, _>(*name)
+            .bind::<Text, _>(*value)
+            .execute(connection)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Whether row-level security can keep rows apart for the role a pool connects as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowSecurity {
+    /// The role the pool connects as.
+    pub role: String,
+    /// Whether that role skips every policy: a superuser, or a role with `BYPASSRLS`.
+    pub bypasses: bool,
+    /// The tables asked about that do not exist, have no row-level security, or lack
+    /// `FORCE ROW LEVEL SECURITY`, so that their owner skips the policies.
+    pub unprotected: Vec<String>,
+}
+
+impl RowSecurity {
+    /// Whether the policies on every table asked about apply to the role.
+    #[must_use]
+    pub fn holds(&self) -> bool {
+        !self.bypasses && self.unprotected.is_empty()
+    }
+}
+
+/// The current role, and whether it skips every policy.
+#[derive(QueryableByName)]
+struct Role {
+    #[diesel(sql_type = Text)]
+    role: String,
+    #[diesel(sql_type = Bool)]
+    bypasses: bool,
+}
+
+/// Whether a table has row-level security enabled and forced.
+#[derive(QueryableByName)]
+struct Forced {
+    #[diesel(sql_type = Bool)]
+    forced: bool,
+}
+
+/// Ask Postgres whether row-level security can apply to `pool`'s role, and whether
+/// each of `tables`, such as `todos` or `app.todos`, has it enabled and forced. Call it
+/// at boot, after migrating, and refuse to serve when it does not hold.
+///
+/// # Errors
+///
+/// Any error from getting a connection or from the queries.
+pub async fn row_security<S: AsRef<str>>(pool: &Pool, tables: &[S]) -> Result<RowSecurity, Error> {
+    let mut connection = pool.get().await?;
+    let role: Role = diesel::sql_query(
+        "SELECT current_user::text AS role, rolsuper OR rolbypassrls AS bypasses
+         FROM pg_roles WHERE rolname = current_user",
+    )
+    .get_result(&mut connection)
+    .await?;
+    let mut unprotected = Vec::new();
+    for table in tables {
+        let table = table.as_ref();
+        let forced: Vec<Forced> = diesel::sql_query(
+            "SELECT relrowsecurity AND relforcerowsecurity AS forced FROM pg_class
+             WHERE oid = to_regclass($1)",
+        )
+        .bind::<Text, _>(table)
+        .load(&mut connection)
+        .await?;
+        if !<[Forced]>::first(&forced).is_some_and(|row| row.forced) {
+            unprotected.push(table.to_string());
+        }
+    }
+    Ok(RowSecurity {
+        role: role.role,
+        bypasses: role.bypasses,
+        unprotected,
+    })
 }
 
 /// One name from a catalog query.

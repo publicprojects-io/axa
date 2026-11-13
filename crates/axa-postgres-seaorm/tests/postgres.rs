@@ -288,3 +288,95 @@ mod shared {
         );
     }
 }
+
+/// The one setting, or an empty string when unset.
+async fn tenant_on(db: &impl ConnectionTrait) -> String {
+    db.query_one_raw(Statement::from_string(
+        DbBackend::Postgres,
+        "SELECT coalesce(current_setting('app.tenant', true), '') AS tenant",
+    ))
+    .await
+    .unwrap()
+    .unwrap()
+    .try_get("", "tenant")
+    .unwrap()
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL as a superuser, and changes its schema"]
+async fn settings_last_for_their_transaction_and_row_security_is_checked() {
+    use axa_postgres_seaorm::{begin_with, row_security, sea_orm::TransactionTrait};
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    // One connection, so a leak, or SET ROLE, reaches the next query.
+    let mut config = PoolConfig::new(uri);
+    config.min_connections = 1;
+    config.max_connections = 1;
+    let db = connect(&config).await.unwrap();
+
+    let tx = begin_with(&db, &[("app.tenant", "acme")]).await.unwrap();
+    assert_eq!(tenant_on(&tx).await, "acme");
+    tx.commit().await.unwrap();
+    assert_eq!(tenant_on(&db).await, "", "a committed setting leaked");
+    let tx = begin_with(&db, &[("app.tenant", "globex")]).await.unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(tenant_on(&db).await, "", "a rolled-back setting leaked");
+    let error = begin_with(&db, &[("role", "postgres")]).await.unwrap_err();
+    assert!(
+        error.to_string().contains("not a custom setting"),
+        "{error}"
+    );
+    // Nothing was begun for the refused name.
+    db.begin().await.unwrap().rollback().await.unwrap();
+
+    for statement in [
+        "DROP TABLE IF EXISTS sea_rls_plain, sea_rls_forced",
+        "CREATE TABLE sea_rls_plain (tenant_id TEXT)",
+        "CREATE TABLE sea_rls_forced (tenant_id TEXT)",
+        "ALTER TABLE sea_rls_forced ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE sea_rls_forced FORCE ROW LEVEL SECURITY",
+        "DROP ROLE IF EXISTS axa_sea_rls_app",
+        "CREATE ROLE axa_sea_rls_app NOLOGIN",
+    ] {
+        db.execute_unprepared(statement).await.unwrap();
+    }
+    let found = row_security(&db, &["sea_rls_plain", "sea_rls_forced", "sea_rls_missing"])
+        .await
+        .unwrap();
+    assert!(found.bypasses);
+    assert_eq!(found.unprotected, ["sea_rls_plain", "sea_rls_missing"]);
+    db.execute_unprepared("SET ROLE axa_sea_rls_app")
+        .await
+        .unwrap();
+    let found = row_security(&db, &["sea_rls_forced"]).await.unwrap();
+    assert_eq!(found.role, "axa_sea_rls_app");
+    assert!(found.holds(), "{found:?}");
+    db.execute_unprepared("RESET ROLE").await.unwrap();
+    db.execute_unprepared("DROP TABLE sea_rls_plain, sea_rls_forced")
+        .await
+        .unwrap();
+    db.execute_unprepared("DROP ROLE axa_sea_rls_app")
+        .await
+        .unwrap();
+}
+
+#[test]
+fn only_custom_settings_can_be_set() {
+    use axa_postgres_seaorm::is_custom_setting;
+    for name in ["app.tenant", "app.user_id", "a.b.c", "_x.y"] {
+        assert!(is_custom_setting(name), "{name}");
+    }
+    for name in [
+        "role",
+        "search_path",
+        "session_authorization",
+        "app.",
+        ".tenant",
+        "app..tenant",
+        "App.Tenant",
+        "app.tenant; RESET ROLE",
+        "app.2fa",
+        "",
+    ] {
+        assert!(!is_custom_setting(name), "{name}");
+    }
+}

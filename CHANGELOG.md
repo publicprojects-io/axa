@@ -23,7 +23,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`axa_postgres_sqlx::begin_with`** (SQX-8, SQX-9): a transaction with settings such
   as `app.tenant` set for its length only, bound, for Postgres row-level security. It
   sets only custom dotted names, and refuses `role`, `search_path`, and the like.
-- **`axa::db::require_row_security`** (DB-9, SQX-10), with `postgres-sqlx`: at boot,
+- **Row-level security settings and checks in the other Postgres crates** (SOR-5,
+  DSL-6, TOA-4): `axa_postgres_seaorm::begin_with` and `axa_postgres_toasty::begin_with`
+  give a transaction with the settings, and `axa_postgres_diesel::set_local` sets them
+  inside a Diesel transaction, refusing a connection with none open. Each has
+  `row_security`, so `require_row_security` works with any Postgres database feature.
+  MySQL and SQLite have no row-level security, so their crates have neither.
+- **`axa::db::require_row_security`** (DB-9, SQX-10), with any Postgres database feature: at boot,
   production refuses a role that is a superuser or has `BYPASSRLS`, and any named table
   without row-level security forced, as each would let a policy silently do nothing.
   Development warns. `axa_postgres_sqlx::row_security` gives the report.

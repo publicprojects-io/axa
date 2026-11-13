@@ -425,11 +425,13 @@ handler runs: `401` with no verified caller, and `403` code `no_tenant` for no t
 or one that is not a lower-case DNS label. Never take a tenant from a header, a path, a
 host, or a body. Bind `tenant.as_str()` in every query. For row-level security as a
 second fence, open the request's transaction with
-`axa_postgres_sqlx::begin_with(pool, &[("app.tenant", tenant.as_str())])`, run every
-query on it, and connect as a role that is not a superuser and has no `BYPASSRLS`. Call
+`axa_postgres_sqlx::begin_with(pool, &[("app.tenant", tenant.as_str())])`, or the same
+function in `axa_postgres_seaorm` or `axa_postgres_toasty`, or call
+`axa_postgres_diesel::set_local` first inside a Diesel transaction, run every query on it, and connect as a role that is not a superuser and has no `BYPASSRLS`. Call
 `axa::db::require_row_security(&pool, &["todos"], &environment)` at boot, after
 migrating, naming every table a policy guards: production refuses to start when a
-policy could not apply. See `examples/multi-tenant`. With Keycloak, map a realm role to the tenant
+policy could not apply. See `examples/multi-tenant`. MySQL and SQLite have no row-level
+security, so there the tenant in every query is the only fence. With Keycloak, map a realm role to the tenant
 in the role map, as `"acme-member": { "tenant": ["acme"] }`.
 
 With `axa-keycloak-auth`:

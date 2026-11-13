@@ -37,10 +37,12 @@ T-15 is done, unreleased, as `format::download`, `format::content_disposition`, 
 T-43 is done, unreleased, as `Tenant` in both auth crates, and `examples/multi-tenant`
 uses it.
 
-T-45 is done, unreleased, with `postgres-sqlx`, as `axa::db::require_row_security`.
+T-45 is done, unreleased, with any Postgres database feature, as
+`axa::db::require_row_security`.
 
-T-44 is done, unreleased, for `axa-postgres-sqlx` as `begin_with`. The SeaORM and Diesel
-crates follow when a service on them asks.
+T-44 is done, unreleased, in all four Postgres crates: `begin_with` for sqlx, SeaORM, and
+Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
+MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
 
 T-20 is done, unreleased, with `tower-http`'s `decompression-full`, which adds no crate
 the build did not have.

@@ -30,7 +30,8 @@ use std::time::Duration;
 
 pub use sea_orm;
 use sea_orm::{
-    ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DbErr, EntityTrait, SqlErr,
+    ConnectOptions, ConnectionTrait, Database, DatabaseConnection, DatabaseTransaction, DbBackend,
+    DbErr, EntityTrait, SqlErr, Statement, TransactionTrait,
 };
 pub use sea_orm_migration;
 use sea_orm_migration::MigratorTrait;
@@ -193,6 +194,126 @@ pub fn quote_identifier(name: &str) -> Option<String> {
     let valid = (first.is_ascii_lowercase() || first == '_')
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
     valid.then(|| format!("\"{name}\""))
+}
+
+/// Whether `name` is a custom setting a service may set for row-level security: two or
+/// more parts of lower-case ASCII letters, digits, and underscores, joined by dots, such
+/// as `app.tenant`. A name with no dot is Postgres's own, such as `role` or
+/// `search_path`, which this never sets.
+///
+/// ```
+/// assert!(axa_postgres_seaorm::is_custom_setting("app.tenant"));
+/// assert!(!axa_postgres_seaorm::is_custom_setting("search_path"));
+/// ```
+#[must_use]
+pub fn is_custom_setting(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('.').collect();
+    name.len() <= 63
+        && parts.len() >= 2
+        && parts.iter().all(|part| {
+            part.chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_lowercase() || first == '_')
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        })
+}
+
+/// Open a transaction with each `(name, value)` set for its length only, such as
+/// `("app.tenant", tenant.as_str())` for a row-level security policy that reads
+/// `current_setting('app.tenant', true)`.
+///
+/// Each pair is set with `set_config($1, $2, true)`: bound, never formatted into the
+/// SQL, and gone when the transaction commits or rolls back, so a pooled connection
+/// never carries one request's tenant into the next. Run every query that needs the
+/// setting on the transaction this returns.
+///
+/// A policy sees nothing unless the role the service connects as is subject to it: not
+/// a superuser, without `BYPASSRLS`, and, if it owns the table, with
+/// `FORCE ROW LEVEL SECURITY` on it. [`row_security`] checks.
+///
+/// # Errors
+///
+/// [`DbErr::Custom`] for a name [`is_custom_setting`] refuses, before anything is
+/// sent, and any error from beginning the transaction or setting a value.
+pub async fn begin_with(
+    pool: &Pool,
+    settings: &[(&str, &str)],
+) -> Result<DatabaseTransaction, DbErr> {
+    if let Some((name, _)) = settings.iter().find(|(name, _)| !is_custom_setting(name)) {
+        return Err(DbErr::Custom(format!("not a custom setting: {name}")));
+    }
+    let tx = pool.begin().await?;
+    for (name, value) in settings {
+        tx.execute_raw(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT set_config($1, $2, true)",
+            [(*name).into(), (*value).into()],
+        ))
+        .await?;
+    }
+    Ok(tx)
+}
+
+/// Whether row-level security can keep rows apart for the role a pool connects as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowSecurity {
+    /// The role the pool connects as.
+    pub role: String,
+    /// Whether that role skips every policy: a superuser, or a role with `BYPASSRLS`.
+    pub bypasses: bool,
+    /// The tables asked about that do not exist, have no row-level security, or lack
+    /// `FORCE ROW LEVEL SECURITY`, so that their owner skips the policies.
+    pub unprotected: Vec<String>,
+}
+
+impl RowSecurity {
+    /// Whether the policies on every table asked about apply to the role.
+    #[must_use]
+    pub fn holds(&self) -> bool {
+        !self.bypasses && self.unprotected.is_empty()
+    }
+}
+
+/// Ask Postgres whether row-level security can apply to `pool`'s role, and whether
+/// each of `tables`, such as `todos` or `app.todos`, has it enabled and forced. Call it
+/// at boot, after migrating, and refuse to serve when it does not hold.
+///
+/// # Errors
+///
+/// Any error from the queries.
+pub async fn row_security<S: AsRef<str>>(pool: &Pool, tables: &[S]) -> Result<RowSecurity, DbErr> {
+    let role = pool
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT current_user::text AS role, rolsuper OR rolbypassrls AS bypasses
+             FROM pg_roles WHERE rolname = current_user",
+        ))
+        .await?
+        .ok_or_else(|| DbErr::Custom("no row for the current role".to_string()))?;
+    let mut unprotected = Vec::new();
+    for table in tables {
+        let table = table.as_ref();
+        let forced = pool
+            .query_one_raw(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                "SELECT relrowsecurity AND relforcerowsecurity AS forced FROM pg_class
+                 WHERE oid = to_regclass($1)",
+                [table.into()],
+            ))
+            .await?
+            .map(|row| row.try_get::<bool>("", "forced"))
+            .transpose()?;
+        if forced != Some(true) {
+            unprotected.push(table.to_string());
+        }
+    }
+    Ok(RowSecurity {
+        role: role.try_get("", "role")?,
+        bypasses: role.try_get("", "bypasses")?,
+        unprotected,
+    })
 }
 
 /// Empty `tables` and restart their identities, for a test. Every name must be a

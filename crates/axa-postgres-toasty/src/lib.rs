@@ -31,7 +31,7 @@
 use std::time::Duration;
 
 pub use toasty;
-use toasty::{Db, ModelSet, migration::MigrationSet};
+use toasty::{Db, ModelSet, Transaction, migration::MigrationSet};
 use toasty_core::stmt::{Type, Value};
 
 /// The handle a service holds: Toasty's [`Db`], which owns a connection pool.
@@ -216,6 +216,138 @@ fn quote_all<S: AsRef<str>>(names: &[S]) -> Result<Vec<String>, Error> {
             })
         })
         .collect()
+}
+
+/// Whether `name` is a custom setting a service may set for row-level security: two or
+/// more parts of lower-case ASCII letters, digits, and underscores, joined by dots, such
+/// as `app.tenant`. A name with no dot is Postgres's own, such as `role` or
+/// `search_path`, which this never sets.
+///
+/// ```
+/// assert!(axa_postgres_toasty::is_custom_setting("app.tenant"));
+/// assert!(!axa_postgres_toasty::is_custom_setting("search_path"));
+/// ```
+#[must_use]
+pub fn is_custom_setting(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('.').collect();
+    name.len() <= 63
+        && parts.len() >= 2
+        && parts.iter().all(|part| {
+            part.chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_lowercase() || first == '_')
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        })
+}
+
+/// Open a transaction with each `(name, value)` set for its length only, such as
+/// `("app.tenant", tenant.as_str())` for a row-level security policy that reads
+/// `current_setting('app.tenant', true)`.
+///
+/// Each pair is set with `set_config($1, $2, true)`: bound, never formatted into the
+/// SQL, and gone when the transaction commits or rolls back, so a pooled connection
+/// never carries one request's tenant into the next. A Toasty transaction holds one
+/// connection, so run every query that needs the setting on the transaction this
+/// returns. Clone the `Db` first if a second handle is needed meanwhile.
+///
+/// A policy sees nothing unless the role the service connects as is subject to it: not
+/// a superuser, without `BYPASSRLS`, and, if it owns the table, with
+/// `FORCE ROW LEVEL SECURITY` on it. [`row_security`] checks.
+///
+/// # Errors
+///
+/// An invalid-statement error for a name [`is_custom_setting`] refuses, before
+/// anything is sent, and any error from beginning the transaction or setting a value.
+pub async fn begin_with<'a>(
+    db: &'a mut Db,
+    settings: &[(&str, &str)],
+) -> Result<Transaction<'a>, Error> {
+    if let Some((name, _)) = settings.iter().find(|(name, _)| !is_custom_setting(name)) {
+        return Err(Error::invalid_statement(format!(
+            "not a custom setting: {name}"
+        )));
+    }
+    let mut tx = db.transaction().await?;
+    for (name, value) in settings {
+        toasty::sql::query("SELECT set_config($1, $2, true)")
+            .bind(*name)
+            .bind(*value)
+            .exec(&mut tx)
+            .await?;
+    }
+    Ok(tx)
+}
+
+/// Whether row-level security can keep rows apart for the role a pool connects as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowSecurity {
+    /// The role the pool connects as.
+    pub role: String,
+    /// Whether that role skips every policy: a superuser, or a role with `BYPASSRLS`.
+    pub bypasses: bool,
+    /// The tables asked about that do not exist, have no row-level security, or lack
+    /// `FORCE ROW LEVEL SECURITY`, so that their owner skips the policies.
+    pub unprotected: Vec<String>,
+}
+
+impl RowSecurity {
+    /// Whether the policies on every table asked about apply to the role.
+    #[must_use]
+    pub fn holds(&self) -> bool {
+        !self.bypasses && self.unprotected.is_empty()
+    }
+}
+
+/// The fields of the first row a query returned.
+fn first_record(rows: &[Value]) -> Option<&[Value]> {
+    match rows.first()? {
+        Value::Record(record) => Some(&record.fields),
+        _ => None,
+    }
+}
+
+/// Ask Postgres whether row-level security can apply to `pool`'s role, and whether
+/// each of `tables`, such as `todos` or `app.todos`, has it enabled and forced. Call it
+/// at boot, after migrating, and refuse to serve when it does not hold.
+///
+/// # Errors
+///
+/// Any error from the queries.
+pub async fn row_security<S: AsRef<str>>(pool: &Pool, tables: &[S]) -> Result<RowSecurity, Error> {
+    let mut db = pool.clone();
+    let rows = toasty::sql::query(
+        "SELECT current_user::text AS role, rolsuper OR rolbypassrls AS bypasses
+         FROM pg_roles WHERE rolname = current_user",
+    )
+    .column_types([Type::String, Type::Bool])
+    .exec(&mut db)
+    .await?;
+    let (role, bypasses) = match first_record(&rows) {
+        Some([Value::String(role), Value::Bool(bypasses)]) => (role.clone(), *bypasses),
+        _ => return Err(Error::invalid_result("no row for the current role")),
+    };
+    let mut unprotected = Vec::new();
+    for table in tables {
+        let table = table.as_ref();
+        let rows = toasty::sql::query(
+            "SELECT relrowsecurity AND relforcerowsecurity AS forced FROM pg_class
+             WHERE oid = to_regclass($1)",
+        )
+        .bind(table)
+        .column_types([Type::Bool])
+        .exec(&mut db)
+        .await?;
+        if !matches!(first_record(&rows), Some([Value::Bool(true)])) {
+            unprotected.push(table.to_string());
+        }
+    }
+    Ok(RowSecurity {
+        role,
+        bypasses,
+        unprotected,
+    })
 }
 
 /// Empty `tables` and restart their identities, for a test. Every name must be a

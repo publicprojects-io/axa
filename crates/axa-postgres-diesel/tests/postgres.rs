@@ -150,3 +150,127 @@ async fn an_unreachable_database_is_an_error() {
     let config = PoolConfig::new("postgres://nobody:nothing@127.0.0.1:1/none");
     assert!(connect(&config).await.is_err());
 }
+
+#[derive(QueryableByName)]
+struct Tenant {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    tenant: String,
+}
+
+const READ_TENANT: &str = "SELECT coalesce(current_setting('app.tenant', true), '') AS tenant";
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL as a superuser, and changes its schema"]
+async fn settings_last_for_their_transaction_and_row_security_is_checked() {
+    use axa_postgres_diesel::{
+        diesel::result::Error as QueryError, diesel_async::AsyncConnection, row_security, set_local,
+    };
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    let mut config = PoolConfig::new(uri);
+    // One connection, so a leak, or SET ROLE, reaches the next query.
+    config.max_connections = 1;
+    let pool = connect(&config).await.unwrap();
+    {
+        let mut connection = pool.get().await.unwrap();
+        // Outside a transaction, the setting would last one statement, so it is refused.
+        let error = set_local(&mut connection, &[("app.tenant", "acme")])
+            .await
+            .unwrap_err();
+        assert!(matches!(error, QueryError::NotInTransaction), "{error:?}");
+
+        let seen = connection
+            .transaction(async |connection| {
+                set_local(connection, &[("app.tenant", "acme")]).await?;
+                let row: Tenant = diesel::sql_query(READ_TENANT)
+                    .get_result(connection)
+                    .await?;
+                Ok::<_, QueryError>(row.tenant)
+            })
+            .await
+            .unwrap();
+        assert_eq!(seen, "acme");
+        let after: Tenant = diesel::sql_query(READ_TENANT)
+            .get_result(&mut connection)
+            .await
+            .unwrap();
+        assert_eq!(after.tenant, "", "a committed setting leaked");
+
+        let refused = connection
+            .transaction(async |connection| {
+                set_local(connection, &[("search_path", "evil")]).await?;
+                Ok::<_, QueryError>(())
+            })
+            .await
+            .unwrap_err();
+        assert!(
+            refused.to_string().contains("not a custom setting"),
+            "{refused}"
+        );
+
+        for statement in [
+            "DROP TABLE IF EXISTS diesel_rls_plain, diesel_rls_forced",
+            "CREATE TABLE diesel_rls_plain (tenant_id TEXT)",
+            "CREATE TABLE diesel_rls_forced (tenant_id TEXT)",
+            "ALTER TABLE diesel_rls_forced ENABLE ROW LEVEL SECURITY",
+            "ALTER TABLE diesel_rls_forced FORCE ROW LEVEL SECURITY",
+            "DROP ROLE IF EXISTS axa_diesel_rls_app",
+            "CREATE ROLE axa_diesel_rls_app NOLOGIN",
+        ] {
+            diesel::sql_query(statement)
+                .execute(&mut connection)
+                .await
+                .unwrap();
+        }
+    }
+    let found = row_security(
+        &pool,
+        &[
+            "diesel_rls_plain",
+            "diesel_rls_forced",
+            "diesel_rls_missing",
+        ],
+    )
+    .await
+    .unwrap();
+    assert!(found.bypasses);
+    assert_eq!(
+        found.unprotected,
+        ["diesel_rls_plain", "diesel_rls_missing"]
+    );
+    let run = async |sql: &str| {
+        let mut connection = pool.get().await.unwrap();
+        diesel::sql_query(sql)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    };
+    run("SET ROLE axa_diesel_rls_app").await;
+    let found = row_security(&pool, &["diesel_rls_forced"]).await.unwrap();
+    assert_eq!(found.role, "axa_diesel_rls_app");
+    assert!(found.holds(), "{found:?}");
+    run("RESET ROLE").await;
+    run("DROP TABLE diesel_rls_plain, diesel_rls_forced").await;
+    run("DROP ROLE axa_diesel_rls_app").await;
+}
+
+#[test]
+fn only_custom_settings_can_be_set() {
+    use axa_postgres_diesel::is_custom_setting;
+    for name in ["app.tenant", "app.user_id", "a.b.c", "_x.y"] {
+        assert!(is_custom_setting(name), "{name}");
+    }
+    for name in [
+        "role",
+        "search_path",
+        "session_authorization",
+        "app.",
+        ".tenant",
+        "app..tenant",
+        "App.Tenant",
+        "app.tenant; RESET ROLE",
+        "app.2fa",
+        "",
+    ] {
+        assert!(!is_custom_setting(name), "{name}");
+    }
+}

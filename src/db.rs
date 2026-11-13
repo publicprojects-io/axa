@@ -253,34 +253,44 @@ use axa_postgres_toasty::toasty as toasty_models;
 /// Refuse to serve where Postgres row-level security cannot keep tenants apart: the
 /// pool's role is a superuser or has `BYPASSRLS`, or one of `tables` lacks row-level
 /// security or `FORCE ROW LEVEL SECURITY`. Call it at boot, after migrating, naming
-/// each table a policy guards.
+/// each table a policy guards. It works with whichever Postgres crate
+/// [`crate::AppContext::db`] holds.
 ///
 /// A production-like environment fails, so a misconfigured deployment never serves
 /// every tenant's rows. Development and test warn and go on, so a local superuser still
 /// works, but a test that proves the policies has to connect as a role they apply to.
 ///
-/// ```no_run
-/// # async fn example(pool: &sqlx::PgPool, environment: &axa::Environment) -> axa::Result<()> {
-/// axa::db::require_row_security(pool, &["todos"], environment).await?;
-/// # Ok(())
-/// # }
+/// ```ignore
+/// axa::db::require_row_security(&ctx.db, &["todos"], &ctx.environment).await?;
 /// ```
 ///
 /// # Errors
 ///
 /// In a production-like environment, when row-level security does not hold, naming the
 /// role and the tables. In any environment, when the database cannot be asked.
-#[cfg(axa_db = "postgres_sqlx")]
+#[cfg(any(
+    axa_db = "postgres_sqlx",
+    axa_db = "postgres_seaorm",
+    axa_db = "postgres_diesel",
+    axa_db = "postgres_toasty"
+))]
 pub async fn require_row_security<S: AsRef<str>>(
-    pool: &axa_postgres_sqlx::Pool,
+    pool: &crate::context::Db,
     tables: &[S],
     environment: &crate::Environment,
 ) -> Result<()> {
+    #[cfg(axa_db = "postgres_sqlx")]
     let found = axa_postgres_sqlx::row_security(pool, tables).await?;
+    #[cfg(axa_db = "postgres_seaorm")]
+    let found = axa_postgres_seaorm::row_security(pool, tables).await?;
+    #[cfg(axa_db = "postgres_diesel")]
+    let found = axa_postgres_diesel::row_security(pool, tables).await?;
+    #[cfg(axa_db = "postgres_toasty")]
+    let found = axa_postgres_toasty::row_security(pool, tables).await?;
     if found.holds() {
         return Ok(());
     }
-    let problem = row_security_problem(&found);
+    let problem = row_security_problem(&found.role, found.bypasses, &found.unprotected);
     if environment.is_production_like() {
         return Err(crate::Error::string(&problem));
     }
@@ -290,19 +300,23 @@ pub async fn require_row_security<S: AsRef<str>>(
 
 /// What is wrong, for an operator: the role and the table names, which come from the
 /// database and the service's own code, and nothing a caller sent.
-#[cfg(axa_db = "postgres_sqlx")]
-fn row_security_problem(found: &axa_postgres_sqlx::RowSecurity) -> String {
+#[cfg(any(
+    axa_db = "postgres_sqlx",
+    axa_db = "postgres_seaorm",
+    axa_db = "postgres_diesel",
+    axa_db = "postgres_toasty"
+))]
+fn row_security_problem(role: &str, bypasses: bool, unprotected: &[String]) -> String {
     let mut parts = Vec::new();
-    if found.bypasses {
+    if bypasses {
         parts.push(format!(
-            "role {} is a superuser or has BYPASSRLS, so it skips every policy",
-            found.role
+            "role {role} is a superuser or has BYPASSRLS, so it skips every policy"
         ));
     }
-    if !found.unprotected.is_empty() {
+    if !unprotected.is_empty() {
         parts.push(format!(
             "these tables are missing, or lack ROW LEVEL SECURITY or FORCE ROW LEVEL SECURITY: {}",
-            found.unprotected.join(", ")
+            unprotected.join(", ")
         ));
     }
     format!("row-level security does not hold: {}", parts.join("; "))
@@ -319,23 +333,15 @@ mod debug_tests {
 
     #[test]
     fn the_row_security_problem_names_the_role_and_each_table() {
-        let found = axa_postgres_sqlx::RowSecurity {
-            role: "app".to_string(),
-            bypasses: true,
-            unprotected: vec!["todos".to_string(), "notes".to_string()],
-        };
-        let text = super::row_security_problem(&found);
+        let tables = ["todos".to_string(), "notes".to_string()];
+        let text = super::row_security_problem("app", true, &tables);
         assert!(
             text.contains("role app is a superuser or has BYPASSRLS"),
             "{text}"
         );
         assert!(text.contains("todos, notes"), "{text}");
-        let only_tables = axa_postgres_sqlx::RowSecurity {
-            bypasses: false,
-            ..found
-        };
-        let text = super::row_security_problem(&only_tables);
-        assert!(!text.contains("BYPASSRLS,"), "{text}");
+        let text = super::row_security_problem("app", false, &tables);
         assert!(!text.contains("role app"), "{text}");
+        assert!(text.contains("todos, notes"), "{text}");
     }
 }

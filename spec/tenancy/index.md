@@ -1,7 +1,7 @@
 # Multi-tenancy
 
 A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. TN-1, and TN-2 and TN-3 for sqlx, are built. The rest is not yet. It proposes capabilities, each with an id
+13 November 2026. TN-1, TN-2, and TN-3 are built, for every Postgres crate. The rest is not yet. It proposes capabilities, each with an id
 (TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
 [`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
 the first few would give.
@@ -82,17 +82,19 @@ starting or ending with a hyphen, as a DNS label is. No token is `401`, and a to
 host, as P-10 asks: a service that routes by subdomain compares the host's tenant with
 the token's and refuses a mismatch.
 
-**TN-2, the tenant transaction.** Done for `axa-postgres-sqlx`, unreleased, as T-44:
-`begin_with`, SQX-8 and SQX-9, which also refuses any name that is not a custom dotted
-setting, so it cannot set `role` or `search_path`. In `axa-postgres-sqlx`, a function that opens a
+**TN-2, the tenant transaction.** Done in all four Postgres crates, unreleased, as T-44:
+`begin_with` in sqlx (SQX-8, SQX-9), SeaORM (SOR-5), and Toasty (TOA-4), and `set_local`
+in Diesel (DSL-6), called inside the service's own transaction, as Diesel's are closures.
+Each refuses any name that is not a custom dotted setting, so it cannot set `role` or
+`search_path`. In `axa-postgres-sqlx`, a function that opens a
 transaction and runs `SELECT set_config($1, $2, true)` for each pair, so each value is
 bound and lasts until the transaction ends. The policies stay in the service's own
 migrations, so this adds no query layer. SeaORM and Diesel follow with the same shape.
-MySQL has no row-level security, so the MySQL crates have no TN-2, and a MySQL service
-keeps the first fence only.
+MySQL and SQLite have no row-level security, so their crates have no TN-2 or TN-3, and a
+service on either keeps the first fence only: the tenant in every query.
 
-**TN-3, the boot check.** Done with `postgres-sqlx`, unreleased, as T-45:
-`axa::db::require_row_security`, DB-9 and SQX-10. `SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname =
+**TN-3, the boot check.** Done with any Postgres database feature, unreleased, as T-45:
+`axa::db::require_row_security`, DB-9, over each crate's `row_security`. `SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname =
 current_user`, and `relforcerowsecurity` from `pg_class` for each table the service names.
 Production refuses to boot when either fails. Development warns, so that a local
 superuser still works, but `axa-test` can run the isolation tests as a role the policies
