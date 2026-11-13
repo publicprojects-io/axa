@@ -5,6 +5,11 @@
 //! AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
 //! ```
 
+#![allow(
+    clippy::used_underscore_items,
+    reason = "the toasty::Model derive generates underscore items"
+)]
+
 use axa_mysql_toasty::{
     PoolConfig, connect, dangerously_recreate, error_number, is_unique_violation, migrate, pending,
     ping, sql_state, truncate,

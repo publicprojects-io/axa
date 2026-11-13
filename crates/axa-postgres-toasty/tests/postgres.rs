@@ -5,6 +5,11 @@
 //! AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-toasty -- --ignored --test-threads=1
 //! ```
 
+#![allow(
+    clippy::used_underscore_items,
+    reason = "the toasty::Model derive generates underscore items"
+)]
+
 use axa_postgres_toasty::{
     PoolConfig, connect, dangerously_recreate, is_unique_violation, migrate, pending, ping,
     truncate,
