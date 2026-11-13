@@ -8,8 +8,8 @@
 use std::path::Path;
 
 use axa_postgres_sqlx::{
-    Db, PoolConfig, connect, dangerously_recreate, is_unique_violation, migrate, pending, ping,
-    revert,
+    Db, PoolConfig, begin_with, connect, dangerously_recreate, is_unique_violation, migrate,
+    pending, ping, revert,
     sqlx::{self, PgPool, Row, migrate::Migrator},
     status, truncate,
 };
@@ -209,4 +209,67 @@ async fn one_function_serves_the_pool_and_a_transaction() {
         async move { item_count(&pool).await }
     });
     assert_eq!(spawned.await.unwrap().unwrap(), 0);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
+async fn a_setting_lasts_for_its_transaction_and_never_reaches_the_next() {
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    // One connection, so the next transaction is on the same one.
+    let mut config = PoolConfig::new(uri);
+    config.min_connections = 0;
+    config.max_connections = 1;
+    let pool = connect(&config).await.unwrap();
+    let read = "SELECT coalesce(current_setting('app.tenant', true), '') AS tenant";
+
+    let mut tx = begin_with(&pool, &[("app.tenant", "acme"), ("app.user_id", "42")])
+        .await
+        .unwrap();
+    let tenant: String = sqlx::query(read)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+        .get("tenant");
+    assert_eq!(tenant, "acme");
+    let user: String = sqlx::query("SELECT current_setting('app.user_id') AS user_id")
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+        .get("user_id");
+    assert_eq!(user, "42");
+    tx.commit().await.unwrap();
+    let after: String = sqlx::query(read)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("tenant");
+    assert_eq!(after, "", "a committed setting leaked into the pool");
+
+    let mut tx = begin_with(&pool, &[("app.tenant", "globex")])
+        .await
+        .unwrap();
+    let _: String = sqlx::query(read)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+        .get("tenant");
+    tx.rollback().await.unwrap();
+    let after: String = sqlx::query(read)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("tenant");
+    assert_eq!(after, "", "a rolled-back setting leaked into the pool");
+
+    // A value is bound, so SQL in it is only text.
+    let mut tx = begin_with(&pool, &[("app.tenant", "x'); RESET ALL; --")])
+        .await
+        .unwrap();
+    let tenant: String = sqlx::query(read)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap()
+        .get("tenant");
+    assert_eq!(tenant, "x'); RESET ALL; --");
+    tx.rollback().await.unwrap();
 }

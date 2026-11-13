@@ -20,6 +20,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   one `GuardConfig::tenant_attribute` names, read only from a caller the guard verified
   and allowed. No verified caller is `401`, and no tenant, two, or one that is not a
   lower-case DNS label is `403`, code `no_tenant`, with an `auth_refused` line.
+- **`axa_postgres_sqlx::begin_with`** (SQX-8, SQX-9): a transaction with settings such
+  as `app.tenant` set for its length only, bound, for Postgres row-level security. It
+  sets only custom dotted names, and refuses `role`, `search_path`, and the like.
 - **Safe downloads in `axa::format`** (FMT-5 to FMT-8): `download` sends a body as a
   file, and `content_disposition` makes its header, `inline` only for a raster image,
   audio, video, or plain text, which cannot run script, and `attachment` for HTML, SVG,

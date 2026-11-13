@@ -32,16 +32,11 @@ use serde::{Deserialize, Serialize};
 /// The longest title, which the table's check also holds to.
 const MAX_TITLE_CHARS: usize = 200;
 
-/// A transaction in which row-level security sees only `tenant`'s rows. The setting
-/// is bound, not formatted into the SQL, and lasts only until the transaction ends,
-/// so a pooled connection never carries one tenant into the next request.
+/// A transaction in which row-level security sees only `tenant`'s rows. Axa sets
+/// `app.tenant` bound, for the transaction only, so a pooled connection never carries
+/// one tenant into the next request.
 async fn in_tenant(pool: &Pool, tenant: &Tenant) -> Result<Transaction<'static, Postgres>> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("SELECT set_config('app.tenant', $1, true)")
-        .bind(tenant.as_str())
-        .execute(&mut *tx)
-        .await?;
-    Ok(tx)
+    Ok(postgres_sqlx::begin_with(pool, &[("app.tenant", tenant.as_str())]).await?)
 }
 
 /// A todo, as the API sends it. The tenant is not sent: the caller knows it.

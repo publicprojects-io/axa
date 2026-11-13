@@ -423,8 +423,11 @@ value of the token's `tenant` attribute, or the one `GuardConfig::tenant_attribu
 names, from a caller the guard verified and allowed, and refuses anything else before the
 handler runs: `401` with no verified caller, and `403` code `no_tenant` for no tenant, two,
 or one that is not a lower-case DNS label. Never take a tenant from a header, a path, a
-host, or a body. Bind `tenant.as_str()` in every query, and see `examples/multi-tenant`
-for row-level security as a second fence. With Keycloak, map a realm role to the tenant
+host, or a body. Bind `tenant.as_str()` in every query. For row-level security as a
+second fence, open the request's transaction with
+`axa_postgres_sqlx::begin_with(pool, &[("app.tenant", tenant.as_str())])`, run every
+query on it, and connect as a role that is not a superuser and has no `BYPASSRLS`; see
+`examples/multi-tenant`. With Keycloak, map a realm role to the tenant
 in the role map, as `"acme-member": { "tenant": ["acme"] }`.
 
 With `axa-keycloak-auth`:

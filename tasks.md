@@ -37,6 +37,9 @@ T-15 is done, unreleased, as `format::download`, `format::content_disposition`, 
 T-43 is done, unreleased, as `Tenant` in both auth crates, and `examples/multi-tenant`
 uses it.
 
+T-44 is done, unreleased, for `axa-postgres-sqlx` as `begin_with`. The SeaORM and Diesel
+crates follow when a service on them asks.
+
 T-20 is done, unreleased, with `tower-http`'s `decompression-full`, which adds no crate
 the build did not have.
 
@@ -92,7 +95,7 @@ for two.
 | Id | Task | Where | Effort | New dependency | Case |
 |---|---|---|---|---|---|
 | T-43 | A `Tenant` extractor from the verified token only (TN-1): exactly one value of a named attribute, `tenant` by default, a tenant-id syntax, `401` without a token, `403` code `no_tenant` otherwise, and no way to take it from a header, path, or host | `axa-paseto-auth`, `axa-keycloak-auth` | S | None | Safety |
-| T-44 | A tenant transaction (TN-2): `begin_in(pool, &[(name, value)])` running `set_config($1, $2, true)` for each pair, bound and ending with the transaction | `axa-postgres-sqlx`, then the SeaORM and Diesel crates | S | None | Safety |
+| T-44 | A tenant transaction (TN-2): `begin_with(pool, &[(name, value)])` running `set_config($1, $2, true)` for each pair, bound and ending with the transaction | `axa-postgres-sqlx`, then the SeaORM and Diesel crates | S | None | Safety |
 | T-45 | A boot check for row-level security (TN-3): production refuses a superuser or `BYPASSRLS` role, and a named table without `FORCE ROW LEVEL SECURITY`; development warns | Postgres database crates, `src/config.rs` | S | None | Safety |
 | T-46 | Isolation helpers (TN-4): PASETO tokens minted with given `attrs` under a test key, and a check that another tenant gets `404` from a resource's read, change, and delete routes | `axa-test` | M | None in `axa-test` beyond what `axa-paseto-auth` tests use | Safety |
 | T-47 | A cache scoped to a tenant (TN-6): every key carries the tenant, with no unscoped way in once a cache is made per tenant | `axa-redis-cache` | S | None | Safety |

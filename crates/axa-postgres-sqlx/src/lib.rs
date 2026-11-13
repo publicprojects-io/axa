@@ -228,6 +228,79 @@ fn quote_all<S: AsRef<str>>(names: &[S]) -> Result<Vec<String>, sqlx::Error> {
         .collect()
 }
 
+/// Whether `name` is a custom setting a service may set for row-level security: two or
+/// more parts of lower-case ASCII letters, digits, and underscores, joined by dots, such
+/// as `app.tenant`. A name with no dot is Postgres's own, such as `role` or
+/// `search_path`, which this never sets.
+///
+/// ```
+/// assert!(axa_postgres_sqlx::is_custom_setting("app.tenant"));
+/// assert!(!axa_postgres_sqlx::is_custom_setting("search_path"));
+/// ```
+#[must_use]
+pub fn is_custom_setting(name: &str) -> bool {
+    let parts: Vec<&str> = name.split('.').collect();
+    name.len() <= 63
+        && parts.len() >= 2
+        && parts.iter().all(|part| {
+            part.chars()
+                .next()
+                .is_some_and(|first| first.is_ascii_lowercase() || first == '_')
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        })
+}
+
+/// Open a transaction with each `(name, value)` set for its length only, such as
+/// `("app.tenant", tenant.as_str())` for a row-level security policy that reads
+/// `current_setting('app.tenant', true)`.
+///
+/// Each pair is set with `set_config($1, $2, true)`: bound, never formatted into the
+/// SQL, and gone when the transaction commits or rolls back, so a pooled connection
+/// never carries one request's tenant into the next. Run every query that needs the
+/// setting on the transaction this returns, as a query on the pool may run on another
+/// connection.
+///
+/// ```no_run
+/// # async fn example(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
+/// let mut tx = axa_postgres_sqlx::begin_with(pool, &[("app.tenant", "acme")]).await?;
+/// let count: i64 = sqlx::query_scalar("SELECT count(*) FROM todos")
+///     .fetch_one(&mut *tx)
+///     .await?;
+/// tx.commit().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// A policy sees nothing unless the role the service connects as is subject to it: not
+/// a superuser, without `BYPASSRLS`, and, if it owns the table, with
+/// `FORCE ROW LEVEL SECURITY` on it.
+///
+/// # Errors
+///
+/// [`sqlx::Error::InvalidArgument`] for a name [`is_custom_setting`] refuses, before
+/// anything is sent, and any error from beginning the transaction or setting a value.
+pub async fn begin_with(
+    pool: &PgPool,
+    settings: &[(&str, &str)],
+) -> Result<sqlx::Transaction<'static, Postgres>, sqlx::Error> {
+    if let Some((name, _)) = settings.iter().find(|(name, _)| !is_custom_setting(name)) {
+        return Err(sqlx::Error::InvalidArgument(format!(
+            "not a custom setting: {name}"
+        )));
+    }
+    let mut tx = pool.begin().await?;
+    for (name, value) in settings {
+        sqlx::query("SELECT set_config($1, $2, true)")
+            .bind(name)
+            .bind(value)
+            .execute(&mut *tx)
+            .await?;
+    }
+    Ok(tx)
+}
+
 /// Apply pending migrations. Sqlx holds a lock while it does, so services
 /// booting together take turns.
 ///
@@ -390,6 +463,50 @@ mod tests {
         let text = format!("{:?}", PoolConfig::new("postgres://me:hunter2@db/app"));
         assert!(!text.contains("hunter2"), "{text}");
         assert!(text.contains("max_connections"), "{text}");
+    }
+
+    #[test]
+    fn only_custom_settings_can_be_set() {
+        for name in [
+            "app.tenant",
+            "app.user_id",
+            "my_app.tenant_2",
+            "a.b.c",
+            "_x.y",
+        ] {
+            assert!(is_custom_setting(name), "{name}");
+        }
+        for name in [
+            "role",
+            "search_path",
+            "session_authorization",
+            "app.",
+            ".tenant",
+            "app..tenant",
+            "App.Tenant",
+            "app.tenant; RESET ROLE",
+            "app.2fa",
+            "",
+        ] {
+            assert!(!is_custom_setting(name), "{name}");
+        }
+        assert!(!is_custom_setting(&format!("app.{}", "a".repeat(60))));
+    }
+
+    #[tokio::test]
+    async fn a_refused_setting_name_fails_before_anything_is_sent() {
+        // This pool would fail to connect, so an error that is not InvalidArgument
+        // would mean something was sent.
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://nobody@127.0.0.1:1/none")
+            .unwrap();
+        let error = begin_with(&pool, &[("app.tenant", "acme"), ("role", "postgres")])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(&error, sqlx::Error::InvalidArgument(text) if text.contains("role")),
+            "{error:?}"
+        );
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # Multi-tenancy
 
 A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. TN-1 is built. The rest is not yet. It proposes capabilities, each with an id
+13 November 2026. TN-1, and TN-2 for sqlx, are built. The rest is not yet. It proposes capabilities, each with an id
 (TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
 [`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
 the first few would give.
@@ -61,7 +61,7 @@ From Axa's own code, at the commit this page was written on:
 | Id | Capability | Why | Effort | Case |
 |---|---|---|---|---|
 | TN-1 | A `Tenant` extractor in both auth crates, from the verified token only | Every service writes this, and the mistakes are taking it from a header or accepting a token with two tenants | S | Safety |
-| TN-2 | A tenant transaction in the Postgres crates: `begin_in(pool, &[("app.tenant", id)])` | Row-level security needs the setting per transaction, bound, on the same connection as the queries | S | Safety |
+| TN-2 | A tenant transaction in the Postgres crates: `begin_with(pool, &[("app.tenant", id)])` | Row-level security needs the setting per transaction, bound, on the same connection as the queries | S | Safety |
 | TN-3 | A boot check that row-level security can apply: production refuses a role that is a superuser or has `BYPASSRLS`, and names any listed table without `FORCE ROW LEVEL SECURITY` | The policy silently does nothing otherwise, and tests run as a superuser pass anyway | S | Safety |
 | TN-4 | Isolation helpers in `axa-test`: tokens minted with given `attrs`, and a check that a route answers `404` for another tenant's id | A cross-tenant test is the one that proves the fences, and each service writes it from nothing | M | Safety |
 | TN-5 | A tenant on a job: an optional `tenant` column on the job queues, set at enqueue and handed to the worker | A job runs outside any request, so the tenant is lost unless the queue carries it | M | Two consumers |
@@ -82,7 +82,9 @@ starting or ending with a hyphen, as a DNS label is. No token is `401`, and a to
 host, as P-10 asks: a service that routes by subdomain compares the host's tenant with
 the token's and refuses a mismatch.
 
-**TN-2, the tenant transaction.** In `axa-postgres-sqlx`, a function that opens a
+**TN-2, the tenant transaction.** Done for `axa-postgres-sqlx`, unreleased, as T-44:
+`begin_with`, SQX-8 and SQX-9, which also refuses any name that is not a custom dotted
+setting, so it cannot set `role` or `search_path`. In `axa-postgres-sqlx`, a function that opens a
 transaction and runs `SELECT set_config($1, $2, true)` for each pair, so each value is
 bound and lasts until the transaction ends. The policies stay in the service's own
 migrations, so this adds no query layer. SeaORM and Diesel follow with the same shape.

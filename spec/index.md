@@ -347,6 +347,8 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | SQX-5 | `axa-postgres-sqlx` | Recreating a test database keeps its extensions. | `recreating_keeps_extensions` |
 | SQX-6 | `axa-postgres-sqlx` | Status works on a database that was never migrated. | `status_on_a_fresh_database_shows_nothing_applied` |
 | SQX-7 | `axa-postgres-sqlx` | `Db` lets one function take the pool or an open transaction, in a future that can be spawned. | `one_function_serves_the_pool_and_a_transaction` |
+| SQX-8 | `axa-postgres-sqlx` | `begin_with` opens a transaction with each `(name, value)` set by `set_config($1, $2, true)`, bound, so it holds for that transaction and is gone after it commits or rolls back, on the same pooled connection. | `a_setting_lasts_for_its_transaction_and_never_reaches_the_next` |
+| SQX-9 | `axa-postgres-sqlx` | `begin_with` sets only a custom setting, two or more dotted parts of lower-case letters, digits, and underscores, such as `app.tenant`, and refuses any other name, such as `role` or `search_path`, with `InvalidArgument` before anything is sent. | `only_custom_settings_can_be_set`, `a_refused_setting_name_fails_before_anything_is_sent` |
 | ENV-D | `axa-environment` | A command that destroys data may run only in development or test, and only when confirmed. | `data_is_destroyed_only_in_development_or_test_and_only_when_confirmed` |
 | PAG-4 | `axa-cursor-pagination` | `LIKE` wildcards are escaped, backslash first. | `like_wildcards_are_neutralised`, `backslash_is_escaped_first` |
 | PAG-7 | `axa-cursor-pagination` | A collection read MUST NOT take `?offset=`, and MUST NOT send `X-Total-Count`. | `there_is_no_offset_parameter`, `a_response_carries_no_total` |
