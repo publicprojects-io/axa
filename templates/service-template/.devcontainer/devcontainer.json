@@ -30,9 +30,9 @@
       }
     }
   },
-  "forwardPorts": [3000],
+  "forwardPorts": [1241],
   "portsAttributes": {
-    "3000": {
+    "1241": {
       "label": "Application",
       "onAutoForward": "notify"
     }

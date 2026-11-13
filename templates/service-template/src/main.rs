@@ -1,102 +1,80 @@
-//! Service Template
+//! A service built with Axa.
 //!
-//! A template for building production-ready services with axa.
-//!
-//! This template follows axa's conventions:
-//! - Library, not framework: main.rs stays ordinary Axum
-//! - Spec-first: Document behavior before implementing
-//! - Fail-closed: Production refuses unsafe configurations
-//! - Audit-friendly: Every request path is traceable
+//! `main` stays ordinary Axum: it reads the settings, starts the logger, builds the
+//! router, and serves it until `SIGTERM` or Ctrl-C.
 
-use axa::{error::AppError, start_app};
-use std::net::SocketAddr;
-use tracing::info;
+use axa::{
+    Environment, Result,
+    config::{Config, Defaults},
+    logger,
+    prelude::AppContext,
+    server,
+};
 
-mod app;
-mod config;
-mod error;
-mod health;
+mod routes;
 
-use app::app;
-use config::Config;
+/// The name the logger and the local database use. Change it to the service's own.
+const SERVICE_NAME: &str = "service_template";
 
-/// Application entry point
-///
-/// Initializes logging, loads configuration, builds the app, and starts the server.
+/// The settings for `environment`, from the environment's variables.
+fn config(environment: &Environment) -> Result<Config> {
+    let defaults = Defaults {
+        // An empty name means this service has no database. Name one, such as
+        // SERVICE_NAME, once a database feature is on.
+        database: "",
+        ..Defaults::default()
+    };
+    Config::from_env(environment, &defaults)
+}
+
 #[tokio::main]
-async fn main() {
-    // Initialize structured logging
-    // In production, use JSON format; in development, use pretty format
-    if std::env::var("LOG_FORMAT").as_deref() == Ok("json") {
-        tracing_subscriber::fmt()
-            .json()
-            .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
-            .init();
-    } else {
-        tracing_subscriber::fmt()
-            .pretty()
-            .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
-            .init();
-    }
+async fn main() -> Result<()> {
+    let environment = Environment::from_env();
+    // Production refuses settings that are unsafe or cannot be read, here, before
+    // anything starts.
+    let config = config(&environment)?;
+    logger::init(SERVICE_NAME, &config.logger);
 
-    // Load configuration from environment variables
-    // In production, these come from the environment or secrets
-    // In development, they can come from a .env file
-    let config = Config::from_env().expect("Failed to load configuration");
-
-    info!(
-        version = env!("CARGO_PKG_VERSION"),
-        name = env!("CARGO_PKG_NAME"),
-        "Starting service"
-    );
-
-    // Build the application router with shared state
-    let app = app::app(config.clone());
-
-    // Determine the address to listen on
-    let addr = SocketAddr::from((
-        [0, 0, 0, 0],
-        config.port.unwrap_or(3000),
-    ));
-
-    info!(address = %addr, "Listening");
-
-    // Start the application using axa's start_app helper
-    // This provides:
-    // - Connection limits
-    // - Request timeouts
-    // - Graceful shutdown
-    // - Consistent startup behavior
-    start_app(app, addr)
-        .await
-        .expect("Failed to start service");
+    let server_config = config.server.clone();
+    let ctx = AppContext::new(environment, (), config);
+    let router = routes::routes().into_app(ctx)?;
+    server::serve(router, &server_config).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use app::app;
-    use axum::body::Body;
-    use axum::http::Request;
-    use config::Config;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
     use tower::ServiceExt;
 
+    /// The service's router under the `test` environment.
+    pub(crate) fn app() -> axum::Router {
+        let config = config(&Environment::Test).unwrap();
+        routes::routes()
+            .into_app(AppContext::new(Environment::Test, (), config))
+            .unwrap()
+    }
+
     #[tokio::test]
-    async fn test_health_check() {
-        // Create test configuration
-        let config = Config::default();
+    async fn the_health_routes_answer() {
+        for path in ["/_health/live", "/_health/ready", "/_health/startup"] {
+            let request = Request::builder().uri(path).body(Body::empty()).unwrap();
+            let response = app().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+        }
+    }
 
-        // Build the app
-        let app = app(config);
-
-        // Send a request to the health endpoint
+    #[tokio::test]
+    async fn the_service_answers_its_own_route() {
         let request = Request::builder()
-            .uri("/_health/live")
+            .uri("/api/v1/status")
             .body(Body::empty())
             .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let response = app().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(response.headers().contains_key("x-request-id"));
     }
 }

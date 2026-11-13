@@ -1,28 +1,18 @@
 [package]
 name = "basic-service"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.97"
 publish = false
 
 [dependencies]
-# Axum for the web framework
+axa = { path = "../.." }
 axum = "0.8"
-
-# axa for shared infrastructure
-axa = { path = "../../", version = "0.12" }
-
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Environment variables
-dotenvy = "0.15"
-
-# Logging
- tracing = "0.1"
- tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-# HTTP client for tests
-hyper = "1.0"
-tower = { version = "0.4", features = ["util"] }
+tower = { version = "0.5", features = ["util"] }
+
+# Standalone, not a member of the axa workspace.
+[workspace]

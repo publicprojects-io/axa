@@ -1,149 +1,127 @@
-//! Basic axa service example
+//! A minimal Axa service with no database.
 //!
-//! This is a minimal example of an Axum service using axa infrastructure.
-//! It demonstrates:
-//! - Standard axa startup pattern
-//! - Health check endpoint
-//! - JSON API endpoint
-//! - Error handling with axa::error
+//! It serves `/api/hello` and `/api/greet/{name}` under the standard middleware, with
+//! the three health routes, and stops cleanly on `SIGTERM` or Ctrl-C.
 //!
-//! Run with: cargo run
-//! Test with: curl http://localhost:3000/health
+//! ```sh
+//! cargo run
+//! curl http://localhost:1241/api/greet/World
+//! curl http://localhost:1241/_health/ready
+//! ```
 
-use axa::{error::AppError, start_app};
-use axum::{
-    routing::get,
-    Json, Router,
+use axa::{
+    Environment, Result,
+    config::{Config, Defaults},
+    logger,
+    prelude::*,
+    server,
 };
+use axa::extract::Path;
 use serde::Serialize;
-use std::net::SocketAddr;
-use tracing::info;
 
-/// Simple health check response
+/// A greeting.
 #[derive(Serialize)]
-struct HealthResponse {
-    status: String,
-    version: String,
-}
-
-/// Simple greeting response
-#[derive(Serialize)]
-struct GreetingResponse {
+struct Greeting {
     message: String,
-    service: String,
 }
 
-/// Create the application router
-fn app() -> Router {
-    Router::new()
-        .route("/health", get(health_check))
-        .route("/", get(root))
-        .route("/greet/:name", get(greet))
+async fn hello() -> Result<Response> {
+    format::json(Greeting {
+        message: "Hello from basic-service".to_string(),
+    })
 }
 
-/// Health check endpoint
-/// 
-/// Returns 200 OK with service health status.
-/// This is a standard endpoint that should be present in all services.
-async fn health_check() -> Result<Json<HealthResponse>, AppError> {
-    Ok(Json(HealthResponse {
-        status: "healthy".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-    }))
+async fn greet(Path(name): Path<String>) -> Result<Response> {
+    if name.chars().count() > 100 {
+        return axa::error::bad_request("name is too long");
+    }
+    format::json(Greeting {
+        message: format!("Hello, {name}!"),
+    })
 }
 
-/// Root endpoint
-/// 
-/// Returns basic service information.
-async fn root() -> Result<Json<GreetingResponse>, AppError> {
-    Ok(Json(GreetingResponse {
-        message: "Welcome to axa basic service".to_string(),
-        service: "basic-service".to_string(),
-    }))
+/// The service's routes, with the health routes Axa adds.
+fn routes() -> AppRoutes {
+    AppRoutes::with_default_routes().add_route(
+        Routes::new()
+            .prefix("/api")
+            .add("/hello", get(hello))
+            .add("/greet/{name}", get(greet)),
+    )
 }
 
-/// Greeting endpoint with parameter
-/// 
-/// Returns a personalized greeting.
-async fn greet(
-    axum::extract::Path(name): axum::extract::Path<String>,
-) -> Result<Json<GreetingResponse>, AppError> {
-    Ok(Json(GreetingResponse {
-        message: format!("Hello, {}!", name),
-        service: "basic-service".to_string(),
-    }))
+/// The settings for `environment`. An empty database name means no database.
+fn config(environment: &Environment) -> Result<Config> {
+    let defaults = Defaults {
+        database: "",
+        ..Defaults::default()
+    };
+    Config::from_env(environment, &defaults)
 }
 
 #[tokio::main]
-async fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter("basic_service=info,tower_http=info,axa=info")
-        .init();
+async fn main() -> Result<()> {
+    let environment = Environment::from_env();
+    let config = config(&environment)?;
+    logger::init("basic_service", &config.logger);
 
-    // Load environment variables from .env file
-    dotenvy::dotenv().ok();
-
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
-
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-
-    info!("Starting basic-service on {}", addr);
-
-    // Start the application using axa's start_app helper
-    // This provides consistent startup behavior across all axa services
-    start_app(app(), addr).await.unwrap();
+    let server_config = config.server.clone();
+    let ctx = AppContext::new(environment, (), config);
+    let router = routes().into_app(ctx)?;
+    server::serve(router, &server_config).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::body::Body;
-    use axum::http::{Request, StatusCode};
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
     use tower::ServiceExt;
 
-    #[tokio::test]
-    async fn test_health_check() {
-        let app = app();
+    fn app() -> axum::Router {
+        let config = config(&Environment::Test).unwrap();
+        routes()
+            .into_app(AppContext::new(Environment::Test, (), config))
+            .unwrap()
+    }
 
-        let request = Request::builder()
-            .uri("/health")
-            .body(Body::empty())
+    async fn get_path(path: &str) -> (StatusCode, String) {
+        let request = Request::builder().uri(path).body(Body::empty()).unwrap();
+        let response = app().oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
             .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
+        (status, String::from_utf8(body.to_vec()).unwrap())
     }
 
     #[tokio::test]
-    async fn test_root() {
-        let app = app();
-
-        let request = Request::builder()
-            .uri("/")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
+    async fn greet_says_hello_by_name() {
+        let (status, body) = get_path("/api/greet/World").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, r#"{"message":"Hello, World!"}"#);
     }
 
     #[tokio::test]
-    async fn test_greet() {
-        let app = app();
+    async fn a_name_that_is_too_long_is_a_problem() {
+        let (status, body) = get_path(&format!("/api/greet/{}", "a".repeat(101))).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert!(body.contains("name is too long"));
+    }
 
-        let request = Request::builder()
-            .uri("/greet/World")
-            .body(Body::empty())
-            .unwrap();
+    #[tokio::test]
+    async fn the_health_routes_answer() {
+        for path in ["/_health/live", "/_health/ready", "/_health/startup"] {
+            assert_eq!(get_path(path).await.0, StatusCode::OK, "{path}");
+        }
+    }
 
-        let response = app.oneshot(request).await.unwrap();
-
-        assert_eq!(response.status(), StatusCode::OK);
+    #[tokio::test]
+    async fn an_unknown_path_is_a_problem() {
+        let (status, body) = get_path("/nope").await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(body.contains("\"status\":404"));
     }
 }

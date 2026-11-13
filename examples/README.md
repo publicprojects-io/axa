@@ -1,211 +1,73 @@
-# axa Examples
+# Axa examples
 
-This directory contains real-world examples demonstrating how to use axa in different scenarios.
+Each example is a standalone Cargo package that builds against the `axa` in this
+repository. Run one from its own directory.
 
-## Available Examples
+| Example | What it shows | Database |
+|---|---|---|
+| [basic-service](basic-service/) | Settings, routes, health probes, problems, and tests with `oneshot` | None |
+| [todo-api](todo-api/) | A Postgres pool in `AppContext::db`, migrations at boot, plain SQL, and a database test | Postgres, with `postgres-sqlx` |
+| [multi-tenant](multi-tenant/) | The tenant from a verified PASETO token, a tenant filter on every query, and Postgres row-level security | Postgres, with `postgres-sqlx` and `paseto` |
 
-| Example | Description | Complexity | Features Used |
-|---------|-------------|------------|---------------|
-| [basic-service](./basic-service) | Minimal axa service | ⭐ | startup, health check, JSON API |
-| [todo-api](./todo-api) | RESTful Todo API with database | ⭐⭐ | db, sqlx, migrations, validation |
-| [multi-tenant](./multi-tenant) | Multi-tenant service | ⭐⭐⭐ | db, multi-tenancy, tenant isolation |
+## Start here
 
-## Learning Path
-
-### 1. Start Here: Basic Service
-
-Begin with the **basic-service** example to understand the fundamental pattern:
-
-```bash
+```sh
 cd examples/basic-service
+cargo run
+curl localhost:1241/api/greet/World
+```
+
+Then [todo-api](todo-api/README.md), which needs Postgres:
+
+```sh
+podman-compose up -d postgres          # from the repository root
+cd examples/todo-api
+export DB_URL=postgres://axa:axa@localhost:5432/axa_development
 cargo run
 ```
 
-This demonstrates:
-- How to start an axa service
-- Health check endpoint
-- JSON responses
-- Error handling
+## The pattern every example follows
 
-### 2. Add a Database: Todo API
+`main` stays ordinary Axum. It reads the settings, starts the logger, builds the router,
+and serves it:
 
-Once you understand the basics, move to **todo-api** to see database integration:
+```rust,ignore
+use axa::{Environment, Result, config::{Config, Defaults}, logger, prelude::*, server};
 
-```bash
-cd examples/todo-api
-# Make sure PostgreSQL is running (see podman-compose.yml in project root)
-DATABASE_URL=postgres://axa:axa@localhost:5432/todo_api cargo run
-```
-
-This adds:
-- SQLx for database access
-- Migrations
-- CRUD operations
-- Request validation
-
-### 3. Scale Up: Multi-tenant
-
-Finally, the **multi-tenant** example shows how to handle multiple tenants:
-
-```bash
-cd examples/multi-tenant
-DATABASE_URL=postgres://axa:axa@localhost:5432/multi_tenant cargo run
-```
-
-This demonstrates:
-- Schema-per-tenant isolation
-- Tenant context propagation
-- Automatic schema provisioning
-- Tenant-specific data access
-
-## Running with podman-compose
-
-All examples can use the project's podman-compose setup:
-
-```bash
-# From project root, start PostgreSQL and Redis
-podman-compose -f podman-compose.yml up -d
-
-# Create databases for examples
-podman exec -it axa-postgres-1 psql -U axa -c "CREATE DATABASE todo_api;"
-podman exec -it axa-postgres-1 psql -U axa -c "CREATE DATABASE multi_tenant;"
-
-# Now run any example
-cd examples/todo-api
-DATABASE_URL=postgres://axa:axa@localhost:5432/todo_api cargo run
-```
-
-## Example Structure
-
-Each example follows the same structure:
-
-```
-example-name/
-├── Cargo.toml          # Dependencies specific to this example
-├── src/
-│   └── main.rs         # Application code
-├── migrations/         # Database migrations (if applicable)
-│   └── *.sql           # Migration files
-├── .env.example        # Example environment configuration
-└── README.md           # Example-specific documentation
-```
-
-## Using Examples as Templates
-
-Each example can serve as a template for your own service:
-
-1. **Copy the example**:
-   ```bash
-   cp -r examples/basic-service my-service
-   cd my-service
-   ```
-
-2. **Rename and customize**:
-   ```bash
-   # Edit Cargo.toml
-   sed -i 's/basic-service/my-service/g' Cargo.toml
-   sed -i 's/name = "basic-service"/name = "my-service"/g' Cargo.toml
-   ```
-
-3. **Add your features**:
-   ```bash
-   # Add axa features as needed
-   cargo add axa --features db,auth,queue
-   ```
-
-4. **Update the dependency path**:
-   ```toml
-   # Change from path dependency to crates.io
-   axa = { version = "0.12" }
-   ```
-
-## Common Patterns
-
-### Starting a Service
-
-All axa services start the same way:
-
-```rust
-use axa::start_app;
-use axum::Router;
-
-fn app() -> Router {
-    Router::new()
-        .route("/health", get(health_check))
-        // Add your routes here
+async fn hello() -> Result<Response> {
+    format::json(serde_json::json!({ "hello": "world" }))
 }
 
 #[tokio::main]
-async fn main() {
-    let addr = ([0, 0, 0, 0], 3000).into();
-    start_app(app(), addr).await.unwrap();
+async fn main() -> Result<()> {
+    let environment = Environment::from_env();
+    let defaults = Defaults { database: "", ..Defaults::default() };
+    let config = Config::from_env(&environment, &defaults)?;
+    logger::init("hello_service", &config.logger);
+
+    let server_config = config.server.clone();
+    let ctx = AppContext::new(environment, (), config);
+    let router = AppRoutes::with_default_routes()
+        .add_route(Routes::new().prefix("/api").add("/hello", get(hello)))
+        .into_app(ctx)?;
+    server::serve(router, &server_config).await
 }
 ```
 
-### Database Integration
+- **Errors.** A handler returns `axa::Result<Response>`. `bad_request("...")` is `400`
+  with its text, `not_found()` is `404`, `?` on a database error is `409`, `422`, `503`,
+  or `500` as fits, and every one is an RFC 9457 problem that quotes nothing the caller
+  sent.
+- **Extractors.** `axa::extract::{Json, Path, Query}` answer a bad body, path, or query
+  as a problem too, where Axum's own answer is plain text.
+- **A database.** With a feature such as `postgres-sqlx`, name the database in
+  `Defaults`, open the pool with `axa::db::connect(&config.database)`, and pass it where
+  this passes `()`. `/_health/ready` then asks it.
+- **Tests.** Build the router with `into_app` and drive it with
+  `tower::ServiceExt::oneshot`, with no server running.
 
-Use axa's database helpers:
+## Start a service of your own
 
-```rust
-use axa::db::{DbPool, init_db_pool};
-
-#[derive(Clone)]
-struct AppState {
-    pool: DbPool,
-}
-
-#[tokio::main]
-async fn main() {
-    let pool = init_db_pool().await.expect("Failed to connect to database");
-    let state = AppState { pool };
-    
-    // Pass state to your router
-    let app = Router::new()
-        .route("/todos", get(list_todos))
-        .with_state(state);
-    
-    start_app(app, addr).await.unwrap();
-}
-```
-
-### Error Handling
-
-Use axa's error type for consistent error responses:
-
-```rust
-use axa::error::AppError;
-
-async fn get_todo(/* ... */) -> Result<Json<TodoResponse>, AppError> {
-    // Return 404 if not found
-    if todo.is_none() {
-        return Err(AppError::not_found("Todo not found"));
-    }
-    
-    // Return 400 for bad requests
-    if title.is_empty() {
-        return Err(AppError::bad_request("Title cannot be empty"));
-    }
-    
-    // Return 500 for internal errors
-    let result = database_query().await.map_err(|e| {
-        AppError::internal(format!("Database error: {}", e))
-    })?;
-    
-    Ok(Json(result))
-}
-```
-
-## Contributing Examples
-
-Have an example to share? Contributions are welcome!
-
-1. Create a new directory in `examples/`
-2. Add a `Cargo.toml`, `src/main.rs`, and `README.md`
-3. Include clear instructions and use cases
-4. Open a pull request
-
-## Need Help?
-
-- Check the [axa Documentation](../docs) for detailed guides
-- See [CONTRIBUTING.md](../CONTRIBUTING.md) for development setup
-- Join the community (link coming soon!)
+Use the [service template](../templates/service-template/README.md), which depends on
+`axa` from crates.io, rather than copying an example, which depends on this repository by
+path.

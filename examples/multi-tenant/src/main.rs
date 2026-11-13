@@ -1,490 +1,519 @@
-//! Multi-tenant Service Example
+//! A todo API shared by many tenants, on Postgres, with Axa.
 //!
-//! This example demonstrates multi-tenancy patterns using axa infrastructure.
-//! It shows:
-//! - Tenant isolation at the database level (schema-per-tenant)
-//! - Tenant identification from JWT or header
-//! - Tenant-specific request context
-//! - Schema management for tenants
+//! The tenant comes from the caller's verified PASETO token, never from a header or a
+//! path the caller chooses. Every row names its tenant, every query filters on it, and
+//! Postgres row-level security refuses another tenant's rows as a second fence.
 //!
-//! Run with: cargo run
-//! Requires: PostgreSQL database
+//! ```sh
+//! cargo run
+//! curl localhost:1241/api/todos -H "authorization: Bearer $TOKEN"
+//! ```
 
+use std::{path::Path as FilePath, sync::Arc};
+
+use authentication_verifier::{Claims, Policy, ReloadablePolicy, ReloadableVerifier, Verifier};
 use axa::{
-    db::{DbPool, init_db_pool},
-    error::AppError,
-    start_app,
-    web::AppState,
+    Environment, Error, Result,
+    config::{Config, Defaults},
+    error::ErrorDetail,
+    extract::{Json, Path},
+    logger, middleware,
+    paseto::{self, Allowed, Guard, GuardConfig},
+    postgres_sqlx::{
+        self, Pool,
+        sqlx::{self, Postgres, Transaction, migrate::Migrator},
+    },
+    prelude::{AppContext, AppRoutes, Response, Routes, State, bad_request, format, get, not_found},
+    server,
 };
-use axum::{
-    extract::State,
-    http::{Request, StatusCode},
-    middleware::Next,
-    response::Response,
-    routing::{delete, get, post, put},
-    Json, Router,
-};
-use chrono::{DateTime, Utc};
+use axum::{extract::FromRequestParts, http::StatusCode, http::request::Parts};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
-use uuid::Uuid;
 
-/// Tenant context extracted from request
-#[derive(Debug, Clone)]
-struct TenantContext {
-    tenant_id: String,
-    schema_name: String,
+/// The longest title, which the table's check also holds to.
+const MAX_TITLE_CHARS: usize = 200;
+
+/// The attribute in a token's `attrs` that names the caller's tenant.
+const TENANT_ATTRIBUTE: &str = "tenant";
+
+/// The caller's tenant, from their verified token.
+///
+/// A handler that takes this cannot run for a caller with no tenant, or with more than
+/// one, so no handler has to remember to check.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Tenant(String);
+
+impl Tenant {
+    /// The one tenant `claims` name, if it is a valid tenant id.
+    fn of(claims: &Claims) -> Option<Self> {
+        match claims.attrs.get(TENANT_ATTRIBUTE).map(Vec::as_slice) {
+            Some([tenant]) if is_tenant_id(tenant) => Some(Self(tenant.clone())),
+            _ => None,
+        }
+    }
 }
 
-/// Application state
-#[derive(Clone)]
-struct AppState {
-    pool: DbPool,
+/// Lower-case letters, digits, and hyphens, not starting with a hyphen, at most 63
+/// characters, as the table's check also says.
+fn is_tenant_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 63
+        && !id.starts_with('-')
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-/// Todo item for a specific tenant
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-struct TenantTodo {
-    id: Uuid,
+impl<S: Send + Sync> FromRequestParts<S> for Tenant {
+    type Rejection = Error;
+
+    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self> {
+        // Only what the guard verified and allowed. With no guard, or on a public
+        // path, there is nothing here, and the request is refused.
+        let allowed = parts
+            .extensions
+            .get::<Allowed>()
+            .ok_or_else(|| Error::Unauthorized("no verified caller".to_string()))?;
+        Self::of(&allowed.claims).ok_or_else(|| {
+            Error::CustomError(StatusCode::FORBIDDEN, ErrorDetail::with_reason("no_tenant"))
+        })
+    }
+}
+
+/// A transaction in which row-level security sees only `tenant`'s rows. The setting
+/// is bound, not formatted into the SQL, and lasts only until the transaction ends,
+/// so a pooled connection never carries one tenant into the next request.
+async fn in_tenant(pool: &Pool, tenant: &Tenant) -> Result<Transaction<'static, Postgres>> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SELECT set_config('app.tenant', $1, true)")
+        .bind(&tenant.0)
+        .execute(&mut *tx)
+        .await?;
+    Ok(tx)
+}
+
+/// A todo, as the API sends it. The tenant is not sent: the caller knows it.
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct Todo {
+    id: i64,
     title: String,
-    description: Option<String>,
     completed: bool,
-    tenant_id: String,
-    created_at: DateTime<Utc>,
-    updated_at: DateTime<Utc>,
 }
 
-/// Create Todo request
-#[derive(Debug, Deserialize, Serialize)]
-struct CreateTodoRequest {
+impl From<(i64, String, bool)> for Todo {
+    fn from((id, title, completed): (i64, String, bool)) -> Self {
+        Self {
+            id,
+            title,
+            completed,
+        }
+    }
+}
+
+/// A new todo. A tenant in the body would be ignored, so there is no field for one.
+#[derive(Deserialize)]
+struct NewTodo {
     title: String,
-    description: Option<String>,
 }
 
-/// Update Todo request
-#[derive(Debug, Deserialize, Serialize)]
-struct UpdateTodoRequest {
+/// A change to a todo. A missing field is left as it is.
+#[derive(Deserialize)]
+struct TodoChange {
     title: Option<String>,
-    description: Option<String>,
     completed: Option<bool>,
 }
 
-/// Todo response
-#[derive(Debug, Serialize)]
-struct TodoResponse {
-    id: Uuid,
-    title: String,
-    description: Option<String>,
-    completed: bool,
-    tenant_id: String,
-    created_at: String,
-    updated_at: String,
-}
-
-/// List response
-#[derive(Debug, Serialize)]
-struct TodoListResponse {
-    todos: Vec<TodoResponse>,
-    total: usize,
-    tenant_id: String,
-}
-
-/// Middleware to extract tenant from header
-/// 
-/// Expects: X-Tenant-ID header containing the tenant identifier
-/// Creates: Tenant-specific schema name and sets up context
-async fn tenant_middleware<B>(
-    request: Request<B>,
-    next: Next<B>,
-) -> Result<Response, StatusCode> {
-    let tenant_id = request
-        .headers()
-        .get("X-Tenant-ID")
-        .and_then(|v| v.to_str().ok())
-        .ok_or(StatusCode::BAD_REQUEST)?;
-
-    // Validate tenant ID (simple validation for demo)
-    if tenant_id.is_empty() || tenant_id.len() > 64 {
-        return Err(StatusCode::BAD_REQUEST);
+/// A title, trimmed, refused when blank or too long.
+fn checked_title(title: &str) -> Result<String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return bad_request("title is blank");
     }
-
-    // Create safe schema name from tenant ID
-    let schema_name = format!("tenant_{}", tenant_id.to_lowercase().replace('-', "_"));
-
-    // Insert tenant context into request extensions
-    let ctx = TenantContext {
-        tenant_id: tenant_id.to_string(),
-        schema_name,
-    };
-
-    let mut request = request;
-    request.extensions_mut().insert(ctx);
-
-    Ok(next.run(request).await)
+    if title.chars().count() > MAX_TITLE_CHARS {
+        return bad_request("title is longer than 200 characters");
+    }
+    Ok(title.to_string())
 }
 
-/// Ensure tenant schema exists
-async fn ensure_tenant_schema(pool: &DbPool, schema_name: &str) -> Result<(), sqlx::Error> {
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = $1)",
+async fn list(State(ctx): State<AppContext>, tenant: Tenant) -> Result<Response> {
+    let mut tx = in_tenant(&ctx.db, &tenant).await?;
+    let rows: Vec<(i64, String, bool)> = sqlx::query_as(
+        "SELECT id, title, completed FROM todos WHERE tenant_id = $1 ORDER BY id LIMIT 100",
     )
-    .bind(schema_name)
-    .fetch_one(pool)
+    .bind(&tenant.0)
+    .fetch_all(&mut *tx)
     .await?;
-
-    if !exists {
-        sqlx::query("CREATE SCHEMA ")
-            .push(schema_name)
-            .execute(pool)
-            .await?;
-
-        // Create todos table in tenant schema
-        sqlx::query(&format!(
-            "CREATE TABLE {}.todos (
-                id UUID PRIMARY KEY NOT NULL,
-                title VARCHAR(255) NOT NULL,
-                description TEXT,
-                completed BOOLEAN NOT NULL DEFAULT FALSE,
-                tenant_id VARCHAR(64) NOT NULL,
-                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-            )",
-            schema_name
-        ))
-        .execute(pool)
-        .await?;
-
-        sqlx::query(&format!(
-            "CREATE INDEX {0}.idx_todos_tenant_created ON {0}.todos(tenant_id, created_at)",
-            schema_name
-        ))
-        .execute(pool)
-        .await?;
-    }
-
-    Ok(())
+    tx.commit().await?;
+    format::json(rows.into_iter().map(Todo::from).collect::<Vec<_>>())
 }
 
-/// Execute a query in a tenant schema
-async fn query_in_schema<T: sqlx::FromRow + Send + Unpin>(
-    pool: &DbPool,
-    schema: &str,
-    query: &str,
-    args: impl sqlx::IntoArguments + Send,
-) -> Result<Vec<T>, sqlx::Error> {
-    let full_query = format!("SET search_path TO {},public; {}", schema, query);
-    sqlx::query_as::<_, T>(&full_query)
-        .into_arguments(args)
-        .fetch_all(pool)
-        .await
+async fn create(
+    State(ctx): State<AppContext>,
+    tenant: Tenant,
+    Json(todo): Json<NewTodo>,
+) -> Result<Response> {
+    let title = checked_title(&todo.title)?;
+    let mut tx = in_tenant(&ctx.db, &tenant).await?;
+    let row: (i64, String, bool) = sqlx::query_as(
+        "INSERT INTO todos (tenant_id, title) VALUES ($1, $2) RETURNING id, title, completed",
+    )
+    .bind(&tenant.0)
+    .bind(title)
+    .fetch_one(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    format::json(Todo::from(row))
 }
 
-/// Execute a scalar query in a tenant schema
-async fn query_scalar_in_schema<T: sqlx::FromRow + Send + Unpin>(
-    pool: &DbPool,
-    schema: &str,
-    query: &str,
-    args: impl sqlx::IntoArguments + Send,
-) -> Result<Option<T>, sqlx::Error> {
-    let full_query = format!("SET search_path TO {},public; {}", schema, query);
-    sqlx::query_as::<_, T>(&full_query)
-        .into_arguments(args)
-        .fetch_optional(pool)
-        .await
-}
-
-/// Health check endpoint
-async fn health_check() -> Result<Json<serde_json::Value>, AppError> {
-    Ok(Json(serde_json::json!({
-        "status": "healthy",
-        "version": env!("CARGO_PKG_VERSION"),
-        "service": "multi-tenant"
-    })))
-}
-
-/// List all todos for the current tenant
-async fn list_todos(State(state): State<AppState>, request: Request<()>) -> Result<Json<TodoListResponse>, AppError> {
-    let ctx = request
-        .extensions()
-        .get::<TenantContext>()
-        .ok_or_else(|| AppError::bad_request("Tenant context not found"))?;
-
-    // Ensure schema exists
-    ensure_tenant_schema(&state.pool, &ctx.schema_name).await?;
-
-    let todos = query_in_schema::<TenantTodo>(
-        &state.pool,
-        &ctx.schema_name,
-        "SELECT id, title, description, completed, tenant_id, created_at, updated_at FROM todos WHERE tenant_id = $1 ORDER BY created_at DESC",
-        (ctx.tenant_id.clone(),)
-    ).await?;
-
-    let responses: Vec<TodoResponse> = todos
-        .into_iter()
-        .map(|todo| TodoResponse {
-            id: todo.id,
-            title: todo.title,
-            description: todo.description,
-            completed: todo.completed,
-            tenant_id: todo.tenant_id,
-            created_at: todo.created_at.to_rfc3339(),
-            updated_at: todo.updated_at.to_rfc3339(),
-        })
-        .collect();
-
-    Ok(Json(TodoListResponse {
-        todos: responses,
-        total: responses.len(),
-        tenant_id: ctx.tenant_id.clone(),
-    }))
-}
-
-/// Get a specific todo
-async fn get_todo(
-    State(state): State<AppState>,
-    request: Request<()>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<Json<TodoResponse>, AppError> {
-    let ctx = request
-        .extensions()
-        .get::<TenantContext>()
-        .ok_or_else(|| AppError::bad_request("Tenant context not found"))?;
-
-    ensure_tenant_schema(&state.pool, &ctx.schema_name).await?;
-
-    let todo = query_scalar_in_schema::<TenantTodo>(
-        &state.pool,
-        &ctx.schema_name,
-        "SELECT id, title, description, completed, tenant_id, created_at, updated_at FROM todos WHERE id = $1 AND tenant_id = $2",
-        (id, ctx.tenant_id.clone()),
-    ).await?;
-
-    match todo {
-        Some(todo) => Ok(Json(TodoResponse {
-            id: todo.id,
-            title: todo.title,
-            description: todo.description,
-            completed: todo.completed,
-            tenant_id: todo.tenant_id,
-            created_at: todo.created_at.to_rfc3339(),
-            updated_at: todo.updated_at.to_rfc3339(),
-        })),
-        None => Err(AppError::not_found(format!("Todo {} not found", id))),
-    }
-}
-
-/// Create a new todo
-async fn create_todo(
-    State(state): State<AppState>,
-    request: Request<Json<CreateTodoRequest>>,
-) -> Result<Json<TodoResponse>, AppError> {
-    let ctx = request
-        .extensions()
-        .get::<TenantContext>()
-        .ok_or_else(|| AppError::bad_request("Tenant context not found"))?;
-
-    let Json(body) = request.into_parts().0 ;
-
-    ensure_tenant_schema(&state.pool, &ctx.schema_name).await?;
-
-    let id = Uuid::new_v4();
-    let now = Utc::now();
-
-    let todo = query_in_schema::<TenantTodo>(
-        &state.pool,
-        &ctx.schema_name,
-        "INSERT INTO todos (id, title, description, completed, tenant_id, created_at, updated_at) 
-         VALUES ($1, $2, $3, $4, $5, $6, $7) 
-         RETURNING id, title, description, completed, tenant_id, created_at, updated_at",
-        (id, body.title, body.description, false, ctx.tenant_id.clone(), now, now),
-    ).await?;
-
-    let todo = todo.into_iter().next().ok_or_else(|| AppError::internal("Failed to create todo"))?;
-
-    Ok(Json(TodoResponse {
-        id: todo.id,
-        title: todo.title,
-        description: todo.description,
-        completed: todo.completed,
-        tenant_id: todo.tenant_id,
-        created_at: todo.created_at.to_rfc3339(),
-        updated_at: todo.updated_at.to_rfc3339(),
-    }))
-}
-
-/// Update a todo
-async fn update_todo(
-    State(state): State<AppState>,
-    request: Request<Json<UpdateTodoRequest>>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<Json<TodoResponse>, AppError> {
-    let ctx = request
-        .extensions()
-        .get::<TenantContext>()
-        .ok_or_else(|| AppError::bad_request("Tenant context not found"))?;
-
-    let Json(body) = request.into_parts().0;
-
-    ensure_tenant_schema(&state.pool, &ctx.schema_name).await?;
-
-    let existing: Option<i64> = query_scalar_in_schema(
-        &state.pool,
-        &ctx.schema_name,
-        "SELECT COUNT(*) FROM todos WHERE id = $1 AND tenant_id = $2",
-        (id, ctx.tenant_id.clone()),
-    ).await?;
-
-    if existing.is_none() || existing.unwrap() == 0 {
-        return Err(AppError::not_found(format!("Todo {} not found", id)));
-    }
-
-    let title = body.title.unwrap_or_else(|| "".to_string());
-    let description = body.description;
-    let completed = body.completed.unwrap_or(false);
-    let now = Utc::now();
-
-    let todo = query_in_schema::<TenantTodo>(
-        &state.pool,
-        &ctx.schema_name,
-        "UPDATE todos 
-         SET title = COALESCE($1, title), 
-             description = COALESCE($2, description), 
-             completed = COALESCE($3, completed), 
-             updated_at = $4 
-         WHERE id = $5 AND tenant_id = $6 
-         RETURNING id, title, description, completed, tenant_id, created_at, updated_at",
-        (title, description, completed, now, id, ctx.tenant_id.clone()),
-    ).await?;
-
-    let todo = todo.into_iter().next().ok_or_else(|| AppError::internal("Failed to update todo"))?;
-
-    Ok(Json(TodoResponse {
-        id: todo.id,
-        title: todo.title,
-        description: todo.description,
-        completed: todo.completed,
-        tenant_id: todo.tenant_id,
-        created_at: todo.created_at.to_rfc3339(),
-        updated_at: todo.updated_at.to_rfc3339(),
-    }))
-}
-
-/// Delete a todo
-async fn delete_todo(
-    State(state): State<AppState>,
-    request: Request<()>,
-    axum::extract::Path(id): axum::extract::Path<Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    let ctx = request
-        .extensions()
-        .get::<TenantContext>()
-        .ok_or_else(|| AppError::bad_request("Tenant context not found"))?;
-
-    ensure_tenant_schema(&state.pool, &ctx.schema_name).await?;
-
-    let deleted = sqlx::query_scalar::<_, i64>(&format!(
-        "SET search_path TO {},public; DELETE FROM todos WHERE id = $1 AND tenant_id = $2",
-        ctx.schema_name
-    ))
+/// Another tenant's todo is `404`, as a missing one is, so that a caller cannot learn
+/// which ids other tenants hold.
+async fn show(
+    State(ctx): State<AppContext>,
+    tenant: Tenant,
+    Path(id): Path<i64>,
+) -> Result<Response> {
+    let mut tx = in_tenant(&ctx.db, &tenant).await?;
+    let row: Option<(i64, String, bool)> = sqlx::query_as(
+        "SELECT id, title, completed FROM todos WHERE tenant_id = $1 AND id = $2",
+    )
+    .bind(&tenant.0)
     .bind(id)
-    .bind(&ctx.tenant_id)
-    .execute(&state.pool)
+    .fetch_optional(&mut *tx)
     .await?;
-
-    if deleted.rows_affected() == 0 {
-        return Err(AppError::not_found(format!("Todo {} not found", id)));
-    }
-
-    Ok(Json(serde_json::json!({
-        "status": "deleted",
-        "id": id.to_string(),
-        "tenant_id": ctx.tenant_id
-    })))
+    tx.commit().await?;
+    row.map_or_else(not_found, |row| format::json(Todo::from(row)))
 }
 
-/// Create the application router
-fn app(state: AppState) -> Router {
-    Router::new()
-        .route("/health", get(health_check))
-        .route("/todos", get(list_todos))
-        .route("/todos", post(create_todo))
-        .route("/todos/:id", get(get_todo))
-        .route("/todos/:id", put(update_todo))
-        .route("/todos/:id", delete(delete_todo))
-        .layer(axum::middleware::from_fn(tenant_middleware))
-        .with_state(state)
+async fn update(
+    State(ctx): State<AppContext>,
+    tenant: Tenant,
+    Path(id): Path<i64>,
+    Json(change): Json<TodoChange>,
+) -> Result<Response> {
+    let title = change.title.as_deref().map(checked_title).transpose()?;
+    let mut tx = in_tenant(&ctx.db, &tenant).await?;
+    let row: Option<(i64, String, bool)> = sqlx::query_as(
+        "UPDATE todos SET title = COALESCE($3, title), completed = COALESCE($4, completed)
+         WHERE tenant_id = $1 AND id = $2 RETURNING id, title, completed",
+    )
+    .bind(&tenant.0)
+    .bind(id)
+    .bind(title)
+    .bind(change.completed)
+    .fetch_optional(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    row.map_or_else(not_found, |row| format::json(Todo::from(row)))
+}
+
+async fn remove(
+    State(ctx): State<AppContext>,
+    tenant: Tenant,
+    Path(id): Path<i64>,
+) -> Result<Response> {
+    let mut tx = in_tenant(&ctx.db, &tenant).await?;
+    let deleted = sqlx::query("DELETE FROM todos WHERE tenant_id = $1 AND id = $2")
+        .bind(&tenant.0)
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    tx.commit().await?;
+    if deleted == 0 {
+        return not_found();
+    }
+    format::empty()
+}
+
+/// The service's routes, with the health routes Axa adds.
+fn routes() -> AppRoutes {
+    AppRoutes::with_default_routes().add_route(
+        Routes::new()
+            .prefix("/api/todos")
+            .add("/", get(list).post(create))
+            .add("/{id}", get(show).patch(update).delete(remove)),
+    )
+}
+
+/// The routes behind `guard`, inside Axa's standard middleware, so that a refusal has
+/// a request id and the security headers.
+fn app(ctx: AppContext, guard: Guard) -> Result<axum::Router> {
+    let http = ctx.config.http.clone();
+    let router = routes().into_router(ctx).layer(
+        axum::middleware::from_fn_with_state(Arc::new(guard), paseto::middleware),
+    );
+    middleware::apply(router, &http)
+}
+
+/// A guard that verifies tokens against the key set in `PASETO_KEYS_FILE`, for
+/// `PASETO_ISSUER` and `PASETO_AUDIENCE`, under the default policy: reads for any
+/// verified caller, writes for `access=write`, deletes for `access=admin`.
+fn guard_from_env() -> Result<Guard> {
+    let variable = |name: &str| {
+        std::env::var(name).map_err(|_| Error::string(&format!("{name} must be set")))
+    };
+    let keys = std::fs::read_to_string(variable("PASETO_KEYS_FILE")?)?;
+    let keys: serde_json::Value = serde_json::from_str(&keys)?;
+    let verifier = Verifier::from_paseto_keys_value(
+        &keys,
+        &variable("PASETO_ISSUER")?,
+        &variable("PASETO_AUDIENCE")?,
+    )
+    .map_err(Error::wrap)?;
+    Ok(Guard::new(
+        GuardConfig::new("todo"),
+        Arc::new(ReloadableVerifier::new(verifier)),
+        Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+    ))
+}
+
+/// The settings for `environment`, with a database named `multi_tenant`.
+fn config(environment: &Environment) -> Result<Config> {
+    let defaults = Defaults {
+        database: "multi_tenant",
+        ..Defaults::default()
+    };
+    Config::from_env(environment, &defaults)
+}
+
+/// The migrations in `migrations/`.
+async fn migrator() -> Result<Migrator> {
+    let directory = FilePath::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    Migrator::new(directory).await.map_err(Error::wrap)
 }
 
 #[tokio::main]
-async fn main() {
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter("multi_tenant=info,tower_http=info,axa=info,sqlx=warn")
-        .init();
+async fn main() -> Result<()> {
+    let environment = Environment::from_env();
+    let config = config(&environment)?;
+    logger::init("multi_tenant", &config.logger);
+    let guard = guard_from_env()?;
 
-    // Load environment variables from .env file
-    dotenvy::dotenv().ok();
+    let pool = axa::db::connect(&config.database).await?;
+    if config.database.auto_migrate {
+        postgres_sqlx::migrate(&pool, &migrator().await?)
+            .await
+            .map_err(Error::wrap)?;
+    }
 
-    // Initialize database pool
-    let pool = init_db_pool().await.expect("Failed to initialize database pool");
-
-    // Create shared schema for common tables
-    sqlx::query("CREATE SCHEMA IF NOT EXISTS shared")
-        .execute(&pool)
-        .await
-        .expect("Failed to create shared schema");
-
-    let port = std::env::var("PORT")
-        .ok()
-        .and_then(|p| p.parse().ok())
-        .unwrap_or(3000);
-
-    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], port));
-
-    tracing::info!("Starting multi-tenant service on {}", addr);
-
-    let state = AppState { pool };
-
-    // Start the application
-    start_app(app(state), addr).await.unwrap();
+    let server_config = config.server.clone();
+    let router = app(AppContext::new(environment, pool, config), guard)?;
+    server::serve(router, &server_config).await
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
-    use axum::body::Body;
-    use axum::http::Request;
+    use axum::{
+        body::Body,
+        http::{Request, header},
+    };
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use ed25519_dalek::SigningKey;
+    use rusty_paseto::core::{Footer, Key, Paseto, PasetoAsymmetricPrivateKey, Payload, Public, V4};
+    use serde_json::{Value, json};
+    use sha2::{Digest, Sha256};
     use tower::ServiceExt;
 
-    #[tokio::test]
-    async fn test_health_check() {
-        let pool = init_db_pool().await.unwrap();
-        let state = AppState { pool };
-        let app = app(state);
+    /// A throwaway signing seed for test tokens. It protects nothing.
+    const SEED: [u8; 32] = [7; 32];
+    const ISSUER: &str = "authentication-service";
+    const AUDIENCE: &str = "multi-tenant";
 
-        let request = Request::builder()
-            .uri("/health")
-            .body(Body::empty())
+    fn kid() -> String {
+        let public = SigningKey::from_bytes(&SEED).verifying_key().to_bytes();
+        URL_SAFE_NO_PAD.encode(Sha256::digest(public))
+    }
+
+    /// A token for a caller with `attrs`, signed as the auth service would.
+    fn token(attrs: &Value) -> String {
+        let payload = json!({
+            "sub": "11111111-1111-1111-1111-111111111111",
+            "email": "alice@example.com", "name": "Alice",
+            "iss": ISSUER, "aud": AUDIENCE,
+            "exp": 11_700_000_000_i64, "iat": 1_700_000_000, "sid": "test-sid",
+            "attrs": attrs,
+        })
+        .to_string();
+        let key = Key::<64>::from(SigningKey::from_bytes(&SEED).to_keypair_bytes());
+        let private = PasetoAsymmetricPrivateKey::<V4, Public>::from(&key);
+        let footer = format!(r#"{{"kid":"{}"}}"#, kid());
+        let mut builder = Paseto::<V4, Public>::builder();
+        builder.set_payload(Payload::from(payload.as_str()));
+        builder.set_footer(Footer::from(footer.as_str()));
+        builder.try_sign(&private).unwrap()
+    }
+
+    fn guard() -> Guard {
+        let public = SigningKey::from_bytes(&SEED).verifying_key().to_bytes();
+        let keys = json!({
+            "keys": [{ "kty": "OKP", "crv": "Ed25519", "use": "sig",
+                       "kid": kid(), "x": URL_SAFE_NO_PAD.encode(public) }]
+        });
+        let verifier = Verifier::from_paseto_keys_value(&keys, ISSUER, AUDIENCE).unwrap();
+        Guard::new(
+            GuardConfig::new("todo"),
+            Arc::new(ReloadableVerifier::new(verifier)),
+            Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+        )
+    }
+
+    fn test_app(pool: Pool) -> axum::Router {
+        let config = config(&Environment::Test).unwrap();
+        app(AppContext::new(Environment::Test, pool, config), guard()).unwrap()
+    }
+
+    /// A pool that connects only when first used, for tests that never reach it.
+    fn unused_pool() -> Pool {
+        sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/unused")
+            .unwrap()
+    }
+
+    async fn send(
+        app: &axum::Router,
+        method: &str,
+        path: &str,
+        token: Option<&str>,
+        body: Option<&str>,
+    ) -> (StatusCode, String) {
+        let mut request = Request::builder().method(method).uri(path);
+        if let Some(token) = token {
+            request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
+        }
+        if body.is_some() {
+            request = request.header(header::CONTENT_TYPE, "application/json");
+        }
+        let request = request
+            .body(body.map_or_else(Body::empty, |body| Body::from(body.to_string())))
             .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
 
-        let response = app.oneshot(request).await.unwrap();
+    fn claims_with(attrs: &[(&str, &[&str])]) -> Claims {
+        let attrs: BTreeMap<String, Vec<String>> = attrs
+            .iter()
+            .map(|(key, values)| {
+                (
+                    (*key).to_string(),
+                    values.iter().map(ToString::to_string).collect(),
+                )
+            })
+            .collect();
+        serde_json::from_value(json!({
+            "sub": "s", "email": "e", "name": "n", "iss": ISSUER, "aud": AUDIENCE,
+            "exp": 0, "iat": 0, "sid": "x", "attrs": attrs,
+        }))
+        .unwrap()
+    }
 
-        assert_eq!(response.status(), StatusCode::OK);
+    #[test]
+    fn a_tenant_is_exactly_one_valid_id_from_the_token() {
+        assert_eq!(
+            Tenant::of(&claims_with(&[("tenant", &["acme"])])),
+            Some(Tenant("acme".to_string()))
+        );
+        for attrs in [
+            &[][..],
+            &[("tenant", &[][..])][..],
+            &[("tenant", &["acme", "globex"][..])][..],
+            &[("tenant", &["Acme"][..])][..],
+            &[("tenant", &["-acme"][..])][..],
+            &[("tenant", &["acme'; --"][..])][..],
+            &[("org", &["acme"][..])][..],
+        ] {
+            assert_eq!(Tenant::of(&claims_with(attrs)), None, "{attrs:?}");
+        }
+        assert!(is_tenant_id(&"a".repeat(63)));
+        assert!(!is_tenant_id(&"a".repeat(64)));
     }
 
     #[tokio::test]
-    async fn test_missing_tenant_header() {
-        let pool = init_db_pool().await.unwrap();
-        let state = AppState { pool };
-        let app = app(state);
+    async fn a_caller_with_no_token_or_no_tenant_is_refused_before_the_database() {
+        let app = test_app(unused_pool());
+        let (status, _) = send(&app, "GET", "/api/todos", None, None).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
 
-        let request = Request::builder()
-            .uri("/todos")
-            .body(Body::empty())
+        let no_tenant = token(&json!({ "access": ["write"] }));
+        let (status, body) = send(&app, "GET", "/api/todos", Some(&no_tenant), None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.contains("no_tenant"), "{body}");
+
+        let two = token(&json!({ "tenant": ["acme", "globex"] }));
+        let (status, _) = send(&app, "GET", "/api/todos", Some(&two), None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn the_policy_decides_writes_before_the_tenant_is_asked() {
+        let app = test_app(unused_pool());
+        let reader = token(&json!({ "tenant": ["acme"] }));
+        let body = Some(r#"{"title":"Milk"}"#);
+        let (status, _) = send(&app, "POST", "/api/todos", Some(&reader), body).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        let (status, _) = send(&app, "DELETE", "/api/todos/1", Some(&reader), None).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    /// Against a real Postgres, on a database this test may wipe, as a role that is
+    /// not a superuser and has no `BYPASSRLS`, so that row-level security applies:
+    ///
+    /// ```sh
+    /// AXA_TEST_DB_URL=postgres://... cargo test -- --ignored
+    /// ```
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn one_tenant_never_sees_or_changes_another_tenants_todos() {
+        let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect(&url)
+            .await
             .unwrap();
+        sqlx::query("DROP TABLE IF EXISTS todos, _sqlx_migrations")
+            .execute(&pool)
+            .await
+            .unwrap();
+        postgres_sqlx::migrate(&pool, &migrator().await.unwrap())
+            .await
+            .unwrap();
+        let app = test_app(pool.clone());
+        let acme = token(&json!({ "tenant": ["acme"], "access": ["admin"] }));
+        let globex = token(&json!({ "tenant": ["globex"], "access": ["admin"] }));
 
-        let response = app.oneshot(request).await.unwrap();
+        let body = Some(r#"{"title":"Acme's secret plan"}"#);
+        let (status, created) = send(&app, "POST", "/api/todos", Some(&acme), body).await;
+        assert_eq!(status, StatusCode::OK);
+        let todo: Todo = serde_json::from_str(&created).unwrap();
+        let path = format!("/api/todos/{}", todo.id);
 
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let (_, listed) = send(&app, "GET", "/api/todos", Some(&globex), None).await;
+        assert_eq!(listed, "[]");
+        for (method, body) in [
+            ("GET", None),
+            ("PATCH", Some(r#"{"completed":true}"#)),
+            ("DELETE", None),
+        ] {
+            let (status, _) = send(&app, method, &path, Some(&globex), body).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{method}");
+        }
+        let (status, _) = send(&app, "GET", &path, Some(&acme), None).await;
+        assert_eq!(status, StatusCode::OK);
+
+        // The second fence: a query that forgets the filter still sees no other
+        // tenant's rows.
+        let mut tx = in_tenant(&pool, &Tenant("globex".to_string()))
+            .await
+            .unwrap();
+        let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM todos")
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        assert_eq!(count, 0, "row-level security does not apply to this role");
     }
 }

@@ -27,75 +27,47 @@ The **service-template** provides a complete foundation for building production-
 
 ### Quick Start
 
-```bash
-# Use the template on GitHub
-# 1. Click "Use this template" on GitHub
-# 2. Create a new repository from this template
-# 3. Clone your new repository
+Copy the directory out of the axa repository, rename it, and run it:
 
-cd your-service
-
-# Rename the project
-find . -type f \( -name "*.rs" -o -name "*.toml" -o -name "*.md" \) \
-  -exec sed -i 's/service-template/your-service/g' {} +\;
-
-# Build and run
-cargo build
+```sh
+cp -R templates/service-template ../your-service
+cd ../your-service
+git init
 cargo run
 ```
 
+Then replace `service-template` and `service_template` with your service's name, as
+[its README](service-template/README.md) describes.
+
 ### Customization
 
-The template is designed to be customized:
+Turn on what the service needs as features of `axa` in `Cargo.toml`, such as
+`axa = { version = "0.12", features = ["postgres-sqlx", "paseto"] }`:
 
-1. **Add Database**: Choose from axa's database crates:
-   - `axa-postgres-sqlx` - PostgreSQL with sqlx
-   - `axa-postgres-seaorm` - PostgreSQL with SeaORM
-   - `axa-mysql-sqlx` - MySQL with sqlx
-   - `axa-mysql-seaorm` - MySQL with SeaORM
-
-2. **Add Authentication**: Choose from axa's auth crates:
-   - `axa-paseto-auth` - PASETO tokens
-   - `axa-keycloak-auth` - Keycloak/OIDC
-
-3. **Add Features**: Enable axa features as needed:
-   - `queue` - Job queue
-   - `outbox` - Transactional outbox
-   - `cursor-pagination` - Signed cursor pagination
-   - `prometheus` - Prometheus metrics
-   - `ratelimit` - Request rate limiting
-   - `idempotency` - Idempotency keys
-   - `versioning` - API versioning
-   - `tracing` - Distributed tracing
-   - `opentelemetry` - OpenTelemetry integration
-   - `redis` - Redis cache
-   - `openapi` - OpenAPI documentation
-   - `session` - Web sessions
+1. **A database**: `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`,
+   `postgres-toasty`, or the `mysql-` forms of each. `AppContext::db` becomes its pool.
+2. **Authentication**: `paseto` for PASETO tokens, or `keycloak` for Keycloak and OIDC.
+3. **More**: `queue`, `outbox`, `cursor-pagination`, `prometheus`, `ratelimit`,
+   `idempotency`, `versioning`, `tracing`, `opentelemetry`, `redis`, `openapi`, and
+   `session`. Each is described in the [axa README](../README.md#installing).
 
 ### Template Structure
 
 ```
 service-template/
-├── README.md                      # Project documentation
-├── Cargo.toml                     # Rust package configuration
-├── .gitignore                     # Git ignore patterns
+├── README.md                      # How to start a service from it
+├── Cargo.toml                     # axa, axum, serde, and tokio; strict lints
+├── .gitignore
 ├── .pre-commit-config.yaml        # Pre-commit hooks
 ├── .devcontainer/                 # VS Code dev container
-│   ├── devcontainer.json
-│   └── podman-compose.devcontainer.yml
-├── podman-compose.yml             # Development containers
-├── .github/
-│   └── workflows/
-│       └── ci.yml                 # CI pipeline
+├── podman-compose.yml             # Local Postgres and Redis
+├── .github/workflows/ci.yml       # CI pipeline
 ├── src/
-│   ├── main.rs                    # Entry point
-│   ├── app.rs                     # Router and state
-│   ├── config.rs                  # Configuration
-│   ├── error.rs                   # Error handling
-│   └── health.rs                  # Health checks
+│   ├── main.rs                    # Settings, logger, and server
+│   └── routes.rs                  # The service's routes
 └── docs/
-    ├── architecture.md             # Architecture decisions
-    └── api.md                      # API documentation
+    ├── architecture.md            # How it is built, and a decision log
+    └── api.md                     # What the service answers
 ```
 
 ## Creating Your Own Template
@@ -116,7 +88,7 @@ All templates follow axa conventions:
 2. **Spec-first**: Document behavior before implementing
 3. **Fail-closed**: Production refuses unsafe configurations
 4. **Audit-friendly**: Every request path is traceable
-5. **Zero indirection**: No macros, no code generation
+5. **No indirection of its own**: health, settings, middleware, and errors come from axa, not from code in the template
 
 ## Learn More
 

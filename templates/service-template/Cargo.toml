@@ -1,95 +1,36 @@
 [package]
 name = "service-template"
 version = "0.1.0"
-edition = "2021"
-authors = ["Your Name <your.email@example.com>"]
-description = "A service built with axa"
+edition = "2024"
+description = "A service built with Axa"
 license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
-repository = "https://github.com/your-org/service-template"
-readme = "README.md"
 rust-version = "1.97"
 publish = false
 
 [dependencies]
-# Core web framework
+# Turn on what the service needs, such as "postgres-sqlx" for a Postgres pool in
+# AppContext::db, "paseto" or "keycloak" for bearer tokens, or "queue" for jobs.
+# Each feature is listed in Axa's README.
+axa = "0.12"
 axum = "0.8"
-
-# axa - Accessories library for Axum
-axa = { version = "0.12", features = ["health"] }
-
-# Serialization
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-
-# Environment variables
-dotenvy = "0.15"
-
-# Logging
- tracing = "0.1"
- tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-
-# Timeouts and graceful shutdown
-tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-# HTTP client for tests
-hyper = "1.0"
-tower = { version = "0.4", features = ["util"] }
-
-[profile.release]
-opt-level = 3
-lto = "fat"
-codegen-units = 1
-panic = "abort"
-strip = true
-
-[profile.release-with-debug]
-inherits = "release"
-debug = true
-strip = false
-
-[lints.clippy]
-# Deny all warnings
-all = ["deny"]
-pedantic = ["deny"]
+tower = { version = "0.5", features = ["util"] }
 
 [lints.rust]
-# Deny all warnings
-all = ["deny"]
+unsafe_code = "forbid"
 missing_docs = "warn"
 
-[features]
-default = []
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
 
-# Database features
-postgres-sqlx = ["axa/postgres-sqlx"]
-postgres-seaorm = ["axa/postgres-seaorm"]
-mysql-sqlx = ["axa/mysql-sqlx"]
-mysql-seaorm = ["axa/mysql-seaorm"]
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
 
-# Authentication features
-db = ["axa/db"]
-auth = ["axa/auth"]
-paseto = ["axa/paseto", "dep:axa-paseto-auth"]
-keycloak = ["axa/keycloak", "dep:axa-keycloak-auth"]
-
-# Other features
-queue = ["axa/queue"]
-outbox = ["axa/outbox"]
-metrics = ["axa/prometheus", "dep:axa-prometheus-metrics"]
-ratelimit = ["axa/ratelimit"]
-idempotency = ["axa/idempotency"]
-tracing = ["axa/tracing"]
-opentelemetry = ["axa/opentelemetry"]
-
-[dependencies.axa-paseto-auth]
-version = "0.12"
-optional = true
-
-[dependencies.axa-keycloak-auth]
-version = "0.12"
-optional = true
-
-[dependencies.axa-prometheus-metrics]
-version = "0.12"
-optional = true
+# Standalone, not a member of the axa workspace.
+[workspace]

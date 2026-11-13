@@ -1,267 +1,104 @@
-# Multi-tenant Service Example
+# Multi-tenant
 
-A multi-tenant service demonstrating tenant isolation patterns with axa.
+A todo API that many tenants share, on Postgres, with Axa's `postgres-sqlx` and `paseto`
+features. One table holds every tenant's rows, and no tenant can see or change another's.
 
-## Features Demonstrated
+## How a tenant is chosen
 
-- **Schema-per-tenant isolation**: Each tenant gets a dedicated PostgreSQL schema
-- **Tenant identification**: Extract tenant ID from `X-Tenant-ID` header
-- **Tenant context**: Propagate tenant context through request lifecycle
-- **Automatic schema provisioning**: Create schemas on-demand
-- **Data isolation**: Tenants can only access their own data
-- **Shared infrastructure**: Common tables in a shared schema
+**From the caller's verified token, and nowhere else.** The auth service puts the
+tenant in the token's `attrs`, as `"tenant": ["acme"]`. The `Tenant` extractor reads it
+from what the PASETO guard verified and allowed, and a handler that takes `Tenant` cannot
+run without one.
 
-## Multi-tenancy Strategy
+| The token | The answer |
+|---|---|
+| None, or not valid | `401` |
+| Valid, with no `tenant`, more than one, or one that is not a tenant id | `403`, code `no_tenant` |
+| Valid, with one tenant, for an action the policy refuses | `403` |
+| Valid, with one tenant, allowed | The request runs in that tenant |
 
-This example uses **schema-per-tenant** multi-tenancy:
+A tenant id is lower-case letters, digits, and hyphens, at most 63 characters, not
+starting with a hyphen. The table checks this too.
 
-```
-PostgreSQL Database
-├── public (default schema)
-├── shared (shared tables across all tenants)
-│   └── tenants (tenant metadata)
-└── tenant_<tenant_id> (per-tenant schemas)
-    └── todos (tenant-specific data)
-```
+Never take the tenant from a header, a path, a subdomain, or a body that the caller
+chooses: any caller could then name any tenant. A subdomain can say which tenant a
+request means, but the token still has to say the caller belongs to it.
 
-### Pros of Schema-per-tenant:
-- ✅ Strong data isolation
-- ✅ Easy to backup/restore individual tenants
-- ✅ Clear performance characteristics
-- ✅ Can set per-schema permissions
-- ✅ Easy to move tenants between servers
+## Two fences
 
-### Cons of Schema-per-tenant:
-- ❌ More schemas to manage
-- ❌ Connection limits per database
-- ❌ Cross-tenant queries require multiple connections
+1. **Every query filters on the tenant.** Each row has a `tenant_id`, the primary key is
+   `(tenant_id, id)`, and every `SELECT`, `UPDATE`, and `DELETE` says
+   `WHERE tenant_id = $1`. Another tenant's todo is `404`, the same as a missing one, so
+   ids leak nothing.
+2. **Postgres row-level security** refuses another tenant's rows even to a query that
+   forgets the filter. Each request runs in a transaction that sets `app.tenant` with
+   `set_config('app.tenant', $1, true)`: bound, not formatted into the SQL, and ended
+   with the transaction, so a pooled connection never carries a tenant into the next
+   request. The policy is in [the migration](migrations/20261113120000_create_todos.sql).
 
-## Quick Start
+Row-level security does not apply to a superuser or a role with `BYPASSRLS`, so connect
+as a role that is neither:
 
-### Prerequisites
-
-- PostgreSQL 15+
-- Rust 1.97+
-
-### Configuration
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env
+```sql
+CREATE ROLE todo_app LOGIN PASSWORD 'todo_app';
+GRANT CREATE ON SCHEMA public TO todo_app;   -- to run the migration as this role
 ```
 
-Edit `.env` with your database credentials:
+## Run it
 
-```env
-DATABASE_URL=postgres://axa:axa@localhost:5432/multi_tenant
-PORT=3000
-```
-
-### Run the Service
-
-```bash
+```sh
+podman-compose up -d postgres                       # from the repository root
+podman-compose exec postgres psql -U axa -d axa_development \
+  -c "CREATE ROLE todo_app LOGIN PASSWORD 'todo_app'" \
+  -c "GRANT CREATE ON SCHEMA public TO todo_app"
 cd examples/multi-tenant
+export DB_URL=postgres://todo_app:todo_app@localhost:5432/axa_development
+export PASETO_KEYS_FILE=./keys.json PASETO_ISSUER=authentication-service PASETO_AUDIENCE=multi-tenant
 cargo run
 ```
 
-### Test with Multiple Tenants
+`keys.json` is the auth service's public key set, a JSON document with a `keys` array of
+Ed25519 keys. Every request to `/api/todos` needs a token from that service:
 
-Open two terminal windows and test with different tenant IDs:
-
-**Terminal 1 (Tenant A):**
-```bash
-# Create a todo for tenant A
-curl -X POST http://localhost:3000/todos \
-  -H "X-Tenant-ID: acme-corp" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Deploy to production", "description": "Deploy the new version"}'
-
-# List todos for tenant A
-curl -H "X-Tenant-ID: acme-corp" http://localhost:3000/todos
+```sh
+curl localhost:1241/api/todos -H "authorization: Bearer $TOKEN"
 ```
 
-**Terminal 2 (Tenant B):**
-```bash
-# Create a todo for tenant B
-curl -X POST http://localhost:3000/todos \
-  -H "X-Tenant-ID: globex" \
-  -H "Content-Type: application/json" \
-  -d '{"title": "Review analytics", "description": "Check the quarterly reports"}'
+## Routes
 
-# List todos for tenant B
-curl -H "X-Tenant-ID: globex" http://localhost:3000/todos
-```
+| Method | Path | Needs | Answer |
+|---|---|---|---|
+| `GET` | `/api/todos` | Any verified caller | Up to 100 of the tenant's todos |
+| `POST` | `/api/todos` | `access=write` | The new todo |
+| `GET` | `/api/todos/{id}` | Any verified caller | The todo, or `404` |
+| `PATCH` | `/api/todos/{id}` | `access=write` | The changed todo, or `404` |
+| `DELETE` | `/api/todos/{id}` | `access=admin` | `200`, or `404` |
 
-**Verify Isolation:**
-```bash
-# Tenant A should only see their own todos
-curl -H "X-Tenant-ID: acme-corp" http://localhost:3000/todos
+The "Needs" column is the default ABAC policy, which the guard applies before a handler
+runs.
 
-# Tenant B should only see their own todos
-curl -H "X-Tenant-ID: globex" http://localhost:3000/todos
+## What it does not do
 
-# Health check (no tenant header required)
-curl http://localhost:3000/health
-```
+- **Per-tenant limits.** Axa's `ratelimit` and `idempotency` features key on what a
+  service returns for a request, so a service can key them on the tenant as well as the
+  caller. This example does not.
+- **Tenant administration.** Creating, suspending, and deleting tenants belongs to the
+  service that issues tokens.
+- **A schema or database per tenant.** One table with row-level security is simpler to
+  migrate and to pool. A tenant that needs its own database is a deployment of its own.
 
-## API Endpoints
+## Test it
 
-| Method | Path | Description | Required Header |
-|--------|------|-------------|------------------|
-| GET | /health | Health check | None |
-| GET | /todos | List todos for tenant | X-Tenant-ID |
-| POST | /todos | Create a todo for tenant | X-Tenant-ID |
-| GET | /todos/:id | Get a todo for tenant | X-Tenant-ID |
-| PUT | /todos/:id | Update a todo for tenant | X-Tenant-ID |
-| DELETE | /todos/:id | Delete a todo for tenant | X-Tenant-ID |
-
-## Tenant Identification
-
-### Current Implementation
-
-The example uses a simple header-based approach:
-
-```
-X-Tenant-ID: <tenant-identifier>
-```
-
-The tenant identifier:
-- Must be 1-64 characters
-- Can contain letters, numbers, hyphens
-- Is converted to lowercase with underscores for schema name
-- Example: `acme-corp` → `tenant_acme_corp` schema
-
-### Production Considerations
-
-For production, consider:
-
-1. **JWT Claims**: Extract tenant ID from a validated JWT token
-2. **Subdomain**: Extract tenant from request host (tenant.app.com)
-3. **API Key**: Use API keys with embedded tenant identifiers
-4. **Database Lookup**: Validate tenant ID against a tenants table
-
-Example JWT approach:
-
-```rust
-async fn jwt_tenant_middleware<B>(request: Request<B>, next: Next<B>) -> Result<Response, StatusCode> {
-    let token = request.headers().get("Authorization")
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.strip_prefix("Bearer "))
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-    
-    let claims: JwtClaims = decode_jwt(token)?;
-    let tenant_id = claims.tenant_id;
-    
-    // Validate tenant exists in database
-    validate_tenant(&tenant_id).await?;
-    
-    let ctx = TenantContext { tenant_id, schema_name: format!("tenant_{}", tenant_id) };
-    let mut request = request;
-    request.extensions_mut().insert(ctx);
-    
-    Ok(next.run(request).await)
-}
-```
-
-## Database Schema Management
-
-The example automatically creates tenant schemas on first access:
-
-```sql
--- When a request comes in with X-Tenant-ID: acme-corp
--- The service creates:
-
-CREATE SCHEMA tenant_acme_corp;
-
-CREATE TABLE tenant_acme_corp.todos (
-    id UUID PRIMARY KEY NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    completed BOOLEAN NOT NULL DEFAULT FALSE,
-    tenant_id VARCHAR(64) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX tenant_acme_corp.idx_todos_tenant_created 
-    ON tenant_acme_corp.todos(tenant_id, created_at);
-```
-
-### Production Schema Management
-
-For production, consider:
-
-1. **Migration System**: Use a proper migration tool like sqlx or sea-orm
-2. **Schema Validation**: Validate schemas exist before use
-3. **Connection Pooling**: Consider separate connection pools per tenant
-4. **Cleanup**: Automatically archive/drop unused tenant schemas
-
-## Project Structure
-
-```
-multi-tenant/
-├── Cargo.toml              # Dependencies
-├── src/
-│   └── main.rs             # Application entry point with multi-tenancy
-├── .env.example            # Example environment variables
-└── README.md               # This file
-```
-
-## Error Handling
-
-The API returns standardized error responses:
-
-- **400 Bad Request**: Missing or invalid tenant ID
-- **404 Not Found**: Resource not found
-- **500 Internal Server Error**: Database or server errors
-
-## Testing
-
-```bash
-# Run tests
+```sh
 cargo test
 ```
 
-## Performance Considerations
+The tests mint tokens with a throwaway key, and check that a caller with no tenant is
+refused before the database is asked. The test that one tenant never sees another's
+rows needs Postgres, as a role row-level security applies to:
 
-### Connection Pooling
-
-For multi-tenant applications:
-- Monitor connection pool metrics
-- Consider larger pools if many tenants
-- Use `PgBouncer` for connection pooling
-
-### Query Performance
-
-- Add indexes on tenant_id columns
-- Monitor query performance per tenant
-- Consider separate databases for very large tenants
-
-### Schema Limits
-
-- PostgreSQL has a limit of ~65,000 schemas per database
-- Consider sharding databases if you exceed this limit
-- Monitor schema creation performance
-
-## Using with podman-compose
-
-From the project root:
-
-```bash
-# Start PostgreSQL
-podman-compose -f podman-compose.yml up -d postgres
-
-# Create the multi_tenant database
-podman exec -it axa-postgres-1 psql -U axa -c "CREATE DATABASE multi_tenant;"
-
-# Run the service
-cd examples/multi-tenant
-DATABASE_URL=postgres://axa:axa@localhost:5432/multi_tenant cargo run
+```sh
+AXA_TEST_DB_URL=postgres://todo_app:todo_app@localhost:5432/multi_tenant_test cargo test -- --ignored
 ```
 
-## Next Steps
-
-- [Basic Service Example](../basic-service) - Start here if you're new to axa
-- [Todo API Example](../todo-api) - See database integration without multi-tenancy
-- [axa Multi-tenancy Documentation](../../docs/multi-tenancy) - Learn about axa's multi-tenancy support
+It drops and recreates `todos` and `_sqlx_migrations`, so give it a database of its own.

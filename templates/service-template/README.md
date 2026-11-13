@@ -1,187 +1,99 @@
-# Service Template
+# Service template
 
-A template for creating new services using axa. This provides a solid foundation
-for building auditable, production-ready Axum services.
+A starting point for a new service on [Axa](https://github.com/publicprojects-io/axa): an
+ordinary Axum `main.rs`, one route, Axa's health probes and middleware, and CI.
 
-## Quick Start
+## Start a service from it
 
-Click the "Use this template" button on GitHub to create a new repository from this template.
+Copy this directory out of the Axa repository, then rename it:
 
-Then:
+```sh
+cp -R templates/service-template ../your-service
+cd ../your-service
+git init
+```
 
-```bash
-# Clone your new repository
-git clone https://github.com/your-org/your-service.git
-cd your-service
+Replace `service-template` and `service_template` with your service's name, in
+`Cargo.toml`, `src/main.rs` (`SERVICE_NAME`), and the docs. Then delete the
+`[workspace]` table at the end of `Cargo.toml` if your service joins a workspace of its
+own.
 
-# Update the project name
-find . -type f -name "*.rs" -o -name "*.toml" -o -name "*.md" | xargs sed -i 's/service-template/your-service/g'
-
-# Install dependencies
-cargo build
-
-# Run the service
+```sh
 cargo run
+curl localhost:1241/api/v1/status
+curl localhost:1241/_health/ready
 ```
 
-## What's Included
+## What is in it
 
-This template provides:
-
-### Core Structure
-
-```
+```text
 service-template/
-├── Cargo.toml              # Main package configuration
+├── Cargo.toml              # axa, axum, serde, and tokio; strict lints
 ├── src/
-│   ├── main.rs             # Application entry point
-│   ├── app.rs              # Application router and state
-│   ├── config.rs           # Configuration management
-│   ├── error.rs            # Error handling
-│   └── health.rs           # Health check endpoints
-├── .github/
-│   └── workflows/
-│       └── ci.yml          # CI configuration
-├── .gitignore              # Git ignore patterns
-├── .pre-commit-config.yaml # Pre-commit hooks
-├── .devcontainer/          # VS Code dev container
-│   ├── devcontainer.json
-│   └── Dockerfile
-├── podman-compose.yml      # Development database
+│   ├── main.rs             # Settings, logger, and server
+│   └── routes.rs           # The service's routes
 ├── docs/
-│   ├── architecture.md     # Architecture decisions
-│   └── api.md              # API documentation
-└── README.md               # Project documentation
+│   ├── api.md              # What the service answers
+│   └── architecture.md     # How it is built, and a decision log
+├── .github/workflows/ci.yml
+├── .pre-commit-config.yaml
+├── .devcontainer/          # VS Code dev container
+└── podman-compose.yml      # Local Postgres and Redis
 ```
 
-### Features
+From Axa, with no code of its own:
 
-- ✅ axa integration with standard patterns
-- ✅ Health checks (liveness, readiness, startup)
-- ✅ Structured logging with tracing
-- ✅ Configuration from environment variables
-- ✅ Error handling with RFC 9457 Problem Details
-- ✅ CI pipeline with fmt, clippy, test, doc checks
-- ✅ Pre-commit hooks
-- ✅ Dev container for VS Code
-- ✅ Podman Compose for local development
-- ✅ Documentation structure
+- **Health probes** at `/_health/live`, `/_health/ready`, and `/_health/startup`.
+  Readiness fails as soon as shutdown begins.
+- **The standard middleware**: request ids, security headers, CORS, a cross-site write
+  guard, body limits, timeouts, and compression in production.
+- **Errors** as RFC 9457 problems that quote nothing the caller sent.
+- **Settings** from the environment, with production refusing unsafe ones at boot.
+- **Graceful shutdown** on `SIGTERM` or Ctrl-C.
 
-### Production Ready
+## Add a route
 
-- Security headers (HSTS, CSP, etc.)
-- Request timeouts
-- Connection limits
-- Graceful shutdown
-- Structured logging
-- Metrics (optional)
+In `src/routes.rs`, add a handler that returns `axa::Result<Response>`, and add it to a
+group:
 
-## Usage
+```rust,ignore
+AppRoutes::with_default_routes().add_route(
+    Routes::new()
+        .prefix("/api/v1")
+        .add("/status", get(status))
+        .add("/widgets/{id}", get(show_widget)),
+)
+```
 
-### Development
+## Add a database
 
-```bash
-# Start database containers
-podman-compose -f podman-compose.yml up -d
+Turn on a database feature, such as `postgres-sqlx`, name the database in `src/main.rs`,
+and pass the pool where `main` passes `()`:
 
-# Run the service
-cargo run
+```toml
+axa = { version = "0.12", features = ["postgres-sqlx"] }
+```
 
-# Run tests
+```rust,ignore
+let defaults = Defaults { database: SERVICE_NAME, ..Defaults::default() };
+// ...
+let pool = axa::db::connect(&config.database).await?;
+let ctx = AppContext::new(environment, pool, config);
+```
+
+`/_health/ready` then asks the database too. Axa's
+[`examples/todo-api`](https://github.com/publicprojects-io/axa/tree/main/examples/todo-api)
+shows the rest, with migrations and tests.
+
+Every feature, such as `paseto` or `keycloak` for bearer tokens and `queue` for
+background jobs, is listed in Axa's
+[README](https://github.com/publicprojects-io/axa#installing).
+
+## Test it
+
+```sh
 cargo test
-
-# Run all checks
-cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
-cargo test
-cargo doc --no-deps
 ```
 
-### Production
-
-```bash
-# Build for production
-cargo build --release
-
-# Run with production configuration
-RUST_LOG=info ./target/release/your-service
-```
-
-## Customization
-
-### Add Database
-
-To add a database:
-
-1. Choose a database crate from axa:
-   - `axa-postgres-sqlx` - PostgreSQL with sqlx
-   - `axa-postgres-seaorm` - PostgreSQL with SeaORM
-   - `axa-mysql-sqlx` - MySQL with sqlx
-   - `axa-mysql-seaorm` - MySQL with SeaORM
-
-2. Add to Cargo.toml:
-   ```toml
-   [dependencies]
-   axa = { version = "0.12", features = ["db"] }
-   axa-postgres-sqlx = "0.12"
-   ```
-
-3. Update configuration in `src/config.rs`
-
-4. Add migrations in a `migrations/` directory
-
-### Add Authentication
-
-To add authentication:
-
-1. Choose an auth crate:
-   - `axa-paseto-auth` - PASETO tokens
-   - `axa-keycloak-auth` - Keycloak/OIDC
-
-2. Add to Cargo.toml:
-   ```toml
-   [dependencies]
-   axa = { version = "0.12", features = ["auth"] }
-   axa-paseto-auth = "0.12"
-   ```
-
-3. Add auth middleware in `src/app.rs`
-
-### Add Features
-
-Available axa features:
-
-- `db` - Database integration
-- `auth` - Authentication helpers
-- `queue` - Job queue
-- `outbox` - Transactional outbox
-- `cursor-pagination` - Signed cursor pagination
-- `prometheus` - Prometheus metrics
-- `ratelimit` - Request rate limiting
-- `idempotency` - Idempotency keys
-- `versioning` - API versioning
-- `tracing` - Distributed tracing
-- `opentelemetry` - OpenTelemetry integration
-- `redis` - Redis cache
-- `openapi` - OpenAPI documentation
-- `session` - Web sessions
-
-## Conventions
-
-This template follows axa conventions:
-
-1. **Library, not framework**: Your `main.rs` stays ordinary Axum
-2. **Spec-first**: Document behavior before implementing
-3. **Fail-closed**: Production refuses unsafe configurations
-4. **Audit-friendly**: Every request path is traceable
-5. **Zero indirection**: No macros, no code generation
-
-## Learn More
-
-- [axa Documentation](https://github.com/publicprojects-io/axa/tree/main/docs)
-- [axa Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md)
-- [axa Crates](https://github.com/publicprojects-io/axa#crates)
-
-## License
-
-This template is provided under the same license as axa: MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only
+The tests drive the router with `tower::ServiceExt::oneshot`, with no server running.
