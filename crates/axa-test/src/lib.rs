@@ -20,6 +20,8 @@
 
 use std::{future::Future, net::SocketAddr};
 
+pub mod isolation;
+
 pub use axa::boot::{BootResult, TestApp};
 use axa::{AppContext, Result};
 pub use axum_test::TestServer;

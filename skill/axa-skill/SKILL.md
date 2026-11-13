@@ -433,7 +433,9 @@ migrating, naming every table a policy guards: production refuses to start when 
 policy could not apply. See `examples/multi-tenant`. MySQL and SQLite have no row-level
 security, so there the tenant in every query is the only fence. Cache a tenant's answers only
 through `cache.for_tenant(tenant.as_str())?`, made per request, never under a key you
-build yourself. With Keycloak, map a realm role to the tenant
+build yourself. Prove the fences with `axa_test::isolation::assert_hidden`: create a
+resource as one tenant, then probe its read, change, and delete routes, and the list, as
+another, which must answer `404` and show nothing. With Keycloak, map a realm role to the tenant
 in the role map, as `"acme-member": { "tenant": ["acme"] }`.
 
 With `axa-keycloak-auth`:

@@ -155,4 +155,4 @@ Each of these gives the same things for its library:
 - [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services
 - [axa-openapi-docs](crates/axa-openapi-docs/README.md) (feature `openapi`): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks for Axum services
 - [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults
-- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test
+- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test, with a check that one tenant cannot reach another's resources

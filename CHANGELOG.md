@@ -23,6 +23,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`axa_postgres_sqlx::begin_with`** (SQX-8, SQX-9): a transaction with settings such
   as `app.tenant` set for its length only, bound, for Postgres row-level security. It
   sets only custom dotted names, and refuses `role`, `search_path`, and the like.
+- **`axa_test::isolation`** (TST-3): `assert_hidden` sends probes of a resource as
+  another tenant and fails, naming each, on any answer but `404`, a `403` among them,
+  or a list that shows the owner's text.
 - **`axa_redis_cache::Cache::for_tenant`** (RDS-8, RDS-9): a cache whose every key is
   one tenant's, under `prefix#tenant:`, which no key of the service's own or of another
   tenant can equal, so one tenant's cached answer is never served to another.

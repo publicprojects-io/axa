@@ -100,7 +100,8 @@ Production refuses to boot when either fails. Development warns, so that a local
 superuser still works, but `axa-test` can run the isolation tests as a role the policies
 apply to.
 
-**TN-4, isolation tests.** For `axa-paseto-auth`, a test key and a `token(attrs)` that the
+**TN-4, isolation tests.** The check is done, unreleased, as `axa_test::isolation`, TST-3.
+Minting test tokens is not yet. For `axa-paseto-auth`, a test key and a `token(attrs)` that the
 guard accepts, as `examples/multi-tenant` writes by hand. Then a helper that, given a
 route that creates a resource and the routes that read, change, and delete it, runs them
 as a second tenant and expects `404` from each.
