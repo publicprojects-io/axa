@@ -54,6 +54,7 @@
       "help/upgrading-to-0.12/index.md"
     ],
     "comparisons": [
+      "spec/tenancy/index.md",
       "spec/compare/index.md",
       "spec/compare/actix-web/index.md",
       "spec/compare/atuin/index.md",

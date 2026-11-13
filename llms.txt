@@ -37,10 +37,11 @@
 - [examples/README](examples/README.md): Examples index
 - [examples/basic-service/](examples/basic-service/README.md): Minimal axa service
 - [examples/todo-api/](examples/todo-api/README.md): RESTful Todo API with database
-- [examples/multi-tenant/](examples/multi-tenant/README.md): Multi-tenant service with schema isolation
+- [examples/multi-tenant/](examples/multi-tenant/README.md): Multi-tenant todo API: tenant from the verified PASETO token, a tenant filter on every query, and Postgres row-level security
 
 ### Comparison Documents
 
+- [spec/tenancy](spec/tenancy/index.md): Multi-tenancy study, proposing TN-1 to TN-11
 - [spec/compare](spec/compare/index.md): Comparisons with other frameworks
 - [spec/compare/actix-web](spec/compare/actix-web/index.md)
 - [spec/compare/atuin](spec/compare/atuin/index.md)

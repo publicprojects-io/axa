@@ -123,6 +123,32 @@ tri-state `Patch<T>`, a form context for Tera pages, a `health` command for imag
 `curl`, Tokio runtime metrics, PROXY protocol, an OpenAPI conformance check in tests, and
 captured logs and mail in `axa-test`.
 
+## Multi-tenancy
+
+A [later study](spec/tenancy/index.md), from 13 November 2026, looked at what a service
+that many tenants share needs from Axa, against Rails' `acts_as_tenant`, Loco, Tenancy for
+Laravel, Windmill, Postgres row-level security as it is used in practice, and AWS's SaaS
+isolation guidance. Axa already has most of the pieces: a token's `attrs` can carry the
+tenant, a rate limit and an idempotency key can be keyed on it, and Postgres can enforce
+it. What is missing is the glue, which every service now writes by hand, and the checks
+that the glue cannot quietly fail.
+
+So the tenancy work comes in two parts:
+
+1. **Keep tenants apart**, with a safety case under P-2: a `Tenant` extractor that reads
+   only the verified token (T-43), a transaction that sets the tenant for row-level
+   security (T-44), a boot check that the policies can apply to the role the service runs
+   as (T-45), isolation helpers in `axa-test` (T-46), and a cache scoped to a tenant
+   (T-47). [`examples/multi-tenant`](examples/multi-tenant/README.md) does each of the
+   first three by hand today, and is the first consumer.
+2. **Wait for two consumers**: a tenant on a job and on an outbox event, a limit per
+   tenant, a cursor bound to its tenant, a tenant on the request span, and refusing a
+   suspended tenant (T-48 to T-53).
+
+It leaves out a tenant from a header or a host alone, scoping every query by default, a
+schema or database made per tenant at run time, and a tenant label on metrics. The study
+gives the reasons.
+
 ## What the plan leaves out
 
 The studies agree on what not to take. `axa` keeps no route macros, attribute macros, or

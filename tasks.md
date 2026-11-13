@@ -79,6 +79,27 @@ Each needs two services that ask, or one with a safety case, before it starts.
 | T-41 | Captured logs and mail in `axa-test` | `axa-test` | S | None | Loco, tuwunel |
 | T-42 | A trailing-slash policy: a `308` to the mounted form, keeping the query, without getting around the auth crates' own checks | `src/routes.rs` | S | None | Topcoat, Poem |
 
+## Multi-tenancy
+
+From the [multi-tenancy study](spec/tenancy/index.md). The first four keep tenants apart,
+so each passes P-2 on one consumer with a safety case, and
+[`examples/multi-tenant`](examples/multi-tenant/README.md) is that consumer. The rest wait
+for two.
+
+| Id | Task | Where | Effort | New dependency | Case |
+|---|---|---|---|---|---|
+| T-43 | A `Tenant` extractor from the verified token only (TN-1): exactly one value of a named attribute, `tenant` by default, a tenant-id syntax, `401` without a token, `403` code `no_tenant` otherwise, and no way to take it from a header, path, or host | `axa-paseto-auth`, `axa-keycloak-auth` | S | None | Safety |
+| T-44 | A tenant transaction (TN-2): `begin_in(pool, &[(name, value)])` running `set_config($1, $2, true)` for each pair, bound and ending with the transaction | `axa-postgres-sqlx`, then the SeaORM and Diesel crates | S | None | Safety |
+| T-45 | A boot check for row-level security (TN-3): production refuses a superuser or `BYPASSRLS` role, and a named table without `FORCE ROW LEVEL SECURITY`; development warns | Postgres database crates, `src/config.rs` | S | None | Safety |
+| T-46 | Isolation helpers (TN-4): PASETO tokens minted with given `attrs` under a test key, and a check that another tenant gets `404` from a resource's read, change, and delete routes | `axa-test` | M | None in `axa-test` beyond what `axa-paseto-auth` tests use | Safety |
+| T-47 | A cache scoped to a tenant (TN-6): every key carries the tenant, with no unscoped way in once a cache is made per tenant | `axa-redis-cache` | S | None | Safety |
+| T-48 | A tenant on a job (TN-5): a nullable `tenant` column, set at enqueue and handed to the worker | Job queue crates | M | None | Two consumers |
+| T-49 | A limit per tenant (TN-7), documented and tested with `by_key` on `(tenant, class)` | `axa-request-rate-limit` | S | None | Two consumers |
+| T-50 | A cursor bound to a context such as the tenant, inside its signature (TN-8) | `axa-cursor-pagination` | S | None | Two consumers |
+| T-51 | An opt-in tenant field on the request span, and never a metrics label (TN-9) | `src/middleware.rs`, `axa-prometheus-metrics` | S | None | Two consumers |
+| T-52 | A tenant on an outbox event (TN-10) | `axa-transactional-outbox` | M | None | Two consumers |
+| T-53 | A suspended tenant refused with `403` code `tenant_suspended`, from a check the service passes in (TN-11) | Auth crates | S | None | Two consumers |
+
 Lower-rated ideas, each on its project's page: a read-replica pool, row-level security context
 per transaction, an SSE helper, an `Accept-Language` helper, CSP script hashes, in-process TLS,
 Unix sockets, a version header, a capped blocking pool for password hashing, operator traffic

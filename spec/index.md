@@ -924,4 +924,9 @@ None.
 
 ## 7. Open questions
 
-None.
+- **Multi-tenancy.** [Multi-tenancy](tenancy/index.md) proposes TN-1 to TN-11: a tenant
+  read only from the verified token, a transaction that sets it for Postgres row-level
+  security, a boot check that the policies can apply, isolation helpers for tests, and
+  tenants on caches, jobs, limits, cursors, spans, and events. None is decided. The page
+  ends with the questions each still has, and [`tasks.md`](../tasks.md) lists them as
+  T-43 to T-53.
