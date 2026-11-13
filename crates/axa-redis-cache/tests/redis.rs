@@ -360,3 +360,16 @@ async fn a_failed_read_is_logged_without_its_key() {
         }
     }
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_REDIS_URL"]
+async fn tenants_keep_their_keys_apart_in_redis() {
+    let cache = cache("tenants", MINUTE).await;
+    let acme = cache.for_tenant("acme").unwrap();
+    let globex = cache.for_tenant("globex").unwrap();
+    acme.set("a", &item()).await.unwrap();
+    assert_eq!(globex.get::<Item>("a").await.unwrap(), None);
+    assert_eq!(cache.get::<Item>("a").await.unwrap(), None);
+    assert_eq!(acme.get::<Item>("a").await.unwrap(), Some(item()));
+    assert!(acme.delete("a").await.unwrap());
+}

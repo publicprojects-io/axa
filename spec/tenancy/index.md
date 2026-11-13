@@ -1,7 +1,7 @@
 # Multi-tenancy
 
 A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. TN-1, TN-2, and TN-3 are built, for every Postgres crate. The rest is not yet. It proposes capabilities, each with an id
+13 November 2026. TN-1, TN-2, and TN-3 are built, for every Postgres crate, and TN-6. The rest is not yet. It proposes capabilities, each with an id
 (TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
 [`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
 the first few would give.
@@ -104,6 +104,12 @@ apply to.
 guard accepts, as `examples/multi-tenant` writes by hand. Then a helper that, given a
 route that creates a resource and the routes that read, change, and delete it, runs them
 as a second tenant and expects `404` from each.
+
+**TN-6, the tenant's cache.** Done, unreleased, as T-47: `Cache::for_tenant`, RDS-8 and
+RDS-9. Keys are `prefix#tenant:key`, and an unscoped key is `prefix:key`, so the
+character after the prefix keeps them apart whatever a key holds, and a tenant id holds
+no `:`, so no tenant's key is another's. A cache with no prefix is refused a tenant, as
+the separation would not hold.
 
 **TN-5, jobs.** `perform_later_in(&tenant, …)`, a nullable `tenant` column, and the tenant
 handed to the worker beside the arguments, so that the worker opens its own tenant

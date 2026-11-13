@@ -65,6 +65,10 @@ pub enum Error {
     /// A TTL below one millisecond, which would store nothing useful.
     #[error("a cache entry needs a TTL of at least one millisecond")]
     InvalidTtl,
+    /// [`Cache::for_tenant`] refused: the tenant is not a tenant id, the cache is
+    /// already a tenant's, or it has no prefix to keep tenants' keys apart from the rest.
+    #[error("no cache for this tenant: {0}")]
+    TenantScope(&'static str),
 }
 
 /// Cache settings.
@@ -95,6 +99,18 @@ impl CacheConfig {
             timeout: DEFAULT_TIMEOUT,
         }
     }
+}
+
+/// Whether `id` is a tenant id, as the auth crates' `is_tenant_id` says: lower-case
+/// ASCII letters, digits, and hyphens, 1 to 63 characters, not starting or ending with a
+/// hyphen.
+fn is_tenant_id(id: &str) -> bool {
+    (1..=63).contains(&id.len())
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 /// Join a prefix and a key.
@@ -209,6 +225,8 @@ impl Backend {
 pub struct Cache {
     backend: Backend,
     prefix: String,
+    /// The tenant every key belongs to, for a cache from [`Cache::for_tenant`].
+    tenant: Option<String>,
     default_ttl: Duration,
     timeout: Duration,
 }
@@ -218,6 +236,7 @@ impl std::fmt::Debug for Cache {
         // Not the connection: its address can carry a password.
         f.debug_struct("Cache")
             .field("prefix", &self.prefix)
+            .field("tenant", &self.tenant)
             .field("default_ttl", &self.default_ttl)
             .finish_non_exhaustive()
     }
@@ -236,6 +255,7 @@ impl Cache {
         Ok(Self {
             backend: Backend::Redis(ConnectionManager::new(client).await?),
             prefix: config.prefix.clone(),
+            tenant: None,
             default_ttl: config.default_ttl,
             timeout: config.timeout,
         })
@@ -253,6 +273,7 @@ impl Cache {
         Ok(Self {
             backend: Backend::Memory(Arc::default()),
             prefix: prefix.into(),
+            tenant: None,
             default_ttl,
             timeout: DEFAULT_TIMEOUT,
         })
@@ -270,9 +291,61 @@ impl Cache {
         }
     }
 
-    /// The full key for `key`, including the prefix.
+    /// The full key for `key`: `prefix:key`, or `prefix#tenant:key` for a tenant's
+    /// cache. The character after the prefix tells them apart, so no key of the
+    /// service's own, whatever it holds, is ever a tenant's, and no tenant's is another's.
     fn key(&self, key: &str) -> String {
-        full_key(&self.prefix, key)
+        match &self.tenant {
+            Some(tenant) => format!("{}#{tenant}:{key}", self.prefix),
+            None => full_key(&self.prefix, key),
+        }
+    }
+
+    /// This cache for `tenant` alone: every key it reads, writes, or deletes is that
+    /// tenant's, so one tenant's cached answer is never served to another. Make one
+    /// per request from the verified tenant, such as `axa::paseto::Tenant`, and pass
+    /// only it to code that serves the tenant:
+    ///
+    /// ```
+    /// # async fn example() -> Result<(), axa_redis_cache::Error> {
+    /// # use std::time::Duration;
+    /// let cache = axa_redis_cache::Cache::memory("svc", Duration::from_mins(5))?;
+    /// let acme = cache.for_tenant("acme")?;
+    /// acme.set("report", &42).await?;
+    /// assert_eq!(cache.for_tenant("globex")?.get::<i32>("report").await?, None);
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// A tenant's cache shares the connection, the default TTL, and the time limit.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::TenantScope`] when `tenant` is not a tenant id (lower-case ASCII letters,
+    /// digits, and hyphens, 1 to 63 characters, not starting or ending with a hyphen),
+    /// when this cache is already a tenant's, or when it has no prefix.
+    pub fn for_tenant(&self, tenant: &str) -> Result<Self, Error> {
+        if self.tenant.is_some() {
+            return Err(Error::TenantScope("this cache is already a tenant's"));
+        }
+        if self.prefix.is_empty() {
+            return Err(Error::TenantScope(
+                "a cache with no prefix cannot keep tenants apart",
+            ));
+        }
+        if !is_tenant_id(tenant) {
+            return Err(Error::TenantScope("not a tenant id"));
+        }
+        Ok(Self {
+            tenant: Some(tenant.to_string()),
+            ..self.clone()
+        })
+    }
+
+    /// The tenant this cache belongs to, for a cache from [`Cache::for_tenant`].
+    #[must_use]
+    pub fn tenant(&self) -> Option<&str> {
+        self.tenant.as_deref()
     }
 
     /// Check that Redis answers.
@@ -661,5 +734,65 @@ mod tests {
         let loaded = memory().get_or_load(PERSON, unstorable).await.unwrap();
         assert_eq!(loaded[&(1, 2)], SECRET);
         assert_named_neither(&logged());
+    }
+
+    #[tokio::test]
+    async fn a_tenants_cache_sees_only_that_tenants_keys() {
+        let cache = memory();
+        let acme = cache.for_tenant("acme").unwrap();
+        let globex = cache.for_tenant("globex").unwrap();
+        acme.set("report", &1).await.unwrap();
+        globex.set("report", &2).await.unwrap();
+        cache.set("report", &3).await.unwrap();
+        assert_eq!(acme.get::<i32>("report").await.unwrap(), Some(1));
+        assert_eq!(globex.get::<i32>("report").await.unwrap(), Some(2));
+        assert_eq!(cache.get::<i32>("report").await.unwrap(), Some(3));
+        assert!(acme.delete("report").await.unwrap());
+        assert_eq!(globex.get::<i32>("report").await.unwrap(), Some(2));
+        assert_eq!(acme.tenant(), Some("acme"));
+        assert_eq!(cache.tenant(), None);
+    }
+
+    #[test]
+    fn no_key_of_the_service_is_ever_a_tenants() {
+        let cache = memory();
+        let acme = cache.for_tenant("acme").unwrap();
+        assert_eq!(acme.key("x"), "svc#acme:x");
+        // Whatever an unscoped key holds, it starts `svc:`, and a tenant's `svc#`.
+        for key in ["#acme:x", "acme:x", ":x", "svc#acme:x"] {
+            assert_ne!(cache.key(key), acme.key("x"), "{key}");
+        }
+        // Nor is one tenant's key another's, as a tenant id holds no `:`.
+        let a = cache.for_tenant("a").unwrap();
+        assert_ne!(a.key("b:x"), cache.for_tenant("a-b").unwrap().key("x"));
+    }
+
+    #[test]
+    fn a_tenants_cache_needs_a_tenant_id_a_prefix_and_no_tenant_yet() {
+        let cache = memory();
+        for tenant in [
+            "",
+            "Acme",
+            "-acme",
+            "acme-",
+            "acme:x",
+            "acme#x",
+            &"a".repeat(64),
+        ] {
+            assert!(
+                matches!(cache.for_tenant(tenant), Err(Error::TenantScope(_))),
+                "{tenant}"
+            );
+        }
+        let acme = cache.for_tenant("acme").unwrap();
+        assert!(matches!(
+            acme.for_tenant("globex"),
+            Err(Error::TenantScope(_))
+        ));
+        let bare = Cache::memory("", LIVE).unwrap();
+        assert!(matches!(
+            bare.for_tenant("acme"),
+            Err(Error::TenantScope(_))
+        ));
     }
 }

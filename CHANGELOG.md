@@ -23,6 +23,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`axa_postgres_sqlx::begin_with`** (SQX-8, SQX-9): a transaction with settings such
   as `app.tenant` set for its length only, bound, for Postgres row-level security. It
   sets only custom dotted names, and refuses `role`, `search_path`, and the like.
+- **`axa_redis_cache::Cache::for_tenant`** (RDS-8, RDS-9): a cache whose every key is
+  one tenant's, under `prefix#tenant:`, which no key of the service's own or of another
+  tenant can equal, so one tenant's cached answer is never served to another.
 - **Row-level security settings and checks in the other Postgres crates** (SOR-5,
   DSL-6, TOA-4): `axa_postgres_seaorm::begin_with` and `axa_postgres_toasty::begin_with`
   give a transaction with the settings, and `axa_postgres_diesel::set_local` sets them
@@ -45,6 +48,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `br`, and `zstd`, with the body limit counted on decoded bytes, so a small body that
   expands past it is a `413`. An encoding it cannot decode is a `415`. A handler that
   read a compressed body itself now gets it decoded, without `content-encoding`.
+- **`axa_redis_cache::Error` has a new variant, `TenantScope`**, so a `match` on it
+  without a wildcard arm adds one.
 - **`GuardConfig` in both auth crates has a new field, `tenant_attribute`**, so a
   service that builds one by hand, rather than with `GuardConfig::new`, adds it.
 - **`config::Http` has a new field, `cross_site_paths`**, so a service that builds an

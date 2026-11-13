@@ -431,7 +431,9 @@ function in `axa_postgres_seaorm` or `axa_postgres_toasty`, or call
 `axa::db::require_row_security(&pool, &["todos"], &environment)` at boot, after
 migrating, naming every table a policy guards: production refuses to start when a
 policy could not apply. See `examples/multi-tenant`. MySQL and SQLite have no row-level
-security, so there the tenant in every query is the only fence. With Keycloak, map a realm role to the tenant
+security, so there the tenant in every query is the only fence. Cache a tenant's answers only
+through `cache.for_tenant(tenant.as_str())?`, made per request, never under a key you
+build yourself. With Keycloak, map a realm role to the tenant
 in the role map, as `"acme-member": { "tenant": ["acme"] }`.
 
 With `axa-keycloak-auth`:

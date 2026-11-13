@@ -40,6 +40,8 @@ uses it.
 T-45 is done, unreleased, with any Postgres database feature, as
 `axa::db::require_row_security`.
 
+T-47 is done, unreleased, as `Cache::for_tenant` in `axa-redis-cache`.
+
 T-44 is done, unreleased, in all four Postgres crates: `begin_with` for sqlx, SeaORM, and
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
 MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
