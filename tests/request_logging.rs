@@ -63,6 +63,7 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         compression: false,
         timeout_seconds: 0,
         timeout_overrides: Vec::new(),
+        cross_site_paths: Vec::new(),
         cors_origins: Vec::new(),
         hsts: false,
         hsts_max_age: 0,

@@ -5,6 +5,22 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A cross-site write guard in the standard stack** (MID-23 to MID-28): an unsafe
+  method or a WebSocket upgrade with `sec-fetch-site: cross-site` is `403`, code
+  `cross_site_write_refused`, and with no `sec-fetch-site`, an `origin` that is not the
+  request's host is `403`, code `origin_mismatch`. A request with neither header passes.
+  An origin `CORS_ALLOWED_ORIGINS` lists passes and gets its CORS headers, and the
+  refusal carries the request id and security headers.
+- **`Http::cross_site_paths`**, set in code, for a route that takes a cross-site write
+  by design, such as an identity provider's `form_post` callback.
+
+### Changed
+
+- **`config::Http` has a new field, `cross_site_paths`**, so a service that builds an
+  `Http` by hand adds `cross_site_paths: Vec::new()`.
+
 ## [0.12.1] - 2026-11-10
 
 This covers `axa` 0.12.1 and the new `axa-maud-templates` 0.1.0. As in 0.12.0, the

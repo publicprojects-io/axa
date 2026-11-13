@@ -190,6 +190,10 @@ pub struct Http {
     /// Routes with their own timeout, checked in order. Set these in code,
     /// for a route such as a large upload that legitimately takes longer.
     pub timeout_overrides: Vec<TimeoutOverride>,
+    /// Paths, matched exactly, where the cross-site write guard lets a cross-site
+    /// request through, such as an identity provider's `form_post` callback. Set these
+    /// in code, and only for a route that checks the request some other way.
+    pub cross_site_paths: Vec<String>,
     /// Origins allowed by CORS. `["*"]` allows any and is refused in
     /// production-like environments. Empty sends no CORS headers.
     pub cors_origins: Vec<String>,
@@ -752,6 +756,7 @@ impl Config {
                 timeout_seconds: vars
                     .parsed("REQUEST_TIMEOUT_SECONDS", if production { 60 } else { 0 }),
                 timeout_overrides: Vec::new(),
+                cross_site_paths: Vec::new(),
                 cors_origins,
                 trusted_proxies: trusted_proxies(&vars),
                 hsts: vars.flag("HTTP_HSTS", production),
@@ -789,9 +794,9 @@ impl Config {
     }
 
     /// The effective settings as `(variable, value)`, safe to print: every
-    /// value has been through [`redact`]. The two lower-case names,
-    /// `dangerously_truncate` and `timeout_overrides`, are not variables,
-    /// because no variable sets them.
+    /// value has been through [`redact`]. The three lower-case names,
+    /// `dangerously_truncate`, `timeout_overrides`, and `cross_site_paths`, are
+    /// not variables, because no variable sets them.
     #[must_use]
     pub fn settings(&self) -> Vec<(&'static str, String)> {
         let Self {
@@ -859,6 +864,7 @@ impl Config {
                     .collect::<Vec<_>>()
                     .join(","),
             ),
+            ("cross_site_paths", http.cross_site_paths.join(",")),
             ("CORS_ALLOWED_ORIGINS", http.cors_origins.join(",")),
             (
                 "TRUSTED_PROXIES",

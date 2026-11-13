@@ -20,7 +20,9 @@ use axum::{
     Router,
     body::{Body, Bytes, HttpBody},
     extract::{DefaultBodyLimit, MatchedPath, Request, State},
-    http::{Extensions, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header},
+    http::{
+        Extensions, HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header, uri::Authority,
+    },
     middleware::{Next, from_fn, from_fn_with_state},
     response::{IntoResponse, Response},
     routing::MethodRouter,
@@ -376,6 +378,11 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     if config.timeout_seconds > 0 || !config.timeout_overrides.is_empty() {
         router = router.layer(from_fn_with_state(Arc::new(config.clone()), timeout));
     }
+    // Inside CORS, the trace, and the standard headers, so that a refusal has them all.
+    router = router.layer(from_fn_with_state(
+        Arc::new(CrossSite::new(config)),
+        cross_site_guard,
+    ));
     if let Some(layer) = cors(&config.cors_origins)? {
         router = router.layer(layer);
     }
@@ -426,7 +433,6 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
             Arc::new(config.trusted_proxies.clone()),
             crate::client::record,
         ))
-        .layer(from_fn(cross_site_guard))
         .layer(from_fn(request_id))
         // Outermost, so that no layer, the trace above all, records a credential.
         .layer(SetSensitiveHeadersLayer::new([
@@ -471,79 +477,117 @@ async fn no_store_secrets(request: Request, next: Next) -> Response {
     response
 }
 
-/// An unsafe method or WebSocket upgrade with `sec-fetch-site: cross-site` is refused
-/// as `403 Forbidden` with code `cross_site_write_refused`. With no `sec-fetch-site`,
-/// it checks `origin`: if present and not a case-insensitive match for the `host`,
-/// it is refused with `403` and code `origin_mismatch`. With neither header, the
-/// request is let through, for non-browser clients.
-async fn cross_site_guard(request: Request, next: Next) -> Response {
-    let method = request.method();
-    let headers = request.headers();
+/// What the cross-site write guard lets through: the origins CORS lists, and the
+/// paths a service named in [`Http::cross_site_paths`].
+struct CrossSite {
+    /// Any origin, for a CORS list of `*`, which production refuses.
+    any_origin: bool,
+    origins: Vec<String>,
+    paths: Vec<String>,
+}
 
-    // Check if this is an unsafe method or WebSocket upgrade
-    let is_unsafe = is_unsafe_method(method) || is_websocket_upgrade(headers);
-    if !is_unsafe {
-        return next.run(request).await;
-    }
-
-    // Check sec-fetch-site first
-    if let Some(sec_fetch_site) = headers.get(&SEC_FETCH_SITE) {
-        if let Ok(value) = sec_fetch_site.to_str()
-            && value.eq_ignore_ascii_case("cross-site")
-        {
-            let detail = ErrorDetail::with_reason("cross_site_write_refused");
-            return Error::CustomError(StatusCode::FORBIDDEN, detail).into_response();
+impl CrossSite {
+    fn new(config: &Http) -> Self {
+        Self {
+            any_origin: config.cors_origins.iter().any(|origin| origin == "*"),
+            origins: config.cors_origins.clone(),
+            paths: config
+                .cross_site_paths
+                .iter()
+                .map(|path| trimmed_path(path).to_string())
+                .collect(),
         }
-        // Other sec-fetch-site values (same-origin, same-site, none) are allowed
-        return next.run(request).await;
     }
 
-    // Fall back to origin check
-    if let (Some(origin), Some(host)) = (headers.get(header::ORIGIN), headers.get(header::HOST)) {
-        if let (Ok(origin_str), Ok(host_str)) = (origin.to_str(), host.to_str()) {
-            // Compare origin with host (case-insensitive)
-            // Origin is typically "https://example.com:1234" or just "https://example.com"
-            // Host is typically "example.com:1234" or just "example.com"
-            let origin_host = extract_host_from_origin(origin_str);
-            if !origin_host.eq_ignore_ascii_case(host_str) {
-                let detail = ErrorDetail::with_reason("origin_mismatch");
-                return Error::CustomError(StatusCode::FORBIDDEN, detail).into_response();
-            }
+    /// Whether `request` may write from another site, whatever its headers say.
+    fn allows(&self, request: &Request) -> bool {
+        let path = trimmed_path(request.uri().path());
+        if self.paths.iter().any(|allowed| allowed == path) {
+            return true;
         }
-        // If origin matches or we can't parse, let it through
+        request
+            .headers()
+            .get(header::ORIGIN)
+            .and_then(|origin| origin.to_str().ok())
+            .is_some_and(|origin| {
+                self.any_origin
+                    // Exactly, as CORS compares them.
+                    || self.origins.iter().any(|allowed| allowed == origin)
+            })
+    }
+}
+
+/// `path` without a trailing slash, keeping `/` itself.
+fn trimmed_path(path: &str) -> &str {
+    match path.trim_end_matches('/') {
+        "" => "/",
+        trimmed => trimmed,
+    }
+}
+
+/// Refuse a write from another site: an unsafe method or a WebSocket upgrade with
+/// `sec-fetch-site: cross-site` is `403` with code `cross_site_write_refused`. With no
+/// `sec-fetch-site`, an `origin` that is not the request's own host is `403` with code
+/// `origin_mismatch`. With neither header, the request is from no browser and passes.
+/// An origin CORS lists, and a path in [`Http::cross_site_paths`], pass too.
+async fn cross_site_guard(
+    State(allowed): State<Arc<CrossSite>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if !is_unsafe_method(request.method()) && !is_websocket_upgrade(request.headers()) {
         return next.run(request).await;
     }
-
-    // Neither sec-fetch-site nor origin: let non-browser clients through
+    if let Some(reason) = cross_site_refusal(&request)
+        && !allowed.allows(&request)
+    {
+        let detail = ErrorDetail::with_reason(reason);
+        return Error::CustomError(StatusCode::FORBIDDEN, detail).into_response();
+    }
     next.run(request).await
 }
 
-/// Returns true for methods that are not safe (GET, HEAD, OPTIONS) or idempotent.
-fn is_unsafe_method(method: &Method) -> bool {
-    !matches!(method, &Method::GET | &Method::HEAD | &Method::OPTIONS)
+/// Why `request` is a write from another site, or `None` when it is not one.
+fn cross_site_refusal(request: &Request) -> Option<&'static str> {
+    let headers = request.headers();
+    if let Some(site) = headers.get(&SEC_FETCH_SITE) {
+        // `same-origin`, `same-site`, and `none`, which a user's own navigation sends,
+        // pass. A value that is not text is no browser's, and is refused.
+        return match site.to_str() {
+            Ok(site) if !site.eq_ignore_ascii_case("cross-site") => None,
+            _ => Some("cross_site_write_refused"),
+        };
+    }
+    let origin = headers.get(header::ORIGIN)?;
+    // HTTP/2 sends the host as `:authority`, which reaches a handler in the URI.
+    let host = headers
+        .get(header::HOST)
+        .and_then(|host| host.to_str().ok())
+        .or_else(|| request.uri().authority().map(Authority::as_str));
+    let matches = match (origin.to_str(), host) {
+        (Ok(origin), Some(host)) => origin_host(origin).eq_ignore_ascii_case(host),
+        _ => false,
+    };
+    (!matches).then_some("origin_mismatch")
 }
 
-/// Returns true if this is a WebSocket upgrade request.
+/// Whether `method` can change something: anything but `GET`, `HEAD`, and `OPTIONS`.
+fn is_unsafe_method(method: &Method) -> bool {
+    !matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS)
+}
+
+/// Whether the request asks to become a WebSocket.
 fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
     headers
         .get(header::UPGRADE)
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| v.eq_ignore_ascii_case("websocket"))
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("websocket"))
 }
 
-/// Extracts the host:port from an Origin header value.
-/// Origin format: scheme "://" host [ ":" port ]
-fn extract_host_from_origin(origin: &str) -> &str {
-    // Find the scheme end (://)
-    if let Some(pos) = origin.find("://") {
-        // Skip past ://
-        let rest = &origin[pos + 3..];
-        // Return everything after :// (this is host:port or just host)
-        rest
-    } else {
-        // No scheme, just return as-is
-        origin
-    }
+/// The `host[:port]` of an origin, `scheme://host[:port]`. An opaque origin, `null`,
+/// has none, and matches no host.
+fn origin_host(origin: &str) -> &str {
+    origin.split_once("://").map_or(origin, |(_, host)| host)
 }
 
 #[cfg(test)]
@@ -564,6 +608,7 @@ mod tests {
             compression: false,
             timeout_seconds: 0,
             timeout_overrides: Vec::new(),
+            cross_site_paths: Vec::new(),
             cors_origins: Vec::new(),
             hsts: true,
             hsts_max_age: 31_536_000,
@@ -1641,6 +1686,129 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    fn with_cross_site(cors_origins: &[&str], paths: &[&str]) -> Http {
+        Http {
+            cors_origins: cors_origins.iter().map(ToString::to_string).collect(),
+            cross_site_paths: paths.iter().map(ToString::to_string).collect(),
+            ..config()
+        }
+    }
+
+    fn cross_site_from(path: &str, origin: &str) -> http::Request<Body> {
+        http::Request::builder()
+            .uri(path)
+            .method("POST")
+            .header(SEC_FETCH_SITE, "cross-site")
+            .header(header::ORIGIN, origin)
+            .body(Body::empty())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_cors_listed_origin_may_write_from_another_site() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let app = apply(router, &with_cross_site(&["https://app.example"], &[])).unwrap();
+        let listed = app
+            .clone()
+            .oneshot(cross_site_from("/test", "https://app.example"))
+            .await
+            .unwrap();
+        assert_eq!(listed.status(), StatusCode::OK);
+        assert_eq!(
+            listed.headers()[header::ACCESS_CONTROL_ALLOW_ORIGIN],
+            "https://app.example"
+        );
+        let unlisted = app
+            .oneshot(cross_site_from("/test", "https://evil.example"))
+            .await
+            .unwrap();
+        assert_eq!(unlisted.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_wildcard_cors_list_lets_every_origin_write() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let response = apply(router, &with_cross_site(&["*"], &[]))
+            .unwrap()
+            .oneshot(cross_site_from("/test", "https://any.example"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn a_listed_cross_site_path_is_let_through_and_no_other() {
+        let router = Router::new()
+            .route("/auth/callback", post(|| async { "signed in" }))
+            .route("/auth/callback/more", post(|| async { "more" }));
+        let app = apply(router, &with_cross_site(&[], &["/auth/callback/"])).unwrap();
+        for path in ["/auth/callback", "/auth/callback/"] {
+            let response = app
+                .clone()
+                .oneshot(cross_site_from(path, "https://idp.example"))
+                .await
+                .unwrap();
+            // Axum routes no trailing slash, so the second is a `404`, but not a refusal.
+            assert_ne!(response.status(), StatusCode::FORBIDDEN, "{path}");
+        }
+        let response = app
+            .oneshot(cross_site_from(
+                "/auth/callback/more",
+                "https://idp.example",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_cross_site_refusal_gets_the_standard_headers() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let response = apply(router, &config())
+            .unwrap()
+            .oneshot(cross_site_request("/test", "POST"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(response.headers().contains_key(X_REQUEST_ID));
+        assert_eq!(
+            response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+            "nosniff"
+        );
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/problem+json"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_origin_is_compared_with_the_authority_when_there_is_no_host() {
+        let router = Router::new().route("/test", post(|| async { "created" }));
+        let app = apply(router, &config()).unwrap();
+        for (origin, status) in [
+            ("https://good.example", StatusCode::OK),
+            ("https://evil.example", StatusCode::FORBIDDEN),
+            ("null", StatusCode::FORBIDDEN),
+        ] {
+            let request = http::Request::builder()
+                .uri("https://good.example/test")
+                .method("POST")
+                .header(header::ORIGIN, origin)
+                .body(Body::empty())
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), status, "{origin}");
+        }
+        let no_host = http::Request::builder()
+            .uri("/test")
+            .method("POST")
+            .header(header::ORIGIN, "https://good.example")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(no_host).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

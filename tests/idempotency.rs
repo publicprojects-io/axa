@@ -42,6 +42,7 @@ fn http() -> Http {
         compression: true,
         timeout_seconds: 0,
         timeout_overrides: Vec::new(),
+        cross_site_paths: Vec::new(),
         cors_origins: Vec::new(),
         hsts: false,
         hsts_max_age: 0,

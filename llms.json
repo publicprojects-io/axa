@@ -238,7 +238,7 @@
     },
     {
       "name": "middleware",
-      "purpose": "The standard HTTP middleware stack"
+      "purpose": "The standard HTTP middleware stack, with security headers, CORS, and a cross-site write guard"
     },
     {
       "name": "model",

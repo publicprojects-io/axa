@@ -27,6 +27,10 @@ made `http-body-util` a direct dependency, which every build already had, and ch
 
 ## Stage 2: capabilities with a clear safety case
 
+T-13 is done, unreleased. An origin CORS lists passes the guard, and the per-route opt-out
+is `Http::cross_site_paths`, matched exactly, as a route layer runs too late to stop a
+handler that the guard, outside routing, has already let through.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-11 | An outbound HTTP client that refuses private, loopback, link-local, CGNAT, and metadata addresses after DNS lookup and on each redirect, connects only to the addresses it checked, and takes an allow-list. Its own threat model and spec section | New crate `axa-http-client` | M | `reqwest` | Svix, Windmill, tuwunel |

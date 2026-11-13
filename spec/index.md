@@ -132,8 +132,9 @@ The variables are listed in `README.md`.
 
 ### 4.4 Middleware
 
-From the outside in: request id, tracing, security headers, CORS, timeout,
-`304`s (CND-1), compression, refusal shaping, body limit, panic catching.
+From the outside in: request id, tracing, security headers, CORS, the cross-site write
+guard (MID-23 to MID-28), timeout, `304`s (CND-1), compression, refusal shaping, body
+limit, panic catching.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -161,8 +162,11 @@ From the outside in: request id, tracing, security headers, CORS, timeout,
 | MID-21 | A response that sets a cookie is `cache-control: no-store` unless its handler set its own caching, and compression never touches a response that sets a cookie or is `no-store`, against BREACH. | `a_response_setting_a_cookie_is_not_stored_or_compressed`, `no_store_is_read_as_a_directive_among_others` |
 | MID-22 | `authorization`, `proxy-authorization`, `cookie`, and `set-cookie` are marked sensitive outside every other layer, so none records them. | `credential_headers_are_marked_sensitive` |
 | MID-23 | An unsafe method (not `GET`, `HEAD`, or `OPTIONS`) or a WebSocket upgrade with `sec-fetch-site: cross-site` is refused with `403` and code `cross_site_write_refused`. | `a_cross_site_unsafe_method_is_refused`, `a_cross_site_websocket_upgrade_is_refused` |
-| MID-24 | With no `sec-fetch-site`, an unsafe method or WebSocket upgrade checks `origin`: if it is present and not a case-insensitive match for the `host`, it is refused with `403` and code `origin_mismatch`. | `an_unsafe_method_with_a_mismatched_origin_is_refused`, `a_websocket_upgrade_with_a_mismatched_origin_is_refused` |
+| MID-24 | With no `sec-fetch-site`, an unsafe method or WebSocket upgrade checks `origin`: if it is present and not a case-insensitive match for the `host`, or for the URI's authority when there is no `host`, as in HTTP/2, it is refused with `403` and code `origin_mismatch`. An opaque origin, `null`, and a request with no host at all are refused. | `an_unsafe_method_with_a_mismatched_origin_is_refused`, `a_websocket_upgrade_with_a_mismatched_origin_is_refused`, `an_origin_is_compared_with_the_authority_when_there_is_no_host` |
 | MID-25 | An unsafe method or WebSocket upgrade with neither `sec-fetch-site` nor `origin` is let through, for non-browser clients. | `an_unsafe_method_with_no_browser_headers_passes` |
+| MID-26 | A request whose `origin` is exactly one CORS lists is not refused by MID-23 or MID-24, and gets its CORS headers. A CORS list of `*`, which production refuses (CFG-8), lets every origin through. | `a_cors_listed_origin_may_write_from_another_site`, `a_wildcard_cors_list_lets_every_origin_write` |
+| MID-27 | A path in `Http::cross_site_paths`, set in code and matched exactly, ignoring a trailing slash, is not refused by MID-23 or MID-24. No other path is let through by it. | `a_listed_cross_site_path_is_let_through_and_no_other` |
+| MID-28 | The cross-site write guard is inside CORS, the trace, the request id, and the security headers, so its refusal is a problem with all of them. | `a_cross_site_refusal_gets_the_standard_headers` |
 
 ### 4.5 Errors
 

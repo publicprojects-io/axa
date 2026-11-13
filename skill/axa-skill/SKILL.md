@@ -127,6 +127,14 @@ call `middleware::apply`. Added after `into_app`, a layer sits outside the stand
 stack: its refusals have no request id, security headers, or CORS headers, and it has no
 panic or timeout protection.
 
+The standard stack refuses a write from another site with `403`: an unsafe method or a
+WebSocket upgrade with `sec-fetch-site: cross-site`, or, from an older browser, an `origin`
+that is not the request's host. A request with neither header is from no browser and
+passes. An origin listed in `CORS_ALLOWED_ORIGINS` passes. A route that takes a cross-site
+form post by design, such as an identity provider's `form_post` callback, goes in
+`config.http.cross_site_paths`, in code, and must check the request some other way, such
+as a signed `state`.
+
 With the `postgres-sqlx` feature, pass a pool where this passes `()`. Then `/_health/ready` asks it
 as `database`, so do not add it again as a named check:
 

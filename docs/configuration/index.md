@@ -94,6 +94,7 @@ APP_ENV=staging cargo run
 | `csp` | `HTTP_CSP` | `default-src 'none'; frame-ancestors 'none'` in production | Content Security Policy |
 | `cors_allowed_origins` | `CORS_ALLOWED_ORIGINS` | All origins in dev/test, none in prod | CORS allowed origins |
 | `timeout_overrides` | N/A | Empty | Per-route timeout overrides |
+| `cross_site_paths` | N/A | Empty | Paths, matched exactly, where the cross-site write guard lets a cross-site write through |
 
 ---
 
@@ -110,6 +111,10 @@ CORS_ALLOWED_ORIGINS=https://app.example.com,https://admin.example.com
 # Allow all (refused in production!)
 CORS_ALLOWED_ORIGINS=*
 ```
+
+A listed origin may also write from another site: the cross-site write guard, which
+refuses an unsafe method or a WebSocket upgrade from another site with `403`, lets it
+through.
 
 ---
 

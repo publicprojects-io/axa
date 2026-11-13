@@ -95,7 +95,7 @@
 - [format](src/format.rs): Response helpers
 - [health](src/health.rs): Health routes
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`
-- [middleware](src/middleware.rs): The standard HTTP middleware stack
+- [middleware](src/middleware.rs): The standard HTTP middleware stack, with security headers, CORS, and a cross-site write guard
 - [model](src/model.rs): Model errors and validation
 - [prelude](src/prelude.rs): Common imports
 - [queue](src/queue.rs): The Postgres job queue, over `axa-postgres-job-queue` (feature `queue`)
