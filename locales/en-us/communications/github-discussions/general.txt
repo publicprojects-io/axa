@@ -1,0 +1,21 @@
+Say hello and tell us what you are building with Axa
+
+Welcome! This is the place for conversation about Axa that does not fit anywhere else: introductions, use cases, opinions, and general chat.
+
+A quick introduction from our side: Axa is an accessories library for Axum. We built it so that a service keeps its ordinary Axum `main.rs` and still gets the pieces every service needs, such as health checks, a safe middleware stack, problem-details errors, background jobs, and database crates for Postgres, MySQL, and SQLite.
+
+## One question for you
+
+**What are you building with Axa, or what brought you here?**
+
+A sentence or two is plenty. For example: "An internal API on Postgres with sqlx, and I wanted readiness checks that work with Kubernetes."
+
+Your answers matter more than usual here. Axa adds a capability once two services need it, so hearing what your service does helps decide what comes next.
+
+## Looking for something else?
+
+- **A question** about using Axa: post in Q&A, so an answer can be marked as accepted.
+- **An idea** for a feature or change: post in Ideas.
+- **A bug**: open an Issue, following CONTRIBUTING.md.
+
+Thank you for stopping by. We will read and reply to the first comments here.

@@ -1,0 +1,20 @@
+Which of these would your service use first?
+
+Description:
+
+Axa has a list of capabilities that wait until two services need them, because adding code nobody uses still costs everyone maintenance. This poll helps find out which of those has real demand. The list is in [tasks.md](https://github.com/publicprojects-io/axa/blob/main/tasks.md), under "Stage 3".
+
+The result is advisory, not binding. A capability with votes moves forward only when the comments show services that will actually use it, so please say in a comment what your service is and how you would use your choice. Votes show what, and comments show why.
+
+The poll stays open until the maintainers post a summary of the results in this thread.
+
+Poll question: Which capability would your service use first?
+
+Options:
+
+1. Sending mail, with SMTP, file, and memory transports
+2. Object storage, for local disk, memory, and S3
+3. Rate limits shared across replicas, in Postgres or Redis
+4. Cron and calendar schedules for background jobs
+5. Opaque API tokens with scopes, expiry, and last use
+6. Something else (explain in comments)

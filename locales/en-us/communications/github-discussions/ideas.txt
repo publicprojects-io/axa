@@ -1,0 +1,46 @@
+How to suggest an idea for Axa
+
+This category is for proposing features and changes before anyone writes code. The best ideas start with the problem they solve, so this post explains how to write one up, with a template you can copy.
+
+## How ideas are handled
+
+- **Two consumers first.** Axa adds a capability once two services need it, or once one service needs it to keep a control that a hazard log, a regulator, or a security review holds it to. An idea that fixes a hole in something Axa already promises has its case already.
+- **Major changes go through an RFC.** A new crate, a breaking change, a spec change, or a significant new feature needs an [RFC](https://github.com/publicprojects-io/axa/blob/main/docs/rfc/index.md). A thread here is the pre-RFC step: it tests whether a proposal has support before anyone writes the full document.
+- **Some things are out of scope.** Axa is a library, not a framework. It will not add lifecycle hooks, route macros, a dependency-injection container, or a database abstraction.
+- **What is already planned** is in [tasks.md](https://github.com/publicprojects-io/axa/blob/main/tasks.md). Check it first, and if your idea is there, reply with your use case, since that is what moves an item forward.
+
+Posting an idea is not a promise that it will be built.
+
+## Template
+
+Copy this into a new Ideas discussion, one idea per thread.
+
+```markdown
+### Problem
+
+What hurts today, for whom, and when? One or two sentences.
+
+### Proposal
+
+What you would like Axa to do, in plain terms. A short list if it has parts.
+
+### Alternatives
+
+What you do today instead, other ways to solve it, and what happens if Axa does nothing.
+
+### Costs and trade-offs
+
+New dependencies, breaking changes, complexity, or maintenance this would add.
+
+### Who needs it
+
+The service, or services, that would use it, and whether a security or regulatory control depends on it.
+
+### Open questions
+
+What you want readers to tell you, such as "Would this cover your case?"
+```
+
+## What happens next
+
+Maintainers and other users reply with questions and use cases. When an idea has a clear problem and enough support, it becomes an Issue, a task in tasks.md, or an RFC.

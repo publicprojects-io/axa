@@ -1,0 +1,43 @@
+Show us what you built with Axa
+
+This category is for sharing what you have made with Axa: services, integrations, demos, tutorials, and experiments. Small and unfinished work is welcome.
+
+Every post here also helps the project. Axa adds a capability once two services need it, so seeing real services shows us what to build next.
+
+## A template you can copy
+
+```markdown
+### What it is
+
+One sentence.
+
+### Why I made it
+
+The problem or curiosity behind it, in two or three sentences.
+
+### Show it
+
+A screenshot, a short code sample, or a link to a demo or repository.
+
+### How to try it
+
+A few steps, or "it is private, but here is how it fits together".
+
+### Which parts of Axa it uses
+
+Such as the middleware stack, health checks, a database crate, or the job queue.
+
+### One thing that was hard or surprising
+
+### What I would like
+
+Feedback, contributors, or other people's examples.
+```
+
+## How to take part
+
+- Share your own project using the template above.
+- Credit the work you built on.
+- Reply to others with specific, kind feedback, such as what you would reuse or one question about how it works.
+
+We would especially like to hear which parts of Axa you used, and which you left out or replaced.

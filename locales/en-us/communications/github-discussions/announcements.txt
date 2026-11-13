@@ -1,0 +1,26 @@
+Welcome to Axa Discussions
+
+Axa now has GitHub Discussions, a place to ask questions, suggest ideas, and share what you build with Axa.
+
+[Axa](https://github.com/publicprojects-io/axa) is an accessories library for Axum websites, databases, microservices, and more. It is a library, not a framework: your `main.rs` stays ordinary Axum, and you call into Axa for a middleware stack, health checks, RFC 9457 error responses, configuration, background jobs, database crates, and graceful shutdown.
+
+## What this means for you
+
+- **Questions get answers in one place.** An answer that works can be marked as accepted, so the next person finds it quickly.
+- **Ideas get discussed before code.** Talking through a proposal here is the first step of the [RFC process](https://github.com/publicprojects-io/axa/blob/main/docs/rfc/index.md) for major changes.
+- **Real use cases shape the roadmap.** Axa adds a capability once two services need it, or once one service needs it to keep a security or regulatory control. Telling us what your service needs is how that happens.
+
+## Where to go for what
+
+- **Questions** about using Axa: [Q&A](https://github.com/publicprojects-io/axa/discussions/categories/q-a)
+- **Ideas** for features and changes: [Ideas](https://github.com/publicprojects-io/axa/discussions/categories/ideas)
+- **Votes** on choices the project faces: [Polls](https://github.com/publicprojects-io/axa/discussions/categories/polls)
+- **Something you built** with Axa: [Show and tell](https://github.com/publicprojects-io/axa/discussions/categories/show-and-tell)
+- **Everything else**, including introductions: [General](https://github.com/publicprojects-io/axa/discussions/categories/general)
+- **Bugs**: [Issues](https://github.com/publicprojects-io/axa/issues), following [CONTRIBUTING.md](https://github.com/publicprojects-io/axa/blob/main/CONTRIBUTING.md)
+
+Only maintainers post in Announcements, and everyone can comment and react.
+
+## Your next step
+
+Head to General and tell us what you are building with Axa, or plan to. Your answer helps decide what Axa adds next.

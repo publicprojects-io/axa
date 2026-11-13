@@ -1,0 +1,45 @@
+How to ask a question about Axa
+
+This category is for questions about using Axa. When a reply solves your problem, mark it as the answer, so the next person with the same question finds it quickly.
+
+## Before you ask
+
+- Search Q&A for your question, and read the [spec](https://github.com/publicprojects-io/axa/blob/main/spec/index.md), which says what each part of Axa does and why.
+- Check the [changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md), especially after an upgrade, and the upgrading guides in `help/`.
+- If something is broken rather than unclear, open an [Issue](https://github.com/publicprojects-io/axa/issues) instead, following CONTRIBUTING.md.
+
+## Checklist for a good question
+
+- **A specific title** that names the problem, such as "Why does `/_health/ready` answer 503 during shutdown?" rather than "Help".
+- **Goal**: what you are trying to do, in one sentence.
+- **What you tried**, in order.
+- **Expected and actual results**, with exact error text in a code block, not a screenshot.
+- **Environment**: your Axa version, the features you turned on (such as `postgres-sqlx`), your Rust version, and your operating system.
+- **A minimal example**: the smallest code or steps that still show the problem.
+
+Remove secrets, tokens, database URLs with passwords, and personal data from anything you paste.
+
+One question per thread, so that one reply can be the answer.
+
+## Template
+
+```markdown
+### Goal
+
+### What I tried
+
+### Expected
+
+### Actual
+
+(exact error text, in a code block)
+
+### Environment
+
+- Axa version:
+- Features:
+- Rust version:
+- Operating system:
+
+### Minimal example
+```
