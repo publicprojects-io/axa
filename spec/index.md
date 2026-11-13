@@ -133,8 +133,8 @@ The variables are listed in `README.md`.
 ### 4.4 Middleware
 
 From the outside in: request id, tracing, security headers, CORS, the cross-site write
-guard (MID-23 to MID-28), timeout, `304`s (CND-1), compression, refusal shaping, body
-limit, panic catching.
+guard (MID-23 to MID-28), timeout, `304`s (CND-1), compression, refusal shaping, request
+decompression (MID-29), body limit, panic catching.
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -167,6 +167,7 @@ limit, panic catching.
 | MID-26 | A request whose `origin` is exactly one CORS lists is not refused by MID-23 or MID-24, and gets its CORS headers. A CORS list of `*`, which production refuses (CFG-8), lets every origin through. | `a_cors_listed_origin_may_write_from_another_site`, `a_wildcard_cors_list_lets_every_origin_write` |
 | MID-27 | A path in `Http::cross_site_paths`, set in code and matched exactly, ignoring a trailing slash, is not refused by MID-23 or MID-24. No other path is let through by it. | `a_listed_cross_site_path_is_let_through_and_no_other` |
 | MID-28 | The cross-site write guard is inside CORS, the trace, the request id, and the security headers, so its refusal is a problem with all of them. | `a_cross_site_refusal_gets_the_standard_headers` |
+| MID-29 | A request body in `gzip`, `deflate`, `br`, or `zstd` reaches the handler decoded, and the body limit counts decoded bytes, so a small body that expands past it is a `413`, for the extractors and for a handler that reads the body itself. An encoding it cannot decode is a `415` problem, and a body that is not what its encoding says is a `400` problem. | `a_compressed_body_reaches_the_handler_decoded`, `a_small_body_that_expands_past_the_limit_is_refused`, `an_encoding_that_cannot_be_decoded_is_a_problem` |
 
 ### 4.5 Errors
 

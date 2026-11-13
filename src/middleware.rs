@@ -31,6 +31,7 @@ use tower_http::{
     catch_panic::CatchPanicLayer,
     compression::{CompressionLayer, DefaultPredicate, Predicate},
     cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer},
+    decompression::RequestDecompressionLayer,
     sensitive_headers::SetSensitiveHeadersLayer,
     set_header::SetResponseHeaderLayer,
     trace::{DefaultOnResponse, TraceLayer},
@@ -363,6 +364,10 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         .layer(CatchPanicLayer::custom(panicked))
         .layer(DefaultBodyLimit::max(config.body_limit))
         .layer(from_fn_with_state(config.body_limit, limit_body))
+        // Outside the limit, so that it counts decoded bytes and a small body that expands
+        // is refused. Inside refusal shaping, so that an encoding it cannot decode is a
+        // `415` problem.
+        .layer(RequestDecompressionLayer::new())
         .layer(from_fn(shape_refusals));
     if config.compression {
         // Never a response holding a secret, which compression can leak (BREACH).
@@ -1262,6 +1267,90 @@ mod tests {
             .unwrap();
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// 10,000 zero bytes, gzipped to 45.
+    const GZIP_BOMB: [u8; 45] = [
+        0x1f, 0x8b, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x13, 0xed, 0xc1, 0x1, 0xd, 0x0, 0x0, 0x0,
+        0xc2, 0xa0, 0xf7, 0x4f, 0x6d, 0xe, 0x37, 0xa0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+        0xe0, 0xdf, 0x0, 0x2e, 0xca, 0x3b, 0x4d, 0x10, 0x27, 0x0, 0x0,
+    ];
+
+    /// `hi`, gzipped.
+    const GZIP_HI: [u8; 22] = [
+        0x1f, 0x8b, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x13, 0xcb, 0xc8, 0x4, 0x0, 0xac, 0x2a,
+        0x93, 0xd8, 0x2, 0x0, 0x0, 0x0,
+    ];
+
+    /// An echo that accepts 64 bytes, more than any gzipped body here.
+    fn decompressing_app() -> Router {
+        async fn read_itself(body: Body) -> std::result::Result<Bytes, StatusCode> {
+            axum::body::to_bytes(body, usize::MAX)
+                .await
+                .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)
+        }
+        let router = Router::new()
+            .route(
+                "/echo",
+                body_limit(axum::routing::post(|body: String| async move { body }), 64),
+            )
+            .route("/raw", body_limit(axum::routing::post(read_itself), 64));
+        apply(router, &config()).unwrap()
+    }
+
+    fn encoded(path: &str, encoding: &str, body: &[u8]) -> http::Request<Body> {
+        http::Request::builder()
+            .method("POST")
+            .uri(path)
+            .header(header::CONTENT_ENCODING, encoding)
+            .body(Body::from(body.to_vec()))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_compressed_body_reaches_the_handler_decoded() {
+        let response = decompressing_app()
+            .oneshot(encoded("/echo", "gzip", &GZIP_HI))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"hi");
+    }
+
+    #[tokio::test]
+    async fn a_small_body_that_expands_past_the_limit_is_refused() {
+        for path in ["/echo", "/raw"] {
+            let response = decompressing_app()
+                .oneshot(encoded(path, "gzip", &GZIP_BOMB))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn an_encoding_that_cannot_be_decoded_is_a_problem() {
+        let response = decompressing_app()
+            .oneshot(encoded("/echo", "compress", b"x"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/problem+json"
+        );
+        let response = decompressing_app()
+            .oneshot(encoded("/echo", "gzip", b"not gzip at all"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/problem+json"
+        );
     }
 
     /// A service with a route for each way to refuse.

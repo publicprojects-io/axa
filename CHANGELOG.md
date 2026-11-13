@@ -23,6 +23,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **The standard stack decodes a compressed request body** (MID-29): `gzip`, `deflate`,
+  `br`, and `zstd`, with the body limit counted on decoded bytes, so a small body that
+  expands past it is a `413`. An encoding it cannot decode is a `415`. A handler that
+  read a compressed body itself now gets it decoded, without `content-encoding`.
 - **`config::Http` has a new field, `cross_site_paths`**, so a service that builds an
   `Http` by hand adds `cross_site_paths: Vec::new()`.
 

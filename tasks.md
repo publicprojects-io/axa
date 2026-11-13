@@ -34,6 +34,9 @@ handler that the guard, outside routing, has already let through.
 T-15 is done, unreleased, as `format::download`, `format::content_disposition`, and
 `format::clean_file_name`, which T-14 can use for an upload's name.
 
+T-20 is done, unreleased, with `tower-http`'s `decompression-full`, which adds no crate
+the build did not have.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-11 | An outbound HTTP client that refuses private, loopback, link-local, CGNAT, and metadata addresses after DNS lookup and on each redirect, connects only to the addresses it checked, and takes an allow-list. Its own threat model and spec section | New crate `axa-http-client` | M | `reqwest` | Svix, Windmill, tuwunel |
