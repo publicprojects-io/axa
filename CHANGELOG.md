@@ -15,6 +15,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refusal carries the request id and security headers.
 - **`Http::cross_site_paths`**, set in code, for a route that takes a cross-site write
   by design, such as an identity provider's `form_post` callback.
+- **A `Tenant` extractor in `axa-paseto-auth` and `axa-keycloak-auth`** (PST-13 to
+  PST-15, KCK-14, KCK-15): exactly one value of the token's `tenant` attribute, or the
+  one `GuardConfig::tenant_attribute` names, read only from a caller the guard verified
+  and allowed. No verified caller is `401`, and no tenant, two, or one that is not a
+  lower-case DNS label is `403`, code `no_tenant`, with an `auth_refused` line.
 - **Safe downloads in `axa::format`** (FMT-5 to FMT-8): `download` sends a body as a
   file, and `content_disposition` makes its header, `inline` only for a raster image,
   audio, video, or plain text, which cannot run script, and `attachment` for HTML, SVG,
@@ -27,6 +32,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `br`, and `zstd`, with the body limit counted on decoded bytes, so a small body that
   expands past it is a `413`. An encoding it cannot decode is a `415`. A handler that
   read a compressed body itself now gets it decoded, without `content-encoding`.
+- **`GuardConfig` in both auth crates has a new field, `tenant_attribute`**, so a
+  service that builds one by hand, rather than with `GuardConfig::new`, adds it.
 - **`config::Http` has a new field, `cross_site_paths`**, so a service that builds an
   `Http` by hand adds `cross_site_paths: Vec::new()`.
 

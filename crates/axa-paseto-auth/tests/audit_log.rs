@@ -10,7 +10,7 @@ use std::{
 };
 
 use authentication_verifier::{Policy, ReloadablePolicy, ReloadableVerifier, Verifier};
-use axa_paseto_auth::{Guard, GuardConfig, middleware};
+use axa_paseto_auth::{Guard, GuardConfig, Tenant, middleware};
 use axum::{
     Router,
     body::Body,
@@ -115,6 +115,10 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
             "/api/places",
             get(|| async { "ok" }).post(|| async { "ok" }),
         )
+        .route(
+            "/api/tenant",
+            get(|tenant: Tenant| async move { tenant.to_string() }),
+        )
         .layer(from_fn_with_state(Arc::new(guard), middleware))
         .layer(axum::Extension(client));
     let good = sign(&SEED);
@@ -146,6 +150,20 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
     assert_eq!(call(&app, "GET", Some(&good)).await, StatusCode::OK);
     let line = log.take();
     assert!(!line.contains("auth_refused"), "{line}");
+
+    // A token with no tenant, where a handler needs one, is refused with a line too.
+    let request = Request::builder()
+        .uri("/api/tenant")
+        .header(AUTHORIZATION, format!("Bearer {good}"))
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    let line = log.take();
+    assert!(line.contains("auth_refused"), "{line}");
+    assert!(line.contains("reason=\"no_tenant\""), "{line}");
+    assert!(line.contains("subject=\"11111111-1111"), "{line}");
+    assert!(!line.contains("alice@example.com"), "{line}");
 
     // Turning enforcement off says so.
     let keys = Verifier::from_paseto_keys_value(&keys, ISSUER, AUDIENCE).unwrap();

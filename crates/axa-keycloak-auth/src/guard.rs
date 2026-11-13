@@ -59,28 +59,35 @@ struct Problem<'a> {
 impl IntoResponse for Rejection {
     fn into_response(self) -> Response {
         let Self(status, detail) = self;
-        let problem = Problem {
-            kind: "about:blank",
-            title: status.canonical_reason().unwrap_or("Error"),
-            status: status.as_u16(),
-            detail: &detail,
-            code: if status == StatusCode::FORBIDDEN {
-                FORBIDDEN
-            } else {
-                "unauthorized"
-            },
+        let code = if status == StatusCode::FORBIDDEN {
+            FORBIDDEN
+        } else {
+            "unauthorized"
         };
-        let mut response = (status, Json(problem)).into_response();
+        problem_response(status, &detail, code)
+    }
+}
+
+/// A refusal as an RFC 9457 problem, with `detail` and `code`. A `401` carries
+/// `WWW-Authenticate: Bearer`.
+pub(crate) fn problem_response(status: StatusCode, detail: &str, code: &str) -> Response {
+    let problem = Problem {
+        kind: "about:blank",
+        title: status.canonical_reason().unwrap_or("Error"),
+        status: status.as_u16(),
+        detail,
+        code,
+    };
+    let mut response = (status, Json(problem)).into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));
+    if status == StatusCode::UNAUTHORIZED {
         response
             .headers_mut()
-            .insert(CONTENT_TYPE, HeaderValue::from_static(PROBLEM_JSON));
-        if status == StatusCode::UNAUTHORIZED {
-            response
-                .headers_mut()
-                .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
-        }
-        response
+            .insert(WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"));
     }
+    response
 }
 
 /// What a service declares about itself.
@@ -96,6 +103,9 @@ pub struct GuardConfig {
     pub public_prefixes: Vec<String>,
     /// `POST` path suffixes that count as destructive rather than a write.
     pub destructive_post_suffixes: Vec<String>,
+    /// The attribute in a token's `attrs` that [`Tenant`](crate::Tenant) reads.
+    /// [`DEFAULT_TENANT_ATTRIBUTE`](crate::DEFAULT_TENANT_ATTRIBUTE) unless set.
+    pub tenant_attribute: String,
 }
 
 impl GuardConfig {
@@ -111,7 +121,16 @@ impl GuardConfig {
                 .to_vec(),
             public_prefixes: Vec::new(),
             destructive_post_suffixes: Vec::new(),
+            tenant_attribute: crate::DEFAULT_TENANT_ATTRIBUTE.to_string(),
         }
+    }
+
+    /// Name the attribute in a token's `attrs` that [`Tenant`](crate::Tenant) reads,
+    /// such as `org`.
+    #[must_use]
+    pub fn tenant_attribute(mut self, attribute: impl Into<String>) -> Self {
+        self.tenant_attribute = attribute.into();
+        self
     }
 
     /// Set whether requests must carry a token.
@@ -424,7 +443,7 @@ impl Refused {
     }
 }
 
-fn invalid_token() -> Rejection {
+pub(crate) fn invalid_token() -> Rejection {
     Rejection(StatusCode::UNAUTHORIZED, INVALID_TOKEN.to_string())
 }
 

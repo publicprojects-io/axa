@@ -418,6 +418,15 @@ Both refuse a decision with an obligation the service has not declared, so a rul
 asks for `"audit"` is a `403` until the service declares it with `Guard::honouring`.
 The `Allowed` extractor gives a handler the decision.
 
+For a service many tenants share, take `Tenant` as a handler argument. It reads the one
+value of the token's `tenant` attribute, or the one `GuardConfig::tenant_attribute`
+names, from a caller the guard verified and allowed, and refuses anything else before the
+handler runs: `401` with no verified caller, and `403` code `no_tenant` for no tenant, two,
+or one that is not a lower-case DNS label. Never take a tenant from a header, a path, a
+host, or a body. Bind `tenant.as_str()` in every query, and see `examples/multi-tenant`
+for row-level security as a second fence. With Keycloak, map a realm role to the tenant
+in the role map, as `"acme-member": { "tenant": ["acme"] }`.
+
 With `axa-keycloak-auth`:
 
 - Every token must carry a configured audience. Keycloak adds a client to `aud` only

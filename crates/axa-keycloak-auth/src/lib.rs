@@ -115,6 +115,7 @@ use serde::{Deserialize, Serialize};
 pub mod abac;
 mod guard;
 pub mod keycloak;
+mod tenant;
 
 pub use abac::{Action, ActionPattern, Decision, Effect, Policy, ReloadablePolicy, Rule};
 pub use guard::{
@@ -122,6 +123,9 @@ pub use guard::{
     middleware,
 };
 pub use keycloak::{KeycloakSettings, KeycloakVerifier, settings_from_lookup};
+pub use tenant::{
+    DEFAULT_TENANT_ATTRIBUTE, MAX_TENANT_ID_LEN, Tenant, TenantRejection, is_tenant_id,
+};
 
 /// Verified token claims. Mirrors the auth-service `Claims` exactly so a
 /// token signed there round-trips here. `sub` carries the user `pid`.

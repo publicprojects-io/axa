@@ -11,73 +11,26 @@
 
 use std::{path::Path as FilePath, sync::Arc};
 
-use authentication_verifier::{Claims, Policy, ReloadablePolicy, ReloadableVerifier, Verifier};
+use authentication_verifier::{Policy, ReloadablePolicy, ReloadableVerifier, Verifier};
 use axa::{
     Environment, Error, Result,
     config::{Config, Defaults},
-    error::ErrorDetail,
     extract::{Json, Path},
     logger, middleware,
-    paseto::{self, Allowed, Guard, GuardConfig},
+    paseto::{self, Guard, GuardConfig, Tenant},
     postgres_sqlx::{
         self, Pool,
         sqlx::{self, Postgres, Transaction, migrate::Migrator},
     },
-    prelude::{AppContext, AppRoutes, Response, Routes, State, bad_request, format, get, not_found},
+    prelude::{
+        AppContext, AppRoutes, Response, Routes, State, bad_request, format, get, not_found,
+    },
     server,
 };
-use axum::{extract::FromRequestParts, http::StatusCode, http::request::Parts};
 use serde::{Deserialize, Serialize};
 
 /// The longest title, which the table's check also holds to.
 const MAX_TITLE_CHARS: usize = 200;
-
-/// The attribute in a token's `attrs` that names the caller's tenant.
-const TENANT_ATTRIBUTE: &str = "tenant";
-
-/// The caller's tenant, from their verified token.
-///
-/// A handler that takes this cannot run for a caller with no tenant, or with more than
-/// one, so no handler has to remember to check.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Tenant(String);
-
-impl Tenant {
-    /// The one tenant `claims` name, if it is a valid tenant id.
-    fn of(claims: &Claims) -> Option<Self> {
-        match claims.attrs.get(TENANT_ATTRIBUTE).map(Vec::as_slice) {
-            Some([tenant]) if is_tenant_id(tenant) => Some(Self(tenant.clone())),
-            _ => None,
-        }
-    }
-}
-
-/// Lower-case letters, digits, and hyphens, not starting with a hyphen, at most 63
-/// characters, as the table's check also says.
-fn is_tenant_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 63
-        && !id.starts_with('-')
-        && id
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
-}
-
-impl<S: Send + Sync> FromRequestParts<S> for Tenant {
-    type Rejection = Error;
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self> {
-        // Only what the guard verified and allowed. With no guard, or on a public
-        // path, there is nothing here, and the request is refused.
-        let allowed = parts
-            .extensions
-            .get::<Allowed>()
-            .ok_or_else(|| Error::Unauthorized("no verified caller".to_string()))?;
-        Self::of(&allowed.claims).ok_or_else(|| {
-            Error::CustomError(StatusCode::FORBIDDEN, ErrorDetail::with_reason("no_tenant"))
-        })
-    }
-}
 
 /// A transaction in which row-level security sees only `tenant`'s rows. The setting
 /// is bound, not formatted into the SQL, and lasts only until the transaction ends,
@@ -85,7 +38,7 @@ impl<S: Send + Sync> FromRequestParts<S> for Tenant {
 async fn in_tenant(pool: &Pool, tenant: &Tenant) -> Result<Transaction<'static, Postgres>> {
     let mut tx = pool.begin().await?;
     sqlx::query("SELECT set_config('app.tenant', $1, true)")
-        .bind(&tenant.0)
+        .bind(tenant.as_str())
         .execute(&mut *tx)
         .await?;
     Ok(tx)
@@ -139,7 +92,7 @@ async fn list(State(ctx): State<AppContext>, tenant: Tenant) -> Result<Response>
     let rows: Vec<(i64, String, bool)> = sqlx::query_as(
         "SELECT id, title, completed FROM todos WHERE tenant_id = $1 ORDER BY id LIMIT 100",
     )
-    .bind(&tenant.0)
+    .bind(tenant.as_str())
     .fetch_all(&mut *tx)
     .await?;
     tx.commit().await?;
@@ -156,7 +109,7 @@ async fn create(
     let row: (i64, String, bool) = sqlx::query_as(
         "INSERT INTO todos (tenant_id, title) VALUES ($1, $2) RETURNING id, title, completed",
     )
-    .bind(&tenant.0)
+    .bind(tenant.as_str())
     .bind(title)
     .fetch_one(&mut *tx)
     .await?;
@@ -172,13 +125,12 @@ async fn show(
     Path(id): Path<i64>,
 ) -> Result<Response> {
     let mut tx = in_tenant(&ctx.db, &tenant).await?;
-    let row: Option<(i64, String, bool)> = sqlx::query_as(
-        "SELECT id, title, completed FROM todos WHERE tenant_id = $1 AND id = $2",
-    )
-    .bind(&tenant.0)
-    .bind(id)
-    .fetch_optional(&mut *tx)
-    .await?;
+    let row: Option<(i64, String, bool)> =
+        sqlx::query_as("SELECT id, title, completed FROM todos WHERE tenant_id = $1 AND id = $2")
+            .bind(tenant.as_str())
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
     tx.commit().await?;
     row.map_or_else(not_found, |row| format::json(Todo::from(row)))
 }
@@ -195,7 +147,7 @@ async fn update(
         "UPDATE todos SET title = COALESCE($3, title), completed = COALESCE($4, completed)
          WHERE tenant_id = $1 AND id = $2 RETURNING id, title, completed",
     )
-    .bind(&tenant.0)
+    .bind(tenant.as_str())
     .bind(id)
     .bind(title)
     .bind(change.completed)
@@ -212,7 +164,7 @@ async fn remove(
 ) -> Result<Response> {
     let mut tx = in_tenant(&ctx.db, &tenant).await?;
     let deleted = sqlx::query("DELETE FROM todos WHERE tenant_id = $1 AND id = $2")
-        .bind(&tenant.0)
+        .bind(tenant.as_str())
         .bind(id)
         .execute(&mut *tx)
         .await?
@@ -238,9 +190,12 @@ fn routes() -> AppRoutes {
 /// a request id and the security headers.
 fn app(ctx: AppContext, guard: Guard) -> Result<axum::Router> {
     let http = ctx.config.http.clone();
-    let router = routes().into_router(ctx).layer(
-        axum::middleware::from_fn_with_state(Arc::new(guard), paseto::middleware),
-    );
+    let router = routes()
+        .into_router(ctx)
+        .layer(axum::middleware::from_fn_with_state(
+            Arc::new(guard),
+            paseto::middleware,
+        ));
     middleware::apply(router, &http)
 }
 
@@ -248,9 +203,8 @@ fn app(ctx: AppContext, guard: Guard) -> Result<axum::Router> {
 /// `PASETO_ISSUER` and `PASETO_AUDIENCE`, under the default policy: reads for any
 /// verified caller, writes for `access=write`, deletes for `access=admin`.
 fn guard_from_env() -> Result<Guard> {
-    let variable = |name: &str| {
-        std::env::var(name).map_err(|_| Error::string(&format!("{name} must be set")))
-    };
+    let variable =
+        |name: &str| std::env::var(name).map_err(|_| Error::string(&format!("{name} must be set")));
     let keys = std::fs::read_to_string(variable("PASETO_KEYS_FILE")?)?;
     let keys: serde_json::Value = serde_json::from_str(&keys)?;
     let verifier = Verifier::from_paseto_keys_value(
@@ -304,14 +258,18 @@ async fn main() -> Result<()> {
 mod tests {
     use std::collections::BTreeMap;
 
+    use authentication_verifier::Claims;
+
     use super::*;
     use axum::{
         body::Body,
-        http::{Request, header},
+        http::{Request, StatusCode, header},
     };
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use ed25519_dalek::SigningKey;
-    use rusty_paseto::core::{Footer, Key, Paseto, PasetoAsymmetricPrivateKey, Payload, Public, V4};
+    use rusty_paseto::core::{
+        Footer, Key, Paseto, PasetoAsymmetricPrivateKey, Payload, Public, V4,
+    };
     use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use tower::ServiceExt;
@@ -413,27 +371,6 @@ mod tests {
         .unwrap()
     }
 
-    #[test]
-    fn a_tenant_is_exactly_one_valid_id_from_the_token() {
-        assert_eq!(
-            Tenant::of(&claims_with(&[("tenant", &["acme"])])),
-            Some(Tenant("acme".to_string()))
-        );
-        for attrs in [
-            &[][..],
-            &[("tenant", &[][..])][..],
-            &[("tenant", &["acme", "globex"][..])][..],
-            &[("tenant", &["Acme"][..])][..],
-            &[("tenant", &["-acme"][..])][..],
-            &[("tenant", &["acme'; --"][..])][..],
-            &[("org", &["acme"][..])][..],
-        ] {
-            assert_eq!(Tenant::of(&claims_with(attrs)), None, "{attrs:?}");
-        }
-        assert!(is_tenant_id(&"a".repeat(63)));
-        assert!(!is_tenant_id(&"a".repeat(64)));
-    }
-
     #[tokio::test]
     async fn a_caller_with_no_token_or_no_tenant_is_refused_before_the_database() {
         let app = test_app(unused_pool());
@@ -507,9 +444,9 @@ mod tests {
 
         // The second fence: a query that forgets the filter still sees no other
         // tenant's rows.
-        let mut tx = in_tenant(&pool, &Tenant("globex".to_string()))
-            .await
-            .unwrap();
+        let globex_tenant =
+            Tenant::from_claims(&claims_with(&[("tenant", &["globex"])]), "tenant").unwrap();
+        let mut tx = in_tenant(&pool, &globex_tenant).await.unwrap();
         let (count,): (i64,) = sqlx::query_as("SELECT count(*) FROM todos")
             .fetch_one(&mut *tx)
             .await

@@ -34,6 +34,9 @@ handler that the guard, outside routing, has already let through.
 T-15 is done, unreleased, as `format::download`, `format::content_disposition`, and
 `format::clean_file_name`, which T-14 can use for an upload's name.
 
+T-43 is done, unreleased, as `Tenant` in both auth crates, and `examples/multi-tenant`
+uses it.
+
 T-20 is done, unreleased, with `tower-http`'s `decompression-full`, which adds no crate
 the build did not have.
 

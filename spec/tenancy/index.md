@@ -1,7 +1,7 @@
 # Multi-tenancy
 
 A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. Nothing here is built yet. It proposes capabilities, each with an id
+13 November 2026. TN-1 is built. The rest is not yet. It proposes capabilities, each with an id
 (TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
 [`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
 the first few would give.
@@ -72,11 +72,12 @@ From Axa's own code, at the commit this page was written on:
 | TN-10 | A tenant on an outbox event, for routing and ordering per tenant | Consumers downstream often split by tenant | M | Two consumers |
 | TN-11 | A suspended tenant refused with `403`, code `tenant_suspended`, from a check the service passes in | Suspension belongs to the service that issues tokens, but tokens live for minutes | S | Two consumers |
 
-**TN-1, the tenant from the token.** `Tenant` reads the `Allowed` the guard left, so it
+**TN-1, the tenant from the token.** Done, unreleased, as T-43: PST-13 to PST-15 and
+KCK-14 and KCK-15. `Tenant` reads the `Allowed` the guard left, so it
 exists only after the policy allowed the request. It takes exactly one value of a named
 attribute, `tenant` unless the guard's config names another, and refuses a value that
-is not a tenant id, by default lower-case letters, digits, and hyphens, at most 63
-characters. No token is `401`, and a token with no tenant, two tenants, or a bad one is
+is not a tenant id: lower-case letters, digits, and hyphens, 1 to 63 characters, not
+starting or ending with a hyphen, as a DNS label is. No token is `401`, and a token with no tenant, two tenants, or a bad one is
 `403`, code `no_tenant`. There is no way to take a tenant from a header, a path, or a
 host, as P-10 asks: a service that routes by subdomain compares the host's tenant with
 the token's and refuses a mismatch.

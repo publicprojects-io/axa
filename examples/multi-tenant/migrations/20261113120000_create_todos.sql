@@ -1,6 +1,6 @@
 -- Every row names its tenant, and every query the service writes filters on it.
 CREATE TABLE todos (
-    tenant_id TEXT NOT NULL CHECK (tenant_id ~ '^[a-z0-9][a-z0-9-]{0,62}$'),
+    tenant_id TEXT NOT NULL CHECK (tenant_id ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'),
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     title TEXT NOT NULL CHECK (char_length(title) BETWEEN 1 AND 200),
     completed BOOLEAN NOT NULL DEFAULT FALSE,

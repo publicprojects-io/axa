@@ -47,6 +47,11 @@
 
 use std::{future::Future, net::IpAddr, sync::Arc};
 
+mod tenant;
+pub use tenant::{
+    DEFAULT_TENANT_ATTRIBUTE, MAX_TENANT_ID_LEN, Tenant, TenantRejection, is_tenant_id,
+};
+
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
 use axa_problem::Problem;
 use axum::{
@@ -111,6 +116,9 @@ pub struct GuardConfig {
     pub public_prefixes: Vec<String>,
     /// `POST` path suffixes that count as destructive rather than a write.
     pub destructive_post_suffixes: Vec<String>,
+    /// The attribute in a token's `attrs` that [`Tenant`] reads.
+    /// [`DEFAULT_TENANT_ATTRIBUTE`] unless set.
+    pub tenant_attribute: String,
 }
 
 impl GuardConfig {
@@ -126,7 +134,15 @@ impl GuardConfig {
                 .to_vec(),
             public_prefixes: Vec::new(),
             destructive_post_suffixes: Vec::new(),
+            tenant_attribute: DEFAULT_TENANT_ATTRIBUTE.to_string(),
         }
+    }
+
+    /// Name the attribute in a token's `attrs` that [`Tenant`] reads, such as `org`.
+    #[must_use]
+    pub fn tenant_attribute(mut self, attribute: impl Into<String>) -> Self {
+        self.tenant_attribute = attribute.into();
+        self
     }
 
     /// Set whether requests must carry a token.
@@ -990,5 +1006,120 @@ mod tests {
             status(app, "GET", "/api/places", Some(&token)).await,
             StatusCode::FORBIDDEN
         );
+    }
+
+    // Tenants.
+
+    fn tenant_app(config: GuardConfig) -> Router {
+        let guard = Guard::new(
+            config,
+            verifier(),
+            Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+        );
+        Router::new()
+            .route(
+                "/api/tenant",
+                get(|tenant: Tenant| async move { tenant.to_string() }),
+            )
+            .route(
+                "/metrics.prom",
+                get(|tenant: Tenant| async move { tenant.to_string() }),
+            )
+            .layer(from_fn_with_state(Arc::new(guard), middleware))
+    }
+
+    async fn tenant_call(app: Router, path: &str, token: Option<&str>) -> Response {
+        let mut request = HttpRequest::builder().uri(path);
+        if let Some(token) = token {
+            request = request.header(AUTHORIZATION, format!("Bearer {token}"));
+        }
+        app.oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+    }
+
+    async fn body_of(response: Response) -> String {
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    #[test]
+    fn a_tenant_id_is_a_dns_label_in_lower_case() {
+        for id in ["acme", "a", "acme-2", "0", &"a".repeat(63)] {
+            assert!(is_tenant_id(id), "{id}");
+        }
+        for id in [
+            "",
+            "Acme",
+            "-acme",
+            "acme-",
+            "ac me",
+            "acme.corp",
+            "acme_corp",
+            "é",
+            "acme'--",
+            &"a".repeat(64),
+        ] {
+            assert!(!is_tenant_id(id), "{id}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_tenant_is_exactly_one_valid_id_from_the_verified_token() {
+        let app = tenant_app(GuardConfig::new("place"));
+        let response = tenant_call(
+            app.clone(),
+            "/api/tenant",
+            Some(&token(&json!({ "tenant": ["acme"] }))),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body_of(response).await, "acme");
+
+        for attrs in [
+            json!({}),
+            json!({ "tenant": [] }),
+            json!({ "tenant": ["acme", "globex"] }),
+            json!({ "tenant": ["Acme"] }),
+            json!({ "org": ["acme"] }),
+        ] {
+            let response = tenant_call(app.clone(), "/api/tenant", Some(&token(&attrs))).await;
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{attrs}");
+            let body = body_of(response).await;
+            assert!(body.contains(r#""code":"no_tenant""#), "{body}");
+            assert!(!body.contains("acme") && !body.contains("Acme"), "{body}");
+        }
+    }
+
+    #[tokio::test]
+    async fn with_no_verified_caller_there_is_no_tenant() {
+        let app = tenant_app(GuardConfig::new("place").public_path("/metrics.prom"));
+        let response = tenant_call(app.clone(), "/api/tenant", None).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        // A public path decides nothing, so even a valid token gives no tenant there.
+        let valid = token(&json!({ "tenant": ["acme"] }));
+        let response = tenant_call(app, "/metrics.prom", Some(&valid)).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(response.headers()[WWW_AUTHENTICATE], "Bearer");
+        // Without the middleware at all, it fails closed.
+        let bare = Router::new().route(
+            "/api/tenant",
+            get(|tenant: Tenant| async move { tenant.to_string() }),
+        );
+        let response = tenant_call(bare, "/api/tenant", Some(&valid)).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn the_guard_can_name_the_tenant_attribute() {
+        let app = tenant_app(GuardConfig::new("place").tenant_attribute("org"));
+        let org = token(&json!({ "org": ["acme"] }));
+        let response = tenant_call(app.clone(), "/api/tenant", Some(&org)).await;
+        assert_eq!(body_of(response).await, "acme");
+        let tenant = token(&json!({ "tenant": ["acme"] }));
+        let response = tenant_call(app, "/api/tenant", Some(&tenant)).await;
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 }

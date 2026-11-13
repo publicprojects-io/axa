@@ -6,9 +6,9 @@ features. One table holds every tenant's rows, and no tenant can see or change a
 ## How a tenant is chosen
 
 **From the caller's verified token, and nowhere else.** The auth service puts the
-tenant in the token's `attrs`, as `"tenant": ["acme"]`. The `Tenant` extractor reads it
-from what the PASETO guard verified and allowed, and a handler that takes `Tenant` cannot
-run without one.
+tenant in the token's `attrs`, as `"tenant": ["acme"]`. Axa's `axa::paseto::Tenant`
+extractor reads it from what the PASETO guard verified and allowed, and a handler that
+takes `Tenant` cannot run without one.
 
 | The token | The answer |
 |---|---|
@@ -17,8 +17,8 @@ run without one.
 | Valid, with one tenant, for an action the policy refuses | `403` |
 | Valid, with one tenant, allowed | The request runs in that tenant |
 
-A tenant id is lower-case letters, digits, and hyphens, at most 63 characters, not
-starting with a hyphen. The table checks this too.
+A tenant id is lower-case letters, digits, and hyphens, 1 to 63 characters, not starting
+or ending with a hyphen, as a DNS label is. The table checks this too.
 
 Never take the tenant from a header, a path, a subdomain, or a body that the caller
 chooses: any caller could then name any tenant. A subdomain can say which tenant a

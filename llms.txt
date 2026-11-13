@@ -131,8 +131,8 @@ Each of these gives the same things for its library:
 
 ### Authentication
 
-- [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication and ABAC enforcement for Axum services
-- [axa-keycloak-auth](crates/axa-keycloak-auth/README.md) (feature `keycloak`): Keycloak bearer authentication and ABAC enforcement for Axum services, standing alone
+- [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication, ABAC enforcement, and a tenant from the verified token, for Axum services
+- [axa-keycloak-auth](crates/axa-keycloak-auth/README.md) (feature `keycloak`): Keycloak bearer authentication, ABAC enforcement, and a tenant from the verified token, for Axum services, standing alone
 
 ### Templates
 
