@@ -37,6 +37,8 @@ T-15 is done, unreleased, as `format::download`, `format::content_disposition`, 
 T-43 is done, unreleased, as `Tenant` in both auth crates, and `examples/multi-tenant`
 uses it.
 
+T-45 is done, unreleased, with `postgres-sqlx`, as `axa::db::require_row_security`.
+
 T-44 is done, unreleased, for `axa-postgres-sqlx` as `begin_with`. The SeaORM and Diesel
 crates follow when a service on them asks.
 

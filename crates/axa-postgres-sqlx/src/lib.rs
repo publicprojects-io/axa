@@ -301,6 +301,69 @@ pub async fn begin_with(
     Ok(tx)
 }
 
+/// Whether row-level security can keep rows apart for the role a pool connects as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RowSecurity {
+    /// The role the pool connects as.
+    pub role: String,
+    /// Whether that role skips every policy: a superuser, or a role with `BYPASSRLS`.
+    pub bypasses: bool,
+    /// The tables asked about that do not exist, have no row-level security, or lack
+    /// `FORCE ROW LEVEL SECURITY`, so that their owner skips the policies.
+    pub unprotected: Vec<String>,
+}
+
+impl RowSecurity {
+    /// Whether the policies on every table asked about apply to the role.
+    #[must_use]
+    pub fn holds(&self) -> bool {
+        !self.bypasses && self.unprotected.is_empty()
+    }
+}
+
+/// Ask Postgres whether row-level security can apply to `pool`'s role, and whether
+/// each of `tables`, such as `todos` or `app.todos`, has it enabled and forced.
+///
+/// A policy does nothing for a superuser or a role with `BYPASSRLS`, and nothing for a
+/// table's owner unless the table has `FORCE ROW LEVEL SECURITY`. Each failure is
+/// silent: every query still answers, with every tenant's rows. Call this at boot, after
+/// migrating, and refuse to serve when it does not hold.
+///
+/// # Errors
+///
+/// Any error from the queries.
+pub async fn row_security<S: AsRef<str>>(
+    pool: &PgPool,
+    tables: &[S],
+) -> Result<RowSecurity, sqlx::Error> {
+    let role = sqlx::query(
+        "SELECT current_user::text AS role, rolsuper OR rolbypassrls AS bypasses
+         FROM pg_roles WHERE rolname = current_user",
+    )
+    .fetch_one(pool)
+    .await?;
+    let mut unprotected = Vec::new();
+    for table in tables {
+        let table = table.as_ref();
+        // Bound, and looked up with to_regclass, which takes the name as text.
+        let forced: Option<bool> = sqlx::query_scalar(
+            "SELECT relrowsecurity AND relforcerowsecurity FROM pg_class
+             WHERE oid = to_regclass($1)",
+        )
+        .bind(table)
+        .fetch_optional(pool)
+        .await?;
+        if forced != Some(true) {
+            unprotected.push(table.to_string());
+        }
+    }
+    Ok(RowSecurity {
+        role: role.get("role"),
+        bypasses: role.get("bypasses"),
+        unprotected,
+    })
+}
+
 /// Apply pending migrations. Sqlx holds a lock while it does, so services
 /// booting together take turns.
 ///

@@ -1,7 +1,7 @@
 # Multi-tenancy
 
 A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. TN-1, and TN-2 for sqlx, are built. The rest is not yet. It proposes capabilities, each with an id
+13 November 2026. TN-1, and TN-2 and TN-3 for sqlx, are built. The rest is not yet. It proposes capabilities, each with an id
 (TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
 [`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
 the first few would give.
@@ -91,7 +91,8 @@ migrations, so this adds no query layer. SeaORM and Diesel follow with the same 
 MySQL has no row-level security, so the MySQL crates have no TN-2, and a MySQL service
 keeps the first fence only.
 
-**TN-3, the boot check.** `SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname =
+**TN-3, the boot check.** Done with `postgres-sqlx`, unreleased, as T-45:
+`axa::db::require_row_security`, DB-9 and SQX-10. `SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname =
 current_user`, and `relforcerowsecurity` from `pg_class` for each table the service names.
 Production refuses to boot when either fails. Development warns, so that a local
 superuser still works, but `axa-test` can run the isolation tests as a role the policies

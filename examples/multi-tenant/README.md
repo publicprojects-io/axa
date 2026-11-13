@@ -37,7 +37,9 @@ request means, but the token still has to say the caller belongs to it.
    request. The policy is in [the migration](migrations/20261113120000_create_todos.sql).
 
 Row-level security does not apply to a superuser or a role with `BYPASSRLS`, so connect
-as a role that is neither:
+as a role that is neither. At boot, `axa::db::require_row_security` checks this, and that
+`todos` has row-level security forced: production refuses to start without both, and
+development warns.
 
 ```sql
 CREATE ROLE todo_app LOGIN PASSWORD 'todo_app';

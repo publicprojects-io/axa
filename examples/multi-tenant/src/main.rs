@@ -244,6 +244,9 @@ async fn main() -> Result<()> {
             .map_err(Error::wrap)?;
     }
 
+    // Refuse to serve, in production, where the policy would not keep tenants apart.
+    axa::db::require_row_security(&pool, &["todos"], &environment).await?;
+
     let server_config = config.server.clone();
     let router = app(AppContext::new(environment, pool, config), guard)?;
     server::serve(router, &server_config).await

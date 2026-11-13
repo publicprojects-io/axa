@@ -273,3 +273,66 @@ async fn a_setting_lasts_for_its_transaction_and_never_reaches_the_next() {
     assert_eq!(tenant, "x'); RESET ALL; --");
     tx.rollback().await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL as a superuser, and drops every table in it"]
+async fn row_security_holds_only_for_a_role_without_bypass_on_a_forced_table() {
+    use axa_postgres_sqlx::row_security;
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    // One connection, so SET ROLE below is the role every later query runs as.
+    let mut config = PoolConfig::new(uri);
+    config.min_connections = 0;
+    config.max_connections = 1;
+    let pool = connect(&config).await.unwrap();
+    for statement in [
+        "DROP TABLE IF EXISTS rls_plain, rls_enabled, rls_forced",
+        "CREATE TABLE rls_plain (tenant_id TEXT)",
+        "CREATE TABLE rls_enabled (tenant_id TEXT)",
+        "ALTER TABLE rls_enabled ENABLE ROW LEVEL SECURITY",
+        "CREATE TABLE rls_forced (tenant_id TEXT)",
+        "ALTER TABLE rls_forced ENABLE ROW LEVEL SECURITY",
+        "ALTER TABLE rls_forced FORCE ROW LEVEL SECURITY",
+        "DROP ROLE IF EXISTS axa_rls_app",
+        "CREATE ROLE axa_rls_app NOLOGIN",
+    ] {
+        sqlx::query(statement).execute(&pool).await.unwrap();
+    }
+    let tables = ["rls_plain", "rls_enabled", "rls_forced", "rls_missing"];
+
+    let as_superuser = row_security(&pool, &tables).await.unwrap();
+    assert!(as_superuser.bypasses);
+    assert_eq!(
+        as_superuser.unprotected,
+        ["rls_plain", "rls_enabled", "rls_missing"]
+    );
+    assert!(!as_superuser.holds());
+
+    sqlx::query("SET ROLE axa_rls_app")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let as_app = row_security(&pool, &["rls_forced"]).await.unwrap();
+    assert_eq!(as_app.role, "axa_rls_app");
+    assert!(!as_app.bypasses);
+    assert!(as_app.holds(), "{as_app:?}");
+    sqlx::query("RESET ROLE").execute(&pool).await.unwrap();
+
+    sqlx::query("ALTER ROLE axa_rls_app BYPASSRLS")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("SET ROLE axa_rls_app")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(row_security(&pool, &["rls_forced"]).await.unwrap().bypasses);
+    sqlx::query("RESET ROLE").execute(&pool).await.unwrap();
+    sqlx::query("DROP TABLE rls_plain, rls_enabled, rls_forced")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DROP ROLE axa_rls_app")
+        .execute(&pool)
+        .await
+        .unwrap();
+}

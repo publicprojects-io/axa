@@ -23,6 +23,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`axa_postgres_sqlx::begin_with`** (SQX-8, SQX-9): a transaction with settings such
   as `app.tenant` set for its length only, bound, for Postgres row-level security. It
   sets only custom dotted names, and refuses `role`, `search_path`, and the like.
+- **`axa::db::require_row_security`** (DB-9, SQX-10), with `postgres-sqlx`: at boot,
+  production refuses a role that is a superuser or has `BYPASSRLS`, and any named table
+  without row-level security forced, as each would let a policy silently do nothing.
+  Development warns. `axa_postgres_sqlx::row_security` gives the report.
 - **Safe downloads in `axa::format`** (FMT-5 to FMT-8): `download` sends a body as a
   file, and `content_disposition` makes its header, `inline` only for a raster image,
   audio, video, or plain text, which cannot run script, and `attachment` for HTML, SVG,
