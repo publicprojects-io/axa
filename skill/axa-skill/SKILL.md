@@ -178,6 +178,9 @@ let cli = axa::cli::parse(
   `Routes::add_with_timeout`, rather than raising `REQUEST_TIMEOUT_SECONDS` for all.
 - Raise the body limit on one route with `middleware::body_limit(post(upload), bytes)`,
   not on all. It binds a handler that reads `Body` itself, as well as the extractors.
+- Send a file with `format::download(bytes, media_type, name)`, never by setting
+  `content-disposition` by hand from a user's file name. It shows only images, audio,
+  video, and plain text in place, downloads HTML, SVG, and PDF, and cleans the name.
 
 ## Conditional requests
 

@@ -92,7 +92,7 @@
 - [db](src/db.rs): Database helpers for the context
 - [error](src/error.rs): The error type and its HTTP mapping
 - [extract](src/extract.rs): Extractors that reject with a problem saying what was wrong
-- [format](src/format.rs): Response helpers
+- [format](src/format.rs): Response helpers, and downloads with a safe `content-disposition`
 - [health](src/health.rs): Health routes
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`
 - [middleware](src/middleware.rs): The standard HTTP middleware stack, with security headers, CORS, and a cross-site write guard

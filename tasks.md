@@ -31,6 +31,9 @@ T-13 is done, unreleased. An origin CORS lists passes the guard, and the per-rou
 is `Http::cross_site_paths`, matched exactly, as a route layer runs too late to stop a
 handler that the guard, outside routing, has already let through.
 
+T-15 is done, unreleased, as `format::download`, `format::content_disposition`, and
+`format::clean_file_name`, which T-14 can use for an upload's name.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-11 | An outbound HTTP client that refuses private, loopback, link-local, CGNAT, and metadata addresses after DNS lookup and on each redirect, connects only to the addresses it checked, and takes an allow-list. Its own threat model and spec section | New crate `axa-http-client` | M | `reqwest` | Svix, Windmill, tuwunel |

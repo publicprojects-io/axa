@@ -15,6 +15,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   refusal carries the request id and security headers.
 - **`Http::cross_site_paths`**, set in code, for a route that takes a cross-site write
   by design, such as an identity provider's `form_post` callback.
+- **Safe downloads in `axa::format`** (FMT-5 to FMT-8): `download` sends a body as a
+  file, and `content_disposition` makes its header, `inline` only for a raster image,
+  audio, video, or plain text, which cannot run script, and `attachment` for HTML, SVG,
+  PDF, and anything else. `clean_file_name` strips the path, control and bidirectional
+  characters, and quotes, and a name that is not ASCII is sent as `filename*` too.
 
 ### Changed
 

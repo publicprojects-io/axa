@@ -226,7 +226,7 @@
     },
     {
       "name": "format",
-      "purpose": "Response helpers"
+      "purpose": "Response helpers, and downloads with a safe content-disposition"
     },
     {
       "name": "health",

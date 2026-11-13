@@ -208,6 +208,10 @@ a browser (TRA-3).
 | FMT-2 | `empty_json` is `{}` and `empty` has no body. | `empty_json_is_an_empty_object`, `empty_has_no_body` |
 | FMT-3 | `text` and `html` set their content types. | `text_and_html_set_their_content_types` |
 | FMT-4 | `redirect` is a `303` to the target. | `redirect_points_at_the_target` |
+| FMT-5 | `content_disposition` is `inline` only for a raster image, audio, video, or plain-text media type, which cannot run script, and `attachment` for any other, such as HTML, SVG, XML, or PDF. | `only_media_types_that_cannot_run_script_are_inline` |
+| FMT-6 | `clean_file_name` keeps the last path component, drops control and bidirectional characters, quotes, and backslashes, trims leading dots and trailing dots and spaces, cuts to 255 bytes on a character boundary keeping the extension, and is `download` when nothing is left. | `a_file_name_loses_its_path_control_characters_and_quotes`, `a_long_file_name_is_cut_on_a_character_boundary_keeping_its_extension` |
+| FMT-7 | A file name that is not all ASCII is sent as an RFC 6266 `filename*` in UTF-8, beside an ASCII `filename` with `_` for each other character and for `%`. | `a_name_that_is_not_ascii_is_sent_in_utf8_beside_an_ascii_fallback` |
+| FMT-8 | `download` sets the content type and disposition, and a media type that is not a header value is sent as `application/octet-stream`, an attachment. | `download_sets_the_type_and_disposition` |
 
 ### 4.7 Health
 
