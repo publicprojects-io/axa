@@ -127,6 +127,10 @@ label.
 `refuse_suspended` takes a `SuspendedCheck`, a function the service passes in, as
 suspension belongs to the issuer. It runs on every request, so it answers from memory.
 
+**TN-8, a cursor bound to the tenant.** Done, unreleased, as T-50: PAG-15,
+`CursorPage::new_in`. The context goes into the hash the cursor is signed over, after a
+byte no query part can hold and its length, so no context reads as another.
+
 **TN-5, jobs.** `perform_later_in(&tenant, …)`, a nullable `tenant` column, and the tenant
 handed to the worker beside the arguments, so that the worker opens its own tenant
 transaction. Claiming stays fair across jobs, not tenants. Fair claiming per tenant is a

@@ -368,6 +368,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | PAG-12 | `axa-cursor-pagination` | A key is at least 32 bytes, and its `Debug` never shows it. | `a_short_key_is_refused_and_a_key_is_never_shown` |
 | PAG-13 | `axa-cursor-pagination` | `CursorPage::bounds` asks for one row more than the page, so that `split` can tell whether more follow, and saturates for Postgres. | `bounds_fetch_one_more_row_and_saturate` |
 | PAG-14 | `axa-cursor-pagination` | A refusal quotes nothing the caller sent, and as `axa::Error` it is a `422` problem with the `code` `unprocessable_entity`. | `an_error_quotes_nothing_the_caller_sent`, `a_bad_page_is_a_422_problem_that_quotes_nothing` |
+| PAG-15 | `axa-cursor-pagination` | `CursorPage::new_in` signs a cursor over a context, such as the tenant, as well, so a cursor made in one context is refused as `BadCursor` in any other, and in none. An empty context is `CursorPage::new`, whose cursors are as before (TN-8). | `a_cursor_made_in_one_context_is_refused_in_another` |
 | PST-1 | `axa-paseto-auth` | Every path is protected unless listed as public. | `an_unlisted_path_is_protected_too` |
 | PST-8 | `axa-paseto-auth` | Enforcement is on unless a service turns it off, and turning it off logs a warning. | `enforcement_is_on_unless_turned_off`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | PST-2 | `axa-paseto-auth` | A public prefix matches whole path segments only. | `prefixes_match_whole_segments_only` |

@@ -6,7 +6,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
-`axa-paseto-auth`, `axa-keycloak-auth`, and `axa-request-rate-limit`.
+`axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`, and
+`axa-cursor-pagination`.
 
 ### Changed
 
@@ -33,6 +34,10 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   both auth crates, layered inside the guard, asks a `SuspendedCheck` the service
   passes in, and refuses a suspended tenant's callers with `403`, code
   `tenant_suspended`, from their next request, with an audit line.
+- **A cursor bound to the tenant** (T-50, TN-8, PAG-15): `CursorPage::new_in` in
+  `axa-cursor-pagination` signs a cursor over a context, such as the tenant, so a
+  cursor made in one tenant is refused in another. `CursorPage::new`'s cursors are
+  unchanged.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

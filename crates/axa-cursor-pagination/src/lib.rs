@@ -183,8 +183,11 @@ pub struct CursorPage {
 }
 
 /// The query a cursor belongs to: the path and the parameters other than
-/// `cursor` and `limit`, sorted so that their order does not matter.
-fn query_hash(path: &str, kept: &[&str]) -> [u8; 32] {
+/// `cursor` and `limit`, sorted so that their order does not matter, and the context,
+/// if any. An empty context adds nothing, so the cursors [`CursorPage::new`] makes are
+/// those it made before contexts were added. A context is marked by a byte no query
+/// part can hold, and its length, so no context reads as another or as a filter.
+fn query_hash(path: &str, kept: &[&str], context: &str) -> [u8; 32] {
     let mut sorted = kept.to_vec();
     sorted.sort_unstable();
     let mut hash = Sha256::new();
@@ -192,6 +195,11 @@ fn query_hash(path: &str, kept: &[&str]) -> [u8; 32] {
     for part in sorted {
         hash.update([0]);
         hash.update(part.as_bytes());
+    }
+    if !context.is_empty() {
+        hash.update([1]);
+        hash.update((context.len() as u64).to_be_bytes());
+        hash.update(context.as_bytes());
     }
     hash.finalize().into()
 }
@@ -213,6 +221,37 @@ impl CursorPage {
     /// `limits.max_limit`, or given twice. [`PageError::BadCursor`] for a cursor
     /// that this key did not sign for this path and these filters.
     pub fn new(key: &CursorKey, limits: CursorLimits, uri: &Uri) -> Result<Self, PageError> {
+        Self::new_in(key, limits, uri, "")
+    }
+
+    /// As [`CursorPage::new`], with cursors that hold only in `context`, such as the
+    /// caller's tenant. A cursor made in one context is a [`PageError::BadCursor`] in
+    /// any other, so a cursor carried from one tenant to another is refused even where
+    /// a query forgets to filter by tenant. An empty context is as [`CursorPage::new`].
+    ///
+    /// ```
+    /// use axa_cursor_pagination::{CursorKey, CursorLimits, CursorPage, PageError};
+    ///
+    /// let key = CursorKey::new(&[7; 32]).unwrap();
+    /// let limits = CursorLimits { default_limit: 50, max_limit: 200 };
+    /// let first = CursorPage::new_in(&key, limits, &"/todos?limit=1".parse().unwrap(), "acme").unwrap();
+    /// let link = first.next_link().unwrap();
+    /// let next = link.to_str().unwrap().trim_start_matches('<').split('>').next().unwrap();
+    /// let uri = next.parse().unwrap();
+    /// assert!(CursorPage::new_in(&key, limits, &uri, "acme").is_ok());
+    /// assert_eq!(CursorPage::new_in(&key, limits, &uri, "globex"), Err(PageError::BadCursor));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`CursorPage::new`], and [`PageError::BadCursor`] for a cursor signed for
+    /// another context.
+    pub fn new_in(
+        key: &CursorKey,
+        limits: CursorLimits,
+        uri: &Uri,
+        context: &str,
+    ) -> Result<Self, PageError> {
         let parts: Vec<&str> = uri
             .query()
             .unwrap_or("")
@@ -243,7 +282,7 @@ impl CursorPage {
             .copied()
             .filter(|part| !matches!(name(part), "cursor" | "limit"))
             .collect();
-        let query = query_hash(uri.path(), &kept);
+        let query = query_hash(uri.path(), &kept, context);
         let offset = match named("cursor").as_slice() {
             [] => 0,
             [cursor] => key.decode(cursor, &query).ok_or(PageError::BadCursor)?,
@@ -356,6 +395,36 @@ mod tests {
         let start = link.find("cursor=").unwrap() + "cursor=".len();
         let end = link[start..].find(['&', '>']).unwrap() + start;
         link[start..end].to_string()
+    }
+
+    #[test]
+    fn a_cursor_made_in_one_context_is_refused_in_another() {
+        let in_context = |uri: &str, context: &str| {
+            CursorPage::new_in(&key(), LIMITS, &uri.parse().unwrap(), context)
+        };
+        let first = in_context("/todos?status=open", "acme").unwrap();
+        let next = format!("/todos?status=open&cursor={}", next_cursor(&first));
+        assert_eq!(in_context(&next, "acme").unwrap().offset(), 10);
+        for other in ["globex", "acme ", "acm", ""] {
+            assert_eq!(
+                in_context(&next, other),
+                Err(PageError::BadCursor),
+                "{other:?}"
+            );
+        }
+        assert_eq!(page(&next), Err(PageError::BadCursor));
+
+        // No context is the cursor `new` has always made, so old cursors still hold.
+        let plain = page("/todos?status=open").unwrap();
+        let next = format!("/todos?status=open&cursor={}", next_cursor(&plain));
+        assert_eq!(in_context(&next, "").unwrap().offset(), 10);
+        assert_eq!(in_context(&next, "acme"), Err(PageError::BadCursor));
+        // The cursor `new` makes for a fixed key and query, worked out apart from this
+        // code as the crate made it before contexts were added.
+        assert_eq!(
+            next_cursor(&page("/things").unwrap()),
+            "AQAAAAAAAAAKZZFSvWeCDy_beDgOauJnX_EjAV2tWtfGim0KJozjf_I"
+        );
     }
 
     #[test]

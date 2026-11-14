@@ -230,7 +230,9 @@ let cli = axa::cli::parse(
 - In the handler, `let page = CursorPage::new(&key, limits, &uri)?;`. A bad limit or
   cursor answers `422` through `?`, and a limit above the maximum is refused, never
   clamped. Bind `let (limit, offset) = page.bounds();` as `LIMIT $1 OFFSET $2`, then
-  return `page.respond(rows)`.
+  return `page.respond(rows)`. Where tenants share the service, use
+  `CursorPage::new_in(&key, limits, &uri, tenant.as_str())?`, so a cursor from one
+  tenant is refused in another.
 - Order every list by something ending in a unique column, such as
   `ORDER BY created_at, id`.
 - Pass user text for `LIKE` through `escape_like` and bind it with `ESCAPE '\'`.

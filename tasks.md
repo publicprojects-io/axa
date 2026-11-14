@@ -138,6 +138,8 @@ tenant (PST-17, KCK-17).
 T-53 is done, unreleased, as `refuse_suspended` and `SuspendedCheck` in both auth crates
 (PST-18, KCK-18).
 
+T-50 is done, unreleased, as `CursorPage::new_in` (PAG-15).
+
 | Id | Task | Where | Effort | New dependency | Case |
 |---|---|---|---|---|---|
 | T-43 | A `Tenant` extractor from the verified token only (TN-1): exactly one value of a named attribute, `tenant` by default, a tenant-id syntax, `401` without a token, `403` code `no_tenant` otherwise, and no way to take it from a header, path, or host | `axa-paseto-auth`, `axa-keycloak-auth` | S | None | Safety |
