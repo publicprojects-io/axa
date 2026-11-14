@@ -111,6 +111,8 @@ type Last = Arc<Mutex<Option<(Instant, Answer)>>>;
 #[derive(Clone)]
 pub struct Checks {
     named: Vec<Check>,
+    /// Fails while migrations are pending, from [`Checks::migrations`].
+    migrations: Option<Check>,
     reuse_for: Duration,
     time_limit: Duration,
     last: Last,
@@ -121,6 +123,7 @@ impl Default for Checks {
     fn default() -> Self {
         Self {
             named: Vec::new(),
+            migrations: None,
             reuse_for: DEFAULT_REUSE,
             time_limit: DEFAULT_TIME_LIMIT,
             last: Arc::default(),
@@ -134,6 +137,7 @@ impl fmt::Debug for Checks {
         let names: Vec<&str> = self.named.iter().map(|c| c.name.as_str()).collect();
         f.debug_struct("Checks")
             .field("checks", &names)
+            .field("migrations", &self.migrations.is_some())
             .field("reuse_for", &self.reuse_for)
             .field("time_limit", &self.time_limit)
             .finish_non_exhaustive()
@@ -161,6 +165,65 @@ impl Checks {
     {
         self.named.push(Check::new(name, check));
         self
+    }
+
+    /// Hold back readiness and startup while migrations are pending. `pending` names
+    /// the migrations not yet applied, as each database crate's `pending` does, and an
+    /// empty list means the schema is current:
+    ///
+    /// ```ignore
+    /// let pool = ctx.db.clone();
+    /// ctx.health_checks = ctx.health_checks.migrations(move || {
+    ///     let pool = pool.clone();
+    ///     async move { axa::postgres_sqlx::pending(&pool, &MIGRATOR).await }
+    /// });
+    /// ```
+    ///
+    /// Production does not migrate at boot, so a new pod can start while the
+    /// migration that its code needs has not run. With this, both probes answer `503`
+    /// naming `migrations` until it has, so the pod gets no traffic against the old
+    /// schema. An error asking is a failure too. Only the count and the error text are
+    /// logged. Start workers with [`crate::server::run_once_migrated`], so that they
+    /// wait as well.
+    #[must_use]
+    pub fn migrations<F, Fut, E>(mut self, pending: F) -> Self
+    where
+        F: Fn() -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Vec<String>, E>> + Send + 'static,
+        E: fmt::Display,
+    {
+        let pending = Arc::new(pending);
+        self.migrations = Some(Check::new("migrations", move || {
+            let asked = pending();
+            async move {
+                match asked.await {
+                    Ok(pending) if pending.is_empty() => Ok(()),
+                    Ok(pending) => Err(format!("{} pending", pending.len())),
+                    Err(error) => Err(error.to_string()),
+                }
+            }
+        }));
+        self
+    }
+
+    /// Resolve once no migration is pending, asking again every [`Checks::reuse_for`]
+    /// while one is, and at once with no [`Checks::migrations`].
+    pub async fn migrated(&self) {
+        let Some(check) = &self.migrations else {
+            return;
+        };
+        let mut told = false;
+        loop {
+            match timeout(self.time_limit, (check.run)()).await {
+                Ok(Ok(())) => return,
+                Ok(Err(error)) if !told => {
+                    tracing::info!(%error, "waiting_for_migrations");
+                    told = true;
+                }
+                _ => {}
+            }
+            tokio::time::sleep(self.reuse_for.max(Duration::from_millis(100))).await;
+        }
     }
 
     /// How long to reuse one answer, whether it passed or failed.
@@ -270,13 +333,9 @@ async fn ok() -> Json<Health> {
     Json(Health { ok: true })
 }
 
-/// The checks Axa can write itself: the database it holds, and the queue too unless
-/// `database_only`.
+/// The checks Axa can write itself: the database it holds, the queue too unless
+/// `database_only`, and the migrations when the service named them.
 fn built_in(ctx: &AppContext, database_only: bool) -> Vec<Check> {
-    #[cfg_attr(
-        all(axa_db = "none", not(feature = "queue")),
-        allow(unused_mut, clippy::let_and_return)
-    )]
     let mut checks = Vec::new();
     #[cfg(not(axa_db = "none"))]
     {
@@ -296,7 +355,10 @@ fn built_in(ctx: &AppContext, database_only: bool) -> Vec<Check> {
             async move { queue.ping().await }
         }));
     }
-    let _ = (ctx, database_only);
+    if let Some(migrations) = &ctx.health_checks.migrations {
+        checks.push(migrations.clone());
+    }
+    let _ = database_only;
     checks
 }
 
@@ -477,6 +539,86 @@ mod tests {
         assert!(checks.startup_answer(database(up.clone())).await.ok);
         // Readiness asks again each round, and sees it.
         assert!(!checks.answer(database(up)).await.ok);
+    }
+
+    async fn one_pending() -> Result<Vec<String>, String> {
+        Ok(vec!["0002_add_due_date".to_string()])
+    }
+
+    async fn none_pending() -> Result<Vec<String>, String> {
+        Ok(Vec::new())
+    }
+
+    async fn pending_unknown() -> Result<Vec<String>, String> {
+        Err("postgres://user:secret@10.0.0.1 refused".to_string())
+    }
+
+    #[tokio::test]
+    async fn readiness_and_startup_wait_while_a_migration_is_pending() {
+        let pending = || Checks::new().migrations(one_pending);
+        let (status, body) = answer(with_checks(pending())).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body, refused(r#"["migrations"]"#));
+        assert!(!body.contains("0002"), "{body}");
+        let request = Request::builder().uri(STARTUP).body(Body::empty()).unwrap();
+        let response = with_checks(pending()).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8_lossy(&body);
+        assert!(body.contains(r#""code":"not_started""#), "{body}");
+        assert!(body.contains(r#""failed":["migrations"]"#), "{body}");
+        assert_eq!(status_of(pending(), LIVE).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn with_no_migration_pending_both_probes_pass() {
+        let current = || Checks::new().migrations(none_pending);
+        assert_eq!(status_of(current(), READY).await, StatusCode::OK);
+        assert_eq!(status_of(current(), STARTUP).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn an_error_asking_for_migrations_is_a_failure_whose_text_is_not_sent() {
+        let (status, body) = answer(with_checks(Checks::new().migrations(pending_unknown))).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(!body.contains("secret"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn migrated_resolves_once_nothing_is_pending() {
+        // With no migrations named, at once.
+        tokio::time::timeout(Duration::from_millis(100), Checks::new().migrated())
+            .await
+            .expect("no migrations named, so nothing to wait for");
+
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = done.clone();
+        let checks = Checks::new().reuse_for(Duration::ZERO).migrations(move || {
+            let done = flag.load(Ordering::SeqCst);
+            async move {
+                Ok::<_, String>(if done {
+                    Vec::new()
+                } else {
+                    vec!["0002".to_string()]
+                })
+            }
+        });
+        let waiting = tokio::spawn({
+            let checks = checks.clone();
+            async move { checks.migrated().await }
+        });
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        assert!(
+            !waiting.is_finished(),
+            "it resolved while a migration was pending"
+        );
+        done.store(true, Ordering::SeqCst);
+        tokio::time::timeout(Duration::from_secs(2), waiting)
+            .await
+            .expect("it resolved once the migration ran")
+            .unwrap();
     }
 
     #[tokio::test]

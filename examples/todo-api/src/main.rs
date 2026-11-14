@@ -20,7 +20,9 @@ use axa::{
         self, Pool,
         sqlx::{self, migrate::Migrator},
     },
-    prelude::{AppContext, AppRoutes, Response, Routes, State, bad_request, format, get, not_found},
+    prelude::{
+        AppContext, AppRoutes, Response, Routes, State, bad_request, format, get, not_found,
+    },
     server,
 };
 use serde::{Deserialize, Serialize};
@@ -179,7 +181,14 @@ async fn main() -> Result<()> {
     migrate_if_asked(&pool, &config).await?;
 
     let server_config = config.server.clone();
-    let ctx = AppContext::new(environment, pool, config);
+    let mut ctx = AppContext::new(environment, pool.clone(), config);
+    // Not ready, and not started, while a migration is pending: in production nothing
+    // migrates at boot, so this pod waits for the one that does.
+    let migrations = std::sync::Arc::new(migrator().await?);
+    ctx.health_checks = ctx.health_checks.clone().migrations(move || {
+        let (pool, migrations) = (pool.clone(), migrations.clone());
+        async move { postgres_sqlx::pending(&pool, &migrations).await }
+    });
     let router = routes().into_app(ctx)?;
     server::serve(router, &server_config).await
 }
@@ -286,6 +295,9 @@ mod tests {
         assert_eq!(serde_json::from_str::<Vec<Todo>>(&body).unwrap().len(), 1);
 
         assert_eq!(send(&app, "DELETE", &path, None).await.0, StatusCode::OK);
-        assert_eq!(send(&app, "GET", &path, None).await.0, StatusCode::NOT_FOUND);
+        assert_eq!(
+            send(&app, "GET", &path, None).await.0,
+            StatusCode::NOT_FOUND
+        );
     }
 }

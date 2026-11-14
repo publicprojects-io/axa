@@ -37,6 +37,9 @@ a tool such as `direnv`.
 - **Migrations at boot**, from `migrations/`, with `axa::postgres_sqlx::migrate`, only
   when `config.database.auto_migrate` is on. It is on outside production, and off in
   production unless `DB_AUTO_MIGRATE` turns it on.
+- **Readiness that waits for them.** `Checks::migrations` holds `/_health/ready` and
+  `/_health/startup` at `503`, naming `migrations`, while any is pending, so a new pod
+  gets no traffic before the migration its code needs has run.
 - **Plain SQL** with `sqlx::query_as` and bound parameters, through the `sqlx` that Axa
   re-exports, so there is no second sqlx to keep in step.
 - **Problems for every refusal.** A blank title is `400` with its text, a body with the

@@ -122,6 +122,11 @@ nothing; readiness at `/_health/ready`, which asks the database, the queue, and 
 checks; startup at `/_health/startup`, which asks only the database. Never add a named
 check for a third-party API: a pod that is not ready gets no traffic at all.
 
+In production, where Axa does not migrate at boot, name the migrations with
+`ctx.health_checks = ctx.health_checks.migrations(...)`, passing a closure that calls
+your database crate's `pending`. Readiness and startup then fail, naming `migrations`,
+until they have run, and `server::run_once_migrated` holds the workers back too.
+
 With layers of your own, such as an auth guard, call `into_router`, add them, and then
 call `middleware::apply`. Added after `into_app`, a layer sits outside the standard
 stack: its refusals have no request id, security headers, or CORS headers, and it has no

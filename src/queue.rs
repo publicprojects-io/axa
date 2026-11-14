@@ -789,6 +789,38 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn jobs_held_back_for_migrations_are_never_claimed_and_shutdown_still_ends() {
+        let _table = TABLE.lock().await;
+        let mut queue = queue_with(QueueOptions {
+            poll_interval: Duration::from_millis(20),
+            ..QueueOptions::default()
+        })
+        .await;
+        queue.register(HangWorker);
+        let queue = Arc::new(queue);
+        let id = queue
+            .enqueue("HangWorker", serde_json::json!(null))
+            .await
+            .unwrap();
+        let stop = tokio::time::sleep(Duration::from_millis(300));
+        let config = local_server();
+        // Migrations that never finish: the job loops must not start.
+        let run = crate::server::run_after(
+            None,
+            Some(queue.clone()),
+            &config,
+            stop,
+            std::future::pending(),
+        );
+        let ended = tokio::time::timeout(Duration::from_secs(5), run).await;
+        ended
+            .expect("waiting for migrations held shutdown")
+            .unwrap();
+        assert_eq!(status_of(&queue, &id).await.0, "queued");
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
     async fn requests_and_jobs_share_one_limit_and_no_job_starts_during_it() {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {

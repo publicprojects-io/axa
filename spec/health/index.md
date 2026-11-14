@@ -39,6 +39,16 @@ It checks only that the service's code has started and its primary database answ
 and never a third party. It holds off liveness and readiness while a slow service
 boots. Once it has passed it passes for good, as Kubernetes asks it no more after that.
 
+## Migrations
+
+Production does not migrate at boot, so a new pod can start while the migration its code
+needs has not run. A service that names its migrations with `Checks::migrations` holds
+back both readiness and startup while any is pending: each answers `503`, naming
+`migrations`, so the pod gets no traffic against the old schema, and startup holds off
+liveness while it waits. Workers wait too, under `server::run_once_migrated`, which
+serves at once, so that the probes can answer, and starts the job loops only once
+nothing is pending.
+
 ## Requirements
 
 | Id | Requirement | Test |
@@ -54,3 +64,5 @@ boots. Once it has passed it passes for good, as Kubernetes asks it no more afte
 | HLT-9 | `/_health/startup` asks only the database `axa` holds. It answers `503` with the `code` `not_started` until the database answers, and once it has passed, it passes for good. | `readiness_fails_when_the_database_does_not_answer`, `startup_once_passed_stays_passed` |
 | HLT-10 | The three paths stay open without a token in `axa-paseto-auth` and `axa-keycloak-auth`, and uncounted in `axa-request-rate-limit`, and only those three: nothing else under `/_health/` is let through. | `health_routes_are_public_by_default` in both auth crates, `health_stays_public_and_everything_else_needs_a_token`, `the_probes_are_never_refused_or_counted` |
 | HLT-11 | From the moment shutdown begins, `/_health/ready` answers `503` with the `code` `shutting_down` and asks nothing, while `/_health/live` still passes. | `readiness_refuses_once_shutdown_begins_and_liveness_does_not` |
+| HLT-12 | With `Checks::migrations`, `/_health/ready` and `/_health/startup` answer `503` naming `migrations`, with codes `not_ready` and `not_started`, while any migration is pending or the asking fails, sending neither the names nor the error text, and pass once none is. Liveness asks nothing. | `readiness_and_startup_wait_while_a_migration_is_pending`, `with_no_migration_pending_both_probes_pass`, `an_error_asking_for_migrations_is_a_failure_whose_text_is_not_sent` |
+| HLT-13 | `Checks::migrated` resolves once no migration is pending, and at once with none named. `server::run_once_migrated` starts the job loops only then, and a shutdown before then ends the run with no job claimed. | `migrated_resolves_once_nothing_is_pending`, `jobs_held_back_for_migrations_are_never_claimed_and_shutdown_still_ends` |

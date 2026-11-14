@@ -640,12 +640,50 @@ pub async fn run(router: Option<Router>, queue: Option<Arc<Queue>>, config: &Ser
     run_until(router, queue, config, shutdown_signal()).await
 }
 
+/// [`run`], with the job loops held back until no migration is pending, as
+/// [`crate::health::Checks::migrations`] says. The server answers at once, so its probes
+/// can say it is not ready yet, and shutdown while waiting stops the wait.
+///
+/// ```ignore
+/// server::run_once_migrated(router, queue, &config.server, &ctx.health_checks).await
+/// ```
+///
+/// # Errors
+///
+/// As [`run`].
+#[cfg(feature = "queue")]
+pub async fn run_once_migrated(
+    router: Option<Router>,
+    queue: Option<Arc<Queue>>,
+    config: &Server,
+    checks: &crate::health::Checks,
+) -> Result<()> {
+    let checks = checks.clone();
+    run_after(router, queue, config, shutdown_signal(), async move {
+        checks.migrated().await;
+    })
+    .await
+}
+
 #[cfg(feature = "queue")]
 pub(crate) async fn run_until(
     router: Option<Router>,
     queue: Option<Arc<Queue>>,
     config: &Server,
     stop: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    run_after(router, queue, config, stop, std::future::ready(())).await
+}
+
+/// [`run_until`], with the job loops started only once `start_jobs` resolves, or not at
+/// all if the stop comes first.
+#[cfg(feature = "queue")]
+pub(crate) async fn run_after(
+    router: Option<Router>,
+    queue: Option<Arc<Queue>>,
+    config: &Server,
+    stop: impl Future<Output = ()> + Send + 'static,
+    start_jobs: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
     let modes = match (&router, &queue) {
         (Some(_), Some(_)) => "server, worker",
@@ -655,7 +693,19 @@ pub(crate) async fn run_until(
     };
     tracing::info!("modes: {modes}");
     let (stop_jobs, stopped) = watch::channel(false);
-    let jobs = queue.map(|queue| tokio::spawn(queue.run(stopped)));
+    let jobs = queue.map(|queue| {
+        let mut waiting = stopped.clone();
+        tokio::spawn(async move {
+            tokio::select! {
+                () = start_jobs => queue.run(stopped).await,
+                // Stopped before the jobs could start: nothing was claimed.
+                () = async {
+                    // The guard it gives back is dropped here, before anything awaits.
+                    let _ = waiting.wait_for(|stop| *stop).await;
+                } => {}
+            }
+        })
+    });
     // Requests and jobs hear at once, and share one time limit, so that no job
     // is claimed during the wait and the whole of shutdown stays under it.
     let stop_jobs = Arc::new(stop_jobs);

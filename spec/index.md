@@ -218,7 +218,7 @@ a browser (TRA-3).
 
 The health routes, `/_health/live`, `/_health/ready`, and `/_health/startup`, follow the
 liveness, readiness, and startup probes Kubernetes gives a container. Their rules, and
-the requirements HLT-1 to HLT-11, are in [Health routes](health/index.md).
+the requirements HLT-1 to HLT-13, are in [Health routes](health/index.md).
 
 ### 4.8 Command line and tasks
 

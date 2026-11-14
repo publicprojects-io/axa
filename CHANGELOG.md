@@ -48,6 +48,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF, and anything else. `clean_file_name` strips the path, control and bidirectional
   characters, and quotes, and a name that is not ASCII is sent as `filename*` too.
 
+- **Readiness that waits for migrations** (HLT-12, HLT-13): `Checks::migrations` takes a
+  function naming the pending migrations, and while any is pending, `/_health/ready` and
+  `/_health/startup` answer `503` naming `migrations`, so a new pod gets no traffic
+  against an old schema. `server::run_once_migrated` serves at once and starts the job
+  loops only once nothing is pending.
 - **Recovery from stale prepared statements** (SQX-11, DB-10): after a migration
   changes what a query returns, each pooled connection that cached it failed once with
   SQLSTATE `0A000`. `axa_postgres_sqlx::note_stale_plan` now has the pool retire every
