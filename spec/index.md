@@ -885,6 +885,39 @@ Behind the `upload` feature.
 | UPL-3 | With `Limits::accept`, a file of a type not listed is `415`, code `unsupported_media_type`, compared without case or parameters. | `a_file_of_a_type_not_accepted_is_a_415` |
 | UPL-4 | A part with no name or one over 128 bytes, a text field that is not UTF-8, or a body that is not valid multipart is `400`, code `bad_request`. The body limit still applies, as `413`. | `a_part_with_no_usable_name_or_text_that_is_not_utf8_is_a_400`, `the_body_limit_still_applies_and_a_broken_body_is_a_400` |
 
+### 4.23 Outbound HTTP
+
+`axa-http-client`, the `http-client` feature, is for a request to a URL that someone
+other than the service chose: a webhook receiver, an avatar, a link preview, an import.
+
+**Threat model.** The attacker chooses a URL, or controls the DNS or the server a URL
+names, and wants the service to reach somewhere only the service can: the cloud metadata
+service at `169.254.169.254` or `fd00:ec2::254`, which hands out credentials; a database,
+cache, or admin page on the private network or on loopback; or a host that trusts the
+service's address. The attacker may write an address in any form the URL standard reads,
+give a name that resolves to a private address or to one only some of the time, or
+answer with a redirect to any of these. Out of scope: a service that lists a private
+range in `allow_nets`, as it then means to reach it; reaching a public host the attacker
+names, which the allow-list is for; a service that takes `reqwest`'s own client back out
+of a request and sends another URL with it; and a response body's contents, which the
+service must treat as untrusted.
+
+**Defence.** Every address is checked where the connection is made, not only in the
+URL. A name goes through the client's own resolver, which keeps only allowed addresses,
+and the connection goes only to those, so a name that answers otherwise a moment later
+changes nothing. An address in the URL, which no resolver sees, is checked before
+sending, and every redirect is checked again. No proxy is used, as a proxy would make
+the connection for it.
+
+| Id | Requirement | Test |
+|---|---|---|
+| OUT-1 | `is_public` is false for every IPv4 and IPv6 range IANA keeps for this network, private use, carrier-grade NAT, loopback, link-local, IETF protocol assignments, documentation, benchmarking, 6to4 relays, multicast, reserved use, and broadcast, and for IPv6 outside `2000::/3`. An IPv4 address inside IPv6, mapped, NAT64, or 6to4, is judged as that IPv4 address, and Teredo is refused. | `only_public_addresses_are_public` |
+| OUT-2 | An address in a URL is refused before sending unless it is public or in an `allow_nets` range, in every form the URL standard reads, such as decimal, hexadecimal, octal, short, and bracketed IPv6. | `an_address_in_the_url_is_checked_in_every_form_it_can_take`, `an_allowed_range_may_be_reached_and_no_other`, `a_range_holds_its_addresses_and_ipv4_inside_ipv6` |
+| OUT-3 | A host name's addresses are looked up by the client, which connects only to those allowed, and fails with `Refused::NoAddress` when none is. `refusal` finds the reason in the error from `send`. | `loopback_is_refused_by_address_and_by_name`, `an_allowed_range_is_reached` |
+| OUT-4 | Only `https`, and `http` unless `https_only`, are sent. `allow_hosts` limits hosts to those listed, exactly or under a `*.` name, without case or a trailing dot. | `the_scheme_and_the_allow_list_are_checked` |
+| OUT-5 | Every redirect is checked as the first URL is, one from `https` to `http` is refused, and past `max_redirects`, 5 by default, it is `Refused::TooManyRedirects`. With 0 it follows none, and a redirect to a scheme other than `http` and `https` is not followed. | `every_redirect_is_checked`, `a_redirect_is_checked_and_never_downgrades_or_runs_on` |
+| OUT-6 | `bytes_limited` refuses a body past its limit as the bytes arrive, whether or not it has a `content-length`. | `a_body_is_refused_past_its_limit_with_or_without_a_length` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:

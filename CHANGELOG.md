@@ -7,6 +7,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`axa-http-client`, as `axa::http_client` behind the new `http-client` feature**
+  (OUT-1 to OUT-6): an outbound client, over `reqwest` with rustls, that refuses any
+  address that is not public, in the URL in any form, after its own DNS lookup, and on
+  every redirect, with `allow_hosts`, `allow_nets`, `https_only`, no proxy, and
+  `bytes_limited` for a body. The spec has its threat model.
 - **`axa-webhooks`, as `axa::webhooks` behind the new `webhooks` feature** (WHK-1 to
   WHK-5): Standard Webhooks signing and verifying, with HMAC-SHA256 `whsec_` secrets and
   Ed25519 `whsk_` and `whpk_` keys, one signature per key while a key rotates, a

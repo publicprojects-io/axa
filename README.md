@@ -79,6 +79,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
+- [`axa-http-client`](crates/axa-http-client): an outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
 - [`axa-webhooks`](crates/axa-webhooks): Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, several keys while one rotates, and a verifying extractor
 - [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition, and request durations by route template
 - [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process

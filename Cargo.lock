@@ -538,6 +538,7 @@ dependencies = [
  "axa-accepts-version-negotiation",
  "axa-cursor-pagination",
  "axa-environment",
+ "axa-http-client",
  "axa-idempotency-key",
  "axa-keycloak-auth",
  "axa-maud-templates",
@@ -612,6 +613,17 @@ dependencies = [
 [[package]]
 name = "axa-environment"
 version = "0.2.0"
+
+[[package]]
+name = "axa-http-client"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "futures-core",
+ "reqwest",
+ "tokio",
+]
 
 [[package]]
 name = "axa-idempotency-key"
@@ -4661,7 +4673,9 @@ checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
 dependencies = [
  "base64 0.22.1",
  "bytes",
+ "encoding_rs",
  "futures-core",
+ "h2",
  "http",
  "http-body",
  "http-body-util",
@@ -4670,6 +4684,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime",
  "percent-encoding",
  "pin-project-lite",
  "quinn",

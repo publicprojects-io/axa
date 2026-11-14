@@ -73,6 +73,8 @@ outbox = ["dep:axa-transactional-outbox", "queue"]
 outbox-encryption = ["outbox", "axa-transactional-outbox/encryption"]
 # Signed cursor pages with no total, as `axa::cursor_pagination`.
 cursor-pagination = ["dep:axa-cursor-pagination"]
+# An outbound HTTP client that refuses private addresses, as `axa::http_client`.
+http-client = ["dep:axa-http-client"]
 # Standard Webhooks signing and verifying, as `axa::webhooks`.
 webhooks = ["dep:axa-webhooks"]
 paseto = ["dep:axa-paseto-auth"]
@@ -98,6 +100,7 @@ axa-openapi-docs = { version = "0.1.0", path = "crates/axa-openapi-docs", option
 axa-transactional-outbox = { version = "0.3.0", path = "crates/axa-transactional-outbox", optional = true }
 axa-cursor-pagination = { version = "0.1.1", path = "crates/axa-cursor-pagination", optional = true }
 axa-webhooks = { version = "0.1.0", path = "crates/axa-webhooks", optional = true }
+axa-http-client = { version = "0.1.0", path = "crates/axa-http-client", optional = true }
 axa-keycloak-auth = { version = "0.4.0", path = "crates/axa-keycloak-auth", optional = true }
 axa-paseto-auth = { version = "0.6.0", path = "crates/axa-paseto-auth", optional = true }
 axa-problem = { version = "0.2.0", path = "crates/axa-problem" }

@@ -120,6 +120,10 @@
       "crate": "axa-webhooks"
     },
     {
+      "name": "http-client",
+      "crate": "axa-http-client"
+    },
+    {
       "name": "paseto",
       "crate": "axa-paseto-auth"
     },
@@ -363,6 +367,13 @@
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
       "feature": "cursor-pagination",
       "readme": "crates/axa-cursor-pagination/README.md"
+    },
+    {
+      "name": "axa-http-client",
+      "version": "0.1.0",
+      "description": "An outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect.",
+      "feature": "http-client",
+      "readme": "crates/axa-http-client/README.md"
     },
     {
       "name": "axa-webhooks",

@@ -147,6 +147,7 @@ Each of these gives the same things for its library:
 - [axa-sqlite-job-queue](crates/axa-sqlite-job-queue/README.md) (a crate on its own): A SQLite job queue, worker pool, and recurring schedules for Axum services
 - [axa-transactional-outbox](crates/axa-transactional-outbox/README.md) (feature `outbox`, and `outbox-encryption` to seal payloads at rest): A transactional outbox and relay on Postgres for Axum services
 - [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services
+- [axa-http-client](crates/axa-http-client/README.md) (feature `http-client`): An outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
 - [axa-webhooks](crates/axa-webhooks/README.md) (feature `webhooks`): Standard Webhooks signing and verifying, with HMAC-SHA256 and Ed25519 keys, for Axum services
 - [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition, and request durations by route template for Axum services
 - [axa-request-rate-limit](crates/axa-request-rate-limit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services

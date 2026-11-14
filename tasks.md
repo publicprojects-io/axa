@@ -56,6 +56,9 @@ T-19 is done, unreleased, as `Checks::migrations`, `Checks::migrated`, and
 `server::run_once_migrated`, for any database, as the service passes its crate's
 `pending`.
 
+T-11 is done, unreleased, as `axa-http-client`, the `http-client` feature, with its
+threat model in spec section 4.23.
+
 T-12 is done, unreleased, as `axa-webhooks`, the `webhooks` feature.
 
 T-16 is done, unreleased, for `axa-postgres-sqlx`, as a database per test cloned from

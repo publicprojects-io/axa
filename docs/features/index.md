@@ -361,6 +361,7 @@ Perfect for: Financial services, healthcare, government
 | `cursor-pagination` | | | | | | | | | | | | |
 | `upload` | | | | | | | | | | | | |
 | `webhooks` | | | ✅ | | | | | | | | | |
+| `http-client` | | | ✅ | | | | | | | | | |
 
 ---
 
@@ -391,6 +392,7 @@ Each feature adds dependencies. Here's the impact of each:
 | `versioning` | axa-accepts-version-negotiation | |
 | `upload` | tempfile | Bounded multipart uploads, files in temporary files |
 | `webhooks` | axa-webhooks, hmac, ed25519-dalek | Standard Webhooks signing and verifying |
+| `http-client` | axa-http-client, reqwest | Outbound requests that cannot reach private addresses |
 | `openapi` | axa-openapi-docs | |
 | `tera` | axa-tera-templates | |
 | `maud` | axa-maud-templates, maud | Compile-time templates |

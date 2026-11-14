@@ -59,6 +59,7 @@
 //! | `outbox` | A transactional outbox and relay on Postgres that keeps a record, as `axa::outbox` |
 //! | `outbox-encryption` | `outbox`, with payloads sealed at rest under the service's keys |
 //! | `cursor-pagination` | Signed cursor pages with no total, and `LIKE` escaping, as `axa::cursor_pagination` |
+//! | `http-client` | An outbound HTTP client that refuses private, loopback, and metadata addresses, as `axa::http_client` |
 //! | `upload` | Bounded multipart uploads, files in temporary files, as `axa::upload` |
 //! | `webhooks` | Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, as `axa::webhooks` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
@@ -128,6 +129,8 @@ pub use axa_accepts_version_negotiation as versioning;
 #[cfg(feature = "cursor-pagination")]
 pub use axa_cursor_pagination as cursor_pagination;
 pub use axa_environment as environment;
+#[cfg(feature = "http-client")]
+pub use axa_http_client as http_client;
 #[cfg(feature = "idempotency")]
 pub use axa_idempotency_key as idempotency;
 #[cfg(feature = "keycloak")]

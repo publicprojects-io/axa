@@ -37,6 +37,7 @@ Use it as a decision tree when starting a new project or adding functionality.
 | Web | Templates (Maud) | `axa-maud-templates` | Compile-time HTML templates |
 | Web | Pagination | `axa-cursor-pagination` | Cursor-based pagination |
 | Web | Webhooks | `axa-webhooks` | Standard Webhooks signing and verifying |
+| Web | Outbound HTTP | `axa-http-client` | Requests that cannot reach private addresses |
 | Outbox | Transactional | `axa-transactional-outbox` | Reliable event publishing |
 | Outbox | Encryption | `axa-outbox-encryption` | Encrypt outbox payloads |
 | Security | Idempotency | `axa-idempotency-key` | Prevent duplicate processing |
@@ -185,6 +186,7 @@ All database features provide:
 - **axa-maud-templates**: Maud template rendering
 - **axa-cursor-pagination**: Cursor-based pagination
 - **axa-webhooks**: Standard Webhooks signing and verifying
+- **axa-http-client**: Outbound requests that cannot reach private addresses
 
 ### Outbox Pattern Features
 
@@ -253,6 +255,7 @@ axa = {
     "versioning",
     "upload",
     "webhooks",
+    "http-client",
   ] 
 }
 axa-postgres-seaorm = "0.12"
