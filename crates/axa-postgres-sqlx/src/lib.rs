@@ -23,7 +23,11 @@
 
 use std::{
     ops::{Deref, DerefMut},
-    time::Duration,
+    sync::{
+        OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 pub use sqlx;
@@ -88,7 +92,68 @@ impl PoolConfig {
             .max_connections(self.max_connections)
             .acquire_timeout(Duration::from_millis(self.connect_timeout_ms))
             .idle_timeout(Duration::from_millis(self.idle_timeout_ms))
+            // Retire a connection whose cached statements a migration has made stale.
+            .before_acquire(|_connection, meta| {
+                Box::pin(async move { Ok(!opened_before_last_stale_plan(meta.age)) })
+            })
     }
+}
+
+/// When this process first needed a clock for stale plans.
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// Nanoseconds after [`EPOCH`] that a stale plan was last seen, plus one, or `0` for
+/// never.
+static LAST_STALE_PLAN: AtomicU64 = AtomicU64::new(0);
+
+fn epoch() -> Instant {
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// Whether `error` is Postgres refusing a statement this connection prepared before a
+/// migration changed what it returns: SQLSTATE `0A000` with "cached plan must not
+/// change result type". Each pooled connection that cached the statement fails so
+/// once, and a fresh connection does not.
+#[must_use]
+pub fn is_stale_plan(error: &sqlx::Error) -> bool {
+    error.as_database_error().is_some_and(|error| {
+        error.code().as_deref() == Some("0A000")
+            && error
+                .message()
+                .contains("cached plan must not change result type")
+    })
+}
+
+/// Record `error` if it is a stale plan, so that every connection opened before now is
+/// retired when next acquired, from every pool [`connect`] opened in this process, and
+/// the next attempt runs on a fresh one. Returns whether it was. `axa::Error` calls
+/// this for every sqlx error it answers, so a service that turns sqlx errors into it
+/// needs nothing more.
+pub fn note_stale_plan(error: &sqlx::Error) -> bool {
+    if !is_stale_plan(error) {
+        return false;
+    }
+    let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
+    LAST_STALE_PLAN.fetch_max(since.saturating_add(1), Ordering::SeqCst);
+    true
+}
+
+/// Whether a connection `age` old was opened at or before the last stale plan.
+fn opened_before_last_stale_plan(age: Duration) -> bool {
+    opened_before(
+        LAST_STALE_PLAN.load(Ordering::SeqCst),
+        epoch().elapsed(),
+        age,
+    )
+}
+
+/// Whether a connection `age` old at `now`, both since [`EPOCH`], was opened at or
+/// before `last`, as [`LAST_STALE_PLAN`] holds it.
+fn opened_before(last: u64, now: Duration, age: Duration) -> bool {
+    if last == 0 {
+        return false;
+    }
+    now.saturating_sub(age) <= Duration::from_nanos(last - 1)
 }
 
 /// Open a pool and prove it works with one connection.
@@ -526,6 +591,20 @@ mod tests {
         let text = format!("{:?}", PoolConfig::new("postgres://me:hunter2@db/app"));
         assert!(!text.contains("hunter2"), "{text}");
         assert!(text.contains("max_connections"), "{text}");
+    }
+
+    #[test]
+    fn a_connection_is_retired_only_if_opened_by_the_last_stale_plan() {
+        let second = Duration::from_secs(1);
+        // Never a stale plan: nothing is retired.
+        assert!(!opened_before(0, 10 * second, 9 * second));
+        // A stale plan at 5s: a connection opened at 1s or 5s goes, one at 6s stays.
+        let at_five = 5_000_000_000 + 1;
+        assert!(opened_before(at_five, 10 * second, 9 * second));
+        assert!(opened_before(at_five, 10 * second, 5 * second));
+        assert!(!opened_before(at_five, 10 * second, 4 * second));
+        // An age past the epoch is opened before anything.
+        assert!(opened_before(at_five, second, 9 * second));
     }
 
     #[test]

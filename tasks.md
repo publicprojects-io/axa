@@ -49,6 +49,9 @@ T-44 is done, unreleased, in all four Postgres crates: `begin_with` for sqlx, Se
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
 MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
 
+T-18 is done, unreleased, as `note_stale_plan` and a `before_acquire` hook in every pool
+`axa_postgres_sqlx::connect` opens.
+
 T-20 is done, unreleased, with `tower-http`'s `decompression-full`, which adds no crate
 the build did not have.
 

@@ -452,10 +452,16 @@ fn sqlite_unavailable(code: &str) -> bool {
 }
 
 /// Whether a sqlx error, from any database, is one that cannot serve for now: a pool
-/// with no free connection or one closed, a connection lost, or the database's own
-/// code for it.
+/// with no free connection or one closed, a connection lost, the database's own
+/// code for it, or, on the `postgres-sqlx` pool, a statement a migration made stale.
 #[cfg(has_sqlx)]
 fn sqlx_unavailable(error: &sqlx::Error) -> bool {
+    // A statement a migration made stale: the pool retires the connections that cached
+    // it, so the next attempt runs on a fresh one, and the caller may try again.
+    #[cfg(feature = "postgres-sqlx")]
+    if axa_postgres_sqlx::note_stale_plan(error) {
+        return true;
+    }
     match error {
         sqlx::Error::PoolTimedOut
         | sqlx::Error::PoolClosed

@@ -336,3 +336,41 @@ async fn row_security_holds_only_for_a_role_without_bypass_on_a_forced_table() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
+async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
+    use axa_postgres_sqlx::{is_stale_plan, note_stale_plan};
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    // One connection, so the statement cached on it is the one that goes stale.
+    let mut config = PoolConfig::new(uri);
+    config.min_connections = 0;
+    config.max_connections = 1;
+    let pool = connect(&config).await.unwrap();
+    for statement in [
+        "DROP TABLE IF EXISTS stale_plan",
+        "CREATE TABLE stale_plan (x INT)",
+        "INSERT INTO stale_plan VALUES (1)",
+    ] {
+        sqlx::raw_sql(statement).execute(&pool).await.unwrap();
+    }
+    let select = "SELECT * FROM stale_plan";
+    sqlx::query(select).fetch_all(&pool).await.unwrap();
+    sqlx::raw_sql("ALTER TABLE stale_plan ALTER COLUMN x TYPE TEXT")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let error = sqlx::query(select).fetch_all(&pool).await.unwrap_err();
+    assert!(is_stale_plan(&error), "{error:?}");
+    assert!(note_stale_plan(&error));
+
+    // The pool hands out a fresh connection, where the statement is prepared again.
+    let rows = sqlx::query(select).fetch_all(&pool).await.unwrap();
+    let x: String = rows[0].get("x");
+    assert_eq!(x, "1");
+    sqlx::raw_sql("DROP TABLE stale_plan")
+        .execute(&pool)
+        .await
+        .unwrap();
+}

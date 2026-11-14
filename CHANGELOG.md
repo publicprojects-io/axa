@@ -48,6 +48,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF, and anything else. `clean_file_name` strips the path, control and bidirectional
   characters, and quotes, and a name that is not ASCII is sent as `filename*` too.
 
+- **Recovery from stale prepared statements** (SQX-11, DB-10): after a migration
+  changes what a query returns, each pooled connection that cached it failed once with
+  SQLSTATE `0A000`. `axa_postgres_sqlx::note_stale_plan` now has the pool retire every
+  connection opened before it, and `axa::Error` calls it and answers `503` with
+  `Retry-After`, so the retry runs on a fresh connection.
+
 ### Changed
 
 - **The standard stack decodes a compressed request body** (MID-29): `gzip`, `deflate`,
