@@ -254,6 +254,7 @@ the requirements HLT-1 to HLT-13, are in [Health routes](health/index.md).
 | JOB-2 | `BackgroundQueue` with no queue is an error, never a silent drop. | `queued_jobs_fail_without_a_queue` |
 | JOB-3 | `BackgroundQueue` with a queue enqueues the job. | `perform_later_enqueues_in_queue_mode` |
 | JOB-4 | `perform_in` keeps its delay on the queued job, and a worker's `timeout` goes on its jobs. There is no default limit. | `perform_in_delays_a_queued_job_and_carries_its_workers_timeout` |
+| JOB-5 | `perform_later_for` runs or queues a job for a tenant in every `WorkerMode`, refusing a tenant that is not a tenant id, and the job runs in `perform_for`, which by default refuses a job with a tenant and runs `perform` for one without, so a worker that takes no tenant never runs a tenant's job. Through `axa::queue`, a registered worker gets its job's tenant the same way. | `a_job_for_a_tenant_reaches_perform_for_and_a_worker_that_takes_none_refuses_it`, `a_worker_gets_its_jobs_tenant_and_one_that_takes_none_refuses_it` |
 
 ### 4.10 Queue
 
@@ -754,6 +755,8 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-26 | `by` and `reason` are codes: 1 to 200 characters with no line breaks. Anything else is refused with `Error::NotACode` before anything is written, and the table refuses it too. | `an_act_needs_a_short_code_for_who_and_why`, `a_by_or_reason_that_is_not_a_code_is_refused` |
 | WRK-27 | Acts are only ever inserted. `UPDATE`, `DELETE`, and `TRUNCATE` on `axa_job_acts` are refused by the database, whoever sends them and with `session_replication_role` set to `replica`. | `the_acts_table_refuses_every_change` |
 | WRK-28 | An act names its job by id, with no foreign key, so retention deletes the job's row and keeps its acts, and `Queue::acts` still reads them. | `acts_are_kept_when_their_job_is_swept` |
+| WRK-29 | A job queued with `NewJob::tenant` keeps its tenant in a nullable `tenant` column, shown in `JobInfo`, and a handler registered with `handle_with_tenant` gets it, or `None`, beside the arguments. A handler registered with `handle` never runs a tenant's job, which fails saying to use `handle_with_tenant`. Claiming stays fair across jobs, not tenants (TN-5). | `a_job_carries_its_tenant_to_a_handler_that_takes_one` |
+| WRK-30 | A tenant that is not a tenant id, as PST-15 has it, is refused with `Error::NotATenant` before anything is written, and the table's check refuses one whatever writes it. `check` fails on a table with no `tenant` column. | `a_tenant_that_is_not_a_tenant_id_is_refused` |
 
 ### 4.19 MySQL job queue
 
@@ -764,11 +767,12 @@ names of the tests in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28, each by the tests named there. | As named in section 4.18 |
+| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-30, each by the tests named there. | As named in section 4.18 |
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
 | MYQ-5 | Names are compared byte for byte, and every time is UTC on the database's clock, whatever the session's `time_zone`. The queue's own transactions run at `READ COMMITTED`, so a claim holds no gap locks. | `two_processes_run_each_job_once`, `a_delayed_job_is_not_claimed_before_its_time` |
+| MYQ-6 | MySQL has no `ADD COLUMN IF NOT EXISTS`, so setup adds the `tenant` column only where `information_schema` shows none, in one string run on one connection, and is safe to repeat on a table made by 0.1.0. | `a_job_carries_its_tenant_to_a_handler_that_takes_one`, on the table setup makes first and then adds the column to |
 
 ### 4.20 SQLite job queue
 
@@ -780,7 +784,7 @@ in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28, each by the tests named there. | As named in section 4.18 |
+| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-30, each by the tests named there. | As named in section 4.18 |
 | SQJ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, in one `BEGIN IMMEDIATE` transaction. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | SQJ-3 | An act changes its job and keeps the act in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |

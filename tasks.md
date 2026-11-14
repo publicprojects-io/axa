@@ -140,6 +140,10 @@ T-53 is done, unreleased, as `refuse_suspended` and `SuspendedCheck` in both aut
 
 T-50 is done, unreleased, as `CursorPage::new_in` (PAG-15).
 
+T-48 is done, unreleased, in all three job queues and `BackgroundWorker`, as a `tenant`
+column, `NewJob::tenant`, `handle_with_tenant`, `perform_later_for`, and `perform_for`
+(WRK-29, WRK-30, JOB-5, MYQ-6).
+
 | Id | Task | Where | Effort | New dependency | Case |
 |---|---|---|---|---|---|
 | T-43 | A `Tenant` extractor from the verified token only (TN-1): exactly one value of a named attribute, `tenant` by default, a tenant-id syntax, `401` without a token, `403` code `no_tenant` otherwise, and no way to take it from a header, path, or host | `axa-paseto-auth`, `axa-keycloak-auth` | S | None | Safety |

@@ -1287,3 +1287,87 @@ async fn a_missing_acts_trigger_stops_the_queue() {
     assert!(Queue::connect(&uri(), quick()).await.is_ok());
     assert!(Queue::connect_existing(&uri(), quick()).await.is_ok());
 }
+
+/// A tenant and the arguments, as a handler that takes a tenant saw them.
+type Seen = (Option<String>, serde_json::Value);
+
+#[tokio::test]
+async fn a_job_carries_its_tenant_to_a_handler_that_takes_one() {
+    let mut queue = fresh(quick()).await;
+    let seen: Arc<Mutex<Vec<Seen>>> = Arc::default();
+    let record = Arc::clone(&seen);
+    queue.handle_with_tenant("Tenanted", move |tenant, args| {
+        record.lock().unwrap().push((tenant, args));
+        async { Ok::<(), String>(()) }
+    });
+    queue.handle("Plain", |_args| async { Ok::<(), String>(()) });
+
+    let job = NewJob::new("Tenanted", serde_json::json!({ "id": 7 })).tenant("acme");
+    assert_eq!(job.tenant_id(), Some("acme"));
+    let acme = queue.enqueue_job(&job).await.unwrap();
+    let none = queue
+        .enqueue("Tenanted", serde_json::json!({ "id": 8 }))
+        .await
+        .unwrap();
+    let plain = queue
+        .enqueue_job(&NewJob::new("Plain", serde_json::Value::Null).tenant("acme"))
+        .await
+        .unwrap();
+    assert_eq!(
+        queue.job(acme).await.unwrap().unwrap().tenant.as_deref(),
+        Some("acme")
+    );
+    assert_eq!(queue.job(none).await.unwrap().unwrap().tenant, None);
+
+    while queue.run_one().await.unwrap() {}
+    let mut seen = seen.lock().unwrap().clone();
+    seen.sort_by_key(|(_, args)| args["id"].as_i64());
+    assert_eq!(
+        seen,
+        vec![
+            (Some("acme".to_string()), serde_json::json!({ "id": 7 })),
+            (None, serde_json::json!({ "id": 8 })),
+        ]
+    );
+    // A handler that takes no tenant never runs a tenant's job.
+    let plain = queue.job(plain).await.unwrap().unwrap();
+    assert_eq!(plain.state, JobState::Failed);
+    assert!(
+        plain.error.unwrap().contains("handle_with_tenant"),
+        "the failure says what to do"
+    );
+}
+
+#[tokio::test]
+async fn a_tenant_that_is_not_a_tenant_id_is_refused() {
+    let queue = fresh(quick()).await;
+    for bad in [
+        "",
+        "Acme",
+        "-acme",
+        "acme-",
+        "acme corp",
+        "acme'--",
+        &"a".repeat(64),
+    ] {
+        let job = NewJob::new("Tenanted", serde_json::Value::Null).tenant(bad);
+        assert!(
+            matches!(queue.enqueue_job(&job).await, Err(Error::NotATenant)),
+            "{bad:?}"
+        );
+    }
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM axa_queue")
+        .fetch_one(queue.pool())
+        .await
+        .unwrap();
+    assert_eq!(count, 0, "nothing was written");
+    // The table holds to the same rule, whatever writes to it.
+    let direct = sqlx::query(
+        "INSERT INTO axa_queue (id, name, args, tenant, run_at, created_at, updated_at)
+         VALUES (?1, 'x', 'null', 'Acme', 0, 0, 0)",
+    )
+    .bind(Uuid::new_v4())
+    .execute(queue.pool())
+    .await;
+    assert!(direct.is_err());
+}

@@ -107,6 +107,38 @@ fn timeout() -> Option<Duration> {
 A timed-out job follows the same rule as any failure: it is tried again only if it has
 attempts left. There is no default limit, and none is taken from a schedule's interval.
 
+## A job for a tenant
+
+A job runs outside any request, so a tenant's job must carry its tenant. Queue it with
+`perform_later_for`, taking the tenant from the verified token, and implement
+`perform_for` to run it in that tenant's transaction:
+
+```rust,ignore
+#[async_trait]
+impl BackgroundWorker<Args> for ReportWorker {
+    fn build(ctx: &AppContext) -> Self { Self { pool: ctx.db.clone() } }
+
+    async fn perform(&self, _: Args) -> Result<()> {
+        Err(axa::Error::Worker("a report is always for a tenant".into()))
+    }
+
+    async fn perform_for(&self, tenant: Option<String>, args: Args) -> Result<()> {
+        let tenant = tenant.ok_or_else(|| axa::Error::Worker("no tenant".into()))?;
+        let mut tx = axa::postgres_sqlx::begin_with(&self.pool, &[("app.tenant", tenant.as_str())]).await?;
+        // ... the report's queries, which row-level security keeps to this tenant ...
+        tx.commit().await?;
+        Ok(())
+    }
+}
+
+ReportWorker::perform_later_for(&ctx, tenant.as_str(), Args { id }).await?;
+```
+
+The tenant is kept in the job's row, in a `tenant` column, and `queue.job(&id)` shows
+it. A worker that does not implement `perform_for` refuses a job with a tenant, and the
+job fails saying so, rather than running with no tenant. Claiming is fair across jobs,
+not tenants, so one tenant's many jobs can delay another's.
+
 ## Where a job is
 
 `perform_later` and the enqueue functions return the job's id. Keep it to ask later:

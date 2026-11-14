@@ -131,10 +131,14 @@ suspension belongs to the issuer. It runs on every request, so it answers from m
 `CursorPage::new_in`. The context goes into the hash the cursor is signed over, after a
 byte no query part can hold and its length, so no context reads as another.
 
-**TN-5, jobs.** `perform_later_in(&tenant, …)`, a nullable `tenant` column, and the tenant
-handed to the worker beside the arguments, so that the worker opens its own tenant
-transaction. Claiming stays fair across jobs, not tenants. Fair claiming per tenant is a
-further step, once a service shows one tenant starving the rest.
+**TN-5, jobs.** Done, unreleased, as T-48: WRK-29, WRK-30, JOB-5, and MYQ-6, in all three
+job queues. `BackgroundWorker::perform_later_for(ctx, tenant, args)`, a nullable `tenant`
+column checked as a tenant id, and the tenant handed to the worker's `perform_for`
+beside the arguments, so that the worker opens its own tenant transaction. It is
+`_for`, not `_in`, as `perform_in` already means a delay. A handler that takes no tenant
+fails a tenant's job rather than run it with none. Claiming stays fair across jobs, not
+tenants. Fair claiming per tenant is a further step, once a service shows one tenant
+starving the rest.
 
 ## What not to add
 
@@ -155,9 +159,6 @@ further step, once a service shows one tenant starving the rest.
   as well as `attrs`, and in what shape, needs checking against Keycloak's documentation.
 - Whether TN-3 should also refuse a connection through a pooler in statement mode, which
   Postgres cannot see from its side.
-- Whether TN-5's tenant belongs in the job queue's own table or in the arguments a service
-  already controls, given that a queue with a tenant column invites a fair-claiming
-  feature next.
 
 ## Sources
 

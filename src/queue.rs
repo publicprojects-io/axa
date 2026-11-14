@@ -33,9 +33,8 @@ impl From<axa_postgres_job_queue::Error> for Error {
             axa_postgres_job_queue::Error::Database(error) => Self::Sqlx(error),
             axa_postgres_job_queue::Error::Encode(error) => Self::JSON(error),
             axa_postgres_job_queue::Error::Job(text) => Self::Worker(text),
-            error @ axa_postgres_job_queue::Error::NotACode { .. } => {
-                Self::BadRequest(error.to_string())
-            }
+            error @ (axa_postgres_job_queue::Error::NotACode { .. }
+            | axa_postgres_job_queue::Error::NotATenant) => Self::BadRequest(error.to_string()),
             other => Self::Worker(other.to_string()),
         }
     }
@@ -226,20 +225,23 @@ impl Queue {
         self.engine.pool()
     }
 
-    /// Register a worker to handle its jobs.
+    /// Register a worker to handle its jobs. A job queued for a tenant goes to the
+    /// worker's [`BackgroundWorker::perform_for`], which refuses it unless the worker
+    /// takes a tenant.
     pub fn register<A, W>(&mut self, worker: W)
     where
         A: Serialize + DeserializeOwned + Send + Sync + 'static,
         W: BackgroundWorker<A> + 'static,
     {
         let worker = Arc::new(worker);
-        self.engine_mut().handle(W::class_name(), move |args| {
-            let worker = worker.clone();
-            async move {
-                let args: A = serde_json::from_value(args).map_err(Error::from)?;
-                worker.perform(args).await
-            }
-        });
+        self.engine_mut()
+            .handle_with_tenant(W::class_name(), move |tenant, args| {
+                let worker = worker.clone();
+                async move {
+                    let args: A = serde_json::from_value(args).map_err(Error::from)?;
+                    worker.perform_for(tenant, args).await
+                }
+            });
     }
 
     /// Run at most `jobs` of worker `W`'s jobs at once in this process, and at least
@@ -547,6 +549,58 @@ mod tests {
         async fn perform(&self, (): ()) -> Result<()> {
             Err(Error::Worker("always".to_string()))
         }
+    }
+
+    /// Records the tenant of each job it runs.
+    struct TenantWorker;
+
+    static TENANTS: std::sync::Mutex<Vec<Option<String>>> = std::sync::Mutex::new(Vec::new());
+
+    #[async_trait]
+    impl BackgroundWorker<()> for TenantWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, (): ()) -> Result<()> {
+            Err(Error::Worker("needs a tenant".to_string()))
+        }
+
+        async fn perform_for(&self, tenant: Option<String>, (): ()) -> Result<()> {
+            TENANTS.lock().unwrap().push(tenant);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn a_worker_gets_its_jobs_tenant_and_one_that_takes_none_refuses_it() {
+        let _table = TABLE.lock().await;
+        let mut queue = queue().await;
+        queue.register(TenantWorker);
+        TENANTS.lock().unwrap().clear();
+        let acme = queue
+            .enqueue_job(&job::<TenantWorker, _>(&()).unwrap().tenant("acme"))
+            .await
+            .unwrap();
+        let args = Args { fail: false };
+        let refused = queue
+            .enqueue_job(&job::<CountWorker, _>(&args).unwrap().tenant("acme"))
+            .await
+            .unwrap();
+        let bad = queue
+            .enqueue_job(&job::<TenantWorker, _>(&()).unwrap().tenant("Acme"))
+            .await
+            .unwrap_err();
+        assert!(matches!(bad, Error::BadRequest(_)), "{bad}");
+        while queue.run_one().await.unwrap() {}
+        assert_eq!(*TENANTS.lock().unwrap(), vec![Some("acme".to_string())]);
+        assert_eq!(status_of(&queue, &acme).await.0, "completed");
+        let (status, error) = status_of(&queue, &refused).await;
+        assert_eq!(status, "failed");
+        assert!(error.unwrap().contains("perform_for"));
+        let info = queue.job(&acme).await.unwrap().unwrap();
+        assert_eq!(info.tenant.as_deref(), Some("acme"));
     }
 
     async fn attempts_of(queue: &Queue, id: &str) -> i32 {

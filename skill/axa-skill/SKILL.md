@@ -303,6 +303,11 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
 ## Jobs
 
 - `ReportWorker::perform_later(&ctx, args)` follows `WORKER_MODE`.
+- A tenant's job carries its tenant: queue it with
+  `ReportWorker::perform_later_for(&ctx, tenant.as_str(), args)`, and implement
+  `perform_for(&self, tenant: Option<String>, args)` to open that tenant's transaction.
+  A worker without `perform_for` refuses a job with a tenant. On the engines directly,
+  `NewJob::tenant(id)` and `Queue::handle_with_tenant`.
 - **Nothing runs jobs by itself.** A service needs `start --all` or a separate
   `start --worker`. Call `queue::warn_if_unserved` at boot so a forgotten worker shows up.
 - A job gets one attempt by default, because a retry repeats its work. Raise

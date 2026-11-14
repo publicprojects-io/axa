@@ -171,6 +171,8 @@ pub enum Error {
         /// Which it was: `by` or `reason`.
         what: &'static str,
     },
+    /// A job's tenant is not a tenant id: see [`is_tenant_id`].
+    NotATenant,
 }
 
 impl fmt::Display for Error {
@@ -183,6 +185,10 @@ impl fmt::Display for Error {
                 f,
                 "`{what}` must be 1 to {MAX_REASON_CHARS} characters with no line breaks"
             ),
+            Self::NotATenant => f.write_str(
+                "a job's tenant must be 1 to 63 lower-case letters, digits, and hyphens, \
+                 not starting or ending with a hyphen",
+            ),
         }
     }
 }
@@ -192,7 +198,7 @@ impl std::error::Error for Error {
         match self {
             Self::Database(error) => Some(error),
             Self::Encode(error) => Some(error),
-            Self::Job(_) | Self::NotACode { .. } => None,
+            Self::Job(_) | Self::NotACode { .. } | Self::NotATenant => None,
         }
     }
 }
@@ -210,7 +216,7 @@ impl From<serde_json::Error> for Error {
 }
 
 type JobFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
-type Handler = Arc<dyn Fn(serde_json::Value) -> JobFuture + Send + Sync>;
+type Handler = Arc<dyn Fn(Option<String>, serde_json::Value) -> JobFuture + Send + Sync>;
 
 const SETUP: &str = "CREATE TABLE IF NOT EXISTS axa_queue (
     id UUID PRIMARY KEY,
@@ -236,6 +242,9 @@ const SETUP_PRIORITY: &str =
     "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS priority SMALLINT NOT NULL DEFAULT 0";
 /// A job's own time limit, when it has one.
 const SETUP_TIMEOUT: &str = "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS timeout_ms BIGINT";
+/// The tenant a job runs for, when it has one, as an auth crate's `Tenant` names it.
+const SETUP_TENANT: &str = "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS tenant TEXT
+    CONSTRAINT axa_queue_tenant_id CHECK (tenant ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')";
 const SETUP_CLAIM_INDEX: &str = "CREATE INDEX IF NOT EXISTS axa_queue_claim
     ON axa_queue (priority DESC, run_at) WHERE status = 'queued'";
 const SETUP_SCHEDULE: &str = "CREATE TABLE IF NOT EXISTS axa_schedule (
@@ -291,12 +300,16 @@ const MISSING_TRIGGERS: &str = "SELECT want FROM unnest($1::text[]) AS want
         WHERE t.tgrelid = to_regclass('axa_job_acts') AND t.tgname = want
           AND t.tgenabled::text = 'A'
     )";
+/// What a job queued for a tenant fails with when its handler takes no tenant.
+const NO_TENANT_HANDLER: &str =
+    "the job has a tenant, and its handler takes none: register it with handle_with_tenant";
+
 /// Advisory lock key for table setup: `axa_q` as bytes.
 const SETUP_LOCK: i64 = 0x0061_7861_5F71;
 
 const ENQUEUE: &str = "INSERT INTO axa_queue
-    (id, name, args, max_attempts, priority, run_at, timeout_ms)
-    VALUES ($1, $2, $3, $4, $5, COALESCE($6, now() + make_interval(secs => $7)), $8)";
+    (id, name, args, max_attempts, priority, run_at, timeout_ms, tenant)
+    VALUES ($1, $2, $3, $4, $5, COALESCE($6, now() + make_interval(secs => $7)), $8, $9)";
 const CLAIM: &str = "UPDATE axa_queue
     SET status = 'running', started_at = now(), updated_at = now(), attempts = attempts + 1
     WHERE id = (
@@ -306,7 +319,7 @@ const CLAIM: &str = "UPDATE axa_queue
         FOR UPDATE SKIP LOCKED
         LIMIT 1
     )
-    RETURNING id, name, args, attempts, max_attempts, timeout_ms";
+    RETURNING id, name, args, attempts, max_attempts, timeout_ms, tenant";
 /// `attempts` identifies this run of the job, so a run that was given up on
 /// finds no row here and changes nothing.
 const HEARTBEAT: &str = "UPDATE axa_queue SET updated_at = now()
@@ -329,7 +342,7 @@ const PURGE: &str = "DELETE FROM axa_queue
     WHERE status IN ('completed', 'failed', 'cancelled')
       AND updated_at < now() - make_interval(days => $1)";
 const STATUS: &str = "SELECT id, name, status, attempts, max_attempts, priority, error,
-    timeout_ms, run_at, started_at, created_at, updated_at FROM axa_queue WHERE id = $1";
+    timeout_ms, tenant, run_at, started_at, created_at, updated_at FROM axa_queue WHERE id = $1";
 /// A run that lost its claim stops, and its job waits for a person. Another run
 /// may hold the row by now, and this stops that one too, at its next report.
 /// A row already completed is left alone.
@@ -410,13 +423,14 @@ const SCHEDULE_ADVANCE: &str = "UPDATE axa_schedule
 /// The statements that make the queue's tables, in order, each safe to repeat. A
 /// service whose role may not change the schema runs these in a migration, and calls
 /// [`Queue::connect_existing`]. They need Postgres 14 or later.
-pub const SETUP_STATEMENTS: [&str; 14] = [
+pub const SETUP_STATEMENTS: [&str; 15] = [
     SETUP,
     SETUP_ATTEMPTS,
     SETUP_MAX_ATTEMPTS,
     SETUP_INDEX,
     SETUP_PRIORITY,
     SETUP_TIMEOUT,
+    SETUP_TENANT,
     SETUP_CLAIM_INDEX,
     SETUP_SCHEDULE,
     SETUP_ACTS,
@@ -485,6 +499,7 @@ pub struct NewJob {
     priority: i16,
     when: When,
     timeout: Option<Duration>,
+    tenant: Option<String>,
 }
 
 impl fmt::Debug for NewJob {
@@ -495,6 +510,7 @@ impl fmt::Debug for NewJob {
             .field("priority", &self.priority)
             .field("when", &self.when)
             .field("timeout", &self.timeout)
+            .field("tenant", &self.tenant)
             .finish_non_exhaustive()
     }
 }
@@ -510,7 +526,19 @@ impl NewJob {
             priority: 0,
             when: When::Now,
             timeout: None,
+            tenant: None,
         }
+    }
+
+    /// Run this job for `tenant`, the id an auth crate's `Tenant` gives, which its
+    /// handler receives beside the arguments, so that it can open its own tenant
+    /// transaction. Only a handler registered with [`Queue::handle_with_tenant`] runs
+    /// it. Enqueuing refuses an id that is not a tenant id, with
+    /// [`Error::NotATenant`].
+    #[must_use]
+    pub fn tenant(mut self, tenant: impl Into<String>) -> Self {
+        self.tenant = Some(tenant.into());
+        self
     }
 
     /// Stop a run of this job past `limit`, and count it as failed with the reason.
@@ -555,6 +583,28 @@ impl NewJob {
     pub fn name(&self) -> &str {
         &self.name
     }
+
+    /// The tenant this job runs for, if any.
+    #[must_use]
+    pub fn tenant_id(&self) -> Option<&str> {
+        self.tenant.as_deref()
+    }
+}
+
+/// The longest tenant id, which a DNS label also allows.
+pub const MAX_TENANT_ID_LEN: usize = 63;
+
+/// Whether `id` is a tenant id: lower-case ASCII letters, digits, and hyphens, not
+/// starting or ending with a hyphen, from 1 to 63 characters, as a DNS label is, and as
+/// the auth crates' `Tenant` holds. The table's check holds to the same rule.
+#[must_use]
+pub fn is_tenant_id(id: &str) -> bool {
+    (1..=MAX_TENANT_ID_LEN).contains(&id.len())
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 /// Add `job` on `executor`, usually the caller's transaction, and return its id.
@@ -562,8 +612,16 @@ impl NewJob {
 ///
 /// # Errors
 ///
-/// Fails on a database error.
+/// Fails on a database error, and with [`Error::NotATenant`] for a tenant that is not a
+/// tenant id, before anything is written.
 pub async fn enqueue_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Result<Uuid> {
+    if job
+        .tenant
+        .as_deref()
+        .is_some_and(|tenant| !is_tenant_id(tenant))
+    {
+        return Err(Error::NotATenant);
+    }
     let id = Uuid::new_v4();
     let (at, delay) = match job.when {
         When::Now => (None, 0.0),
@@ -579,6 +637,7 @@ pub async fn enqueue_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Res
         .bind(at)
         .bind(delay)
         .bind(job.timeout.map(millis))
+        .bind(job.tenant.as_deref())
         .execute(executor)
         .await?;
     Ok(id)
@@ -770,6 +829,8 @@ pub struct JobInfo {
     pub priority: i16,
     /// Its time limit, if it was given one.
     pub timeout: Option<Duration>,
+    /// The tenant it runs for, if any.
+    pub tenant: Option<String>,
     /// The text of its last failure. For operators only: it is whatever the job's
     /// error said.
     pub error: Option<String>,
@@ -964,6 +1025,7 @@ struct Claimed {
     attempts: i32,
     limit: i32,
     timeout: Option<Duration>,
+    tenant: Option<String>,
 }
 
 /// How a run ended.
@@ -1045,9 +1107,11 @@ impl Queue {
     /// Fails when the database cannot be reached, a table is missing or out of date,
     /// or a trigger is missing or turned off.
     pub async fn check(&self) -> Result<()> {
-        sqlx::query("SELECT attempts, max_attempts, priority, timeout_ms FROM axa_queue LIMIT 0")
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "SELECT attempts, max_attempts, priority, timeout_ms, tenant FROM axa_queue LIMIT 0",
+        )
+        .execute(&self.pool)
+        .await?;
         sqlx::query(
             "SELECT name, due_at, last_job, interval_ms, seen_at, archived_at FROM axa_schedule LIMIT 0",
         )
@@ -1090,6 +1154,10 @@ impl Queue {
 
     /// Run `handler` for jobs named `name`. Its error text is kept on the job's
     /// row. Registering a name again replaces its handler.
+    ///
+    /// A job queued for a tenant, with [`NewJob::tenant`], is failed rather than run
+    /// here, as this handler would run it with no tenant: register a handler that
+    /// takes one with [`Queue::handle_with_tenant`].
     pub fn handle<F, Fut, E>(&mut self, name: impl Into<String>, handler: F)
     where
         F: Fn(serde_json::Value) -> Fut + Send + Sync + 'static,
@@ -1097,8 +1165,29 @@ impl Queue {
         E: fmt::Display + 'static,
     {
         let handler = Arc::new(handler);
-        let run: Handler = Arc::new(move |args| {
+        let run: Handler = Arc::new(move |tenant, args| {
+            if tenant.is_some() {
+                return Box::pin(std::future::ready(Err(NO_TENANT_HANDLER.to_string())));
+            }
             let job = handler(args);
+            Box::pin(async move { job.await.map_err(|error| error.to_string()) })
+        });
+        self.handlers.insert(name.into(), run);
+    }
+
+    /// Run `handler` for jobs named `name`, handing it the job's tenant, or `None` for
+    /// a job queued with none, beside its arguments, so that it can open its own
+    /// tenant transaction. Claiming stays fair across jobs, not tenants. Registering a
+    /// name again replaces its handler.
+    pub fn handle_with_tenant<F, Fut, E>(&mut self, name: impl Into<String>, handler: F)
+    where
+        F: Fn(Option<String>, serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = std::result::Result<(), E>> + Send + 'static,
+        E: fmt::Display + 'static,
+    {
+        let handler = Arc::new(handler);
+        let run: Handler = Arc::new(move |tenant, args| {
+            let job = handler(tenant, args);
             Box::pin(async move { job.await.map_err(|error| error.to_string()) })
         });
         self.handlers.insert(name.into(), run);
@@ -1197,6 +1286,7 @@ impl Queue {
             timeout: row
                 .try_get::<Option<i64>, _>("timeout_ms")?
                 .map(from_millis),
+            tenant: row.try_get("tenant")?,
             error: row.try_get("error")?,
             run_at: row.try_get("run_at")?,
             started_at: row.try_get("started_at")?,
@@ -1538,6 +1628,7 @@ impl Queue {
             timeout: row
                 .try_get::<Option<i64>, _>("timeout_ms")?
                 .map(from_millis),
+            tenant: row.try_get("tenant")?,
         }))
     }
 
@@ -1559,7 +1650,10 @@ impl Queue {
         let _place = places.remove(&job.name);
         drop(places);
         let outcome = match self.handlers.get(&job.name) {
-            Some(handler) => self.supervise(handler(job.args.clone()), &job).await,
+            Some(handler) => {
+                let run = handler(job.tenant.clone(), job.args.clone());
+                self.supervise(run, &job).await
+            }
             None => Outcome::Done(Err(
                 Error::Job(format!("no handler for job {}", job.name)).to_string()
             )),

@@ -6,11 +6,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
-`axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`, and
-`axa-cursor-pagination`.
+`axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`,
+`axa-cursor-pagination`, and the three job queues.
 
 ### Changed
 
+- **The job queues write a `tenant` column**, which `Queue::connect` adds. A service on
+  `Queue::connect_existing` runs `SETUP_STATEMENTS` again before it deploys.
 - **`config::Http` has `log_tenant`**, so a service that builds one by hand adds
   `log_tenant: false`. See [Upgrading to Axa 0.14](help/upgrading-to-0.14/index.md).
 
@@ -38,6 +40,12 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   `axa-cursor-pagination` signs a cursor over a context, such as the tenant, so a
   cursor made in one tenant is refused in another. `CursorPage::new`'s cursors are
   unchanged.
+- **A tenant on a job** (T-48, TN-5, WRK-29, WRK-30, JOB-5, MYQ-6): in all three job
+  queues, `NewJob::tenant` keeps a job's tenant in a new nullable `tenant` column,
+  checked as a tenant id, and `Queue::handle_with_tenant` hands it to the handler
+  beside the arguments. A handler registered with `handle` fails a tenant's job rather
+  than run it with no tenant. In `axa`, `BackgroundWorker::perform_later_for` queues a
+  job for a tenant, and `perform_for` runs it, refusing it by default.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

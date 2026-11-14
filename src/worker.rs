@@ -96,6 +96,55 @@ where
         }
     }
 
+    /// Run or enqueue a job for `tenant`, per [`WorkerMode`], and return its id. The
+    /// job runs in [`BackgroundWorker::perform_for`], which this worker must
+    /// implement to take a tenant: a job runs outside any request, so its tenant is
+    /// lost unless the job carries it. Take `tenant` from the auth crate's `Tenant`,
+    /// as `tenant.as_str()`, never from what a caller sent.
+    ///
+    /// # Errors
+    ///
+    /// Fails for a tenant that is not a tenant id, when queueing fails, no queue is
+    /// configured, or a foreground job fails.
+    async fn perform_later_for(ctx: &AppContext, tenant: &str, args: A) -> Result<String>
+    where
+        Self: Sized + 'static,
+    {
+        if !is_tenant_id(tenant) {
+            return Err(Error::BadRequest(
+                "a job's tenant must be a tenant id".to_string(),
+            ));
+        }
+        let tenant = tenant.to_string();
+        match ctx.config.workers {
+            WorkerMode::BackgroundQueue => {
+                #[cfg(feature = "queue")]
+                {
+                    let job = crate::queue::job::<Self, A>(&args)?.tenant(tenant);
+                    enqueue(ctx, &job).await
+                }
+                #[cfg(not(feature = "queue"))]
+                {
+                    let _ = (args, tenant);
+                    no_queue()
+                }
+            }
+            WorkerMode::ForegroundBlocking => {
+                Self::build(ctx).perform_for(Some(tenant), args).await?;
+                Ok(Uuid::new_v4().to_string())
+            }
+            WorkerMode::BackgroundAsync => {
+                let worker = Self::build(ctx);
+                tokio::spawn(async move {
+                    if let Err(error) = worker.perform_for(Some(tenant), args).await {
+                        tracing::error!(%error, "background job failed");
+                    }
+                });
+                Ok(Uuid::new_v4().to_string())
+            }
+        }
+    }
+
     /// Tries a job of this worker gets with the queue, including the first.
     /// `None` uses `QueueOptions::max_attempts`. Set it only for work that is
     /// safe to repeat.
@@ -120,6 +169,37 @@ where
 
     /// The job's work.
     async fn perform(&self, args: A) -> Result<()>;
+
+    /// The job's work for `tenant`, the tenant it was queued for, or `None`. A worker
+    /// whose jobs run for a tenant implements this, and opens its own tenant
+    /// transaction with it. By default a job with no tenant goes to
+    /// [`BackgroundWorker::perform`], and a job with one is refused, as `perform`
+    /// would run it with no tenant.
+    ///
+    /// # Errors
+    ///
+    /// By default, for a job with a tenant, and otherwise as `perform`.
+    async fn perform_for(&self, tenant: Option<String>, args: A) -> Result<()> {
+        match tenant {
+            None => self.perform(args).await,
+            Some(_) => Err(Error::Worker(
+                "the job has a tenant, and its worker takes none: implement perform_for"
+                    .to_string(),
+            )),
+        }
+    }
+}
+
+/// Whether `id` is a tenant id, as the auth crates' `Tenant` and the job queue hold
+/// it: 1 to 63 lower-case letters, digits, and hyphens, not starting or ending with a
+/// hyphen.
+fn is_tenant_id(id: &str) -> bool {
+    (1..=63).contains(&id.len())
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 /// Add a job to the context's queue.
@@ -225,6 +305,50 @@ mod tests {
             .await
             .is_err()
         );
+    }
+
+    struct TenantWorker;
+
+    static TENANTS: std::sync::Mutex<Vec<Option<String>>> = std::sync::Mutex::new(Vec::new());
+
+    #[async_trait]
+    impl BackgroundWorker<()> for TenantWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, (): ()) -> Result<()> {
+            Err(Error::Worker("needs a tenant".to_string()))
+        }
+
+        async fn perform_for(&self, tenant: Option<String>, (): ()) -> Result<()> {
+            TENANTS.lock().unwrap().push(tenant);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_job_for_a_tenant_reaches_perform_for_and_a_worker_that_takes_none_refuses_it() {
+        let ctx = context("ForegroundBlocking");
+        TenantWorker::perform_later_for(&ctx, "acme", ())
+            .await
+            .unwrap();
+        assert_eq!(*TENANTS.lock().unwrap(), vec![Some("acme".to_string())]);
+        let args = Args {
+            amount: 1,
+            fail: false,
+        };
+        let error = AddWorker::perform_later_for(&ctx, "acme", args)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("perform_for"), "{error}");
+        for bad in ["", "Acme", "acme-", &"a".repeat(64)] {
+            let error = TenantWorker::perform_later_for(&ctx, bad, ())
+                .await
+                .unwrap_err();
+            assert!(matches!(error, Error::BadRequest(_)), "{bad:?}");
+        }
+        assert_eq!(TENANTS.lock().unwrap().len(), 1);
     }
 
     #[tokio::test]
