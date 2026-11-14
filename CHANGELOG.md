@@ -7,6 +7,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`config::Settings`** (CFG-28 to CFG-30): a service reads its own variables with
+  Axa's rules, a blank value unset, every problem named at once, no secret quoted, and
+  `finish` refusing a production boot with any problem. `secret` and `required_secret`
+  read `NAME` or a file `NAME_FILE` names, refusing both, and `DB_URL` may come from
+  `DB_URL_FILE`.
 - **A cross-site write guard in the standard stack** (MID-23 to MID-28): an unsafe
   method or a WebSocket upgrade with `sec-fetch-site: cross-site` is `403`, code
   `cross_site_write_refused`, and with no `sec-fetch-site`, an `origin` that is not the

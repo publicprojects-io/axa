@@ -56,6 +56,9 @@ T-19 is done, unreleased, as `Checks::migrations`, `Checks::migrated`, and
 `server::run_once_migrated`, for any database, as the service passes its crate's
 `pending`.
 
+T-21 is done, unreleased, as `config::Settings`, with `_FILE` secrets for a service's
+own settings and for `DB_URL`.
+
 T-18 is done, unreleased, as `note_stale_plan` and a `before_acquire` hook in every pool
 `axa_postgres_sqlx::connect` opens.
 

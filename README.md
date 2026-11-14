@@ -338,7 +338,7 @@ place.
 |---|---|
 | `APP_ENV` | `development`, `test`, or `production`. Any other name gets production's stricter behaviour. With it unset, a debug build is development and a release build is production |
 | `PORT`, `BINDING`, `HOST` | Listening port, address, and public URL |
-| `DB_URL` | Connection string. Required in production for a service with a database, where it must set `sslmode` to `require`, `verify-ca`, or `verify-full` unless it stays on this machine |
+| `DB_URL` | Connection string. Required in production for a service with a database, where it must set `sslmode` to `require`, `verify-ca`, or `verify-full` unless it stays on this machine. `DB_URL_FILE` may name a file holding it instead |
 | `DB_ALLOW_INSECURE` | Let a production service reach its database without demanding TLS, as on a network that encrypts its own traffic |
 | `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
 | `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds. 5 seconds and 10 minutes by default, or a service's `Defaults` |

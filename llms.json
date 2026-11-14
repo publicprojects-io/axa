@@ -207,7 +207,7 @@
     },
     {
       "name": "config",
-      "purpose": "Configuration from the process environment"
+      "purpose": "Configuration from the process environment, and `Settings` for a service's own variables, with `_FILE` secrets"
     },
     {
       "name": "context",

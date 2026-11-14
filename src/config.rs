@@ -361,7 +361,7 @@ pub fn redact(name: &str, value: &str) -> String {
 
 /// The database settings, from `DB_` variables.
 fn database<F: Fn(&str) -> Option<String>>(
-    vars: &Vars<F>,
+    vars: &Settings<F>,
     defaults: &Defaults,
     environment: &Environment,
     uri: String,
@@ -395,8 +395,8 @@ fn is_application_name(name: &str) -> bool {
 
 /// `DB_APPLICATION_NAME`, or the database name stem, which names the service, when it
 /// is one Postgres keeps as it is. A set name that is not is a problem.
-fn application_name<F: Fn(&str) -> Option<String>>(vars: &Vars<F>, stem: &str) -> String {
-    match vars.set("DB_APPLICATION_NAME") {
+fn application_name<F: Fn(&str) -> Option<String>>(vars: &Settings<F>, stem: &str) -> String {
+    match vars.optional("DB_APPLICATION_NAME") {
         Some(name) if is_application_name(name.trim()) => name.trim().to_string(),
         Some(name) => {
             vars.invalid(
@@ -414,7 +414,7 @@ fn application_name<F: Fn(&str) -> Option<String>>(vars: &Vars<F>, stem: &str) -
 /// A statement timeout or read-only mode works only on Postgres, so asking for either
 /// with another database is a problem, rather than a setting silently ignored.
 fn session_settings_need_postgres<F: Fn(&str) -> Option<String>>(
-    vars: &Vars<F>,
+    vars: &Settings<F>,
     database: &Database,
 ) {
     let postgres = cfg!(any(
@@ -425,45 +425,150 @@ fn session_settings_need_postgres<F: Fn(&str) -> Option<String>>(
     ));
     let none = cfg!(axa_db = "none");
     if !postgres && !none && (database.statement_timeout_ms > 0 || database.read_only) {
-        vars.problems.borrow_mut().push(
+        vars.problem(
             "DB_STATEMENT_TIMEOUT_MS and DB_READ_ONLY work only with a Postgres database"
                 .to_string(),
         );
     }
 }
 
-/// Typed reads over a lookup function, so parsing can be tested without
-/// touching the process environment. A value that is set but invalid is noted
-/// in `problems`, and what happens next is decided in one place, at the end of
-/// [`Config::from_lookup`].
-struct Vars<F> {
+/// Typed reads of a service's settings, with Axa's rules: a blank value counts as
+/// unset, a value that is set but invalid is a problem, the problems are named all at
+/// once, and no secret is ever quoted.
+///
+/// [`Config`] reads Axa's own settings with it, and a service reads its own the same
+/// way. [`Settings::finish`] then refuses to boot a production-like environment with
+/// any problem, and elsewhere hands the problems back as warnings.
+///
+/// # Examples
+///
+/// ```
+/// use axa::{Environment, config::Settings};
+///
+/// let settings = Settings::from_lookup(&Environment::Production, |name| match name {
+///     "UPSTREAM_URL" => Some("https://upstream.example".to_string()),
+///     "UPSTREAM_RETRIES" => Some("three".to_string()),
+///     _ => None,
+/// });
+/// let url = settings.required("UPSTREAM_URL");
+/// let retries: u32 = settings.parsed("UPSTREAM_RETRIES", 3);
+/// let token = settings.secret("UPSTREAM_TOKEN");
+/// assert_eq!(url.as_deref(), Some("https://upstream.example"));
+/// assert_eq!((retries, token), (3, None));
+///
+/// let error = settings.finish().unwrap_err();
+/// assert!(error.to_string().contains("UPSTREAM_RETRIES"));
+/// ```
+pub struct Settings<F> {
     lookup: F,
+    production: bool,
     problems: RefCell<Vec<String>>,
 }
 
-impl<F: Fn(&str) -> Option<String>> Vars<F> {
+impl Settings<fn(&str) -> Option<String>> {
+    /// Read settings for `environment` from the process environment.
+    #[must_use]
+    pub fn from_env(environment: &Environment) -> Self {
+        fn var(name: &str) -> Option<String> {
+            std::env::var(name).ok()
+        }
+        Settings::from_lookup(environment, var)
+    }
+}
+
+impl<F: Fn(&str) -> Option<String>> fmt::Debug for Settings<F> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Settings")
+            .field("production", &self.production)
+            .field("problems", &self.problems.borrow())
+            .finish_non_exhaustive()
+    }
+}
+
+impl<F: Fn(&str) -> Option<String>> Settings<F> {
+    /// Read settings for `environment` through `lookup`, which gives the value of a
+    /// variable, or `None` when it is unset.
+    pub fn from_lookup(environment: &Environment, lookup: F) -> Self {
+        Self {
+            lookup,
+            production: environment.is_production_like(),
+            problems: RefCell::new(Vec::new()),
+        }
+    }
+
     /// The value of `name`, when it is set to something other than blanks.
-    fn set(&self, name: &str) -> Option<String> {
+    pub fn optional(&self, name: &str) -> Option<String> {
         (self.lookup)(name).filter(|value| !value.trim().is_empty())
     }
 
-    /// Note that `name` holds an invalid `value`.
-    fn invalid(&self, name: &str, value: &str, expected: &str) {
-        let shown = redact(name, value);
-        self.problems
-            .borrow_mut()
-            .push(format!("{name}={shown:?} is not {expected}"));
+    /// The value of `name`. An unset one is a problem.
+    pub fn required(&self, name: &str) -> Option<String> {
+        let value = self.optional(name);
+        if value.is_none() {
+            self.problem(format!("{name} is required"));
+        }
+        value
     }
 
-    /// The value of `name`, or `default` when unset.
-    fn text(&self, name: &str, default: &str) -> String {
+    /// The value of `name`, or of the file `{name}_FILE` names, so that a secret can be
+    /// mounted as a file rather than set in the environment. The file's last line ending
+    /// is dropped, and a file of blanks counts as unset. Both set, or a file that cannot
+    /// be read, is a problem, and gives `None`.
+    pub fn secret(&self, name: &str) -> Option<String> {
+        let file_name = format!("{name}_FILE");
+        match (self.optional(name), self.optional(&file_name)) {
+            (Some(_), Some(_)) => {
+                self.problem(format!("{name} and {file_name} are both set: set one"));
+                None
+            }
+            (Some(value), None) => Some(value),
+            (None, Some(path)) => match std::fs::read_to_string(path.trim()) {
+                Ok(text) => {
+                    let text = text.strip_suffix('\n').unwrap_or(&text);
+                    let text = text.strip_suffix('\r').unwrap_or(text);
+                    (!text.trim().is_empty()).then(|| text.to_string())
+                }
+                Err(error) => {
+                    self.problem(format!("{file_name}={path:?} cannot be read: {error}"));
+                    None
+                }
+            },
+            (None, None) => None,
+        }
+    }
+
+    /// [`Settings::secret`], and an unset one is a problem.
+    pub fn required_secret(&self, name: &str) -> Option<String> {
+        let before = self.problems.borrow().len();
+        let value = self.secret(name);
+        // A secret refused for being set twice, or unreadable, is a problem already.
+        if value.is_none() && self.problems.borrow().len() == before {
+            self.problem(format!("{name} or {name}_FILE is required"));
+        }
+        value
+    }
+
+    /// Note that `name` holds an invalid `value`, which is shown through [`redact`].
+    /// `expected` says what it should be, as in "a port number".
+    pub fn invalid(&self, name: &str, value: &str, expected: &str) {
+        let shown = redact(name, value);
+        self.problem(format!("{name}={shown:?} is not {expected}"));
+    }
+
+    /// Note a problem with the settings. It must quote no secret.
+    pub fn problem(&self, problem: impl Into<String>) {
+        self.problems.borrow_mut().push(problem.into());
+    }
+
+    /// The value of `name`, or `default` when unset. A blank value is kept.
+    pub fn text(&self, name: &str, default: &str) -> String {
         (self.lookup)(name).unwrap_or_else(|| default.to_string())
     }
 
     /// The parsed value of `name`, or `default` when unset. An unparsable
-    /// value also gives `default`, and is noted.
-    fn parsed<T: std::str::FromStr>(&self, name: &str, default: T) -> T {
-        let Some(value) = self.set(name) else {
+    /// value also gives `default`, and is a problem.
+    pub fn parsed<T: std::str::FromStr>(&self, name: &str, default: T) -> T {
+        let Some(value) = self.optional(name) else {
             return default;
         };
         value.trim().parse().unwrap_or_else(|_| {
@@ -474,10 +579,10 @@ impl<F: Fn(&str) -> Option<String>> Vars<F> {
 
     /// The boolean value of `name`, or `default` when unset. `1`, `true`,
     /// `yes`, and `on` mean true, and `0`, `false`, `no`, and `off` mean false.
-    /// Anything else also gives `default`, and is noted: a typo for "on" must
+    /// Anything else also gives `default`, and is a problem: a typo for "on" must
     /// not read as "off".
-    fn flag(&self, name: &str, default: bool) -> bool {
-        let Some(value) = self.set(name) else {
+    pub fn flag(&self, name: &str, default: bool) -> bool {
+        let Some(value) = self.optional(name) else {
             return default;
         };
         match value.trim().to_ascii_lowercase().as_str() {
@@ -491,9 +596,9 @@ impl<F: Fn(&str) -> Option<String>> Vars<F> {
     }
 
     /// The value of `name` as read by `from_name`, or `default` when unset. A
-    /// name it does not know also gives `default`, and is noted.
-    fn named<T>(&self, name: &str, default: T, from_name: impl Fn(&str) -> Option<T>) -> T {
-        let Some(value) = self.set(name) else {
+    /// name it does not know also gives `default`, and is a problem.
+    pub fn named<T>(&self, name: &str, default: T, from_name: impl Fn(&str) -> Option<T>) -> T {
+        let Some(value) = self.optional(name) else {
             return default;
         };
         from_name(&value).unwrap_or_else(|| {
@@ -502,10 +607,33 @@ impl<F: Fn(&str) -> Option<String>> Vars<F> {
         })
     }
 
+    /// The problems so far.
+    pub fn problems(&self) -> Vec<String> {
+        self.problems.borrow().clone()
+    }
+
+    /// End the reading. Fail closed: a production service that misread a setting would
+    /// run with something nobody chose, and a warning there is read too late.
+    ///
+    /// # Errors
+    ///
+    /// Fails in a production-like environment when there is any problem, naming them
+    /// all. Elsewhere it gives the problems back, for the service to log as warnings.
+    pub fn finish(self) -> Result<Vec<String>> {
+        let problems = self.problems.into_inner();
+        if self.production && !problems.is_empty() {
+            return Err(Error::string(&format!(
+                "invalid settings: {}",
+                problems.join("; ")
+            )));
+        }
+        Ok(problems)
+    }
+
     /// The log filter from `LOG_FILTER`. One that does not parse is noted and
     /// dropped, because [`logger::init_env_filter`] would panic on it.
     fn log_filter(&self) -> Option<String> {
-        let filter = self.set("LOG_FILTER")?;
+        let filter = self.optional("LOG_FILTER")?;
         if tracing_subscriber::EnvFilter::try_new(&filter).is_err() {
             self.invalid("LOG_FILTER", &filter, "a valid log filter");
             return None;
@@ -578,11 +706,18 @@ fn stays_private(uri: &str) -> bool {
 /// The connection string. Fail closed: a production service must never fall
 /// back to a guessed local database.
 fn database_uri<F: Fn(&str) -> Option<String>>(
-    vars: &Vars<F>,
+    vars: &Settings<F>,
     environment: &Environment,
     defaults: &Defaults,
 ) -> Result<String> {
-    match vars.set("DB_URL") {
+    let noted = vars.problems.borrow().len();
+    let uri = vars.secret("DB_URL");
+    // Both DB_URL and DB_URL_FILE set, or a file that cannot be read: guessing a local
+    // database instead would hide the mistake anywhere.
+    if let Some(problem) = vars.problems.borrow().get(noted) {
+        return Err(Error::string(problem));
+    }
+    match uri {
         Some(uri)
             if environment.is_production_like()
                 && !stays_private(&uri)
@@ -627,7 +762,7 @@ fn local_database_uri(database: &str, environment: &Environment) -> String {
 /// The allowed origins. Development serves browser dev servers on other ports,
 /// so it allows any. Production sends no CORS headers until origins are listed.
 /// `MAX_CONNECTIONS`, which must leave room for at least one.
-fn connection_limit<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> usize {
+fn connection_limit<F: Fn(&str) -> Option<String>>(vars: &Settings<F>) -> usize {
     let max = vars.parsed("MAX_CONNECTIONS", crate::server::MAX_CONNECTIONS);
     if max == 0 {
         vars.invalid("MAX_CONNECTIONS", "0", "at least 1");
@@ -638,8 +773,8 @@ fn connection_limit<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> usize {
 
 /// `TRUSTED_PROXIES`, as a comma-separated list. A list with any bad entry is noted,
 /// and none are trusted, which is the side to fail on.
-fn trusted_proxies<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> Vec<ProxyNet> {
-    let Some(list) = vars.set("TRUSTED_PROXIES") else {
+fn trusted_proxies<F: Fn(&str) -> Option<String>>(vars: &Settings<F>) -> Vec<ProxyNet> {
+    let Some(list) = vars.optional("TRUSTED_PROXIES") else {
         return Vec::new();
     };
     list.split(',')
@@ -652,7 +787,7 @@ fn trusted_proxies<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> Vec<ProxyNe
 }
 
 fn cors_origins<F: Fn(&str) -> Option<String>>(
-    vars: &Vars<F>,
+    vars: &Settings<F>,
     production: bool,
 ) -> Result<Vec<String>> {
     let origins: Vec<String> = match (vars.lookup)("CORS_ALLOWED_ORIGINS") {
@@ -677,7 +812,7 @@ fn cors_origins<F: Fn(&str) -> Option<String>>(
 /// largest one, so `DB_MAX_CONNECTIONS=1` works alone. A pool that cannot exist is
 /// noted, and the default applies.
 fn pool_size<F: Fn(&str) -> Option<String>>(
-    vars: &Vars<F>,
+    vars: &Settings<F>,
     defaults: &Defaults,
     production: bool,
 ) -> (u32, u32) {
@@ -703,7 +838,7 @@ fn pool_size<F: Fn(&str) -> Option<String>>(
 
 /// The policy from `HTTP_CONTENT_SECURITY_POLICY`, where blank means none, or production's default when unset.
 fn content_security_policy<F: Fn(&str) -> Option<String>>(
-    vars: &Vars<F>,
+    vars: &Settings<F>,
     production: bool,
 ) -> Option<String> {
     match (vars.lookup)("HTTP_CONTENT_SECURITY_POLICY") {
@@ -716,7 +851,7 @@ fn content_security_policy<F: Fn(&str) -> Option<String>>(
 
 /// The policy from `HTTP_PERMISSIONS_POLICY`, where blank means none, or the deny-list
 /// when unset.
-fn permissions_policy<F: Fn(&str) -> Option<String>>(vars: &Vars<F>) -> Option<String> {
+fn permissions_policy<F: Fn(&str) -> Option<String>>(vars: &Settings<F>) -> Option<String> {
     match (vars.lookup)("HTTP_PERMISSIONS_POLICY") {
         Some(policy) if policy.trim().is_empty() => None,
         Some(policy) => Some(policy),
@@ -764,10 +899,7 @@ impl Config {
         defaults: &Defaults,
         lookup: impl Fn(&str) -> Option<String>,
     ) -> Result<Self> {
-        let vars = Vars {
-            lookup,
-            problems: RefCell::new(Vec::new()),
-        };
+        let vars = Settings::from_lookup(environment, lookup);
         let production = environment.is_production_like();
         let test = *environment == Environment::Test;
 
@@ -1628,12 +1760,11 @@ mod tests {
 
     #[test]
     fn an_invalid_value_under_a_secret_name_is_not_printed() {
-        let vars = Vars {
-            lookup: |_: &str| Some("hunter2".to_string()),
-            problems: RefCell::new(Vec::new()),
-        };
+        let vars = Settings::from_lookup(&Environment::Development, |_: &str| {
+            Some("hunter2".to_string())
+        });
         let _: u16 = vars.parsed("REDIS_PASSWORD_LENGTH", 1);
-        let problems = vars.problems.into_inner();
+        let problems = vars.finish().unwrap();
         assert!(problems[0].contains("REDIS_PASSWORD_LENGTH"));
         assert!(!problems[0].contains("hunter2"), "{}", problems[0]);
     }
@@ -1727,5 +1858,177 @@ mod tests {
         );
         let config = with(&[("WORKER_MODE", "BackgroundAsync")], &Environment::Test).unwrap();
         assert_eq!(config.workers, WorkerMode::BackgroundAsync);
+    }
+
+    /// Settings read from `pairs`, for `environment`.
+    fn reader<'a>(
+        pairs: &'a [(&'a str, &'a str)],
+        environment: &Environment,
+    ) -> Settings<impl Fn(&str) -> Option<String> + 'a> {
+        Settings::from_lookup(environment, move |name: &str| {
+            pairs
+                .iter()
+                .find(|(key, _)| *key == name)
+                .map(|(_, value)| (*value).to_string())
+        })
+    }
+
+    /// A file holding `text`, in a directory of this test's own, removed on drop.
+    struct SecretFile(std::path::PathBuf);
+
+    impl SecretFile {
+        fn new(test: &str, contents: &str) -> Self {
+            let dir = std::env::temp_dir().join(format!("axa-{test}-{}", std::process::id()));
+            std::fs::create_dir_all(&dir).unwrap();
+            let path = dir.join("secret");
+            std::fs::write(&path, contents).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &str {
+            self.0.to_str().unwrap()
+        }
+    }
+
+    impl Drop for SecretFile {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(self.0.parent().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_service_reads_its_own_settings_with_the_same_rules() {
+        let pairs = [
+            ("UPSTREAM_URL", "https://upstream.example"),
+            ("UPSTREAM_RETRIES", " 5 "),
+            ("UPSTREAM_GZIP", "on"),
+            ("UPSTREAM_REGION", "  "),
+        ];
+        let settings = reader(&pairs, &Environment::Production);
+        assert_eq!(
+            settings.required("UPSTREAM_URL").as_deref(),
+            Some("https://upstream.example")
+        );
+        assert_eq!(settings.parsed::<u32>("UPSTREAM_RETRIES", 3), 5);
+        assert!(settings.flag("UPSTREAM_GZIP", false));
+        assert_eq!(settings.optional("UPSTREAM_REGION"), None);
+        assert_eq!(settings.text("UPSTREAM_REGION", "eu"), "  ");
+        assert_eq!(settings.finish().unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn production_refuses_a_services_problems_and_development_warns() {
+        let pairs = [("UPSTREAM_RETRIES", "three"), ("UPSTREAM_GZIP", "tru")];
+        let read = |environment| {
+            let settings = reader(&pairs, environment);
+            let _: u32 = settings.parsed("UPSTREAM_RETRIES", 3);
+            let _ = settings.flag("UPSTREAM_GZIP", false);
+            let _ = settings.required("UPSTREAM_URL");
+            settings.problem("UPSTREAM_REGION is not served");
+            settings.finish()
+        };
+        let error = read(&Environment::Production).unwrap_err().to_string();
+        for name in [
+            "UPSTREAM_RETRIES",
+            "UPSTREAM_GZIP",
+            "UPSTREAM_URL is required",
+            "UPSTREAM_REGION",
+        ] {
+            assert!(error.contains(name), "{name} in {error}");
+        }
+        let warnings = read(&Environment::Development).unwrap();
+        assert_eq!(warnings.len(), 4, "{warnings:?}");
+    }
+
+    #[test]
+    fn a_services_secret_is_never_quoted() {
+        let pairs = [("UPSTREAM_TOKEN_LENGTH", "hunter2")];
+        let settings = reader(&pairs, &Environment::Development);
+        let _: u32 = settings.parsed("UPSTREAM_TOKEN_LENGTH", 1);
+        settings.invalid("UPSTREAM_URL", "https://me:hunter2@upstream", "reachable");
+        let warnings = settings.finish().unwrap().join("; ");
+        assert!(warnings.contains("UPSTREAM_TOKEN_LENGTH"), "{warnings}");
+        assert!(!warnings.contains("hunter2"), "{warnings}");
+        assert!(!settings_debug().contains("hunter2"));
+    }
+
+    /// The `Debug` text of settings that hold a secret.
+    fn settings_debug() -> String {
+        let pairs = [("UPSTREAM_TOKEN", "hunter2")];
+        format!("{:?}", reader(&pairs, &Environment::Development))
+    }
+
+    #[test]
+    fn a_secret_may_come_from_a_file() {
+        let file = SecretFile::new("secret-file", "hunter2\r\n");
+        let pairs = [("UPSTREAM_TOKEN_FILE", file.path())];
+        let settings = reader(&pairs, &Environment::Production);
+        assert_eq!(
+            settings.secret("UPSTREAM_TOKEN").as_deref(),
+            Some("hunter2")
+        );
+        assert_eq!(settings.finish().unwrap(), Vec::<String>::new());
+
+        let pairs = [("UPSTREAM_TOKEN", "hunter2")];
+        let settings = reader(&pairs, &Environment::Production);
+        assert_eq!(
+            settings.required_secret("UPSTREAM_TOKEN").as_deref(),
+            Some("hunter2")
+        );
+        assert!(settings.finish().is_ok());
+    }
+
+    #[test]
+    fn a_secret_set_twice_or_unreadable_is_refused() {
+        let file = SecretFile::new("secret-twice", "hunter2");
+        let twice = [
+            ("UPSTREAM_TOKEN", "hunter3"),
+            ("UPSTREAM_TOKEN_FILE", file.path()),
+        ];
+        let settings = reader(&twice, &Environment::Production);
+        assert_eq!(settings.required_secret("UPSTREAM_TOKEN"), None);
+        let error = settings.finish().unwrap_err().to_string();
+        assert!(error.contains("both set"), "{error}");
+        assert!(!error.contains("hunter"), "{error}");
+        assert!(!error.contains("required"), "{error}");
+
+        let missing = [("UPSTREAM_TOKEN_FILE", "/no/such/axa/secret")];
+        let settings = reader(&missing, &Environment::Production);
+        assert_eq!(settings.secret("UPSTREAM_TOKEN"), None);
+        let error = settings.finish().unwrap_err().to_string();
+        assert!(error.contains("/no/such/axa/secret"), "{error}");
+    }
+
+    #[test]
+    fn a_required_secret_that_is_unset_or_blank_is_a_problem() {
+        let blank = SecretFile::new("secret-blank", " \n");
+        for pairs in [vec![], vec![("UPSTREAM_TOKEN_FILE", blank.path())]] {
+            let settings = reader(&pairs, &Environment::Production);
+            assert_eq!(settings.required_secret("UPSTREAM_TOKEN"), None);
+            let error = settings.finish().unwrap_err().to_string();
+            assert!(
+                error.contains("UPSTREAM_TOKEN or UPSTREAM_TOKEN_FILE is required"),
+                "{error}"
+            );
+        }
+        let settings = reader(&[], &Environment::Production);
+        assert_eq!(settings.secret("UPSTREAM_TOKEN"), None);
+        assert!(settings.finish().is_ok());
+    }
+
+    #[test]
+    fn the_database_url_may_come_from_a_file() {
+        let file = SecretFile::new("db-url-file", "postgres://me:hunter2@localhost/svc\n");
+        let config = with(&[("DB_URL_FILE", file.path())], &Environment::Production).unwrap();
+        assert_eq!(config.database.uri, "postgres://me:hunter2@localhost/svc");
+        let both = [
+            ("DB_URL", "postgres://localhost/svc"),
+            ("DB_URL_FILE", file.path()),
+        ];
+        let error = with(&both, &Environment::Production)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("DB_URL and DB_URL_FILE"), "{error}");
+        assert!(!error.contains("hunter2"), "{error}");
     }
 }

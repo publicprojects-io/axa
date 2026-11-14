@@ -141,7 +141,7 @@ HTTP_COMPRESSION=false
 
 | Field | Environment Variable | Default | Description |
 |-------|---------------------|---------|-------------|
-| `url` | `DATABASE_URL` | Computed from defaults | Connection string |
+| `uri` | `DB_URL`, or a file `DB_URL_FILE` names | Computed from defaults | Connection string. Setting both is refused |
 | `min_connections` | `DB_MIN_CONNECTIONS` | 1 | Minimum pool connections |
 | `max_connections` | `DB_MAX_CONNECTIONS` | 10 | Maximum pool connections |
 | `connect_timeout` | `DB_CONNECT_TIMEOUT` | 5000 ms | Connection timeout |
@@ -383,6 +383,34 @@ DATABASE_URL=
 ```
 
 In development and test, invalid values fall back to defaults with a warning.
+
+---
+
+## A Service's Own Settings
+
+`config::Settings` reads a service's own variables with the same rules: a blank value
+counts as unset, an invalid one is a problem, every problem is named at once, and no
+secret is quoted. `finish` refuses a production-like boot with any problem, and elsewhere
+gives the problems back as warnings.
+
+```rust
+use axa::{Environment, config::Settings};
+
+let environment = Environment::from_env();
+let settings = Settings::from_env(&environment);
+let upstream = settings.required("UPSTREAM_URL");
+let retries: u32 = settings.parsed("UPSTREAM_RETRIES", 3);
+let token = settings.required_secret("UPSTREAM_TOKEN");
+for warning in settings.finish()? {
+    tracing::warn!("{warning}");
+}
+```
+
+A secret, read with `secret` or `required_secret`, may instead come from a file that
+`{NAME}_FILE` names, as a mounted Kubernetes or Docker secret is. The file's last line
+ending is dropped. Setting both `NAME` and `NAME_FILE`, or naming a file that cannot be
+read, is a problem. `DB_URL` reads the same way, from `DB_URL_FILE`, and either mistake
+there stops the boot in every environment.
 
 ---
 
