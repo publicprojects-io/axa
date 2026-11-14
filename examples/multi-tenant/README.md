@@ -96,9 +96,9 @@ cargo test
 ```
 
 The tests mint tokens with `axa_test::paseto::TestKeys`, a throwaway key, and check that
-a caller with no tenant is
-refused before the database is asked. The test that one tenant never sees another's
-rows needs Postgres, as a role row-level security applies to:
+a caller with no tenant is refused before the database is asked. The test that one
+tenant never sees another's rows needs Postgres, as a role row-level security applies
+to:
 
 ```sh
 AXA_TEST_DB_URL=postgres://todo_app:todo_app@localhost:5432/multi_tenant_test cargo test -- --ignored
