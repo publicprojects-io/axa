@@ -412,7 +412,7 @@
     {
       "name": "axa-test",
       "version": "0.3.0",
-      "description": "Request-level test helpers for Axa services, built on axum-test.",
+      "description": "Request-level test helpers for Axa services, built on axum-test, with a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
     },

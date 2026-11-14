@@ -7,6 +7,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`axa_test::postgres::TestDatabase`**, behind `axa-test`'s new `postgres-sqlx`
+  feature (TST-5 to TST-7): a Postgres database for each test, cloned from a template
+  migrated once and named for its migrations, dropped by `close` or by the guard, with
+  any left by an ended run swept by the next.
 - **`axa::upload`, behind the new `upload` feature** (UPL-1 to UPL-4): `upload::read`
   takes Axum's `Multipart` and holds it to `Limits` on the total, each file, each text
   field, text in memory, and the number of parts and files, as `413` problems naming

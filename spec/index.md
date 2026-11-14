@@ -497,6 +497,9 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | TST-2 | `axa-test` | A request test on a service that cannot boot fails, and its body never runs. | `a_request_test_on_a_service_that_cannot_boot_fails` |
 | TST-3 | `axa-test` | `isolation::assert_hidden` sends each probe with another tenant's headers and fails, naming every wrong one, when a probe of a resource answers other than `404`, a `403` among them, or a list fails or shows the owner's text. | `routes_that_keep_tenants_apart_pass`, `a_403_tells_another_tenant_the_id_exists`, `a_list_that_shows_another_tenants_id_fails`, `the_owner_is_not_another_tenant` |
 | TST-4 | `axa-test` | With the `paseto` feature, `paseto::TestKeys` signs PASETO tokens with the attributes a test names, which a verifier from the same keys accepts through `axa-paseto-auth`'s guard, and which a token from another key, for another audience, or past its expiry is not. | `a_test_token_reaches_the_handler_with_its_tenant`, `another_tenant_sees_nothing_of_acmes`, `tokens_the_guard_must_refuse_are_refused` |
+| TST-5 | `axa-test` | With the `postgres-sqlx` feature, `postgres::TestDatabase::new` gives each call a database of its own, cloned from a template its migrator migrated once, under a name the migrations decide, so each sees none of the others' rows. Many starting at once build the template once. | `each_test_gets_a_migrated_database_of_its_own`, `many_tests_starting_together_share_one_template`, `a_template_name_follows_the_migrations` |
+| TST-6 | `axa-test` | `close` drops the database and waits. A guard dropped without it, panicking or not, has its database dropped on a thread of its own, without blocking the test's runtime. `new` sweeps clones over two minutes old that no session is using. | `the_database_is_dropped_by_close_or_with_the_guard_even_on_a_panic`, `a_clone_name_says_when_it_was_made` |
+| TST-7 | `axa-test` | A migration that fails leaves no template, finished or partial. A changed migration gets another template, and `drop_templates` drops every template but the one it keeps. | `a_failed_migration_leaves_no_template`, `changed_migrations_get_another_template_and_old_ones_can_be_dropped` |
 
 ### 4.14 Databases
 
@@ -912,6 +915,7 @@ AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test --features postgres-sqlx --test row_security -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --features postgres-sqlx --test stale_plan -- --ignored
+AXA_TEST_DB_URL=postgres://... cargo test -p axa-test --features postgres-sqlx -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1

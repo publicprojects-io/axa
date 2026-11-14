@@ -133,6 +133,7 @@ jobs:
           cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
           cargo test --features postgres-sqlx --test row_security -- --ignored
           cargo test --features postgres-sqlx --test stale_plan -- --ignored
+          cargo test -p axa-test --features postgres-sqlx -- --ignored
           cargo test --features outbox --test outbox_shutdown -- --ignored
           cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
           cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
