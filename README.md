@@ -683,7 +683,8 @@ apply. `Cache::for_tenant` keeps one tenant's cached answers from another. See
 `axa::http_client::Client` fetches a URL someone else chose without letting it reach a
 private, loopback, or cloud metadata address, as checked after its own DNS lookup and on
 every redirect. `axa::webhooks` signs and verifies Standard Webhooks deliveries, and its
-`Verified` extractor runs a handler only for a delivery signed by a key it knows. See
+`Verified` extractor runs a handler only for a delivery signed by a key it knows, with
+the `Verifier` in `ctx.shared_store`. See
 [`examples/webhooks`](examples/webhooks).
 
 ## Requirements

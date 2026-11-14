@@ -27,19 +27,16 @@ use axa::{
     logger,
     prelude::*,
     server,
-    webhooks::{Signer, SigningKey, Verifier},
+    webhooks::{Signer, SigningKey, Verified, Verifier},
 };
-use axum::{
-    body::Bytes,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-};
+use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 /// The most of a subscriber's answer this reads.
 const MAX_ANSWER_BYTES: usize = 64_000;
 
-/// What the webhook routes share, kept in `AppContext::shared_store`.
+/// What the webhook routes share, kept in `AppContext::shared_store`. The verifier goes
+/// there on its own as well, where `Verified` looks for it.
 struct Hooks {
     signer: Signer,
     verifier: Verifier,
@@ -73,20 +70,9 @@ struct Event {
     kind: String,
 }
 
-/// Take a delivery from the billing provider. Verify first, and parse only what was
-/// signed.
-async fn billing(
-    State(ctx): State<AppContext>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Response> {
-    let Some(hooks) = ctx.shared_store.get_ref::<Hooks>() else {
-        return Err(axa::Error::InternalServerError);
-    };
-    let delivery = match hooks.verifier.verify(&headers, &body) {
-        Ok(delivery) => delivery,
-        Err(refusal) => return Ok(refusal.into_response()),
-    };
+/// Take a delivery from the billing provider. `Verified` runs this only for a delivery
+/// signed by the key in `WEBHOOK_SECRET`, so it parses only what was signed.
+async fn billing(Verified { delivery, body }: Verified) -> Result<Response> {
     let Ok(event) = serde_json::from_slice::<Event>(&body) else {
         return bad_request("the delivery is not a billing event");
     };
@@ -211,6 +197,7 @@ fn settings(
 /// The app for `environment`, with `hooks` in its shared store.
 fn app(environment: Environment, config: Config, hooks: Hooks) -> Result<axum::Router> {
     let ctx = AppContext::new(environment, (), config);
+    ctx.shared_store.insert(hooks.verifier.clone());
     ctx.shared_store.insert(hooks);
     routes().into_app(ctx)
 }
@@ -228,7 +215,10 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http::Request};
+    use axum::{
+        body::Body,
+        http::{HeaderMap, Request},
+    };
     use tower::ServiceExt;
 
     const SECRET: &str = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";

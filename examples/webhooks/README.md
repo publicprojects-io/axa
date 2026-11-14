@@ -19,15 +19,18 @@ without printing the value.
 
 ## Receiving: `POST /hooks/billing`
 
-The handler verifies before it reads anything:
+The handler takes `Verified`, so it runs only for a verified delivery, and reads only
+the body that was signed:
 
 ```rust,ignore
-let delivery = match hooks.verifier.verify(&headers, &body) {
-    Ok(delivery) => delivery,
-    Err(refusal) => return Ok(refusal.into_response()),
-};
-let event: Event = serde_json::from_slice(&body)?;
+async fn billing(Verified { delivery, body }: Verified) -> Result<Response> {
+    let event: Event = serde_json::from_slice(&body)?;
+    // ...
+}
 ```
+
+`Verified` finds the `Verifier` in `ctx.shared_store`, where `app` puts it. Were it
+missing, every delivery would be refused with a `500`, code `webhook_verifier_missing`.
 
 | The delivery | The answer |
 |---|---|
@@ -39,10 +42,6 @@ let event: Event = serde_json::from_slice(&body)?;
 A delivery may come twice within the window, as a retry or a replay. A real service
 keeps the ids it has handled for at least five minutes, and does nothing for an id it
 has seen.
-
-`axa::webhooks::Verified` is an extractor that does the same, for a router whose
-state holds the `Verifier`. With Axa's `AppContext` as the state, a service cannot add
-that, so this example keeps the verifier in `ctx.shared_store` and calls `verify`.
 
 ## Sending: `POST /api/notify`
 

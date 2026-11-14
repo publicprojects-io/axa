@@ -373,6 +373,9 @@ pub enum Refusal {
     /// No signature listed is one of the verifier's keys' for this delivery. Code
     /// `webhook_signature_invalid`.
     NoValidSignature,
+    /// The verifier has no key, as when the service set none, so nothing can verify.
+    /// A `500`, code `webhook_verifier_missing`, as the fault is the service's.
+    NoKey,
 }
 
 impl fmt::Display for Refusal {
@@ -382,6 +385,7 @@ impl fmt::Display for Refusal {
             Self::MalformedHeader(name) => write!(f, "the {name} header is malformed"),
             Self::OutOfWindow => f.write_str("the webhook timestamp is too far from now"),
             Self::NoValidSignature => f.write_str("no webhook signature is valid"),
+            Self::NoKey => f.write_str("no webhook verifying key is set"),
         }
     }
 }
@@ -395,6 +399,7 @@ impl Refusal {
         match self {
             Self::MissingHeader(_) | Self::MalformedHeader(_) => StatusCode::BAD_REQUEST,
             Self::OutOfWindow | Self::NoValidSignature => StatusCode::UNAUTHORIZED,
+            Self::NoKey => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -405,6 +410,7 @@ impl Refusal {
             Self::MissingHeader(_) | Self::MalformedHeader(_) => "webhook_headers_invalid",
             Self::OutOfWindow => "webhook_timestamp_out_of_range",
             Self::NoValidSignature => "webhook_signature_invalid",
+            Self::NoKey => "webhook_verifier_missing",
         }
     }
 }
@@ -435,6 +441,23 @@ impl Verifier {
         }
     }
 
+    /// A verifier with no key, which refuses every delivery with [`Refusal::NoKey`]: what
+    /// a state hands [`Verified`] when the service set no verifier, so that a missing key
+    /// fails closed. [`Verifier::and`] adds a key to it.
+    #[must_use]
+    pub fn without_keys() -> Self {
+        Self {
+            keys: Vec::new(),
+            tolerance: DEFAULT_TOLERANCE,
+        }
+    }
+
+    /// Whether it has a key, and so can verify anything.
+    #[must_use]
+    pub fn has_keys(&self) -> bool {
+        !self.keys.is_empty()
+    }
+
     /// Accept a signature by `key` as well, as while a key rotates.
     #[must_use]
     pub fn and(mut self, key: VerifyingKey) -> Self {
@@ -462,7 +485,8 @@ impl Verifier {
     ///
     /// # Errors
     ///
-    /// Refuses a missing or malformed header, a timestamp further from `now` than the
+    /// Refuses every delivery when it has no key. Otherwise refuses a missing or
+    /// malformed header, a timestamp further from `now` than the
     /// tolerance, and a delivery where no signature listed, of up to
     /// [`MAX_SIGNATURES`], is one of this verifier's keys'. A signature of a version it
     /// does not know is passed over, as Standard Webhooks says.
@@ -472,6 +496,9 @@ impl Verifier {
         body: &[u8],
         now: u64,
     ) -> Result<Delivery, Refusal> {
+        if self.keys.is_empty() {
+            return Err(Refusal::NoKey);
+        }
         let header = |name: &'static str| {
             headers
                 .get(name)
@@ -862,5 +889,25 @@ mod tests {
             body.contains(r#""code":"webhook_timestamp_out_of_range""#),
             "{body}"
         );
+    }
+
+    #[test]
+    fn a_verifier_without_keys_refuses_every_delivery() {
+        let verifier = Verifier::without_keys();
+        assert!(!verifier.has_keys());
+        let headers = Signer::new(key(SECRET))
+            .headers_now("msg_1", b"{}")
+            .unwrap();
+        let refusal = verifier.verify(&headers, b"{}").unwrap_err();
+        assert_eq!(refusal, Refusal::NoKey);
+        assert_eq!(refusal.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(refusal.code(), "webhook_verifier_missing");
+        assert_eq!(
+            verifier.verify(&HeaderMap::new(), b"").unwrap_err(),
+            Refusal::NoKey
+        );
+        let verifier = Verifier::without_keys().and(key(SECRET).verifying_key());
+        assert!(verifier.has_keys());
+        assert!(verifier.verify(&headers, b"{}").is_ok());
     }
 }

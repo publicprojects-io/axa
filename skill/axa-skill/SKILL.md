@@ -514,8 +514,8 @@ path)`, without booting anything.
   every redirect. Read the body with `bytes_limited`. Never reach such a URL with a
   plain `reqwest::Client`, which goes wherever it is pointed.
 - Sign a webhook with `axa::webhooks::Signer` and send its headers, with the same id on
-  every retry. Verify one by taking `Verified` in the handler with the `Verifier` in
-  the state; the body it gives is exactly what was signed. Record each delivery id for
+  every retry. Verify one by taking `Verified` in the handler, with the `Verifier`
+  put in `ctx.shared_store` (or in a state of the service's own); the body it gives is exactly what was signed. Record each delivery id for
   the five-minute window, as a delivery may be sent twice within it.
 
 ## Observability

@@ -5,6 +5,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+This covers `axa` and `axa-webhooks` 0.1.1.
+
+### Added
+
+- **`Verified` with `AppContext`** (WHK-7): with the `webhooks` feature, the
+  `axa::webhooks::Verified` extractor works on Axa's own state, taking the `Verifier`
+  from `ctx.shared_store`. In 0.13.0 a service had to call `verify` itself. With no
+  verifier there, every delivery is refused with a `500`, code
+  `webhook_verifier_missing`, and an error is logged.
+- **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
+  `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
+  `500`, rather than letting one through.
+
 ## [0.13.0] - 2026-11-14
 
 This covers `axa` 0.13.0, `axa-postgres-sqlx` 0.2.0, `axa-postgres-seaorm` 0.4.0,

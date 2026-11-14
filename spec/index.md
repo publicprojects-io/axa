@@ -505,6 +505,8 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | WHK-3 | `axa-webhooks` | A timestamp further from now than the tolerance, five minutes by default, either way, is refused, and a missing or malformed header is refused before any signature is checked. | `a_timestamp_outside_the_window_is_refused_either_way`, `malformed_headers_are_refused_before_any_signature_is_checked` |
 | WHK-4 | `axa-webhooks` | Keys parse from `whsec_`, `whsk_`, and `whpk_` only, at the lengths each has, a `whsk_` key's public half must match it, and no key's `Debug` text holds it. | `keys_parse_strictly_and_never_print` |
 | WHK-5 | `axa-webhooks` | The `Verified` extractor runs the handler only for a verified delivery, with its body as signed, and otherwise answers a problem quoting nothing sent: `400` `webhook_headers_invalid`, `401` `webhook_signature_invalid`, or `401` `webhook_timestamp_out_of_range`. | `the_extractor_runs_the_handler_only_for_a_verified_delivery` |
+| WHK-6 | `axa-webhooks` | A verifier with no key, from `Verifier::without_keys`, refuses every delivery, before reading any header, with `500` `webhook_verifier_missing`, as the fault is the service's. | `a_verifier_without_keys_refuses_every_delivery` |
+| WHK-7 | `axa` | With the `webhooks` feature, `Verified` works with `AppContext` as the state, taking the `Verifier` from `shared_store`. With none there, or one with no key, it refuses every delivery as WHK-6 says and logs an error. | `verified_takes_its_verifier_from_the_shared_store_and_fails_closed` |
 
 ### 4.14 Databases
 

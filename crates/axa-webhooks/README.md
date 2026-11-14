@@ -50,6 +50,12 @@ nothing that was sent:
 | A header is missing or malformed | `400` | `webhook_headers_invalid` |
 | The timestamp is outside the window | `401` | `webhook_timestamp_out_of_range` |
 | No signature verifies | `401` | `webhook_signature_invalid` |
+| The verifier has no key | `500` | `webhook_verifier_missing` |
+
+A state that may have no verifier hands `Verified` one from `Verifier::without_keys()`,
+which refuses every delivery, so that a missing key fails closed. With Axa's
+`AppContext` as the state, `Verified` takes the verifier from `ctx.shared_store`, and
+does that when none is there.
 
 The window stops a delivery being replayed later, but not within the window. A receiver
 that must act once per delivery records each `delivery.id` it handles, for at least as

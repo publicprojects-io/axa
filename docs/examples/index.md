@@ -1039,8 +1039,9 @@ async fn billing(Verified { delivery, body }: Verified) -> Result<Response> {
 }
 ```
 
-With `AppContext` as the state, keep the `Verifier` in `ctx.shared_store` and call
-`verifier.verify(&headers, &body)` in the handler instead.
+With `AppContext` as the state, put the `Verifier` in the shared store once, with
+`ctx.shared_store.insert(verifier)`. If none is there, every delivery is refused with a
+`500`, code `webhook_verifier_missing`, and an error is logged.
 
 ### Fetching a URL Someone Else Chose
 

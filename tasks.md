@@ -27,57 +27,57 @@ made `http-body-util` a direct dependency, which every build already had, and ch
 
 ## Stage 2: capabilities with a clear safety case
 
-T-13 is done, unreleased. An origin CORS lists passes the guard, and the per-route opt-out
+T-13 is done, in 0.13.0. An origin CORS lists passes the guard, and the per-route opt-out
 is `Http::cross_site_paths`, matched exactly, as a route layer runs too late to stop a
 handler that the guard, outside routing, has already let through.
 
-T-15 is done, unreleased, as `format::download`, `format::content_disposition`, and
+T-15 is done, in 0.13.0, as `format::download`, `format::content_disposition`, and
 `format::clean_file_name`, which T-14 can use for an upload's name.
 
-T-43 is done, unreleased, as `Tenant` in both auth crates, and `examples/multi-tenant`
+T-43 is done, in 0.13.0, as `Tenant` in both auth crates, and `examples/multi-tenant`
 uses it.
 
-T-45 is done, unreleased, with any Postgres database feature, as
+T-45 is done, in 0.13.0, with any Postgres database feature, as
 `axa::db::require_row_security`.
 
-T-47 is done, unreleased, as `Cache::for_tenant` in `axa-redis-cache`.
+T-47 is done, in 0.13.0, as `Cache::for_tenant` in `axa-redis-cache`.
 
-T-46 is done, unreleased: `axa_test::isolation::assert_hidden`, and
+T-46 is done, in 0.13.0: `axa_test::isolation::assert_hidden`, and
 `axa_test::paseto::TestKeys` behind the `paseto` feature.
 
-T-44 is done, unreleased, in all four Postgres crates: `begin_with` for sqlx, SeaORM, and
+T-44 is done, in 0.13.0, in all four Postgres crates: `begin_with` for sqlx, SeaORM, and
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
 MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
 
-T-17 is done, unreleased, for the four Postgres crates. MySQL has its own forms of each,
+T-17 is done, in 0.13.0, for the four Postgres crates. MySQL has its own forms of each,
 and they wait for a service that asks.
 
-T-19 is done, unreleased, as `Checks::migrations`, `Checks::migrated`, and
+T-19 is done, in 0.13.0, as `Checks::migrations`, `Checks::migrated`, and
 `server::run_once_migrated`, for any database, as the service passes its crate's
 `pending`.
 
-T-11 is done, unreleased, as `axa-http-client`, the `http-client` feature, with its
+T-11 is done, in 0.13.0, as `axa-http-client`, the `http-client` feature, with its
 threat model in spec section 4.23.
 
-T-12 is done, unreleased, as `axa-webhooks`, the `webhooks` feature.
+T-12 is done, in 0.13.0, as `axa-webhooks`, the `webhooks` feature.
 
-T-16 is done, unreleased, for `axa-postgres-sqlx`, as a database per test cloned from
+T-16 is done, in 0.13.0, for `axa-postgres-sqlx`, as a database per test cloned from
 a template database rather than a schema per test: Postgres copies a database whole,
 and cannot copy a schema.
 
-T-14 is done, unreleased, as `axa::upload` behind the `upload` feature, with
+T-14 is done, in 0.13.0, as `axa::upload` behind the `upload` feature, with
 `tempfile`.
 
-T-22 is done, unreleased, as a `pointer` in the problem's `errors` for a `422` JSON
+T-22 is done, in 0.13.0, as a `pointer` in the problem's `errors` for a `422` JSON
 body (ERR-15), for Axa's `Json` and Axum's alike.
 
-T-21 is done, unreleased, as `config::Settings`, with `_FILE` secrets for a service's
+T-21 is done, in 0.13.0, as `config::Settings`, with `_FILE` secrets for a service's
 own settings and for `DB_URL`.
 
-T-18 is done, unreleased, as `note_stale_plan` and a `before_acquire` hook in every pool
+T-18 is done, in 0.13.0, as `note_stale_plan` and a `before_acquire` hook in every pool
 `axa_postgres_sqlx::connect` opens.
 
-T-20 is done, unreleased, with `tower-http`'s `decompression-full`, which adds no crate
+T-20 is done, in 0.13.0, with `tower-http`'s `decompression-full`, which adds no crate
 the build did not have.
 
 | Id | Task | Where | Effort | New dependency | Sources |

@@ -48,26 +48,13 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Next: Version 0.13.0
+## Next: Version 0.13.1
 
-### Stage 2: Capabilities with Clear Safety Cases
+- `axa::webhooks::Verified` with `AppContext` as the state, taking the `Verifier` from
+  `ctx.shared_store` and failing closed without one (WHK-6, WHK-7), with
+  `axa-webhooks` 0.1.1
 
-High priority, no new dependencies:
-
-- **T-17**: Per-connection database settings (`statement_timeout`, `application_name`, read-only mode)
-- **T-18**: Recovery from stale prepared statements
-- **T-19**: Readiness waits for migrations (pending migrations cause `/_health/ready` to fail)
-- **T-20**: Request body decompression with limit on decoded bytes
-
-Medium priority:
-
-- **T-11**: Outbound HTTP client that refuses private addresses (`axa-http-client` crate)
-- **T-12**: Webhook signing and verifying (`axa-webhooks` crate)
-- **T-14**: Bounded multipart uploads with limits and file spooling
-- **T-15**: Safe `Content-Disposition` for downloads
-- **T-16**: Database per test in `axa-test`
-- **T-21**: Public settings reader for service's own variables
-- **T-22**: Field paths in JSON body errors
+Stages 1 and 2 are done. What is left waits under P-2, below.
 
 ---
 

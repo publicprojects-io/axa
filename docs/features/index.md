@@ -287,7 +287,8 @@ Sending a file back needs no feature: `format::download` sets a safe
 The `webhooks` feature provides:
 - `Signer`, signing with HMAC-SHA256 or Ed25519 keys, several while one rotates
 - `Verifier`, accepting a delivery signed by a key it knows within five minutes
-- `Verified`, an extractor that runs a handler only for a verified delivery
+- `Verified`, an extractor that runs a handler only for a verified delivery, taking
+  the `Verifier` from `ctx.shared_store` with `AppContext` as the state
 
 ---
 

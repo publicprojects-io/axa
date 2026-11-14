@@ -206,3 +206,84 @@ impl AppContext {
         Self::new(environment, test_db(), config)
     }
 }
+
+/// With the `webhooks` feature, [`axa_webhooks::Verified`] takes its verifier from the
+/// context's `shared_store`, where the service puts it with
+/// `ctx.shared_store.insert(verifier)`. Without one there, every delivery is refused
+/// with a `500`, code `webhook_verifier_missing`, and an error logged, so that a service
+/// that forgot its key fails closed and is seen to.
+#[cfg(feature = "webhooks")]
+impl axum::extract::FromRef<AppContext> for axa_webhooks::Verifier {
+    fn from_ref(ctx: &AppContext) -> Self {
+        ctx.shared_store
+            .get::<Self>()
+            .filter(Self::has_keys)
+            .unwrap_or_else(|| {
+                tracing::error!(
+                    "a webhook delivery arrived, but no Verifier with a key is in the \
+                     shared store, so it is refused"
+                );
+                Self::without_keys()
+            })
+    }
+}
+
+#[cfg(all(test, feature = "webhooks"))]
+mod webhook_tests {
+    use axa_webhooks::{Signer, SigningKey, Verified, Verifier};
+    use axum::{Router, body::Body, http::Request, http::StatusCode, routing::post};
+    use tower::ServiceExt;
+
+    use super::AppContext;
+    use crate::{
+        Environment,
+        config::{Config, Defaults},
+    };
+
+    fn router(verifier: Option<Verifier>) -> Router {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let ctx = AppContext::for_test(Environment::Test, config);
+        if let Some(verifier) = verifier {
+            ctx.shared_store.insert(verifier);
+        }
+        Router::new()
+            .route(
+                "/hook",
+                post(|verified: Verified| async move { verified.delivery.id }),
+            )
+            .with_state(ctx)
+    }
+
+    async fn deliver(router: Router, signer: &Signer) -> (StatusCode, String) {
+        let mut request = Request::post("/hook").body(Body::from("{}")).unwrap();
+        *request.headers_mut() = signer.headers_now("msg_1", b"{}").unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    #[tokio::test]
+    async fn verified_takes_its_verifier_from_the_shared_store_and_fails_closed() {
+        let key: SigningKey = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw".parse().unwrap();
+        let signer = Signer::new(key.clone());
+
+        let set = router(Some(Verifier::new(key.verifying_key())));
+        assert_eq!(
+            deliver(set, &signer).await,
+            (StatusCode::OK, "msg_1".into())
+        );
+
+        for unset in [router(None), router(Some(Verifier::without_keys()))] {
+            let (status, body) = deliver(unset, &signer).await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert!(body.contains("webhook_verifier_missing"), "{body}");
+        }
+    }
+}

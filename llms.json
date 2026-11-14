@@ -380,7 +380,7 @@
     },
     {
       "name": "axa-webhooks",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Standard Webhooks signing and verifying, with HMAC-SHA256 and Ed25519 keys, for Axum services.",
       "feature": "webhooks",
       "readme": "crates/axa-webhooks/README.md"
