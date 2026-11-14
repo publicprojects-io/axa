@@ -7,8 +7,9 @@
 use std::{fmt, sync::Arc};
 
 use axum::{
-    extract::FromRequestParts,
+    extract::{FromRequestParts, Request, State},
     http::{Extensions, StatusCode, request::Parts},
+    middleware::Next,
     response::{IntoResponse, Response},
 };
 
@@ -152,4 +153,84 @@ fn tenant_of(parts: &Parts) -> Result<Tenant, TenantRejection> {
         );
     }
     tenant
+}
+
+/// The check [`refuse_suspended`] asks of each verified tenant: `true` when the tenant
+/// is suspended. The service passes it in, as suspension belongs to the service that
+/// issues tokens, while a token already issued lives until it expires.
+///
+/// The check runs on every request, so it should answer from memory, such as a set
+/// the service keeps fresh from its issuer's events or by polling, and never wait on
+/// the network.
+///
+/// ```
+/// use std::{collections::HashSet, sync::{Arc, RwLock}};
+///
+/// use axa_keycloak_auth::SuspendedCheck;
+///
+/// let suspended: Arc<RwLock<HashSet<String>>> = Arc::default();
+/// let list = Arc::clone(&suspended);
+/// let check = SuspendedCheck::new(move |tenant| {
+///     // A poisoned lock fails closed: every tenant is refused until it is fixed.
+///     list.read().map_or(true, |list| list.contains(tenant.as_str()))
+/// });
+/// suspended.write().unwrap().insert("acme".to_string());
+/// ```
+#[derive(Clone)]
+pub struct SuspendedCheck(Arc<dyn Fn(&Tenant) -> bool + Send + Sync>);
+
+impl SuspendedCheck {
+    /// A check that calls `is_suspended` for each verified tenant.
+    pub fn new(is_suspended: impl Fn(&Tenant) -> bool + Send + Sync + 'static) -> Self {
+        Self(Arc::new(is_suspended))
+    }
+
+    /// Whether `tenant` is suspended.
+    #[must_use]
+    pub fn is_suspended(&self, tenant: &Tenant) -> bool {
+        (self.0)(tenant)
+    }
+}
+
+impl fmt::Debug for SuspendedCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SuspendedCheck").finish_non_exhaustive()
+    }
+}
+
+/// Middleware refusing a caller whose tenant [`SuspendedCheck`] says is suspended, as
+/// `403`, code `tenant_suspended`, with an audit line naming the subject and tenant.
+/// Add it inside the guard, as the tenant is known only once the guard has verified
+/// the token:
+///
+/// ```ignore
+/// routes
+///     .layer(from_fn_with_state(check, axa_keycloak_auth::refuse_suspended))
+///     .layer(from_fn_with_state(Arc::new(guard), axa_keycloak_auth::middleware))
+/// ```
+///
+/// A request with no tenant, as on a public path, passes on, for the handler's
+/// [`Tenant`] to refuse as it would.
+pub async fn refuse_suspended(
+    State(check): State<SuspendedCheck>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if let Ok(tenant) = Tenant::from_extensions(request.extensions())
+        && check.is_suspended(&tenant)
+    {
+        let subject = request
+            .extensions()
+            .get::<Allowed>()
+            .map(|allowed| allowed.claims.sub.clone());
+        tracing::warn!(
+            status = 403,
+            subject = subject.as_deref(),
+            tenant = tenant.as_str(),
+            reason = "tenant_suspended",
+            "auth_refused",
+        );
+        return problem_response(StatusCode::FORBIDDEN, "forbidden", "tenant_suspended");
+    }
+    next.run(request).await
 }

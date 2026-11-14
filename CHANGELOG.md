@@ -29,6 +29,10 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   `HTTP_LOG_TENANT=true`, the request span has a `tenant` field, which the auth crates'
   guards fill with the tenant they verified, so every log line for a request carries
   it. Off by default. No metric is labelled by tenant.
+- **A suspended tenant refused** (T-53, TN-11, PST-18, KCK-18): `refuse_suspended` in
+  both auth crates, layered inside the guard, asks a `SuspendedCheck` the service
+  passes in, and refuses a suspended tenant's callers with `403`, code
+  `tenant_suspended`, from their next request, with an audit line.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

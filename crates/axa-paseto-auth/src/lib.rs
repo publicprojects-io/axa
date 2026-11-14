@@ -49,7 +49,8 @@ use std::{future::Future, net::IpAddr, sync::Arc};
 
 mod tenant;
 pub use tenant::{
-    DEFAULT_TENANT_ATTRIBUTE, MAX_TENANT_ID_LEN, Tenant, TenantRejection, is_tenant_id,
+    DEFAULT_TENANT_ATTRIBUTE, MAX_TENANT_ID_LEN, SuspendedCheck, Tenant, TenantRejection,
+    is_tenant_id, refuse_suspended,
 };
 
 use authentication_verifier::{Action, Claims, Decision, ReloadablePolicy, ReloadableVerifier};
@@ -1150,6 +1151,53 @@ mod tests {
         let valid = token(&json!({ "org": ["acme"] }));
         let response = tenant_call(bare, "/api/tenant", Some(&valid)).await;
         assert_eq!(body_of(response).await, "Unauthenticated");
+    }
+
+    #[tokio::test]
+    async fn a_suspended_tenant_is_refused_from_its_next_request() {
+        use std::{collections::HashSet, sync::RwLock};
+
+        let suspended: Arc<RwLock<HashSet<String>>> = Arc::default();
+        let list = Arc::clone(&suspended);
+        let check = SuspendedCheck::new(move |tenant| {
+            list.read()
+                .map_or(true, |list| list.contains(tenant.as_str()))
+        });
+        let guard = Guard::new(
+            GuardConfig::new("place"),
+            verifier(),
+            Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+        );
+        let app = Router::new()
+            .route(
+                "/api/tenant",
+                get(|tenant: Tenant| async move { tenant.to_string() }),
+            )
+            .layer(from_fn_with_state(check, refuse_suspended))
+            .layer(from_fn_with_state(Arc::new(guard), middleware));
+        let acme = token(&json!({ "tenant": ["acme"] }));
+        let globex = token(&json!({ "tenant": ["globex"] }));
+        let call = |token: String| {
+            let app = app.clone();
+            async move {
+                let response = tenant_call(app, "/api/tenant", Some(&token)).await;
+                (response.status(), body_of(response).await)
+            }
+        };
+
+        assert_eq!(call(acme.clone()).await.0, StatusCode::OK);
+        suspended.write().unwrap().insert("acme".to_string());
+        let (status, body) = call(acme.clone()).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.contains(r#""code":"tenant_suspended""#), "{body}");
+        assert_eq!(call(globex).await, (StatusCode::OK, "globex".to_string()));
+        suspended.write().unwrap().remove("acme");
+        assert_eq!(call(acme).await.0, StatusCode::OK);
+
+        // No tenant: passed on, and refused by the extractor as ever.
+        let (status, body) = call(token(&json!({}))).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(body.contains(r#""code":"no_tenant""#), "{body}");
     }
 
     #[tokio::test]

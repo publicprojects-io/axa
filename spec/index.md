@@ -385,6 +385,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | PST-15 | `axa-paseto-auth` | A tenant id is lower-case ASCII letters, digits, and hyphens, 1 to 63 characters, not starting or ending with a hyphen, as a DNS label is. | `a_tenant_id_is_a_dns_label_in_lower_case` |
 | PST-16 | `axa-paseto-auth` | `Tenant::from_extensions` finds the tenant the extractor finds, from a request's extensions, for code inside the guard such as a limit's key, and writes no audit line. With no verified, allowed caller it is `Unauthenticated`. | `from_extensions_finds_the_tenant_the_extractor_finds` |
 | PST-17 | The guard records the tenant it verified, as PST-13 reads it, on the current span's `tenant` field, which records nothing where the span has none. A token with no tenant leaves the field empty and the request goes on. | `the_guard_records_the_tenant_only_where_the_span_asks` |
+| PST-18 | `refuse_suspended`, inside the guard, refuses a verified caller whose tenant the service's `SuspendedCheck` says is suspended, from its next request, as `403`, code `tenant_suspended`, with an audit line naming the subject and tenant and not the email. A request with no tenant passes on, for `Tenant` to refuse (TN-11). | `a_suspended_tenant_is_refused_from_its_next_request`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | DSL-1 | `axa-postgres-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-postgres-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-postgres-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
@@ -417,6 +418,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | KCK-15 | `axa-keycloak-auth` | A tenant id follows PST-15. | `a_tenant_id_is_a_dns_label_in_lower_case` |
 | KCK-16 | `axa-keycloak-auth` | `Tenant::from_extensions` follows PST-16. | `from_extensions_finds_the_tenant_the_extractor_finds` |
 | KCK-17 | The guard records the tenant as PST-17 says. | `the_guard_records_the_tenant_only_where_the_span_asks` |
+| KCK-18 | `refuse_suspended` follows PST-18. | `a_suspended_tenant_is_refused_from_its_next_request` |
 | RDS-7 | `axa-redis-cache` | A log line holds neither a key, which can name a person, nor a stored value. | `an_unreadable_entry_is_logged_without_its_key_or_value`, `a_failed_cache_write_is_logged_without_its_key_or_value`, `a_failed_read_is_logged_without_its_key` (Redis tests, the connection cut and Redis stalled) |
 | RDS-1 | `axa-redis-cache` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis-cache` | Prefixes keep services apart. | `prefixes_keep_services_apart` |

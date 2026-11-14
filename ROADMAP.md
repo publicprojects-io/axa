@@ -56,7 +56,7 @@ This document outlines the planned development path for axa. See
 - The rest of multi-tenancy, which three services asked for (T-48 to T-53):
   - A limit per tenant (T-49), done
   - A tenant on the request span, never a metrics label (T-51), done
-  - A suspended tenant refused with `403`, code `tenant_suspended` (T-53)
+  - A suspended tenant refused with `403`, code `tenant_suspended` (T-53), done
   - A cursor bound to the tenant (T-50)
   - A tenant on a job (T-48) and on an outbox event (T-52)
 

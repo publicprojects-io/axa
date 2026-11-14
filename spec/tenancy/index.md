@@ -123,6 +123,10 @@ inside the guard, where the tenant is known. Each replica counts for itself.
 runs, and the guard records the tenant it verified into it. A tenant is never a metrics
 label.
 
+**TN-11, a suspended tenant.** Done, unreleased, as T-53: PST-18 and KCK-18.
+`refuse_suspended` takes a `SuspendedCheck`, a function the service passes in, as
+suspension belongs to the issuer. It runs on every request, so it answers from memory.
+
 **TN-5, jobs.** `perform_later_in(&tenant, …)`, a nullable `tenant` column, and the tenant
 handed to the worker beside the arguments, so that the worker opens its own tenant
 transaction. Claiming stays fair across jobs, not tenants. Fair claiming per tenant is a

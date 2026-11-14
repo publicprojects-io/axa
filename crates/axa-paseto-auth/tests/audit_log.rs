@@ -10,7 +10,7 @@ use std::{
 };
 
 use authentication_verifier::{Policy, ReloadablePolicy, ReloadableVerifier, Verifier};
-use axa_paseto_auth::{Guard, GuardConfig, Tenant, middleware};
+use axa_paseto_auth::{Guard, GuardConfig, SuspendedCheck, Tenant, middleware, refuse_suspended};
 use axum::{
     Router,
     body::Body,
@@ -37,11 +37,15 @@ fn kid() -> String {
 
 /// Sign with `seed`, naming the real key, so that a wrong seed reaches the signature.
 fn sign(seed: &[u8; 32]) -> String {
+    sign_with(seed, &json!({}))
+}
+
+fn sign_with(seed: &[u8; 32], attrs: &serde_json::Value) -> String {
     let payload = json!({
         "sub": "11111111-1111-1111-1111-111111111111",
         "email": "alice@example.com", "name": "Alice",
         "iss": ISSUER, "aud": AUDIENCE,
-        "exp": 11_700_000_000_i64, "iat": 1_700_000_000, "sid": "test-sid", "attrs": {},
+        "exp": 11_700_000_000_i64, "iat": 1_700_000_000, "sid": "test-sid", "attrs": attrs,
     })
     .to_string();
     let key = Key::<64>::from(SigningKey::from_bytes(seed).to_keypair_bytes());
@@ -162,6 +166,33 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
     let line = log.take();
     assert!(line.contains("auth_refused"), "{line}");
     assert!(line.contains("reason=\"no_tenant\""), "{line}");
+    assert!(line.contains("subject=\"11111111-1111"), "{line}");
+    assert!(!line.contains("alice@example.com"), "{line}");
+
+    // A suspended tenant's refusal names who, the tenant, and why.
+    let guard = Guard::new(
+        GuardConfig::new("place"),
+        Arc::new(ReloadableVerifier::new(
+            Verifier::from_paseto_keys_value(&keys, ISSUER, AUDIENCE).unwrap(),
+        )),
+        Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+    );
+    let suspended = Router::new()
+        .route("/api/places", get(|| async { "ok" }))
+        .layer(from_fn_with_state(
+            SuspendedCheck::new(|tenant| tenant.as_str() == "acme"),
+            refuse_suspended,
+        ))
+        .layer(from_fn_with_state(Arc::new(guard), middleware));
+    let acme = sign_with(&SEED, &json!({ "tenant": ["acme"] }));
+    assert_eq!(
+        call(&suspended, "GET", Some(&acme)).await,
+        StatusCode::FORBIDDEN
+    );
+    let line = log.take();
+    assert!(line.contains(" WARN "), "{line}");
+    assert!(line.contains("reason=\"tenant_suspended\""), "{line}");
+    assert!(line.contains("tenant=\"acme\""), "{line}");
     assert!(line.contains("subject=\"11111111-1111"), "{line}");
     assert!(!line.contains("alice@example.com"), "{line}");
 

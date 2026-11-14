@@ -135,6 +135,9 @@ T-49 is done, unreleased, as RAT-16 and `Tenant::from_extensions` in both auth c
 T-51 is done, unreleased, as `HTTP_LOG_TENANT` (MID-30), with the guards recording the
 tenant (PST-17, KCK-17).
 
+T-53 is done, unreleased, as `refuse_suspended` and `SuspendedCheck` in both auth crates
+(PST-18, KCK-18).
+
 | Id | Task | Where | Effort | New dependency | Case |
 |---|---|---|---|---|---|
 | T-43 | A `Tenant` extractor from the verified token only (TN-1): exactly one value of a named attribute, `tenant` by default, a tenant-id syntax, `401` without a token, `403` code `no_tenant` otherwise, and no way to take it from a header, path, or host | `axa-paseto-auth`, `axa-keycloak-auth` | S | None | Safety |

@@ -124,7 +124,8 @@ pub use guard::{
 };
 pub use keycloak::{KeycloakSettings, KeycloakVerifier, settings_from_lookup};
 pub use tenant::{
-    DEFAULT_TENANT_ATTRIBUTE, MAX_TENANT_ID_LEN, Tenant, TenantRejection, is_tenant_id,
+    DEFAULT_TENANT_ATTRIBUTE, MAX_TENANT_ID_LEN, SuspendedCheck, Tenant, TenantRejection,
+    is_tenant_id, refuse_suspended,
 };
 
 /// Verified token claims. Mirrors the auth-service `Claims` exactly so a

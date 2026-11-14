@@ -675,7 +675,10 @@ For a service many tenants share, the tenant comes from the verified token and n
 else: a handler takes `axa::paseto::Tenant` or `axa::keycloak::Tenant`. On Postgres,
 `begin_with` runs a request's transaction with `app.tenant` set, for row-level security,
 and `axa::db::require_row_security` refuses to boot production when a policy could not
-apply. `Cache::for_tenant` keeps one tenant's cached answers from another. See
+apply. `Cache::for_tenant` keeps one tenant's cached answers from another. A limit keyed on
+`Tenant::from_extensions` keeps one tenant's burst from another's allowance,
+`refuse_suspended` refuses a suspended tenant's tokens before they expire, and
+`HTTP_LOG_TENANT` puts the tenant on every log line. See
 [`examples/multi-tenant`](examples/multi-tenant) and the
 [tenancy study](spec/tenancy/index.md).
 

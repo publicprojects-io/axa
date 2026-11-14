@@ -464,7 +464,10 @@ through `cache.for_tenant(tenant.as_str())?`, made per request, never under a ke
 build yourself. Limit each tenant apart with `ratelimit::by_key` on a key of
 `(Tenant::from_extensions(request.extensions()).ok()?, class)`, layered inside the guard,
 where the tenant is known. Set `HTTP_LOG_TENANT=true` to put the tenant on every log line
-of a request; never put a tenant in a metrics label. Prove the fences with `axa_test::isolation::assert_hidden`: create a
+of a request; never put a tenant in a metrics label. To refuse a suspended tenant whose
+tokens have not expired, layer `refuse_suspended` inside the guard with a
+`SuspendedCheck::new(|tenant| ...)` that answers from memory, such as a set the service
+keeps fresh; it answers `403`, code `tenant_suspended`. Prove the fences with `axa_test::isolation::assert_hidden`: create a
 resource as one tenant, then probe its read, change, and delete routes, and the list, as
 another, which must answer `404` and show nothing. With `axa-test`'s `paseto` feature, mint each
 tenant's token with `TestKeys::new().token(issuer, audience).attr("tenant", ["acme"])`,

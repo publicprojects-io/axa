@@ -8,8 +8,8 @@ mod idp;
 use std::sync::Arc;
 
 use axa_keycloak_auth::{
-    Guard, GuardConfig, KeycloakSettings, KeycloakVerifier, Policy, ReloadablePolicy, Tenant,
-    middleware,
+    Guard, GuardConfig, KeycloakSettings, KeycloakVerifier, Policy, ReloadablePolicy,
+    SuspendedCheck, Tenant, middleware, refuse_suspended,
 };
 use axum::{
     Router,
@@ -23,6 +23,11 @@ use serde_json::json;
 use tower::ServiceExt;
 
 fn app(idp: &TestIdp, config: GuardConfig) -> Router {
+    checked_app(idp, config, None)
+}
+
+/// The app, with `check` inside the guard, where the tenant is known.
+fn checked_app(idp: &TestIdp, config: GuardConfig, check: Option<SuspendedCheck>) -> Router {
     let settings = KeycloakSettings {
         url: idp.base_url.clone(),
         realm: "mxi".to_string(),
@@ -40,7 +45,7 @@ fn app(idp: &TestIdp, config: GuardConfig) -> Router {
         Arc::new(KeycloakVerifier::new(settings).unwrap()),
         Arc::new(ReloadablePolicy::new(Policy::default_policy())),
     );
-    Router::new()
+    let router = Router::new()
         .route(
             "/api/tenant",
             get(|tenant: Tenant| async move { tenant.to_string() }),
@@ -53,8 +58,12 @@ fn app(idp: &TestIdp, config: GuardConfig) -> Router {
                     Err(rejection) => format!("{rejection:?}"),
                 }
             }),
-        )
-        .layer(from_fn_with_state(Arc::new(guard), middleware))
+        );
+    let router = match check {
+        Some(check) => router.layer(from_fn_with_state(check, refuse_suspended)),
+        None => router,
+    };
+    router.layer(from_fn_with_state(Arc::new(guard), middleware))
 }
 
 async fn send(app: &Router, token: Option<&str>) -> (StatusCode, String) {
@@ -130,6 +139,38 @@ async fn from_extensions_finds_the_tenant_the_extractor_finds() {
     );
     let (_, body) = send_to(&bare, path, None).await;
     assert_eq!(body, "Err(Unauthenticated)");
+}
+
+#[tokio::test]
+async fn a_suspended_tenant_is_refused_from_its_next_request() {
+    use std::{collections::HashSet, sync::RwLock};
+
+    let idp = TestIdp::start().await;
+    let suspended: Arc<RwLock<HashSet<String>>> = Arc::default();
+    let list = Arc::clone(&suspended);
+    let check = SuspendedCheck::new(move |tenant| {
+        list.read()
+            .map_or(true, |list| list.contains(tenant.as_str()))
+    });
+    let app = checked_app(&idp, GuardConfig::new("place"), Some(check));
+    let acme = with_roles(&idp, &["acme-member"]);
+    let globex = with_roles(&idp, &["globex-member"]);
+
+    assert_eq!(send(&app, Some(&acme)).await.0, StatusCode::OK);
+    suspended.write().unwrap().insert("acme".to_string());
+    let (status, body) = send(&app, Some(&acme)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body.contains(r#""code":"tenant_suspended""#), "{body}");
+    assert_eq!(
+        send(&app, Some(&globex)).await,
+        (StatusCode::OK, "globex".into())
+    );
+    suspended.write().unwrap().remove("acme");
+    assert_eq!(send(&app, Some(&acme)).await.0, StatusCode::OK);
+
+    let (status, body) = send(&app, Some(&with_roles(&idp, &[]))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(body.contains(r#""code":"no_tenant""#), "{body}");
 }
 
 #[test]
