@@ -58,7 +58,7 @@ pub const SIGNATURE_HEADER: &str = "webhook-signature";
 
 /// How far a delivery's timestamp may be from now, either way, unless a verifier says
 /// otherwise: five minutes, as Standard Webhooks suggests.
-pub const DEFAULT_TOLERANCE: Duration = Duration::from_secs(300);
+pub const DEFAULT_TOLERANCE: Duration = Duration::from_mins(5);
 
 /// The most signatures a delivery may list, so that one cannot make a receiver check
 /// any number.
@@ -664,8 +664,7 @@ mod tests {
         let headers = Signer::new(key(SECRET))
             .headers("msg_1", 1_000, b"")
             .unwrap();
-        let verifier =
-            Verifier::new(key(SECRET).verifying_key()).tolerance(Duration::from_secs(60));
+        let verifier = Verifier::new(key(SECRET).verifying_key()).tolerance(Duration::from_mins(1));
         assert!(verifier.verify_at(&headers, b"", 1_060).is_ok());
         assert!(verifier.verify_at(&headers, b"", 940).is_ok());
         for now in [1_061, 939] {
