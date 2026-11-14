@@ -32,9 +32,8 @@ let config = Config::from_env(&environment, &defaults)?;
 | Variable | Values | Default | Description |
 |----------|--------|---------|-------------|
 | `APP_ENV` | `development`, `test`, `production`, `staging`, etc. | `development` (debug build) or `production` (release build) | Names the environment |
-| `LOCO_ENV` | Same as above | Used if `APP_ENV` is not set | Legacy Loco variable |
 
-**Priority**: `APP_ENV` > `LOCO_ENV` > build type
+Only `APP_ENV` is read. A Loco service that set `LOCO_ENV` sets `APP_ENV` instead.
 
 **Examples**:
 ```bash
@@ -62,7 +61,7 @@ APP_ENV=staging cargo run
 | `binding` | `BINDING` | `127.0.0.1` | Listening address |
 | `host` | `HOST` | `http://localhost:1241` | Public base URL |
 | `shutdown_timeout_seconds` | `SHUTDOWN_TIMEOUT_SECONDS` | 25 | Graceful shutdown timeout |
-| `header_read_timeout_seconds` | `HEADER_READ_TIMEOUT_SECONDS` | 30 | Client header read timeout |
+| `header_read_timeout_seconds` | `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS` | 30 | Client header read timeout |
 | `keep_alive_timeout_seconds` | `KEEP_ALIVE_TIMEOUT_SECONDS` | 75 | Idle connection timeout |
 | `send_stall_timeout_seconds` | `SEND_STALL_TIMEOUT_SECONDS` | 60 | Client read stall timeout |
 
@@ -87,12 +86,12 @@ APP_ENV=staging cargo run
 
 | Field | Environment Variable | Default | Description |
 |-------|---------------------|---------|-------------|
-| `body_limit_bytes` | `BODY_LIMIT_BYTES` | 2 MB | Maximum request body size |
+| `body_limit` | `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` | 2,000,000 bytes | Maximum request body size |
 | `timeout_seconds` | `REQUEST_TIMEOUT_SECONDS` | 0 (off) in dev/test, 60 in prod | Request timeout |
-| `hsts_max_age_seconds` | `HSTS_MAX_AGE_SECONDS` | 31,536,000 (1 year) | HSTS header max-age |
+| `hsts_max_age` | `HSTS_MAX_AGE_SECONDS` | 31,536,000 (1 year) | HSTS header max-age |
 | `compression` | `HTTP_COMPRESSION` | `true` in production | Enable compression |
-| `csp` | `HTTP_CSP` | `default-src 'none'; frame-ancestors 'none'` in production | Content Security Policy |
-| `cors_allowed_origins` | `CORS_ALLOWED_ORIGINS` | All origins in dev/test, none in prod | CORS allowed origins |
+| `csp` | `HTTP_CONTENT_SECURITY_POLICY` | `default-src 'none'; frame-ancestors 'none'` in production | Content Security Policy |
+| `cors_origins` | `CORS_ALLOWED_ORIGINS` | All origins in dev/test, none in prod | CORS allowed origins |
 | `log_tenant` | `HTTP_LOG_TENANT` | `false` | Put the verified tenant on the request span |
 | `timeout_overrides` | N/A | Empty | Per-route timeout overrides |
 | `cross_site_paths` | N/A | Empty | Paths, matched exactly, where the cross-site write guard lets a cross-site write through |
@@ -164,7 +163,7 @@ HTTP_COMPRESSION=false
 | Test | `postgres://postgres:postgres@localhost:5432/{database}_test` | `postgres://postgres:postgres@localhost:5432/my_service_test` |
 | Production | **Required** | `postgres://user:pass@host:port/database?sslmode=require` |
 
-**Production Requirement**: The `DATABASE_URL` must use TLS (`sslmode=require`, `verify-ca`, or `verify-full`) unless `DB_ALLOW_INSECURE=true`.
+**Production Requirement**: The `DB_URL` must use TLS (`sslmode=require`, `verify-ca`, or `verify-full`) unless `DB_ALLOW_INSECURE=true`.
 
 ---
 
@@ -296,7 +295,6 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 | Variable | Type | Required in Prod | Default | Description |
 |----------|------|------------------|---------|-------------|
 | `APP_ENV` | String | No | `development` or `production` | Environment name |
-| `LOCO_ENV` | String | No | (falls back to APP_ENV) | Legacy Loco variable |
 | `PORT` | Number | No | 1241 | Server port |
 | `BINDING` | String | No | `127.0.0.1` | Server binding |
 | `HOST` | String | No | `http://localhost:PORT` | Public URL |
@@ -306,7 +304,7 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 | Variable | Type | Required in Prod | Default | Description |
 |----------|------|------------------|---------|-------------|
 | `SHUTDOWN_TIMEOUT_SECONDS` | Number | No | 25 | Graceful shutdown timeout |
-| `HEADER_READ_TIMEOUT_SECONDS` | Number | No | 30 | Header read timeout |
+| `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS` | Number | No | 30 | Header read timeout |
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | Number | No | 75 | Idle connection timeout |
 | `SEND_STALL_TIMEOUT_SECONDS` | Number | No | 60 | Send stall timeout |
 | `MAX_CONNECTIONS` | Number | No | 10000 | Maximum connections |
@@ -315,10 +313,10 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 
 | Variable | Type | Required in Prod | Default | Description |
 |----------|------|------------------|---------|-------------|
-| `BODY_LIMIT_BYTES` | Number | No | 2,000,000 | Request body limit |
+| `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` | Number | No | 2,000,000 | Request body limit |
 | `REQUEST_TIMEOUT_SECONDS` | Number | No | 60 (prod) / 0 (dev) | Request timeout |
 | `HTTP_COMPRESSION` | Boolean | No | `true` (prod) / `false` (dev) | Enable compression |
-| `HTTP_CSP` | String | No | `default-src 'none'; frame-ancestors 'none'` (prod) | Content Security Policy |
+| `HTTP_CONTENT_SECURITY_POLICY` | String | No | `default-src 'none'; frame-ancestors 'none'` (prod) | Content Security Policy |
 | `CORS_ALLOWED_ORIGINS` | String | No | All (dev) / None (prod) | CORS allowed origins |
 | `HSTS_MAX_AGE_SECONDS` | Number | No | 31,536,000 | HSTS max-age |
 | `HTTP_LOG_TENANT` | Boolean | No | `false` | Put the verified tenant on the request span |
@@ -327,7 +325,7 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 
 | Variable | Type | Required in Prod | Default | Description |
 |----------|------|------------------|---------|-------------|
-| `DATABASE_URL` | String | **Yes (if database configured)** | Computed | Connection string |
+| `DB_URL` | String | **Yes (if database configured)** | Computed | Connection string, or `DB_URL_FILE` naming a file that holds it |
 | `DB_MIN_CONNECTIONS` | Number | No | 1 | Min pool connections |
 | `DB_MAX_CONNECTIONS` | Number | No | 10 | Max pool connections |
 | `DB_CONNECT_TIMEOUT` | Number | No | 5000 | Connection timeout (ms) |
@@ -381,7 +379,7 @@ HTTP_COMPRESSION=maybe
 
 # Missing required database URL
 # (when service has a database configured)
-DATABASE_URL=
+DB_URL=
 ```
 
 In development and test, invalid values fall back to defaults with a warning.
@@ -443,7 +441,7 @@ fn test_production_config() {
         &environment,
         &Defaults::default(),
         |name| match name {
-            "DATABASE_URL" => Some("postgres://user:pass@localhost/db".to_string()),
+            "DB_URL" => Some("postgres://user:pass@localhost/db".to_string()),
             _ => None,
         },
     ).unwrap();

@@ -33,7 +33,7 @@ Library:       Your code -> axa functions -> Behavior
 
 In production, axa **refuses to start** with unsafe or invalid configuration:
 
-- Missing `DATABASE_URL` in production → boot fails
+- Missing `DB_URL` in production → boot fails
 - `CORS_ALLOWED_ORIGINS=*` in production → boot fails
 - Invalid `REQUEST_TIMEOUT_SECONDS=abc` → boot fails
 - Database URL without TLS in production → boot fails
@@ -194,7 +194,7 @@ Each feature is:
 │     └─ Timeout layer (REQUEST_TIMEOUT_SECONDS)                     │
 │     └─ Conditional request layer (ETag, 304)                         │
 │     └─ Compression layer (if enabled)                               │
-│     └─ Body limit layer (BODY_LIMIT_BYTES)                         │
+│     └─ Body limit layer (HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT)       │
 │     └─ Panic catch layer (turns panics into 500)                    │
 │                                                                      │
 │  5. Route Matching                                                  │

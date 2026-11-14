@@ -185,7 +185,7 @@ flowchart TD
         F5 --> F6[Timeout Layer\nREQUEST_TIMEOUT_SECONDS]
         F6 --> F7[Conditional Request\nETag, 304 Not Modified]
         F7 --> F8[Compression\n(if enabled)]
-        F8 --> F9[Body Limit\nBODY_LIMIT_BYTES]
+        F8 --> F9[Body Limit\nHTTP_REQUEST_BODY_LIMIT_BYTE_COUNT]
         F9 --> F10[Panic Catch\n500 Internal Server Error]
     end
     
@@ -233,7 +233,7 @@ flowchart TD
     
     ConditionalL -->|8| CompressL[Compression Layer\nGzip, deflate, brotli\nIf Accept-Encoding allows\nCompresses response body]
     
-    CompressL -->|9| BodyLimitL[Body Limit Layer\nBODY_LIMIT_BYTES\nRejects requests exceeding limit\nReturns 413 Payload Too Large]
+    CompressL -->|9| BodyLimitL[Body Limit Layer\nHTTP_REQUEST_BODY_LIMIT_BYTE_COUNT\nRejects requests exceeding limit\nReturns 413 Payload Too Large]
     
     BodyLimitL -->|10| PanicL[Panic Catch Layer\nTurns panics into 500 Internal Server Error\nLogs full panic information\nPrevents service crash]
     
