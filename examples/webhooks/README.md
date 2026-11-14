@@ -7,7 +7,7 @@ to a subscriber, with Axa's `webhooks` and `http-client` features.
 
 ```sh
 cd examples/webhooks
-export WEBHOOK_SECRET=whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw
+export WEBHOOK_SECRET="whsec_$(openssl rand -base64 32)"
 export SUBSCRIBER_URL=https://example.com/hooks
 cargo run
 ```

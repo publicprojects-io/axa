@@ -7,7 +7,7 @@
 //! URL says.
 //!
 //! ```sh
-//! export WEBHOOK_SECRET=whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw
+//! export WEBHOOK_SECRET="whsec_$(openssl rand -base64 32)"
 //! export SUBSCRIBER_URL=https://example.com/hooks
 //! cargo run
 //! curl -X POST localhost:1241/api/notify -H 'content-type: application/json' -d '{"type":"invoice.paid"}'

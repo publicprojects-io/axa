@@ -1,0 +1,7 @@
+# gitleaks's own rules, and one value they mistake for a secret.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Standard Webhooks' published test-vector secret, which is public and signs nothing real"
+regexes = ['''^whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw$''']
