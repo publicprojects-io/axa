@@ -1916,7 +1916,8 @@ async fn state_is_read_from_the_attempts() {
             "kind",
             "key",
             "fingerprint",
-            "created_at"
+            "created_at",
+            "tenant"
         ]
     );
     let event = add(&pool, "1").await;
@@ -3151,4 +3152,98 @@ async fn a_service_can_drive_the_outbox_from_its_own_loop() {
     assert_eq!(outcomes(&pool, &events[3]).await, ["claimed", "returned"]);
     assert_eq!(state(&pool, &events[0]).await, "delivered");
     assert!(matches!(outbox.ping().await, Ok(())));
+}
+
+// OBX-40 and OBX-41: an event's tenant.
+
+async fn add_for(pool: &PgPool, tenant: &str, key: &str) -> Event {
+    let event = Event::new("invoice", "paid", key, json!({ "key": key })).for_tenant(tenant);
+    let mut transaction = pool.begin().await.unwrap();
+    write(&mut transaction, &event).await.unwrap();
+    transaction.commit().await.unwrap();
+    event
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_tenant_goes_with_its_event_and_keeps_a_line_of_its_own() {
+    let _table = TABLE.lock().await;
+    let (outbox, pool) = fresh(quick()).await;
+    let acme = add_for(&pool, "acme", "7").await;
+    let globex = add_for(&pool, "globex", "7").await;
+    let acme_later = add_for(&pool, "acme", "7").await;
+    let plain = add_to(&pool, "invoice", "7").await;
+
+    // One key, three lines: acme's, globex's, and the one with no tenant. Each line's
+    // first event goes, and acme's second waits for its first.
+    let batch = take(&outbox).await;
+    let taken: HashMap<Uuid, Option<String>> = batch
+        .iter()
+        .map(|event| (event.event_id, event.tenant.clone()))
+        .collect();
+    assert_eq!(taken.len(), 3, "{taken:?}");
+    assert_eq!(taken[&acme.event_id].as_deref(), Some("acme"));
+    assert_eq!(taken[&globex.event_id].as_deref(), Some("globex"));
+    assert_eq!(taken[&plain.event_id], None);
+    assert!(!taken.contains_key(&acme_later.event_id));
+    assert_eq!(deliver(&outbox, &pool, &batch).await, 3);
+    let next = take(&outbox).await;
+    assert_eq!(next.len(), 1);
+    assert_eq!(next[0].event_id, acme_later.event_id);
+
+    // A tenant that is not a tenant id is refused, and the transaction fails.
+    for bad in ["Acme", "acme corp", "-acme", ""] {
+        let event = Event::new("invoice", "paid", "7", json!({})).for_tenant(bad);
+        let mut transaction = pool.begin().await.unwrap();
+        let error = write(&mut transaction, &event).await.unwrap_err();
+        assert!(
+            matches!(&error, sqlx::Error::Encode(inner)
+                if matches!(inner.downcast_ref::<Refused>(), Some(Refused::NotATenant))),
+            "{bad:?}"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_changed_tenant_is_tampered_and_an_event_with_none_keeps_its_fingerprint() {
+    let _table = TABLE.lock().await;
+    let (outbox, pool) = fresh(quick()).await;
+    let moved = add_for(&pool, "acme", "1").await;
+    let plain = add(&pool, "2").await;
+    // An event with no tenant has the fingerprint it had before tenants.
+    let same: bool = sqlx::query_scalar(
+        "SELECT e.fingerprint = axa_outbox_fingerprint(
+            e.event_id, e.topic, e.kind, e.key, p.payload, p.sealed)
+         FROM axa_outbox_events e JOIN axa_outbox_payloads p USING (event_id)
+         WHERE e.event_id = $1",
+    )
+    .bind(plain.event_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert!(same);
+    tamper(
+        &pool,
+        "axa_outbox_events",
+        "axa_outbox_events_refuse",
+        "UPDATE axa_outbox_events SET tenant = 'globex' WHERE event_id = $1",
+        &moved,
+    )
+    .await;
+    let broker = Broker::default();
+    let publish = taking(&broker);
+    let relay = Relay::spawn(|stopped| {
+        outbox
+            .clone()
+            .run(decide::deliver_all, publish, audit, stopped)
+    });
+    let stats = drained(&outbox).await;
+    relay.stop().await;
+    assert_eq!(broker.event_ids(), [plain.event_id]);
+    assert_eq!(
+        latest(&pool, &moved).await,
+        Some(("failed".to_string(), Some("tampered".to_string())))
+    );
+    assert_eq!(stats.tampered, 1);
 }

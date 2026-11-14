@@ -99,6 +99,22 @@ writer.write(&mut transaction, &event).await?;
 A field in `deny` fails the write wherever it is in the payload, as an object key at any
 depth. The list is empty unless a service fills it.
 
+### An event for a tenant
+
+Where tenants share the service, name the event's tenant, taken from the verified token:
+
+```rust,ignore
+let event = Event::new("invoice", "paid", invoice.id.to_string(), payload)
+    .for_tenant(tenant.as_str());
+outbox::write(&mut transaction, &event).await?;
+```
+
+The relay hands it back as `Claimed::tenant`, for routing, such as a topic or partition
+per tenant. Events keep their order per tenant, topic, and key, so one tenant's stuck
+event never holds back another tenant's on the same key. The fingerprint covers the
+tenant, so a changed one is caught as `tampered`. A tenant that is not a tenant id fails
+the write with `Refused::NotATenant`.
+
 ## Run the relay beside the server
 
 This is ordinary code in `main.rs`, and there is no trait to implement:

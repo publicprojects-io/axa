@@ -7,10 +7,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
 `axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`,
-`axa-cursor-pagination`, and the three job queues.
+`axa-cursor-pagination`, the three job queues, and `axa-transactional-outbox`.
 
 ### Changed
 
+- **The outbox writes a `tenant` column**, and `Event`, `Claimed`, and `Refused` grow
+  with it. A service on `Outbox::connect_existing` runs `SETUP_STATEMENTS` again.
 - **The job queues write a `tenant` column**, which `Queue::connect` adds. A service on
   `Queue::connect_existing` runs `SETUP_STATEMENTS` again before it deploys.
 - **`config::Http` has `log_tenant`**, so a service that builds one by hand adds
@@ -46,6 +48,10 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   beside the arguments. A handler registered with `handle` fails a tenant's job rather
   than run it with no tenant. In `axa`, `BackgroundWorker::perform_later_for` queues a
   job for a tenant, and `perform_for` runs it, refusing it by default.
+- **A tenant on an outbox event** (T-52, TN-10, OBX-40, OBX-41): `Event::for_tenant` in
+  `axa-transactional-outbox` keeps the event's tenant, which the relay gets as
+  `Claimed::tenant`. Order is kept per tenant, topic, and key, and the fingerprint
+  covers the tenant, while an event with none keeps its old fingerprint.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

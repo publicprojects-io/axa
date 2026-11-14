@@ -59,7 +59,7 @@ This document outlines the planned development path for axa. See
   - A suspended tenant refused with `403`, code `tenant_suspended` (T-53), done
   - A cursor bound to the tenant (T-50), done
   - A tenant on a job (T-48), done
-  - A tenant on an outbox event (T-52)
+  - A tenant on an outbox event (T-52), done
 
 Stages 1 and 2 are done. The rest waits under P-2, below.
 

@@ -227,6 +227,10 @@ pub struct Event {
     /// What keeps events in order, usually the record's public id. Events with one
     /// topic and key go out in order, and a broker's partition key is usually this.
     pub key: String,
+    /// The tenant the event is for, if any, as an auth crate's `Tenant` names it. Events
+    /// keep their order per tenant, topic, and key, so one tenant's stuck event never
+    /// holds back another's, and a relay can route by it. The fingerprint covers it.
+    pub tenant: Option<String>,
     /// The event itself. Stored as JSONB, so it comes back with its keys reordered.
     pub payload: Value,
 }
@@ -245,8 +249,17 @@ impl Event {
             topic: topic.into(),
             kind: kind.into(),
             key: key.into(),
+            tenant: None,
             payload,
         }
+    }
+
+    /// The event, for `tenant`. Take it from the verified token, as `tenant.as_str()`,
+    /// never from what a caller sent. Writing refuses one that is not a tenant id.
+    #[must_use]
+    pub fn for_tenant(mut self, tenant: impl Into<String>) -> Self {
+        self.tenant = Some(tenant.into());
+        self
     }
 }
 
@@ -257,6 +270,7 @@ impl fmt::Debug for Event {
             .field("event_id", &self.event_id)
             .field("topic", &self.topic)
             .field("kind", &self.kind)
+            .field("tenant", &self.tenant)
             .finish_non_exhaustive()
     }
 }
@@ -283,6 +297,9 @@ pub enum Refused {
         /// Which it was: `by` or `reason`.
         what: &'static str,
     },
+    /// The event's tenant is not a tenant id: 1 to 63 lower-case letters, digits, and
+    /// hyphens, not starting or ending with a hyphen.
+    NotATenant,
 }
 
 impl fmt::Display for Refused {
@@ -299,11 +316,23 @@ impl fmt::Display for Refused {
                 f,
                 "`{what}` must be 1 to {MAX_REASON_CHARS} characters with no line breaks"
             ),
+            Self::NotATenant => f.write_str("the outbox event's tenant is not a tenant id"),
         }
     }
 }
 
 impl std::error::Error for Refused {}
+
+/// Whether `id` is a tenant id, as the auth crates' `Tenant` and the table's check hold
+/// it.
+fn is_tenant_id(id: &str) -> bool {
+    (1..=63).contains(&id.len())
+        && !id.starts_with('-')
+        && !id.ends_with('-')
+        && id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+}
 
 impl From<Refused> for sqlx::Error {
     fn from(refused: Refused) -> Self {
@@ -350,9 +379,9 @@ struct Stored {
 /// One text for both drivers, so that `SeaORM` can bind plain strings. The fingerprint
 /// is made by the database from what it stores.
 const WRITE: &str = "WITH event AS (
-        INSERT INTO axa_outbox_events (event_id, topic, kind, key, fingerprint)
-        VALUES ($1::uuid, $2, $3, $4, axa_outbox_fingerprint(
-            $1::uuid, $2, $3, $4, $5::jsonb, decode($6, 'hex')))
+        INSERT INTO axa_outbox_events (event_id, topic, kind, key, tenant, fingerprint)
+        VALUES ($1::uuid, $2, $3, $4, $7::text, axa_outbox_fingerprint(
+            $1::uuid, $2, $3, $4, $7::text, $5::jsonb, decode($6, 'hex')))
         RETURNING event_id
     )
     INSERT INTO axa_outbox_payloads (event_id, payload, sealed)
@@ -394,6 +423,13 @@ impl Writer {
 
     /// Check `event` and make what is stored.
     fn prepare(&self, event: &Event) -> Result<Stored, sqlx::Error> {
+        if event
+            .tenant
+            .as_deref()
+            .is_some_and(|tenant| !is_tenant_id(tenant))
+        {
+            return Err(Refused::NotATenant.into());
+        }
         let json = serde_json::to_string(&event.payload)
             .map_err(|error| sqlx::Error::Encode(Box::new(error)))?;
         if json.len() > self.options.max_payload_bytes {
@@ -445,6 +481,7 @@ impl Writer {
             .bind(&event.key)
             .bind(stored.plain)
             .bind(stored.sealed)
+            .bind(event.tenant.as_deref())
             .execute(&mut **transaction)
             .await?;
         Ok(())
@@ -472,6 +509,7 @@ impl Writer {
             event.key.clone().into(),
             stored.plain.into(),
             stored.sealed.into(),
+            event.tenant.clone().into(),
         ];
         transaction
             .execute_raw(Statement::from_sql_and_values(
@@ -578,6 +616,8 @@ pub struct Claimed {
     pub kind: String,
     /// What keeps events in order.
     pub key: String,
+    /// The tenant it is for, if any, to route by.
+    pub tenant: Option<String>,
     /// The event itself, opened if it was sealed.
     pub payload: Value,
     /// The relay that claimed it.
@@ -595,6 +635,7 @@ impl fmt::Debug for Claimed {
             .field("event_id", &self.event_id)
             .field("topic", &self.topic)
             .field("kind", &self.kind)
+            .field("tenant", &self.tenant)
             .field("claim", &self.claim)
             .finish_non_exhaustive()
     }
@@ -1065,6 +1106,7 @@ mod tests {
             topic: event.topic.clone(),
             kind: event.kind.clone(),
             key: event.key.clone(),
+            tenant: None,
             payload,
             relay: Uuid::new_v4(),
             claim: Uuid::new_v4(),

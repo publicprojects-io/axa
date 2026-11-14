@@ -66,6 +66,15 @@ const LEASES: &str = "CREATE TABLE IF NOT EXISTS axa_outbox_leases (
     heard_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )";
 
+/// The tenant an event is for, when it has one, as an auth crate's `Tenant` names it.
+/// Added to a table that may already hold events, each of which then has none.
+const EVENTS_TENANT: &str = "ALTER TABLE axa_outbox_events ADD COLUMN IF NOT EXISTS tenant TEXT
+    CONSTRAINT axa_outbox_events_tenant_id
+    CHECK (tenant ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')";
+/// The tenant of each event owed, so that events keep their order per tenant, topic,
+/// and key, and one tenant's event never holds back another's.
+const OWED_TENANT: &str = "ALTER TABLE axa_outbox_owed ADD COLUMN IF NOT EXISTS tenant TEXT";
+
 /// What a claim walks, oldest first.
 const OWED_READY: &str = "CREATE INDEX IF NOT EXISTS axa_outbox_owed_ready
     ON axa_outbox_owed (id) WHERE state = 'pending'";
@@ -93,6 +102,25 @@ RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
         || convert_to(topic, 'UTF8') || '\x00'::bytea
         || convert_to(kind, 'UTF8') || '\x00'::bytea
         || convert_to(key, 'UTF8') || '\x00'::bytea
+        || CASE WHEN sealed IS NOT NULL THEN '\x73'::bytea || sealed
+                ELSE '\x6a'::bytea || convert_to(payload::text, 'UTF8') END
+    ), 'hex')
+$$";
+
+/// SHA-256 over an event's id, topic, kind, key, tenant, and stored payload. With no
+/// tenant it is the fingerprint above, byte for byte, so every event written before
+/// tenants keeps its fingerprint. A tenant is marked by `t`, which neither payload mark
+/// is, and ends with a zero byte, which a tenant id cannot hold.
+const FINGERPRINT_TENANT: &str = r"CREATE OR REPLACE FUNCTION axa_outbox_fingerprint(
+    event_id UUID, topic TEXT, kind TEXT, key TEXT, tenant TEXT, payload JSONB, sealed BYTEA)
+RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT encode(sha256(
+        uuid_send(event_id)
+        || convert_to(topic, 'UTF8') || '\x00'::bytea
+        || convert_to(kind, 'UTF8') || '\x00'::bytea
+        || convert_to(key, 'UTF8') || '\x00'::bytea
+        || CASE WHEN tenant IS NULL THEN ''::bytea
+                ELSE '\x74'::bytea || convert_to(tenant, 'UTF8') || '\x00'::bytea END
         || CASE WHEN sealed IS NOT NULL THEN '\x73'::bytea || sealed
                 ELSE '\x6a'::bytea || convert_to(payload::text, 'UTF8') END
     ), 'hex')
@@ -132,8 +160,8 @@ $$";
 const OWE: &str = "CREATE OR REPLACE FUNCTION axa_outbox_owe() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-    INSERT INTO axa_outbox_owed (event_id, id, topic, key)
-    VALUES (NEW.event_id, NEW.id, NEW.topic, NEW.key);
+    INSERT INTO axa_outbox_owed (event_id, id, topic, key, tenant)
+    VALUES (NEW.event_id, NEW.id, NEW.topic, NEW.key, NEW.tenant);
     RETURN NULL;
 END
 $$";
@@ -277,18 +305,21 @@ const ALWAYS_LEASES: &str =
 /// order, each safe to repeat. A service whose role may not change the schema runs these
 /// in a migration, and calls [`Outbox::connect_existing`](crate::Outbox::connect_existing).
 /// They need Postgres 14 or later.
-pub const SETUP_STATEMENTS: [&str; 33] = [
+pub const SETUP_STATEMENTS: [&str; 36] = [
     EVENTS,
     PAYLOADS,
     ATTEMPTS,
     OWED,
     LEASES,
+    EVENTS_TENANT,
+    OWED_TENANT,
     OWED_READY,
     OWED_LINE,
     OWED_CLAIMED,
     ATTEMPTS_EVENT,
     ATTEMPTS_RECENT,
     FINGERPRINT,
+    FINGERPRINT_TENANT,
     REFUSE,
     GUARD,
     OWED_GUARD,
@@ -392,8 +423,8 @@ const REBUILD_EMPTY: &str = "DELETE FROM axa_outbox_owed";
 /// unless it was ever delivered, refused, or erased, and its latest attempt says the
 /// rest. Holds are not kept, so a held event is decided again.
 const REBUILD_FILL: &str = "INSERT INTO axa_outbox_owed
-        (event_id, id, topic, key, state, claim, charges, reason, retry_at)
-    SELECT e.event_id, e.id, e.topic, e.key,
+        (event_id, id, topic, key, tenant, state, claim, charges, reason, retry_at)
+    SELECT e.event_id, e.id, e.topic, e.key, e.tenant,
         CASE WHEN latest.outcome = 'claimed' THEN 'claimed'
              WHEN latest.outcome IN ('failed', 'abandoned') THEN 'failed'
              ELSE 'pending' END,

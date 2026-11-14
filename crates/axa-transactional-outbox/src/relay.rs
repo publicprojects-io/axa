@@ -37,12 +37,13 @@ const MAX_PAUSE: Duration = Duration::from_mins(1);
 
 /// Each column a relay reads, so that a table out of date fails at boot.
 const PROBES: [&str; 5] = [
-    "SELECT id, event_id, topic, kind, key, fingerprint, created_at FROM axa_outbox_events LIMIT 0",
+    "SELECT id, event_id, topic, kind, key, tenant, fingerprint, created_at
+     FROM axa_outbox_events LIMIT 0",
     "SELECT event_id, payload, sealed FROM axa_outbox_payloads LIMIT 0",
     "SELECT id, event_id, outcome, relay, claim, reason, by, retry_at, at
      FROM axa_outbox_attempts LIMIT 0",
-    "SELECT event_id, id, topic, key, state, claim, charges, reason, retry_at, held_since,
-            recheck_at
+    "SELECT event_id, id, topic, key, tenant, state, claim, charges, reason, retry_at,
+            held_since, recheck_at
      FROM axa_outbox_owed LIMIT 0",
     "SELECT claim, relay, heard_at FROM axa_outbox_leases LIMIT 0",
 ];
@@ -57,16 +58,18 @@ const MISSING_TRIGGERS: &str = "SELECT want.name
 const MISSING_INDEXES: &str =
     "SELECT name FROM unnest($1::text[]) AS name WHERE to_regclass(name) IS NULL";
 const MISSING_FINGERPRINT: &str = "SELECT to_regprocedure(
-    'axa_outbox_fingerprint(uuid, text, text, text, jsonb, bytea)') IS NULL";
+        'axa_outbox_fingerprint(uuid, text, text, text, jsonb, bytea)') IS NULL
+    OR to_regprocedure(
+        'axa_outbox_fingerprint(uuid, text, text, text, text, jsonb, bytea)') IS NULL";
 
 /// The events a claim may take, oldest first, locked for this claim alone. An earlier
-/// event still owed for the same topic and key holds one back, unless its topic has no
-/// order. `FOR UPDATE SKIP LOCKED` is what stops two relays taking one event, and the
+/// event still owed for the same tenant, topic, and key holds one back, unless its topic
+/// has no order. `FOR UPDATE SKIP LOCKED` is what stops two relays taking one event, and the
 /// state is checked again once the lock is had, because the claim changes the row.
 const CANDIDATES: &str = "SELECT o.event_id, o.id, o.charges, e.topic, e.kind, e.key,
-        p.payload, p.sealed,
+        e.tenant, p.payload, p.sealed,
         e.fingerprint IS NOT DISTINCT FROM axa_outbox_fingerprint(
-            e.event_id, e.topic, e.kind, e.key, p.payload, p.sealed) AS intact
+            e.event_id, e.topic, e.kind, e.key, e.tenant, p.payload, p.sealed) AS intact
     FROM axa_outbox_owed o
     JOIN axa_outbox_events e ON e.event_id = o.event_id
     LEFT JOIN axa_outbox_payloads p ON p.event_id = o.event_id
@@ -75,6 +78,7 @@ const CANDIDATES: &str = "SELECT o.event_id, o.id, o.charges, e.topic, e.kind, e
       AND (o.topic = ANY($2) OR NOT EXISTS (
           SELECT 1 FROM axa_outbox_owed earlier
           WHERE earlier.topic = o.topic AND earlier.key = o.key
+            AND earlier.tenant IS NOT DISTINCT FROM o.tenant
             AND earlier.id < o.id AND earlier.state <> 'failed'
       ))
     ORDER BY o.id
@@ -418,6 +422,7 @@ impl Outbox {
                 topic: row.try_get("topic")?,
                 kind: row.try_get("kind")?,
                 key: row.try_get("key")?,
+                tenant: row.try_get("tenant")?,
                 payload: Value::Null,
                 relay: self.relay,
                 claim,

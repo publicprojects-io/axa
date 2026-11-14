@@ -9,9 +9,16 @@ the new fields.
 | Change | What to do |
 |---|---|
 | `config::Http` has `log_tenant` | Add `log_tenant: false` where you build an `Http` by hand |
+| The outbox's `Event` and `Claimed` have `tenant`, and `Refused` has `NotATenant` | Build an `Event` with `Event::new`, or add `tenant: None`; add an arm for `NotATenant` to a `match` on `Refused` |
 | `JobInfo` has `tenant`, and `SETUP_STATEMENTS` in each job queue has one more statement | Nothing, unless you match on the array's length |
 
 ## What changes with no compile error
+
+**The outbox has a `tenant` column**, on `axa_outbox_events` and `axa_outbox_owed`,
+and a second form of `axa_outbox_fingerprint` that covers it. `Outbox::connect` adds
+them. A service on `Outbox::connect_existing` runs `SETUP_STATEMENTS` again first, as
+`connect_existing` refuses tables without them. Events already written have no tenant
+and keep their fingerprints.
 
 **The job queue has a `tenant` column.** `Queue::connect` adds it at boot. A service on
 `Queue::connect_existing` runs `SETUP_STATEMENTS` again in a migration before it

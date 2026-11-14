@@ -425,6 +425,8 @@ every change.
   `Failure::unavailable("broker_down")` charges nothing and waits, and
   `Failure::rejected("code")` charges this event, which ends as `failed` after
   `max_attempts`.
+- For a tenant's event, `Event::new(...).for_tenant(tenant.as_str())`. The relay gets it
+  as `Claimed::tenant`, to route by, and order is kept per tenant, topic, and key.
 - Delivery is at least once, so a consumer must dedupe on `event_id`:
   `outbox::inbox::seen(&mut transaction, event_id)` in the consumer's transaction.
 - Watch `Outbox::stats`: `failed` and `tampered` need a person, and `held` with

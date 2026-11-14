@@ -131,6 +131,10 @@ suspension belongs to the issuer. It runs on every request, so it answers from m
 `CursorPage::new_in`. The context goes into the hash the cursor is signed over, after a
 byte no query part can hold and its length, so no context reads as another.
 
+**TN-10, the outbox.** Done, unreleased, as T-52: OBX-40 and OBX-41. A `tenant` column on
+the events and on what is owed, a line per tenant, topic, and key, and a second
+fingerprint that covers the tenant and is the first, byte for byte, without one.
+
 **TN-5, jobs.** Done, unreleased, as T-48: WRK-29, WRK-30, JOB-5, and MYQ-6, in all three
 job queues. `BackgroundWorker::perform_later_for(ctx, tenant, args)`, a nullable `tenant`
 column checked as a tenant id, and the tenant handed to the worker's `perform_for`
