@@ -7,6 +7,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`axa::upload`, behind the new `upload` feature** (UPL-1 to UPL-4): `upload::read`
+  takes Axum's `Multipart` and holds it to `Limits` on the total, each file, each text
+  field, text in memory, and the number of parts and files, as `413` problems naming
+  the limit, with `415` for a file type `accept` does not list. Files go to temporary
+  files, deleted on drop unless `File::persist` keeps them, with cleaned names. It adds
+  `tempfile`.
 - **A JSON Pointer in a rejected JSON body's problem** (ERR-15): a body that parses but
   has a value that does not fit gets `errors: [{"pointer": "#/items/1/count"}]`,
   naming where and never what. It uses `serde_path_to_error`, which Axum already uses.

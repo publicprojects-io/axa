@@ -56,6 +56,9 @@ T-19 is done, unreleased, as `Checks::migrations`, `Checks::migrated`, and
 `server::run_once_migrated`, for any database, as the service passes its crate's
 `pending`.
 
+T-14 is done, unreleased, as `axa::upload` behind the `upload` feature, with
+`tempfile`.
+
 T-22 is done, unreleased, as a `pointer` in the problem's `errors` for a `422` JSON
 body (ERR-15), for Axa's `Json` and Axum's alike.
 

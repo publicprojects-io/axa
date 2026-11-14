@@ -93,6 +93,7 @@
 - [db](src/db.rs): Database helpers for the context
 - [error](src/error.rs): The error type and its HTTP mapping
 - [extract](src/extract.rs): Extractors that reject with a problem saying what was wrong
+- [upload](src/upload.rs) (feature `upload`): Bounded multipart uploads, files spooled to temporary files
 - [format](src/format.rs): Response helpers, and downloads with a safe `content-disposition`
 - [health](src/health.rs): Health routes
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`

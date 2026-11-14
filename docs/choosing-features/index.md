@@ -249,6 +249,7 @@ axa = {
     "cursor-pagination",
     "idempotency",
     "versioning",
+    "upload",
   ] 
 }
 axa-postgres-seaorm = "0.12"

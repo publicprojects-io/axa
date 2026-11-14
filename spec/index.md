@@ -866,6 +866,17 @@ so they run in `cargo test`.
 | SLD-15 | `axa-sqlite-diesel` | `dangerously_recreate` refuses a table name `quote_identifier` refuses and drops nothing. | `dangerously_recreate_refuses_a_name_it_cannot_quote_and_drops_nothing` |
 | SLD-16 | `axa-sqlite-diesel` | A pool that is all in use answers a caller with an error within its `wait_timeout`, and serves again once a connection is returned. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
 
+### 4.22 Uploads
+
+Behind the `upload` feature.
+
+| Id | Requirement | Test |
+|---|---|---|
+| UPL-1 | `upload::read` keeps text fields in memory and writes each file to a temporary file, deleted when its `File` drops, with its cleaned file name (FMT-6) and its declared media type, lower case without parameters, or `application/octet-stream`. | `fields_are_kept_and_files_spooled_to_temporary_files` |
+| UPL-2 | Past any of `Limits`' total, file, text field, text in memory, part count, or file count, it is `413`, code `payload_too_large`, as the bytes arrive. The `detail` names the limit and quotes nothing sent. | `each_limit_is_a_413_that_names_the_limit_and_quotes_nothing` |
+| UPL-3 | With `Limits::accept`, a file of a type not listed is `415`, code `unsupported_media_type`, compared without case or parameters. | `a_file_of_a_type_not_accepted_is_a_415` |
+| UPL-4 | A part with no name or one over 128 bytes, a text field that is not UTF-8, or a body that is not valid multipart is `400`, code `bad_request`. The body limit still applies, as `413`. | `a_part_with_no_usable_name_or_text_that_is_not_utf8_is_a_400`, `the_body_limit_still_applies_and_a_broken_body_is_a_400` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:

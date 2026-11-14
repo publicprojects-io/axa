@@ -115,6 +115,8 @@ pub mod routes;
 pub mod server;
 pub mod store;
 pub mod task;
+#[cfg(feature = "upload")]
+pub mod upload;
 #[cfg(feature = "model")]
 pub mod validation;
 pub mod worker;

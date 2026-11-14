@@ -359,6 +359,7 @@ Perfect for: Financial services, healthcare, government
 | `opentelemetry` | | | | | | | | | | ✅ | ✅ | |
 | `idempotency` | ✅ | | | | | | | | | | | |
 | `cursor-pagination` | | | | | | | | | | | | |
+| `upload` | | | | | | | | | | | | |
 
 ---
 
@@ -387,6 +388,7 @@ Each feature adds dependencies. Here's the impact of each:
 | `redis` | axa-redis-cache | |
 | `ratelimit` | axa-request-rate-limit | |
 | `versioning` | axa-accepts-version-negotiation | |
+| `upload` | tempfile | Bounded multipart uploads, files in temporary files |
 | `openapi` | axa-openapi-docs | |
 | `tera` | axa-tera-templates | |
 | `maud` | axa-maud-templates, maud | Compile-time templates |

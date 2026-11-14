@@ -222,6 +222,10 @@
       "purpose": "The error type and its HTTP mapping"
     },
     {
+      "name": "upload",
+      "purpose": "Bounded multipart uploads, files spooled to temporary files (feature `upload`)"
+    },
+    {
       "name": "extract",
       "purpose": "Extractors that reject with a problem saying what was wrong"
     },
