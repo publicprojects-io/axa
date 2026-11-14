@@ -49,6 +49,9 @@ T-44 is done, unreleased, in all four Postgres crates: `begin_with` for sqlx, Se
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
 MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
 
+T-17 is done, unreleased, for the four Postgres crates. MySQL has its own forms of each,
+and they wait for a service that asks.
+
 T-19 is done, unreleased, as `Checks::migrations`, `Checks::migrated`, and
 `server::run_once_migrated`, for any database, as the service passes its crate's
 `pending`.

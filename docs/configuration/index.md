@@ -147,6 +147,9 @@ HTTP_COMPRESSION=false
 | `connect_timeout` | `DB_CONNECT_TIMEOUT` | 5000 ms | Connection timeout |
 | `idle_timeout` | `DB_IDLE_TIMEOUT` | 600000 ms (10 min) | Idle connection timeout |
 | `statement_logging` | `DB_LOGGING` | `false` | Log SQL statements |
+| `statement_timeout_ms` | `DB_STATEMENT_TIMEOUT_MS` | `0`, none | Postgres `statement_timeout` on every connection |
+| `application_name` | `DB_APPLICATION_NAME` | The database name stem | Postgres `application_name`, shown in `pg_stat_activity` |
+| `read_only` | `DB_READ_ONLY` | `false` | Open every Postgres transaction read-only |
 | `auto_migrate` | `DB_AUTO_MIGRATE` | `true` in dev/test, `false` in prod | Auto-run migrations at boot |
 | `allow_insecure` | `DB_ALLOW_INSECURE` | `false` | Allow non-TLS connections in production |
 
@@ -328,6 +331,9 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 | `DB_CONNECT_TIMEOUT` | Number | No | 5000 | Connection timeout (ms) |
 | `DB_IDLE_TIMEOUT` | Number | No | 600000 | Idle timeout (ms) |
 | `DB_LOGGING` | Boolean | No | `false` | Log SQL statements |
+| `DB_STATEMENT_TIMEOUT_MS` | Number | No | `0` | Postgres statement timeout (ms), `0` for none |
+| `DB_APPLICATION_NAME` | String | No | Database name stem | Postgres application name |
+| `DB_READ_ONLY` | Boolean | No | `false` | Read-only Postgres transactions |
 | `DB_AUTO_MIGRATE` | Boolean | No | `false` (prod) / `true` (dev) | Auto-migrate at boot |
 | `DB_ALLOW_INSECURE` | Boolean | No | `false` | Allow non-TLS in prod |
 

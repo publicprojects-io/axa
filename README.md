@@ -343,6 +343,7 @@ place.
 | `DB_MIN_CONNECTIONS`, `DB_MAX_CONNECTIONS` | Pool size |
 | `DB_CONNECT_TIMEOUT`, `DB_IDLE_TIMEOUT` | Pool timeouts, in milliseconds. 5 seconds and 10 minutes by default, or a service's `Defaults` |
 | `DB_LOGGING`, `DB_AUTO_MIGRATE` | Statement logging, and migrating at boot. A service sharing a database it does not own sets `Defaults::auto_migrate` to `false` |
+| `DB_STATEMENT_TIMEOUT_MS`, `DB_APPLICATION_NAME`, `DB_READ_ONLY` | Postgres only: a `statement_timeout` on every connection, `0` by default for none; the `application_name` that `pg_stat_activity` shows, the database name stem by default; and read-only transactions, for a replica |
 | `LOG_ENABLE`, `LOG_LEVEL`, `LOG_FORMAT`, `LOG_FILTER` | Logging. `RUST_LOG` wins over all of them |
 | `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT` | Largest accepted request body |
 | `HTTP_COMPRESSION`, `HTTP_HSTS` | Response compression and HSTS |

@@ -263,3 +263,38 @@ fn only_custom_settings_can_be_set() {
         assert!(!is_custom_setting(name), "{name}");
     }
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    let mut config = PoolConfig::new(uri);
+    config.statement_timeout_ms = 1234;
+    config.application_name = "axa-session-test".to_string();
+    config.read_only = true;
+    let mut db = connect(&config, toasty::models!(Person)).await.unwrap();
+    let mut show = async |name: &str| -> String {
+        let rows = toasty::sql::query("SELECT current_setting($1)")
+            .bind(name)
+            .exec(&mut db)
+            .await
+            .unwrap();
+        match rows.first() {
+            Some(toasty::stmt::Value::Record(record)) => match record.fields.first() {
+                Some(toasty::stmt::Value::String(value)) => value.clone(),
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    };
+    assert_eq!(show("statement_timeout").await, "1234ms");
+    assert_eq!(show("application_name").await, "axa-session-test");
+    assert_eq!(show("default_transaction_read_only").await, "on");
+    let refused = toasty::sql::statement("CREATE TABLE axa_read_only_refused (x INT)")
+        .exec(&mut db)
+        .await
+        .err()
+        .unwrap();
+    // Toasty reads a read-only refusal into an error of its own, not a SQLSTATE.
+    assert!(refused.to_string().contains("read-only"), "{refused}");
+}

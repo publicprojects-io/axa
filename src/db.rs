@@ -43,6 +43,9 @@ impl From<&Database> for axa_postgres_sqlx::PoolConfig {
             max_connections: config.max_connections,
             connect_timeout_ms: config.connect_timeout,
             idle_timeout_ms: config.idle_timeout,
+            statement_timeout_ms: config.statement_timeout_ms,
+            application_name: config.application_name.clone(),
+            read_only: config.read_only,
         }
     }
 }
@@ -58,6 +61,9 @@ impl From<&Database> for axa_postgres_seaorm::PoolConfig {
             connect_timeout_ms: config.connect_timeout,
             idle_timeout_ms: config.idle_timeout,
             enable_logging: config.enable_logging,
+            statement_timeout_ms: config.statement_timeout_ms,
+            application_name: config.application_name.clone(),
+            read_only: config.read_only,
         }
     }
 }
@@ -71,6 +77,9 @@ impl From<&Database> for axa_postgres_diesel::PoolConfig {
             uri: config.uri.clone(),
             max_connections: usize::try_from(config.max_connections).unwrap_or(usize::MAX),
             wait_timeout: std::time::Duration::from_millis(config.connect_timeout),
+            statement_timeout_ms: config.statement_timeout_ms,
+            application_name: config.application_name.clone(),
+            read_only: config.read_only,
         }
     }
 }
@@ -84,6 +93,9 @@ impl From<&Database> for axa_postgres_toasty::PoolConfig {
             max_connections: config.max_connections,
             connect_timeout_ms: config.connect_timeout,
             idle_timeout_ms: config.idle_timeout,
+            statement_timeout_ms: config.statement_timeout_ms,
+            application_name: config.application_name.clone(),
+            read_only: config.read_only,
         }
     }
 }

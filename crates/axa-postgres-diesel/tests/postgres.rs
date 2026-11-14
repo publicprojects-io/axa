@@ -274,3 +274,37 @@ fn only_custom_settings_can_be_set() {
         assert!(!is_custom_setting(name), "{name}");
     }
 }
+
+#[derive(QueryableByName)]
+struct Setting {
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    value: String,
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    let mut config = PoolConfig::new(uri);
+    config.statement_timeout_ms = 1234;
+    config.application_name = "axa-session-test".to_string();
+    config.read_only = true;
+    let pool = connect(&config).await.unwrap();
+    let mut connection = pool.get().await.unwrap();
+    let mut show = async |name: &str| -> String {
+        diesel::sql_query("SELECT current_setting($1) AS value")
+            .bind::<diesel::sql_types::Text, _>(name)
+            .get_result::<Setting>(&mut connection)
+            .await
+            .unwrap()
+            .value
+    };
+    assert_eq!(show("statement_timeout").await, "1234ms");
+    assert_eq!(show("application_name").await, "axa-session-test");
+    assert_eq!(show("default_transaction_read_only").await, "on");
+    let refused = diesel::sql_query("CREATE TABLE axa_read_only_refused (x INT)")
+        .execute(&mut connection)
+        .await
+        .unwrap_err();
+    assert!(refused.to_string().contains("read-only"), "{refused}");
+}

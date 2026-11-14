@@ -52,6 +52,15 @@ pub struct PoolConfig {
     pub connect_timeout_ms: u64,
     /// How long a connection may sit unused before it is closed, in milliseconds.
     pub idle_timeout_ms: u64,
+    /// Postgres's `statement_timeout` on every connection, in milliseconds. `0` sets
+    /// none.
+    pub statement_timeout_ms: u64,
+    /// Postgres's `application_name` on every connection, so `pg_stat_activity` says
+    /// which service a query came from. Empty sets none.
+    pub application_name: String,
+    /// Open every transaction read-only, as for a read replica or a reporting
+    /// service, so that a write is refused by the database.
+    pub read_only: bool,
 }
 
 impl std::fmt::Debug for PoolConfig {
@@ -60,6 +69,9 @@ impl std::fmt::Debug for PoolConfig {
             .field("max_connections", &self.max_connections)
             .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field("idle_timeout_ms", &self.idle_timeout_ms)
+            .field("statement_timeout_ms", &self.statement_timeout_ms)
+            .field("application_name", &self.application_name)
+            .field("read_only", &self.read_only)
             .finish_non_exhaustive()
     }
 }
@@ -74,6 +86,9 @@ impl PoolConfig {
             max_connections: 10,
             connect_timeout_ms: 5_000,
             idle_timeout_ms: 600_000,
+            statement_timeout_ms: 0,
+            application_name: String::new(),
+            read_only: false,
         }
     }
 
@@ -92,13 +107,120 @@ impl PoolConfig {
     }
 }
 
+impl PoolConfig {
+    /// The connection string with the session settings added, as every connection
+    /// [`connect`] opens uses.
+    ///
+    /// # Errors
+    ///
+    /// When the URL sets `options` already and a statement timeout or read-only mode
+    /// is set here too, or when the application name is not one Postgres keeps as it
+    /// is.
+    pub fn connection_uri(&self) -> Result<String, Error> {
+        session_uri(
+            &self.uri,
+            self.statement_timeout_ms,
+            &self.application_name,
+            self.read_only,
+        )
+        .map_err(Error::invalid_connection_url)
+    }
+}
+
+/// `uri` with each session setting added as a libpq connection parameter, so that
+/// every connection the pool opens starts with them, at no extra round trip:
+/// `statement_timeout` and `default_transaction_read_only` in `options`, and
+/// `application_name`.
+///
+/// An `application_name` the URL already names is kept. `options` the URL already
+/// names, with a setting here to add, is refused, rather than either one silently
+/// replacing the other.
+fn session_uri(
+    uri: &str,
+    statement_timeout_ms: u64,
+    application_name: &str,
+    read_only: bool,
+) -> Result<String, String> {
+    let mut options = Vec::new();
+    if statement_timeout_ms > 0 {
+        options.push(format!("-c statement_timeout={statement_timeout_ms}"));
+    }
+    if read_only {
+        options.push("-c default_transaction_read_only=on".to_string());
+    }
+    let mut params = Vec::new();
+    if !options.is_empty() {
+        if has_param(uri, "options") {
+            return Err(
+                "the connection URL sets options already: set the statement timeout and \
+                 read-only mode there, or here, not both"
+                    .to_string(),
+            );
+        }
+        params.push(("options", options.join(" ")));
+    }
+    if !application_name.is_empty() && !has_param(uri, "application_name") {
+        if !is_application_name(application_name) {
+            return Err(
+                "an application name is ASCII letters, digits, `_`, `.`, and `-`, at most 63"
+                    .to_string(),
+            );
+        }
+        params.push(("application_name", application_name.to_string()));
+    }
+    if params.is_empty() {
+        return Ok(uri.to_string());
+    }
+    let separator = if uri.contains('?') { '&' } else { '?' };
+    let query: Vec<String> = params
+        .iter()
+        .map(|(name, value)| format!("{name}={}", percent_encode(value)))
+        .collect();
+    Ok(format!("{uri}{separator}{}", query.join("&")))
+}
+
+/// Whether the query of `uri` names `name`.
+fn has_param(uri: &str, name: &str) -> bool {
+    uri.split_once('?').is_some_and(|(_, query)| {
+        query
+            .split('&')
+            .any(|pair| pair.split('=').next() == Some(name))
+    })
+}
+
+/// Whether `name` is an application name Postgres keeps as it is: ASCII letters,
+/// digits, `_`, `.`, and `-`, from 1 to 63 bytes.
+fn is_application_name(name: &str) -> bool {
+    (1..=63).contains(&name.len())
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+}
+
+/// `value` with every byte but the unreserved ones percent-encoded.
+fn percent_encode(value: &str) -> String {
+    use std::fmt::Write as _;
+    let mut encoded = String::new();
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
+}
+
 /// Connect to the database for `models`, and check that it answers.
 ///
 /// # Errors
 ///
 /// Fails when the URL is not one Toasty reads, or the database cannot be reached.
 pub async fn connect(config: &PoolConfig, models: ModelSet) -> Result<Pool, Error> {
-    let db = config.builder(models).connect(&config.uri).await?;
+    let db = config
+        .builder(models)
+        .connect(&config.connection_uri()?)
+        .await?;
     ping(&db).await?;
     Ok(db)
 }
@@ -406,6 +528,42 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_settings_become_connection_parameters() {
+        let base = "postgres://app@db/app";
+        assert_eq!(session_uri(base, 0, "", false).unwrap(), base);
+        assert_eq!(
+            session_uri(base, 5000, "orders", true).unwrap(),
+            "postgres://app@db/app?options=-c%20statement_timeout%3D5000%20-c%20\
+             default_transaction_read_only%3Don&application_name=orders"
+        );
+        assert_eq!(
+            session_uri("postgres://db/app?sslmode=require", 0, "orders", false).unwrap(),
+            "postgres://db/app?sslmode=require&application_name=orders"
+        );
+    }
+
+    #[test]
+    fn a_url_that_sets_them_already_is_kept_or_refused() {
+        // Its own application name wins.
+        let named = "postgres://db/app?application_name=mine";
+        assert_eq!(session_uri(named, 0, "orders", false).unwrap(), named);
+        // Its own options and a setting here would replace one another, so neither does.
+        let with_options = "postgres://db/app?options=-c%20work_mem%3D64MB";
+        assert!(session_uri(with_options, 5000, "", false).is_err());
+        assert!(session_uri(with_options, 0, "", true).is_err());
+        assert_eq!(
+            session_uri(with_options, 0, "", false).unwrap(),
+            with_options
+        );
+        for name in ["has space", "a&b=c", "é", &"a".repeat(64)] {
+            assert!(
+                session_uri("postgres://db/app", 0, name, false).is_err(),
+                "{name}"
+            );
+        }
+    }
 
     #[test]
     fn debug_text_leaves_out_the_connection_string() {

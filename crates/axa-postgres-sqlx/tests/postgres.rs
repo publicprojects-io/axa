@@ -374,3 +374,32 @@ async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    let mut config = PoolConfig::new(uri);
+    config.statement_timeout_ms = 1234;
+    config.application_name = "axa-session-test".to_string();
+    config.read_only = true;
+    let pool = connect(&config).await.unwrap();
+    let show = |sql: &'static str| {
+        let pool = pool.clone();
+        async move {
+            let row = sqlx::query(sql).fetch_one(&pool).await.unwrap();
+            row.get::<String, _>(0)
+        }
+    };
+    assert_eq!(show("SHOW statement_timeout").await, "1234ms");
+    assert_eq!(show("SHOW application_name").await, "axa-session-test");
+    assert_eq!(show("SHOW default_transaction_read_only").await, "on");
+    let refused = sqlx::raw_sql("CREATE TABLE axa_read_only_refused (x INT)")
+        .execute(&pool)
+        .await
+        .unwrap_err();
+    let code = refused
+        .as_database_error()
+        .and_then(axa_postgres_sqlx::sqlx::error::DatabaseError::code);
+    assert_eq!(code.as_deref(), Some("25006"), "{refused:?}");
+}

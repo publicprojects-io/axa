@@ -380,3 +380,43 @@ fn only_custom_settings_can_be_set() {
         assert!(!is_custom_setting(name), "{name}");
     }
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    let mut config = PoolConfig::new(uri);
+    config.statement_timeout_ms = 1234;
+    config.application_name = "axa-session-test".to_string();
+    config.read_only = true;
+    let db = connect(&config).await.unwrap();
+    let show = async |sql: &str, name: &str| -> String {
+        db.query_one_raw(Statement::from_string(DbBackend::Postgres, sql))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get("", name)
+            .unwrap()
+    };
+    assert_eq!(
+        show("SHOW statement_timeout", "statement_timeout").await,
+        "1234ms"
+    );
+    assert_eq!(
+        show("SHOW application_name", "application_name").await,
+        "axa-session-test"
+    );
+    assert_eq!(
+        show(
+            "SHOW default_transaction_read_only",
+            "default_transaction_read_only"
+        )
+        .await,
+        "on"
+    );
+    let refused = db
+        .execute_unprepared("CREATE TABLE axa_read_only_refused (x INT)")
+        .await
+        .unwrap_err();
+    assert!(refused.to_string().contains("read-only"), "{refused}");
+}

@@ -48,6 +48,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF, and anything else. `clean_file_name` strips the path, control and bidirectional
   characters, and quotes, and a name that is not ASCII is sent as `filename*` too.
 
+- **Postgres session settings** (SQX-12, SOR-6, DSL-7, TOA-5, CFG-27):
+  `DB_STATEMENT_TIMEOUT_MS`, `DB_APPLICATION_NAME`, and `DB_READ_ONLY` reach every
+  connection the Postgres crates open, as libpq's `options` and `application_name`.
+  The application name is the database name stem unless set, so `pg_stat_activity`
+  names the service. Production refuses either of the others with another database.
 - **Readiness that waits for migrations** (HLT-12, HLT-13): `Checks::migrations` takes a
   function naming the pending migrations, and while any is pending, `/_health/ready` and
   `/_health/startup` answer `503` naming `migrations`, so a new pod gets no traffic
@@ -65,6 +70,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `br`, and `zstd`, with the body limit counted on decoded bytes, so a small body that
   expands past it is a `413`. An encoding it cannot decode is a `415`. A handler that
   read a compressed body itself now gets it decoded, without `content-encoding`.
+- **Each Postgres crate's `PoolConfig` and `config::Database` have new fields**,
+  `statement_timeout_ms`, `application_name`, and `read_only`, so code that builds one
+  by hand, rather than with `PoolConfig::new` or `Config::from_env`, adds them.
 - **`axa_redis_cache::Error` has a new variant, `TenantScope`**, so a `match` on it
   without a wildcard arm adds one.
 - **`GuardConfig` in both auth crates has a new field, `tenant_attribute`**, so a

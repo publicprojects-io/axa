@@ -149,6 +149,10 @@ pub struct Logger {
 }
 
 /// Database settings. `Debug` hides any password in the connection string.
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "each is a switch of its own, read from a variable of its own"
+)]
 #[derive(Clone)]
 pub struct Database {
     /// Connection string. Empty for a service with no database.
@@ -167,6 +171,14 @@ pub struct Database {
     pub auto_migrate: bool,
     /// Empty the tables at boot. Only ever on under `test`.
     pub dangerously_truncate: bool,
+    /// Postgres's `statement_timeout` on every connection, in milliseconds, from
+    /// `DB_STATEMENT_TIMEOUT_MS`. `0`, the default, sets none.
+    pub statement_timeout_ms: u64,
+    /// Postgres's `application_name` on every connection, from `DB_APPLICATION_NAME`,
+    /// or the database name stem in [`Defaults`]. Empty sets none.
+    pub application_name: String,
+    /// Open every transaction read-only, from `DB_READ_ONLY`, as for a read replica.
+    pub read_only: bool,
 }
 
 /// A timeout for the routes ending in one path suffix.
@@ -221,6 +233,9 @@ impl fmt::Debug for Database {
             enable_logging,
             auto_migrate,
             dangerously_truncate,
+            statement_timeout_ms,
+            application_name,
+            read_only,
         } = self;
         f.debug_struct("Database")
             .field("uri", &redact("DB_URL", uri))
@@ -231,6 +246,9 @@ impl fmt::Debug for Database {
             .field("enable_logging", enable_logging)
             .field("auto_migrate", auto_migrate)
             .field("dangerously_truncate", dangerously_truncate)
+            .field("statement_timeout_ms", statement_timeout_ms)
+            .field("application_name", application_name)
+            .field("read_only", read_only)
             .finish()
     }
 }
@@ -339,6 +357,79 @@ pub fn redact(name: &str, value: &str) -> String {
         return REDACTED.to_string();
     }
     redact_pairs(&redact_userinfo(value))
+}
+
+/// The database settings, from `DB_` variables.
+fn database<F: Fn(&str) -> Option<String>>(
+    vars: &Vars<F>,
+    defaults: &Defaults,
+    environment: &Environment,
+    uri: String,
+) -> Database {
+    let production = environment.is_production_like();
+    let test = *environment == Environment::Test;
+    let (min_connections, max_connections) = pool_size(vars, defaults, production);
+    Database {
+        uri,
+        min_connections,
+        max_connections,
+        connect_timeout: vars.parsed("DB_CONNECT_TIMEOUT", defaults.connect_timeout),
+        idle_timeout: vars.parsed("DB_IDLE_TIMEOUT", defaults.idle_timeout),
+        enable_logging: vars.flag("DB_LOGGING", false),
+        auto_migrate: vars.flag("DB_AUTO_MIGRATE", defaults.auto_migrate && !production),
+        dangerously_truncate: test,
+        statement_timeout_ms: vars.parsed("DB_STATEMENT_TIMEOUT_MS", 0),
+        application_name: application_name(vars, defaults.database),
+        read_only: vars.flag("DB_READ_ONLY", false),
+    }
+}
+
+/// Whether `name` is an application name Postgres keeps as it is: ASCII letters,
+/// digits, `_`, `.`, and `-`, from 1 to 63 bytes.
+fn is_application_name(name: &str) -> bool {
+    (1..=63).contains(&name.len())
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+}
+
+/// `DB_APPLICATION_NAME`, or the database name stem, which names the service, when it
+/// is one Postgres keeps as it is. A set name that is not is a problem.
+fn application_name<F: Fn(&str) -> Option<String>>(vars: &Vars<F>, stem: &str) -> String {
+    match vars.set("DB_APPLICATION_NAME") {
+        Some(name) if is_application_name(name.trim()) => name.trim().to_string(),
+        Some(name) => {
+            vars.invalid(
+                "DB_APPLICATION_NAME",
+                &name,
+                "ASCII letters, digits, `_`, `.`, and `-`, at most 63",
+            );
+            String::new()
+        }
+        None if is_application_name(stem) => stem.to_string(),
+        None => String::new(),
+    }
+}
+
+/// A statement timeout or read-only mode works only on Postgres, so asking for either
+/// with another database is a problem, rather than a setting silently ignored.
+fn session_settings_need_postgres<F: Fn(&str) -> Option<String>>(
+    vars: &Vars<F>,
+    database: &Database,
+) {
+    let postgres = cfg!(any(
+        axa_db = "postgres_sqlx",
+        axa_db = "postgres_seaorm",
+        axa_db = "postgres_diesel",
+        axa_db = "postgres_toasty"
+    ));
+    let none = cfg!(axa_db = "none");
+    if !postgres && !none && (database.statement_timeout_ms > 0 || database.read_only) {
+        vars.problems.borrow_mut().push(
+            "DB_STATEMENT_TIMEOUT_MS and DB_READ_ONLY work only with a Postgres database"
+                .to_string(),
+        );
+    }
 }
 
 /// Typed reads over a lookup function, so parsing can be tested without
@@ -682,7 +773,6 @@ impl Config {
 
         let uri = database_uri(&vars, environment, defaults)?;
         let cors_origins = cors_origins(&vars, production)?;
-        let (min_connections, max_connections) = pool_size(&vars, defaults, production);
 
         let level = if test {
             logger::LogLevel::Warn
@@ -740,16 +830,7 @@ impl Config {
                 override_filter: vars.log_filter(),
                 warnings: Vec::new(),
             },
-            database: Database {
-                uri,
-                min_connections,
-                max_connections,
-                connect_timeout: vars.parsed("DB_CONNECT_TIMEOUT", defaults.connect_timeout),
-                idle_timeout: vars.parsed("DB_IDLE_TIMEOUT", defaults.idle_timeout),
-                enable_logging: vars.flag("DB_LOGGING", false),
-                auto_migrate: vars.flag("DB_AUTO_MIGRATE", defaults.auto_migrate && !production),
-                dangerously_truncate: test,
-            },
+            database: database(&vars, defaults, environment, uri),
             http: Http {
                 body_limit: vars.parsed("HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT", defaults.body_limit),
                 compression: vars.flag("HTTP_COMPRESSION", production),
@@ -766,6 +847,8 @@ impl Config {
             },
             workers: vars.named("WORKER_MODE", workers, worker_mode),
         };
+
+        session_settings_need_postgres(&vars, &config.database);
 
         // Fail closed: a production service that misread a setting would run
         // with something nobody chose, and a warning there is read too late.
@@ -846,6 +929,12 @@ impl Config {
             ("DB_IDLE_TIMEOUT", database.idle_timeout.to_string()),
             ("DB_LOGGING", database.enable_logging.to_string()),
             ("DB_AUTO_MIGRATE", database.auto_migrate.to_string()),
+            (
+                "DB_STATEMENT_TIMEOUT_MS",
+                database.statement_timeout_ms.to_string(),
+            ),
+            ("DB_APPLICATION_NAME", database.application_name.clone()),
+            ("DB_READ_ONLY", database.read_only.to_string()),
             (
                 "dangerously_truncate",
                 database.dangerously_truncate.to_string(),
@@ -1340,6 +1429,81 @@ mod tests {
         assert_eq!(config.server.port, DEFAULT_PORT);
         assert!(config.logger.warnings[0].contains("PORT"));
         assert!(config.logger.warnings[0].contains("not-a-port"));
+    }
+
+    #[test]
+    fn session_settings_are_read_and_named_for_the_service_by_default() {
+        let config = with(&[], &Environment::Development).unwrap();
+        assert_eq!(config.database.statement_timeout_ms, 0);
+        assert_eq!(config.database.application_name, "svc");
+        assert!(!config.database.read_only);
+        let pairs = [
+            ("DB_STATEMENT_TIMEOUT_MS", "5000"),
+            ("DB_APPLICATION_NAME", "orders-api"),
+            ("DB_READ_ONLY", "true"),
+        ];
+        let config = with(&pairs, &Environment::Development).unwrap();
+        assert_eq!(config.database.statement_timeout_ms, 5000);
+        assert_eq!(config.database.application_name, "orders-api");
+        assert!(config.database.read_only);
+        let printed = format!("{:?}", config.settings());
+        for name in [
+            "DB_STATEMENT_TIMEOUT_MS",
+            "DB_APPLICATION_NAME",
+            "DB_READ_ONLY",
+        ] {
+            assert!(printed.contains(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn production_refuses_an_application_name_postgres_would_change() {
+        for name in ["has space", "é", "a;b"] {
+            let pairs = [
+                ("DB_URL", "postgres://localhost/x"),
+                ("DB_APPLICATION_NAME", name),
+            ];
+            let error = with(&pairs, &Environment::Production).unwrap_err();
+            assert!(error.to_string().contains("DB_APPLICATION_NAME"), "{name}");
+        }
+        let config = with(
+            &[("DB_APPLICATION_NAME", "has space")],
+            &Environment::Development,
+        )
+        .unwrap();
+        assert_eq!(config.database.application_name, "");
+    }
+
+    /// Only a build whose database is not Postgres can ask for what only Postgres has.
+    #[cfg(not(any(
+        axa_db = "none",
+        axa_db = "postgres_sqlx",
+        axa_db = "postgres_seaorm",
+        axa_db = "postgres_diesel",
+        axa_db = "postgres_toasty"
+    )))]
+    #[test]
+    fn production_refuses_postgres_session_settings_on_another_database() {
+        let url = if cfg!(any(
+            axa_db = "mysql_sqlx",
+            axa_db = "mysql_seaorm",
+            axa_db = "mysql_diesel",
+            axa_db = "mysql_toasty"
+        )) {
+            "mysql://localhost/x"
+        } else {
+            "sqlite://x.sqlite3"
+        };
+        for pair in [
+            ("DB_STATEMENT_TIMEOUT_MS", "5000"),
+            ("DB_READ_ONLY", "true"),
+        ] {
+            let error = with(&[("DB_URL", url), pair], &Environment::Production).unwrap_err();
+            assert!(
+                error.to_string().contains("only with a Postgres database"),
+                "{error}"
+            );
+        }
     }
 
     #[test]
