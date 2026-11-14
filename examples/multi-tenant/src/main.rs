@@ -9,7 +9,7 @@
 //! curl localhost:1241/api/todos -H "authorization: Bearer $TOKEN"
 //! ```
 
-use std::{path::Path as FilePath, sync::Arc};
+use std::{num::NonZeroU32, path::Path as FilePath, sync::Arc};
 
 use authentication_verifier::{Policy, ReloadablePolicy, ReloadableVerifier, Verifier};
 use axa::{
@@ -25,9 +25,15 @@ use axa::{
     prelude::{
         AppContext, AppRoutes, Response, Routes, State, bad_request, format, get, not_found,
     },
+    ratelimit::{Keyed, Limiter, by_key},
     server,
 };
+use axum::extract::Request;
 use serde::{Deserialize, Serialize};
+
+/// How many reads, and how many writes, one tenant may make in a minute, from all its
+/// callers together, so that one tenant's burst never uses up another's.
+const TENANT_REQUESTS_PER_MINUTE: NonZeroU32 = NonZeroU32::new(600).unwrap();
 
 /// The longest title, which the table's check also holds to.
 const MAX_TITLE_CHARS: usize = 200;
@@ -181,12 +187,34 @@ fn routes() -> AppRoutes {
     )
 }
 
+/// A limit of `limit` a minute for each tenant and class of request, reads or writes.
+/// It keys on the tenant the guard verified, so a caller cannot buy a fresh limit by
+/// naming another, and a request with no tenant is left for the guard and the handler
+/// to refuse.
+fn per_tenant(limit: NonZeroU32) -> Keyed<(Tenant, &'static str)> {
+    let minute = NonZeroU32::new(60).unwrap_or(NonZeroU32::MIN);
+    Limiter::new(limit, minute).key(|request: &Request| {
+        let tenant = Tenant::from_extensions(request.extensions()).ok()?;
+        let class = if request.method().is_safe() {
+            "read"
+        } else {
+            "write"
+        };
+        Some((tenant, class))
+    })
+}
+
 /// The routes behind `guard`, inside Axa's standard middleware, so that a refusal has
-/// a request id and the security headers.
-fn app(ctx: AppContext, guard: Guard) -> Result<axum::Router> {
+/// a request id and the security headers. The limit per tenant sits inside the guard,
+/// where the tenant is known.
+fn app(ctx: AppContext, guard: Guard, limit: NonZeroU32) -> Result<axum::Router> {
     let http = ctx.config.http.clone();
     let router = routes()
         .into_router(ctx)
+        .layer(axum::middleware::from_fn_with_state(
+            per_tenant(limit),
+            by_key,
+        ))
         .layer(axum::middleware::from_fn_with_state(
             Arc::new(guard),
             paseto::middleware,
@@ -248,7 +276,8 @@ async fn main() -> Result<()> {
     axa::db::require_row_security(&pool, &["todos"], &environment).await?;
 
     let server_config = config.server.clone();
-    let router = app(AppContext::new(environment, pool, config), guard)?;
+    let ctx = AppContext::new(environment, pool, config);
+    let router = app(ctx, guard, TENANT_REQUESTS_PER_MINUTE)?;
     server::serve(router, &server_config).await
 }
 
@@ -296,8 +325,17 @@ mod tests {
     }
 
     fn test_app(pool: Pool) -> axum::Router {
+        limited_app(pool, TENANT_REQUESTS_PER_MINUTE)
+    }
+
+    fn limited_app(pool: Pool, limit: NonZeroU32) -> axum::Router {
         let config = config(&Environment::Test).unwrap();
-        app(AppContext::new(Environment::Test, pool, config), guard()).unwrap()
+        app(
+            AppContext::new(Environment::Test, pool, config),
+            guard(),
+            limit,
+        )
+        .unwrap()
     }
 
     /// A pool that connects only when first used, for tests that never reach it.
@@ -363,6 +401,30 @@ mod tests {
         let two = token(&json!({ "tenant": ["acme", "globex"] }));
         let (status, _) = send(&app, "GET", "/api/todos", Some(&two), None).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn one_tenant_using_up_its_limit_leaves_the_others_theirs() {
+        // The database is never reached, so each request the limit lets through fails
+        // there. Only whether it was refused for the limit matters here.
+        let app = limited_app(unused_pool(), NonZeroU32::new(2).unwrap());
+        let acme = token(&json!({ "tenant": ["acme"] }));
+        let globex = token(&json!({ "tenant": ["globex"] }));
+        for _ in 0..2 {
+            let (status, _) = send(&app, "GET", "/api/todos", Some(&acme), None).await;
+            assert_ne!(status, StatusCode::TOO_MANY_REQUESTS);
+        }
+        let (status, body) = send(&app, "GET", "/api/todos", Some(&acme), None).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{body}");
+
+        let (status, _) = send(&app, "GET", "/api/todos", Some(&globex), None).await;
+        assert_ne!(status, StatusCode::TOO_MANY_REQUESTS);
+        // A caller with no tenant is not counted, and is refused as before.
+        let none = token(&json!({}));
+        for _ in 0..3 {
+            let (status, _) = send(&app, "GET", "/api/todos", Some(&none), None).await;
+            assert_eq!(status, StatusCode::FORBIDDEN);
+        }
     }
 
     #[tokio::test]

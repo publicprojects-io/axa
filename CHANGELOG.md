@@ -5,7 +5,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-This covers `axa` and `axa-webhooks` 0.1.1.
+This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
+`axa-paseto-auth`, `axa-keycloak-auth`, and `axa-request-rate-limit`.
 
 ### Added
 
@@ -14,6 +15,11 @@ This covers `axa` and `axa-webhooks` 0.1.1.
   from `ctx.shared_store`. In 0.13.0 a service had to call `verify` itself. With no
   verifier there, every delivery is refused with a `500`, code
   `webhook_verifier_missing`, and an error is logged.
+- **A limit per tenant** (T-49, TN-7, RAT-16): `Tenant::from_extensions` in
+  `axa-paseto-auth` and `axa-keycloak-auth` (PST-16, KCK-16) reads the verified tenant
+  from a request's extensions, for a `ratelimit::by_key` key of `(tenant, class)`
+  layered inside the guard. `examples/multi-tenant` limits each tenant's reads and
+  writes apart.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

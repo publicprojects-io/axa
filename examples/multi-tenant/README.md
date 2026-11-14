@@ -79,11 +79,26 @@ curl localhost:1241/api/todos -H "authorization: Bearer $TOKEN"
 The "Needs" column is the default ABAC policy, which the guard applies before a handler
 runs.
 
+## A limit per tenant
+
+Each tenant may make 600 reads and 600 writes a minute, from all its callers together,
+so one tenant's burst never uses up another's. Past that, the answer is `429`, with
+`Retry-After`. The limit is keyed by the tenant the guard verified, read with
+`Tenant::from_extensions`, so it sits inside the guard:
+
+```rust,ignore
+Limiter::new(limit, minute).key(|request: &Request| {
+    let tenant = Tenant::from_extensions(request.extensions()).ok()?;
+    let class = if request.method().is_safe() { "read" } else { "write" };
+    Some((tenant, class))
+})
+```
+
+Each replica counts for itself, so with three replicas a tenant gets three times the
+limit.
+
 ## What it does not do
 
-- **Per-tenant limits.** Axa's `ratelimit` and `idempotency` features key on what a
-  service returns for a request, so a service can key them on the tenant as well as the
-  caller. This example does not.
 - **Tenant administration.** Creating, suspending, and deleting tenants belongs to the
   service that issues tokens.
 - **A schema or database per tenant.** One table with row-level security is simpler to

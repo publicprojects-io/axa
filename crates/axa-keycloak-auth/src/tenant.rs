@@ -8,7 +8,7 @@ use std::{fmt, sync::Arc};
 
 use axum::{
     extract::FromRequestParts,
-    http::{StatusCode, request::Parts},
+    http::{Extensions, StatusCode, request::Parts},
     response::{IntoResponse, Response},
 };
 
@@ -48,6 +48,29 @@ impl Tenant {
             Some([id]) if is_tenant_id(id) => Some(Self(id.clone())),
             _ => None,
         }
+    }
+
+    /// The tenant of the caller the guard verified and allowed, read from a request's
+    /// extensions as the extractor reads it, but writing no audit line: for code that
+    /// runs inside the guard before the handler, such as the key of a limit per tenant.
+    ///
+    /// # Errors
+    ///
+    /// As the extractor: [`TenantRejection::Unauthenticated`] when no caller was
+    /// verified and allowed, and [`TenantRejection::NoTenant`] when the caller's token
+    /// names no tenant, more than one, or one that is not a tenant id.
+    pub fn from_extensions(extensions: &Extensions) -> Result<Self, TenantRejection> {
+        // Only what the guard allowed. With no guard there is nothing here, and this
+        // fails closed.
+        let allowed = extensions
+            .get::<Allowed>()
+            .ok_or(TenantRejection::Unauthenticated)?;
+        let attribute = extensions
+            .get::<Arc<Guard>>()
+            .map_or(DEFAULT_TENANT_ATTRIBUTE, |guard| {
+                guard.config().tenant_attribute.as_str()
+            });
+        Self::from_claims(&allowed.claims, attribute).ok_or(TenantRejection::NoTenant)
     }
 
     /// The tenant id, to bind in a query or a key.
@@ -114,19 +137,10 @@ impl<S: Send + Sync> FromRequestParts<S> for Tenant {
 }
 
 fn tenant_of(parts: &Parts) -> Result<Tenant, TenantRejection> {
-    // Only what the guard allowed. With no guard there is nothing here, and this fails
-    // closed.
-    let allowed = parts
-        .extensions
-        .get::<Allowed>()
-        .ok_or(TenantRejection::Unauthenticated)?;
-    let attribute = parts
-        .extensions
-        .get::<Arc<Guard>>()
-        .map_or(DEFAULT_TENANT_ATTRIBUTE, |guard| {
-            guard.config().tenant_attribute.as_str()
-        });
-    Tenant::from_claims(&allowed.claims, attribute).ok_or_else(|| {
+    let tenant = Tenant::from_extensions(&parts.extensions);
+    if tenant == Err(TenantRejection::NoTenant)
+        && let Some(allowed) = parts.extensions.get::<Allowed>()
+    {
         // An audit line, as the guard writes for its own refusals. The subject is the
         // caller's id, and the attribute's values are not written, as they came from
         // the token.
@@ -136,6 +150,6 @@ fn tenant_of(parts: &Parts) -> Result<Tenant, TenantRejection> {
             reason = "no_tenant",
             "auth_refused",
         );
-        TenantRejection::NoTenant
-    })
+    }
+    tenant
 }

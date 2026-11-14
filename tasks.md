@@ -127,7 +127,10 @@ Each needs two services that ask, or one with a safety case, before it starts.
 From the [multi-tenancy study](spec/tenancy/index.md). The first four keep tenants apart,
 so each passes P-2 on one consumer with a safety case, and
 [`examples/multi-tenant`](examples/multi-tenant/README.md) is that consumer. The rest wait
-for two.
+for two. On 2026-11-14 three services, `crm`, `ppm`, and `wpm`,
+asked for multi-tenancy, which passes P-2 for the rest.
+
+T-49 is done, unreleased, as RAT-16 and `Tenant::from_extensions` in both auth crates.
 
 | Id | Task | Where | Effort | New dependency | Case |
 |---|---|---|---|---|---|

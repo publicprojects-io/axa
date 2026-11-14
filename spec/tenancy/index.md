@@ -73,7 +73,7 @@ From Axa's own code, at the commit this page was written on:
 | TN-10 | A tenant on an outbox event, for routing and ordering per tenant | Consumers downstream often split by tenant | M | Two consumers |
 | TN-11 | A suspended tenant refused with `403`, code `tenant_suspended`, from a check the service passes in | Suspension belongs to the service that issues tokens, but tokens live for minutes | S | Two consumers |
 
-**TN-1, the tenant from the token.** Done, unreleased, as T-43: PST-13 to PST-15 and
+**TN-1, the tenant from the token.** Done in 0.13.0, as T-43: PST-13 to PST-15 and
 KCK-14 and KCK-15. `Tenant` reads the `Allowed` the guard left, so it
 exists only after the policy allowed the request. It takes exactly one value of a named
 attribute, `tenant` unless the guard's config names another, and refuses a value that
@@ -83,7 +83,7 @@ starting or ending with a hyphen, as a DNS label is. No token is `401`, and a to
 host, as P-10 asks: a service that routes by subdomain compares the host's tenant with
 the token's and refuses a mismatch.
 
-**TN-2, the tenant transaction.** Done in all four Postgres crates, unreleased, as T-44:
+**TN-2, the tenant transaction.** Done in 0.13.0 in all four Postgres crates, as T-44:
 `begin_with` in sqlx (SQX-8, SQX-9), SeaORM (SOR-5), and Toasty (TOA-4), and `set_local`
 in Diesel (DSL-6), called inside the service's own transaction, as Diesel's are closures.
 Each refuses any name that is not a custom dotted setting, so it cannot set `role` or
@@ -94,24 +94,29 @@ migrations, so this adds no query layer. SeaORM and Diesel follow with the same 
 MySQL and SQLite have no row-level security, so their crates have no TN-2 or TN-3, and a
 service on either keeps the first fence only: the tenant in every query.
 
-**TN-3, the boot check.** Done with any Postgres database feature, unreleased, as T-45:
+**TN-3, the boot check.** Done in 0.13.0 with any Postgres database feature, as T-45:
 `axa::db::require_row_security`, DB-9, over each crate's `row_security`. `SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname =
 current_user`, and `relforcerowsecurity` from `pg_class` for each table the service names.
 Production refuses to boot when either fails. Development warns, so that a local
 superuser still works, but `axa-test` can run the isolation tests as a role the policies
 apply to.
 
-**TN-4, isolation tests.** Done, unreleased, as T-46: `axa_test::isolation`, TST-3, and
+**TN-4, isolation tests.** Done in 0.13.0, as T-46: `axa_test::isolation`, TST-3, and
 `axa_test::paseto::TestKeys`, TST-4. For `axa-paseto-auth`, a test key and a `token(attrs)` that the
 guard accepts, as `examples/multi-tenant` writes by hand. Then a helper that, given a
 route that creates a resource and the routes that read, change, and delete it, runs them
 as a second tenant and expects `404` from each.
 
-**TN-6, the tenant's cache.** Done, unreleased, as T-47: `Cache::for_tenant`, RDS-8 and
+**TN-6, the tenant's cache.** Done in 0.13.0, as T-47: `Cache::for_tenant`, RDS-8 and
 RDS-9. Keys are `prefix#tenant:key`, and an unscoped key is `prefix:key`, so the
 character after the prefix keeps them apart whatever a key holds, and a tenant id holds
 no `:`, so no tenant's key is another's. A cache with no prefix is refused a tenant, as
 the separation would not hold.
+
+**TN-7, a limit per tenant.** Done, unreleased, as T-49: RAT-16, with
+`Tenant::from_extensions` in both auth crates (PST-16, KCK-16) for the key, and
+`examples/multi-tenant` limiting each tenant's reads and writes apart. The layer sits
+inside the guard, where the tenant is known. Each replica counts for itself.
 
 **TN-5, jobs.** `perform_later_in(&tenant, …)`, a nullable `tenant` column, and the tenant
 handed to the worker beside the arguments, so that the worker opens its own tenant

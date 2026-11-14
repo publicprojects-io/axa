@@ -6,7 +6,7 @@ rust-version = "1.97"
 publish = false
 
 [dependencies]
-axa = { path = "../..", features = ["postgres-sqlx", "paseto"] }
+axa = { path = "../..", features = ["postgres-sqlx", "paseto", "ratelimit"] }
 # The verifier and policy types the guard is built from, which axa-paseto-auth uses.
 authentication-verifier = "0.9"
 axum = "0.8"

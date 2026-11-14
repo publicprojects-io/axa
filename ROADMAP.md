@@ -48,13 +48,19 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Next: Version 0.13.1
+## Next: Version 0.14.0
 
 - `axa::webhooks::Verified` with `AppContext` as the state, taking the `Verifier` from
   `ctx.shared_store` and failing closed without one (WHK-6, WHK-7), with
   `axa-webhooks` 0.1.1
+- The rest of multi-tenancy, which three services asked for (T-48 to T-53):
+  - A limit per tenant (T-49), done
+  - A tenant on the request span, never a metrics label (T-51)
+  - A suspended tenant refused with `403`, code `tenant_suspended` (T-53)
+  - A cursor bound to the tenant (T-50)
+  - A tenant on a job (T-48) and on an outbox event (T-52)
 
-Stages 1 and 2 are done. What is left waits under P-2, below.
+Stages 1 and 2 are done. The rest waits under P-2, below.
 
 ---
 

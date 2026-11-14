@@ -66,6 +66,29 @@
 //! # }
 //! ```
 //!
+//! # Counting by tenant
+//!
+//! Where tenants share a service, one tenant's burst should not use up another's
+//! allowance. Key the limit by the tenant and a class of request, such as reads and
+//! writes, with the auth crate's `Tenant::from_extensions`, beside the limit per client.
+//! The tenant is there only once the guard has verified the token, so this layer goes
+//! inside the guard, added to the router before the guard's layer, and a request
+//! with no tenant is left to the guard and the handler to refuse. Never take the
+//! tenant from a header or a path, which any caller can write.
+//!
+//! ```ignore
+//! use axa_paseto_auth::Tenant;
+//!
+//! let per_tenant = Limiter::new(limit, 60.try_into().unwrap()).key(|request: &Request| {
+//!     let tenant = Tenant::from_extensions(request.extensions()).ok()?;
+//!     let class = if request.method().is_safe() { "read" } else { "write" };
+//!     Some((tenant, class))
+//! });
+//! let router = routes
+//!     .layer(from_fn_with_state(per_tenant, by_key))
+//!     .layer(from_fn_with_state(Arc::new(guard), axa_paseto_auth::middleware));
+//! ```
+//!
 //! # A full table
 //!
 //! Past [`MAX_KEYS`], a key not yet held has nowhere of its own to be counted.
@@ -937,6 +960,44 @@ mod tests {
         // The same address, another subject: counted apart.
         let bob = app.oneshot(as_subject("/", Some("bob"))).await.unwrap();
         assert_eq!(bob.status(), StatusCode::OK);
+    }
+
+    /// The tenant, as an auth crate's guard leaves it for `Tenant::from_extensions`.
+    #[derive(Clone)]
+    struct TenantOf(&'static str);
+
+    #[tokio::test]
+    async fn a_limit_per_tenant_and_class_keeps_tenants_and_classes_apart() {
+        let keyed = limiter(2, 60).key(|request: &Request| {
+            let tenant = request.extensions().get::<TenantOf>()?.0;
+            let class = if request.method() == http::Method::GET {
+                "read"
+            } else {
+                "write"
+            };
+            Some((tenant, class))
+        });
+        let app = Router::new()
+            .route("/", get(|| async { "ok" }).post(|| async { "ok" }))
+            .layer(from_fn_with_state(keyed, by_key));
+        let send = |method: http::Method, tenant: &'static str| {
+            let mut request = request("/", Some("203.0.113.9"));
+            *request.method_mut() = method;
+            request.extensions_mut().insert(TenantOf(tenant));
+            let app = app.clone();
+            async move { app.oneshot(request).await.unwrap().status() }
+        };
+        for _ in 0..2 {
+            assert_eq!(send(http::Method::POST, "acme").await, StatusCode::OK);
+        }
+        assert_eq!(
+            send(http::Method::POST, "acme").await,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        // The same client and tenant, another class, and another tenant, from the same
+        // address: each has its own limit.
+        assert_eq!(send(http::Method::GET, "acme").await, StatusCode::OK);
+        assert_eq!(send(http::Method::POST, "globex").await, StatusCode::OK);
     }
 
     #[tokio::test]

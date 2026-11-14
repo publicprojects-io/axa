@@ -1113,6 +1113,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn from_extensions_finds_the_tenant_the_extractor_finds() {
+        let from_extensions = |request: axum::extract::Request| async move {
+            match Tenant::from_extensions(request.extensions()) {
+                Ok(tenant) => tenant.to_string(),
+                Err(rejection) => format!("{rejection:?}"),
+            }
+        };
+        let guard = Guard::new(
+            GuardConfig::new("place").tenant_attribute("org"),
+            verifier(),
+            Arc::new(ReloadablePolicy::new(Policy::default_policy())),
+        );
+        let app = Router::new()
+            .route("/api/tenant", get(from_extensions))
+            .layer(from_fn_with_state(Arc::new(guard), middleware));
+        for (attrs, expected) in [
+            (json!({ "org": ["acme"] }), "acme"),
+            (json!({ "tenant": ["acme"] }), "NoTenant"),
+            (json!({ "org": ["acme", "globex"] }), "NoTenant"),
+        ] {
+            let response = tenant_call(app.clone(), "/api/tenant", Some(&token(&attrs))).await;
+            assert_eq!(body_of(response).await, expected, "{attrs}");
+        }
+        let bare = Router::new().route("/api/tenant", get(from_extensions));
+        let valid = token(&json!({ "org": ["acme"] }));
+        let response = tenant_call(bare, "/api/tenant", Some(&valid)).await;
+        assert_eq!(body_of(response).await, "Unauthenticated");
+    }
+
+    #[tokio::test]
     async fn the_guard_can_name_the_tenant_attribute() {
         let app = tenant_app(GuardConfig::new("place").tenant_attribute("org"));
         let org = token(&json!({ "org": ["acme"] }));

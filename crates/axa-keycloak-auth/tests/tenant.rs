@@ -45,11 +45,24 @@ fn app(idp: &TestIdp, config: GuardConfig) -> Router {
             "/api/tenant",
             get(|tenant: Tenant| async move { tenant.to_string() }),
         )
+        .route(
+            "/api/from-extensions",
+            get(|request: axum::extract::Request| async move {
+                match Tenant::from_extensions(request.extensions()) {
+                    Ok(tenant) => tenant.to_string(),
+                    Err(rejection) => format!("{rejection:?}"),
+                }
+            }),
+        )
         .layer(from_fn_with_state(Arc::new(guard), middleware))
 }
 
 async fn send(app: &Router, token: Option<&str>) -> (StatusCode, String) {
-    let mut request = Request::builder().uri("/api/tenant");
+    send_to(app, "/api/tenant", token).await
+}
+
+async fn send_to(app: &Router, path: &str, token: Option<&str>) -> (StatusCode, String) {
+    let mut request = Request::builder().uri(path);
     if let Some(token) = token {
         request = request.header(AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -98,6 +111,25 @@ async fn the_guard_can_name_the_tenant_attribute() {
     assert_eq!((status, body.as_str()), (StatusCode::OK, "acme"));
     let (status, _) = send(&app, Some(&with_roles(&idp, &["acme-member"]))).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn from_extensions_finds_the_tenant_the_extractor_finds() {
+    let idp = TestIdp::start().await;
+    let app = app(&idp, GuardConfig::new("place").tenant_attribute("org"));
+    let path = "/api/from-extensions";
+    let (_, body) = send_to(&app, path, Some(&with_roles(&idp, &["acme-org"]))).await;
+    assert_eq!(body, "acme");
+    let (_, body) = send_to(&app, path, Some(&with_roles(&idp, &["acme-member"]))).await;
+    assert_eq!(body, "NoTenant");
+    let bare = Router::new().route(
+        path,
+        get(|request: axum::extract::Request| async move {
+            format!("{:?}", Tenant::from_extensions(request.extensions()))
+        }),
+    );
+    let (_, body) = send_to(&bare, path, None).await;
+    assert_eq!(body, "Err(Unauthenticated)");
 }
 
 #[test]
