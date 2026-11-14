@@ -564,6 +564,7 @@ dependencies = [
  "axa-tracing",
  "axa-transactional-outbox",
  "axa-web-session",
+ "axa-webhooks",
  "axum",
  "clap",
  "http-body-util",
@@ -973,6 +974,20 @@ dependencies = [
  "tokio",
  "tower",
  "uuid",
+]
+
+[[package]]
+name = "axa-webhooks"
+version = "0.1.0"
+dependencies = [
+ "axa-problem",
+ "axum",
+ "base64 0.23.1",
+ "ed25519-dalek 3.0.0",
+ "hmac",
+ "sha2 0.11.1",
+ "tokio",
+ "tower",
 ]
 
 [[package]]

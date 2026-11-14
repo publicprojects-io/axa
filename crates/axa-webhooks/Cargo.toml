@@ -1,0 +1,27 @@
+[package]
+name = "axa-webhooks"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
+description = "Standard Webhooks signing and verifying, with HMAC-SHA256 and Ed25519 keys, for Axum services."
+readme = "README.md"
+repository = "https://github.com/publicprojects-io/axa/"
+license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+keywords = ["axum", "webhooks", "hmac", "ed25519", "signature"]
+categories = ["web-programming::http-server", "cryptography"]
+
+[dependencies]
+axa-problem = { version = "0.2.0", path = "../axa-problem" }
+axum = "0.8"
+base64 = "0.23"
+ed25519-dalek = "3.0"
+hmac = "0.13"
+sha2 = "0.11"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+
+[lints]
+workspace = true

@@ -73,6 +73,8 @@ outbox = ["dep:axa-transactional-outbox", "queue"]
 outbox-encryption = ["outbox", "axa-transactional-outbox/encryption"]
 # Signed cursor pages with no total, as `axa::cursor_pagination`.
 cursor-pagination = ["dep:axa-cursor-pagination"]
+# Standard Webhooks signing and verifying, as `axa::webhooks`.
+webhooks = ["dep:axa-webhooks"]
 paseto = ["dep:axa-paseto-auth"]
 # `axa::error` answers with `axa-problem`, so this adds
 # nothing, and stays so that a service naming it still builds.
@@ -95,6 +97,7 @@ axa-idempotency-key = { version = "0.2.2", path = "crates/axa-idempotency-key", 
 axa-openapi-docs = { version = "0.1.0", path = "crates/axa-openapi-docs", optional = true }
 axa-transactional-outbox = { version = "0.3.0", path = "crates/axa-transactional-outbox", optional = true }
 axa-cursor-pagination = { version = "0.1.1", path = "crates/axa-cursor-pagination", optional = true }
+axa-webhooks = { version = "0.1.0", path = "crates/axa-webhooks", optional = true }
 axa-keycloak-auth = { version = "0.4.0", path = "crates/axa-keycloak-auth", optional = true }
 axa-paseto-auth = { version = "0.6.0", path = "crates/axa-paseto-auth", optional = true }
 axa-problem = { version = "0.2.0", path = "crates/axa-problem" }

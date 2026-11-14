@@ -360,6 +360,7 @@ Perfect for: Financial services, healthcare, government
 | `idempotency` | ✅ | | | | | | | | | | | |
 | `cursor-pagination` | | | | | | | | | | | | |
 | `upload` | | | | | | | | | | | | |
+| `webhooks` | | | ✅ | | | | | | | | | |
 
 ---
 
@@ -389,6 +390,7 @@ Each feature adds dependencies. Here's the impact of each:
 | `ratelimit` | axa-request-rate-limit | |
 | `versioning` | axa-accepts-version-negotiation | |
 | `upload` | tempfile | Bounded multipart uploads, files in temporary files |
+| `webhooks` | axa-webhooks, hmac, ed25519-dalek | Standard Webhooks signing and verifying |
 | `openapi` | axa-openapi-docs | |
 | `tera` | axa-tera-templates | |
 | `maud` | axa-maud-templates, maud | Compile-time templates |

@@ -116,6 +116,10 @@
       "crate": "axa-cursor-pagination"
     },
     {
+      "name": "webhooks",
+      "crate": "axa-webhooks"
+    },
+    {
       "name": "paseto",
       "crate": "axa-paseto-auth"
     },
@@ -359,6 +363,13 @@
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
       "feature": "cursor-pagination",
       "readme": "crates/axa-cursor-pagination/README.md"
+    },
+    {
+      "name": "axa-webhooks",
+      "version": "0.1.0",
+      "description": "Standard Webhooks signing and verifying, with HMAC-SHA256 and Ed25519 keys, for Axum services.",
+      "feature": "webhooks",
+      "readme": "crates/axa-webhooks/README.md"
     },
     {
       "name": "axa-paseto-auth",

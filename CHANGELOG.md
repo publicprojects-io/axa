@@ -7,6 +7,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`axa-webhooks`, as `axa::webhooks` behind the new `webhooks` feature** (WHK-1 to
+  WHK-5): Standard Webhooks signing and verifying, with HMAC-SHA256 `whsec_` secrets and
+  Ed25519 `whsk_` and `whpk_` keys, one signature per key while a key rotates, a
+  five-minute timestamp window, and a `Verified` extractor answering a problem.
 - **`axa_test::postgres::TestDatabase`**, behind `axa-test`'s new `postgres-sqlx`
   feature (TST-5 to TST-7): a Postgres database for each test, cloned from a template
   migrated once and named for its migrations, dropped by `close` or by the guard, with

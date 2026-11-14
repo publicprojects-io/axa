@@ -59,6 +59,8 @@
 //! | `outbox` | A transactional outbox and relay on Postgres that keeps a record, as `axa::outbox` |
 //! | `outbox-encryption` | `outbox`, with payloads sealed at rest under the service's keys |
 //! | `cursor-pagination` | Signed cursor pages with no total, and `LIKE` escaping, as `axa::cursor_pagination` |
+//! | `upload` | Bounded multipart uploads, files in temporary files, as `axa::upload` |
+//! | `webhooks` | Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, as `axa::webhooks` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
@@ -184,6 +186,8 @@ pub use axa_tracing as tracing;
 pub use axa_transactional_outbox as outbox;
 #[cfg(feature = "session")]
 pub use axa_web_session as session;
+#[cfg(feature = "webhooks")]
+pub use axa_webhooks as webhooks;
 pub use context::AppContext;
 pub use environment::Environment;
 pub use error::{Error, Result};
