@@ -71,7 +71,7 @@ Turn on a database feature, such as `postgres-sqlx`, name the database in `src/m
 and pass the pool where `main` passes `()`:
 
 ```toml
-axa = { version = "0.12", features = ["postgres-sqlx"] }
+axa = { version = "0.13", features = ["postgres-sqlx"] }
 ```
 
 ```rust,ignore

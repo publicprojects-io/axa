@@ -42,7 +42,7 @@ Then replace `service-template` and `service_template` with your service's name,
 ### Customization
 
 Turn on what the service needs as features of `axa` in `Cargo.toml`, such as
-`axa = { version = "0.12", features = ["postgres-sqlx", "paseto"] }`:
+`axa = { version = "0.13", features = ["postgres-sqlx", "paseto"] }`:
 
 1. **A database**: `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`,
    `postgres-toasty`, or the `mysql-` forms of each. `AppContext::db` becomes its pool.

@@ -29,6 +29,8 @@ Read these rather than guessing at an API:
 | Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
+| Upgrading to 0.13 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.13/index.md) |
+| Upgrading to 0.12 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.12/index.md) |
 | Upgrading to 0.11 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.11/index.md) |
 | Upgrading to 0.3 and later | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.3/index.md) |
 | Leaving Loco | [From Loco into Axa](https://github.com/publicprojects-io/axa/blob/main/help/from-loco-into-axa/index.md) |
@@ -39,12 +41,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["postgres-sqlx", "queue"] }
+axa = { version = "0.13", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa-test = "0.3"
+axa-test = "0.4"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must
@@ -73,6 +75,9 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Request limits per client or per key, and failed-login lockout | `ratelimit` |
 | `Idempotency-Key` on writes, over Postgres | `idempotency` |
 | `Accepts-version` negotiation | `versioning` |
+| Multipart uploads with limits, files in temporary files | `upload` |
+| Signing or verifying Standard Webhooks | `webhooks` |
+| Fetching a URL someone else chose, never a private address | `http-client` |
 
 `features` lists one name per subcrate, and each subcrate is also usable alone.
 `Environment` lives in `axa-environment`, which has no dependencies, so a migration
@@ -191,6 +196,11 @@ let cli = axa::cli::parse(
 - A compressed request body arrives decoded, and the limit counts decoded bytes. Do
   not decode one yourself, and do not verify a signature over the raw bytes of a
   compressed body: the handler sees the decoded ones.
+- Read an upload with `upload::read(multipart, &Limits { .. })`, never by looping over
+  `Multipart` yourself, which sets no limit. Set `accept` to the file types the route
+  takes, and `persist` a file before the `Upload` drops, or it is deleted.
+- A `422` for a JSON body carries `errors: [{"pointer": "#/items/1/count"}]`, naming
+  where the value was wrong and never what it was.
 - Send a file with `format::download(bytes, media_type, name)`, never by setting
   `content-disposition` by hand from a user's file name. It shows only images, audio,
   video, and plain text in place, downloads HTML, SVG, and PDF, and cleans the name.
@@ -247,6 +257,14 @@ Production fails closed, and these are the usual first-deploy surprises:
   takes `axa::client::ClientAddr` for the real address, which stays out of the request
   span because it is personal data.
 - `MAX_CONNECTIONS` limits open connections, and defaults to `server::MAX_CONNECTIONS`.
+- `DB_URL_FILE` may name a file holding the connection string, as a mounted secret.
+  Setting it and `DB_URL` both stops the boot.
+
+Read a service's own variables with `config::Settings`, not `std::env::var`, so they
+get the same rules: `let settings = Settings::from_env(&environment);`, then
+`required`, `parsed`, `flag`, and `secret`, which reads `NAME` or a file `NAME_FILE`
+names, and last `settings.finish()?`, which refuses a production boot with any problem
+and otherwise gives back warnings to log.
 
 ## Destructive commands
 
@@ -480,8 +498,25 @@ async fn health_answers() {
 }
 ```
 
+For a test that needs Postgres, `axa-test`'s `postgres-sqlx` feature gives
+`TestDatabase::new(&MIGRATOR).await?`: a database of the test's own, cloned from a
+template migrated once, on the server `AXA_TEST_DB_URL` names. Use `db.pool`, and end
+with `db.close().await`; a guard dropped without it is cleaned up, but later.
+
 Use `AppRoutes::mounted` for a route census: it lists every route as `(method, full
 path)`, without booting anything.
+
+## Outbound requests and webhooks
+
+- Fetch a URL that a caller, a tenant, or a webhook subscriber chose only with
+  `axa::http_client::Client`, built with `https_only(true)` in production. It refuses
+  private, loopback, and metadata addresses in the URL, after its own DNS lookup, and on
+  every redirect. Read the body with `bytes_limited`. Never reach such a URL with a
+  plain `reqwest::Client`, which goes wherever it is pointed.
+- Sign a webhook with `axa::webhooks::Signer` and send its headers, with the same id on
+  every retry. Verify one by taking `Verified` in the handler with the `Verifier` in
+  the state; the body it gives is exactly what was signed. Record each delivery id for
+  the five-minute window, as a delivery may be sent twice within it.
 
 ## Observability
 

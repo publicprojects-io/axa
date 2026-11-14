@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -51,6 +51,7 @@
       "help/background-jobs/index.md",
       "help/upgrading-to-0.3/index.md",
       "help/upgrading-to-0.11/index.md",
+      "help/upgrading-to-0.13/index.md",
       "help/upgrading-to-0.12/index.md"
     ],
     "comparisons": [
@@ -293,14 +294,14 @@
   "crates": [
     {
       "name": "axa-postgres-diesel",
-      "version": "0.2.1",
+      "version": "0.3.0",
       "description": "Diesel on PostgreSQL: pooling, migrations, and test resets for Axum services, in pure Rust.",
       "feature": "postgres-diesel",
       "readme": "crates/axa-postgres-diesel/README.md"
     },
     {
       "name": "axa-postgres-toasty",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Toasty on PostgreSQL: connections, migrations, and test resets for Axum services.",
       "feature": "postgres-toasty",
       "readme": "crates/axa-postgres-toasty/README.md"
@@ -314,7 +315,7 @@
     },
     {
       "name": "axa-keycloak-auth",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
       "readme": "crates/axa-keycloak-auth/README.md"
@@ -384,7 +385,7 @@
     },
     {
       "name": "axa-paseto-auth",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto-auth/README.md"
@@ -405,14 +406,14 @@
     },
     {
       "name": "axa-redis-cache",
-      "version": "0.1.1",
+      "version": "0.2.0",
       "description": "A Redis cache with mandatory expiry for Axum services.",
       "feature": "redis",
       "readme": "crates/axa-redis-cache/README.md"
     },
     {
       "name": "axa-postgres-seaorm",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "description": "SeaORM on PostgreSQL: connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.",
       "feature": "postgres-seaorm",
       "readme": "crates/axa-postgres-seaorm/README.md"
@@ -426,14 +427,14 @@
     },
     {
       "name": "axa-postgres-sqlx",
-      "version": "0.1.3",
+      "version": "0.2.0",
       "description": "PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.",
       "feature": "postgres-sqlx",
       "readme": "crates/axa-postgres-sqlx/README.md"
     },
     {
       "name": "axa-test",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "description": "Request-level test helpers for Axa services, built on axum-test, with a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"

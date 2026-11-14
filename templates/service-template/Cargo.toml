@@ -11,7 +11,7 @@ publish = false
 # Turn on what the service needs, such as "postgres-sqlx" for a Postgres pool in
 # AppContext::db, "paseto" or "keycloak" for bearer tokens, or "queue" for jobs.
 # Each feature is listed in Axa's README.
-axa = "0.12"
+axa = "0.13"
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

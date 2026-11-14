@@ -7,9 +7,9 @@ The crate documentation has the rules, and section 4.17 of the
 [spec](../../spec/index.md#417-outbox) has what is proved.
 
 ```toml
-axa = { version = "0.12", features = ["outbox"] }
+axa = { version = "0.13", features = ["outbox"] }
 # Or, to seal payloads at rest:
-axa = { version = "0.12", features = ["outbox-encryption"] }
+axa = { version = "0.13", features = ["outbox-encryption"] }
 ```
 
 `axa-transactional-outbox` 0.2 keeps a **record**. What a service delivered, what it refused, and what

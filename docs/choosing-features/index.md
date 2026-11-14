@@ -212,27 +212,21 @@ All database features provide:
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["postgres-sqlx"] }
-axa-postgres-sqlx = "0.12"
+axa = { version = "0.13", features = ["postgres-sqlx"] }
 ```
 
 ### REST API with Postgres + Auth + Observability
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["postgres-seaorm", "paseto", "tracing", "opentelemetry", "prometheus"] }
-axa-postgres-seaorm = "0.12"
-axa-paseto-auth = "0.12"
-axa-opentelemetry = "0.12"
+axa = { version = "0.13", features = ["postgres-seaorm", "paseto", "tracing", "opentelemetry", "prometheus"] }
 ```
 
 ### Background Jobs with Postgres
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["queue"] }
-axa-postgres-sqlx = "0.12"
-axa-postgres-job-queue = "0.12"
+axa = { version = "0.13", features = ["queue"] }
 ```
 
 ### Full-featured Service
@@ -240,7 +234,7 @@ axa-postgres-job-queue = "0.12"
 ```toml
 [dependencies]
 axa = { 
-  version = "0.12", 
+  version = "0.13", 
   features = [
     "postgres-seaorm",
     "queue",
@@ -258,10 +252,6 @@ axa = {
     "http-client",
   ] 
 }
-axa-postgres-seaorm = "0.12"
-axa-postgres-job-queue = "0.12"
-axa-paseto-auth = "0.12"
-axa-opentelemetry = "0.12"
 ```
 
 ---

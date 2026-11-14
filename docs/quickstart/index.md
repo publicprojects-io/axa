@@ -43,7 +43,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axa = "0.12.1"
+axa = "0.13.0"
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -53,7 +53,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 For a service with a PostgreSQL database using sqlx, add the `postgres-sqlx` feature:
 ```toml
 [dependencies]
-axa = { version = "0.12.1", features = ["postgres-sqlx"] }
+axa = { version = "0.13.0", features = ["postgres-sqlx"] }
 ```
 
 For other databases, use `postgres-seaorm`, `postgres-diesel`, `postgres-toasty`, `mysql-sqlx`, `mysql-seaorm`, `mysql-diesel`, `mysql-toasty`, `sqlite-sqlx`, `sqlite-seaorm`, or `sqlite-diesel`.
@@ -281,5 +281,5 @@ You now have a working Axa service! Here's what to explore next:
 ## Need Help?
 
 - Check the [specification](../spec/index.md) for exact behavior
-- Review the [upgrade guide](../help/upgrading-to-0.12/index.md) if migrating from an older version
+- Review the [upgrade guide](../help/upgrading-to-0.13/index.md) if migrating from an older version
 - See [Converting a project from Loco to Axa](../help/from-loco-into-axa/index.md) if converting from Loco

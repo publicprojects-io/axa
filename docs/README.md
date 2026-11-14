@@ -46,7 +46,8 @@ Learn how to use axa effectively:
 
 ### Migration Guides
 
-- **[Upgrading to 0.12](../help/upgrading-to-0.12/index.md)** - Latest upgrade guide
+- **[Upgrading to 0.13](../help/upgrading-to-0.13/index.md)** - Latest upgrade guide
+- **[Upgrading to 0.12](../help/upgrading-to-0.12/index.md)**
 - **[Upgrading to 0.11](../help/upgrading-to-0.11/index.md)** - Previous upgrade guide
 - **[Upgrading to 0.3](../help/upgrading-to-0.3/index.md)** - Migration from earlier versions
 - **[From Loco into axa](../help/from-loco-into-axa/index.md)** - Converting Loco projects
@@ -67,7 +68,7 @@ This documentation follows these principles:
 1. **Task-oriented**: Each guide helps you accomplish a specific goal
 2. **Example-driven**: Code examples are working, tested snippets
 3. **Principle-based**: Explains the "why" behind the "how"
-4. **Up-to-date**: Matches the current version (0.12.1)
+4. **Up-to-date**: Matches the current version (0.13.0)
 
 ---
 

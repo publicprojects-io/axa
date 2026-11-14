@@ -2,7 +2,7 @@
 
 > Accessories library for Axum websites, databases, microservices, and more. A library, not a framework: `main.rs` stays ordinary Axum and
 > calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
-> the preferred way to reach a database. Version 0.12.1, Rust 1.97 or newer.
+> the preferred way to reach a database. Version 0.13.0, Rust 1.97 or newer.
 
 ## Docs
 
@@ -76,6 +76,7 @@
 - [From Loco into Axa](help/from-loco-into-axa/index.md)
 - [From Loco SeaORM into axa-postgres-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)
+- [Upgrading to 0.13](help/upgrading-to-0.13/index.md)
 - [Upgrading to 0.12](help/upgrading-to-0.12/index.md)
 - [Upgrading to 0.11](help/upgrading-to-0.11/index.md)
 - [Upgrading to 0.3](help/upgrading-to-0.3/index.md)

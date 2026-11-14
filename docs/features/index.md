@@ -42,17 +42,17 @@ Each feature is named for its database and library:
 **Do you need a database?**
 
 - **No database needed** → Use core `axa` only
-- **PostgreSQL with sqlx (RECOMMENDED)** → Add `axa = { version = "0.12.1", features = ["postgres-sqlx"] }`
-- **PostgreSQL with SeaORM** → Add `axa = { version = "0.12.1", features = ["postgres-seaorm"] }`
-- **PostgreSQL with Diesel (no native libpq)** → Add `axa = { version = "0.12.1", features = ["postgres-diesel"] }`
-- **PostgreSQL with Toasty** → Add `axa = { version = "0.12.1", features = ["postgres-toasty"] }`
-- **MySQL with sqlx** → Add `axa = { version = "0.12.1", features = ["mysql-sqlx"] }`
-- **MySQL with SeaORM** → Add `axa = { version = "0.12.1", features = ["mysql-seaorm"] }`
-- **MySQL with Diesel (no native libmysqlclient)** → Add `axa = { version = "0.12.1", features = ["mysql-diesel"] }`
-- **MySQL with Toasty** → Add `axa = { version = "0.12.1", features = ["mysql-toasty"] }`
-- **SQLite with sqlx** → Add `axa = { version = "0.12.1", features = ["sqlite-sqlx"] }`
-- **SQLite with SeaORM** → Add `axa = { version = "0.12.1", features = ["sqlite-seaorm"] }`
-- **SQLite with Diesel** → Add `axa = { version = "0.12.1", features = ["sqlite-diesel"] }`
+- **PostgreSQL with sqlx (RECOMMENDED)** → Add `axa = { version = "0.13.0", features = ["postgres-sqlx"] }`
+- **PostgreSQL with SeaORM** → Add `axa = { version = "0.13.0", features = ["postgres-seaorm"] }`
+- **PostgreSQL with Diesel (no native libpq)** → Add `axa = { version = "0.13.0", features = ["postgres-diesel"] }`
+- **PostgreSQL with Toasty** → Add `axa = { version = "0.13.0", features = ["postgres-toasty"] }`
+- **MySQL with sqlx** → Add `axa = { version = "0.13.0", features = ["mysql-sqlx"] }`
+- **MySQL with SeaORM** → Add `axa = { version = "0.13.0", features = ["mysql-seaorm"] }`
+- **MySQL with Diesel (no native libmysqlclient)** → Add `axa = { version = "0.13.0", features = ["mysql-diesel"] }`
+- **MySQL with Toasty** → Add `axa = { version = "0.13.0", features = ["mysql-toasty"] }`
+- **SQLite with sqlx** → Add `axa = { version = "0.13.0", features = ["sqlite-sqlx"] }`
+- **SQLite with SeaORM** → Add `axa = { version = "0.13.0", features = ["sqlite-seaorm"] }`
+- **SQLite with Diesel** → Add `axa = { version = "0.13.0", features = ["sqlite-diesel"] }`
 
 **Recommendation**: Use `postgres-sqlx` unless you have existing code in another library. SeaORM adds models and schema helpers. Diesel needs no C database client library. Toasty is before 1.0, and its migrations go forward only. For SQLite, only sqlx and SeaORM are published: the Diesel and Toasty crates are in the repository but not on crates.io.
 
@@ -63,7 +63,7 @@ Each feature is named for its database and library:
 **Do you need to run background jobs?**
 
 - **No** → Skip
-- **Yes, with Postgres queue** → Add `axa = { version = "0.12.1", features = ["queue"] }`
+- **Yes, with Postgres queue** → Add `axa = { version = "0.13.0", features = ["queue"] }`
 - **Yes, with MySQL queue** → Add `axa-mysql-job-queue` crate (not a feature)
 - **Yes, with SQLite queue** → Add `axa-sqlite-job-queue` crate (not a feature)
 - **Yes, with in-process execution** → Use `BackgroundAsync` worker mode (built into core)
@@ -83,8 +83,8 @@ The MySQL and SQLite job queues are separate crates with the same API.
 **Do you need reliable event publishing?**
 
 - **No** → Skip
-- **Yes, basic outbox** → Add `axa = { version = "0.12.1", features = ["outbox"] }`
-- **Yes, with encrypted payloads** → Add `axa = { version = "0.12.1", features = ["outbox-encryption"] }`
+- **Yes, basic outbox** → Add `axa = { version = "0.13.0", features = ["outbox"] }`
+- **Yes, with encrypted payloads** → Add `axa = { version = "0.13.0", features = ["outbox-encryption"] }`
 
 The outbox feature provides:
 - Transactional event storage
@@ -101,8 +101,8 @@ The outbox feature provides:
 **What authentication method do you need?**
 
 - **None / Custom** → Skip
-- **PASETO tokens (RECOMMENDED for new projects)** → Add `axa = { version = "0.12.1", features = ["paseto"] }`
-- **Keycloak OAuth2 / OIDC** → Add `axa = { version = "0.12.1", features = ["keycloak"] }`
+- **PASETO tokens (RECOMMENDED for new projects)** → Add `axa = { version = "0.13.0", features = ["paseto"] }`
+- **Keycloak OAuth2 / OIDC** → Add `axa = { version = "0.13.0", features = ["keycloak"] }`
 - **Both PASETO and Keycloak** → Add both features
 
 **Comparison**:
@@ -119,7 +119,7 @@ The outbox feature provides:
 **Do you need browser-based sessions?**
 
 - **No (API only)** → Skip
-- **Yes, with cookies** → Add `axa = { version = "0.12.1", features = ["session"] }`
+- **Yes, with cookies** → Add `axa = { version = "0.13.0", features = ["session"] }`
 
 The `session` feature provides:
 - Secure, encrypted sessions
@@ -134,7 +134,7 @@ The `session` feature provides:
 **Do you need API versioning?**
 
 - **No** → Skip
-- **Yes, header-based** → Add `axa = { version = "0.12.1", features = ["versioning"] }`
+- **Yes, header-based** → Add `axa = { version = "0.13.0", features = ["versioning"] }`
 
 The `versioning` feature provides:
 - `Accepts-Version` header negotiation
@@ -148,7 +148,7 @@ The `versioning` feature provides:
 **Do you need caching?**
 
 - **No** → Skip
-- **Yes, Redis cache** → Add `axa = { version = "0.12.1", features = ["redis"] }`
+- **Yes, Redis cache** → Add `axa = { version = "0.13.0", features = ["redis"] }`
 
 The `redis` feature provides:
 - Mandatory TTL on all entries
@@ -163,7 +163,7 @@ The `redis` feature provides:
 **Do you need request rate limiting?**
 
 - **No** → Skip
-- **Yes, in-process** → Add `axa = { version = "0.12.1", features = ["ratelimit"] }`
+- **Yes, in-process** → Add `axa = { version = "0.13.0", features = ["ratelimit"] }`
 
 The `ratelimit` feature provides:
 - Per-client limits
@@ -179,7 +179,7 @@ The `ratelimit` feature provides:
 **Do you need to paginate collections?**
 
 - **No** → Skip
-- **Yes, cursor-based** → Add `axa = { version = "0.12.1", features = ["cursor-pagination"] }`
+- **Yes, cursor-based** → Add `axa = { version = "0.13.0", features = ["cursor-pagination"] }`
 
 The `cursor-pagination` feature provides:
 - Opaque, signed cursors
@@ -196,8 +196,8 @@ The `cursor-pagination` feature provides:
 **Do you need HTML templates?**
 
 - **No** → Skip
-- **Yes, Tera templates** → Add `axa = { version = "0.12.1", features = ["tera"] }`
-- **Yes, Maud templates** → Add `axa = { version = "0.12.1", features = ["maud"] }`
+- **Yes, Tera templates** → Add `axa = { version = "0.13.0", features = ["tera"] }`
+- **Yes, Maud templates** → Add `axa = { version = "0.13.0", features = ["maud"] }`
 
 The `tera` feature provides:
 - Safe HTML escaping by default
@@ -216,9 +216,9 @@ The `maud` feature provides:
 **Do you need observability?**
 
 - **No** → Skip
-- **Yes, Prometheus metrics** → Add `axa = { version = "0.12.1", features = ["prometheus"] }`
-- **Yes, OpenTelemetry tracing** → Add `axa = { version = "0.12.1", features = ["opentelemetry"] }`
-- **Yes, advanced tracing** → Add `axa = { version = "0.12.1", features = ["tracing"] }`
+- **Yes, Prometheus metrics** → Add `axa = { version = "0.13.0", features = ["prometheus"] }`
+- **Yes, OpenTelemetry tracing** → Add `axa = { version = "0.13.0", features = ["opentelemetry"] }`
+- **Yes, advanced tracing** → Add `axa = { version = "0.13.0", features = ["tracing"] }`
 
 | Feature | Purpose |
 |---------|---------|
@@ -233,7 +233,7 @@ The `maud` feature provides:
 **Do you need API documentation?**
 
 - **No** → Skip
-- **Yes, OpenAPI docs** → Add `axa = { version = "0.12.1", features = ["openapi"] }`
+- **Yes, OpenAPI docs** → Add `axa = { version = "0.13.0", features = ["openapi"] }`
 
 The `openapi` feature provides:
 - OpenAPI document serving
@@ -247,7 +247,7 @@ The `openapi` feature provides:
 **Do you need idempotent writes?**
 
 - **No** → Skip
-- **Yes, idempotency keys** → Add `axa = { version = "0.12.1", features = ["idempotency"] }`
+- **Yes, idempotency keys** → Add `axa = { version = "0.13.0", features = ["idempotency"] }`
 
 The `idempotency` feature provides:
 - `Idempotency-Key` header handling
@@ -265,7 +265,7 @@ The `idempotency` feature provides:
 
 ```toml
 [dependencies]
-axa = { version = "0.12.1", features = ["postgres-sqlx", "cursor-pagination", "ratelimit"] }
+axa = { version = "0.13.0", features = ["postgres-sqlx", "cursor-pagination", "ratelimit"] }
 ```
 
 Perfect for: JSON APIs, microservices, internal tools
@@ -277,7 +277,7 @@ Perfect for: JSON APIs, microservices, internal tools
 ```toml
 [dependencies]
 axa = { 
-    version = "0.12.1", 
+    version = "0.13.0", 
     features = [
         "postgres-sqlx",
         "session", 
@@ -298,7 +298,7 @@ Perfect for: User-facing applications, admin panels
 ```toml
 [dependencies]
 axa = { 
-    version = "0.12.1", 
+    version = "0.13.0", 
     features = ["postgres-sqlx", "queue", "outbox"] 
 }
 ```
@@ -312,7 +312,7 @@ Perfect for: CQRS, event sourcing, reliable messaging
 ```toml
 [dependencies]
 axa = { 
-    version = "0.12.1", 
+    version = "0.13.0", 
     features = [
         "postgres-sqlx",
         "paseto",

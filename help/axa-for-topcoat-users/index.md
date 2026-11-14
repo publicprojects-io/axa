@@ -73,7 +73,7 @@ In Axa, with `features = ["tera"]`:
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["tera"] }
+axa = { version = "0.13", features = ["tera"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```

@@ -296,7 +296,7 @@ async fn transfer_funds(
 ```rust
 // In your Cargo.toml:
 // [dependencies]
-// axa = { version = "0.12.1", features = ["postgres-seaorm"] }
+// axa = { version = "0.13.0", features = ["postgres-seaorm"] }
 // sea-orm = { version = "2.0", features = ["postgres", "runtime-tokio-rustls"] }
 
 use axa::{Environment, config::{Config, Defaults}, logger, prelude::*, server};
@@ -365,7 +365,7 @@ async fn main() -> Result<()> {
 ```rust
 // In your Cargo.toml:
 // [dependencies]
-// axa = { version = "0.12.1", features = ["paseto"] }
+// axa = { version = "0.13.0", features = ["paseto"] }
 
 use axa::{Environment, config::{Config, Defaults}, logger, prelude::*, server, paseto};
 use axa::paseto::{Guard, Policy};

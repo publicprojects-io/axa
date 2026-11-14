@@ -23,14 +23,14 @@ For the rest of the move (routes, boot, configuration, tests), see
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["postgres-seaorm"] }
+axa = { version = "0.13", features = ["postgres-seaorm"] }
 ```
 
 In a separate migration crate:
 
 ```toml
 [dependencies]
-axa = { version = "0.12", features = ["postgres-seaorm"] }
+axa = { version = "0.13", features = ["postgres-seaorm"] }
 sea-orm-migration = { version = "2.0", features = ["runtime-tokio-rustls", "sqlx-postgres"] }
 ```
 

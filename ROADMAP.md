@@ -5,11 +5,28 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.12.1
+## Current Version: 0.13.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.13.0
+- Stage 2 tasks (capabilities with a safety case):
+  - Cross-site write guard in the standard stack (T-13)
+  - Bounded multipart uploads, `axa::upload` (T-14)
+  - Safe downloads, `format::download` (T-15)
+  - A Postgres database per test in `axa-test` (T-16)
+  - Postgres session settings (T-17)
+  - Recovery from stale prepared statements (T-18)
+  - Readiness that waits for migrations (T-19)
+  - Decoded compressed request bodies (T-20)
+  - `config::Settings`, with `_FILE` secrets (T-21)
+  - JSON Pointers in body errors (T-22)
+  - `axa-http-client`, refusing private addresses (T-11)
+  - `axa-webhooks`, Standard Webhooks signing and verifying (T-12)
+- Multi-tenancy (T-43 to T-47): a `Tenant` extractor, row-level security
+  transactions and boot checks, a tenant-scoped cache, and isolation test helpers
 
 ### Version 0.12.1
 - MySQL and SQLite support for all database features
@@ -17,7 +34,6 @@ This document outlines the planned development path for axa. See
 - Documentation restructuring into modular docs
 - Visual architecture diagrams
 - Podman-based development infrastructure
-- Cross-site write guard (T-13)
 
 ### Version 0.11.0
 - Stage 1 tasks (closing holes):

@@ -66,7 +66,7 @@ This is a complete Axa service with two routes, based on the README's
 
 ```toml
 [dependencies]
-axa = "0.12"
+axa = "0.13"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```

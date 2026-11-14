@@ -17,7 +17,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.12"
+axa = "0.13"
 ```
 
 ### Always included
@@ -660,7 +660,8 @@ how to move a service across.
 
 ## Relationship to Loco
 
-To upgrade from 0.11, read [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md), from 0.10,
+To upgrade from 0.12, read [Upgrading to Axa 0.13](help/upgrading-to-0.13/index.md), from 0.11,
+[Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md), from 0.10,
 [Upgrading to Axa 0.11](help/upgrading-to-0.11/index.md), and
 from earlier versions, [Upgrading to Axa 0.3](help/upgrading-to-0.3/index.md).
 

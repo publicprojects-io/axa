@@ -8,7 +8,7 @@ real requests to its full router, middleware and all, with no port opened.
 
 ```toml
 [dev-dependencies]
-axa-test = "0.3"
+axa-test = "0.4"
 ```
 
 ```rust,ignore
@@ -39,7 +39,7 @@ that accepts them, for a service whose guard is `axa-paseto-auth`:
 
 ```toml
 [dev-dependencies]
-axa-test = { version = "0.3", features = ["paseto"] }
+axa-test = { version = "0.4", features = ["paseto"] }
 ```
 
 Never use these keys outside tests: anyone can mint a token they verify.
@@ -53,7 +53,7 @@ role that may create databases:
 
 ```toml
 [dev-dependencies]
-axa-test = { version = "0.3", features = ["postgres-sqlx"] }
+axa-test = { version = "0.4", features = ["postgres-sqlx"] }
 ```
 
 ```rust,ignore

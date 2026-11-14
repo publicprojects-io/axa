@@ -5,6 +5,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-14
+
+This covers `axa` 0.13.0, `axa-postgres-sqlx` 0.2.0, `axa-postgres-seaorm` 0.4.0,
+`axa-postgres-diesel` 0.3.0, `axa-postgres-toasty` 0.2.0, `axa-paseto-auth` 0.7.0,
+`axa-keycloak-auth` 0.5.0, `axa-redis-cache` 0.2.0, and `axa-test` 0.4.0, and the new
+`axa-webhooks` 0.1.0 and `axa-http-client` 0.1.0. As in 0.12, the `sqlite-*` features
+are left out of the published `axa` until the SQLite crates can be published. To
+upgrade, read [Upgrading to Axa 0.13](help/upgrading-to-0.13/index.md).
+
 ### Added
 
 - **`axa-http-client`, as `axa::http_client` behind the new `http-client` feature**
@@ -74,7 +83,6 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   audio, video, or plain text, which cannot run script, and `attachment` for HTML, SVG,
   PDF, and anything else. `clean_file_name` strips the path, control and bidirectional
   characters, and quotes, and a name that is not ASCII is sent as `filename*` too.
-
 - **Postgres session settings** (SQX-12, SOR-6, DSL-7, TOA-5, CFG-27):
   `DB_STATEMENT_TIMEOUT_MS`, `DB_APPLICATION_NAME`, and `DB_READ_ONLY` reach every
   connection the Postgres crates open, as libpq's `options` and `application_name`.
@@ -106,6 +114,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   service that builds one by hand, rather than with `GuardConfig::new`, adds it.
 - **`config::Http` has a new field, `cross_site_paths`**, so a service that builds an
   `Http` by hand adds `cross_site_paths: Vec::new()`.
+- **The standard stack refuses a cross-site write** (MID-23 to MID-28), where it let
+  one through before. A route that takes one by design, such as an identity provider's
+  `form_post` callback, is listed in `Http::cross_site_paths`, and a browser origin
+  that writes from another site is listed in `CORS_ALLOWED_ORIGINS`.
+- **`DB_URL` and `DB_URL_FILE` both set, or a `DB_URL_FILE` that cannot be read, stops
+  the boot** in every environment (CFG-30).
+- **`axa-test` 0.4.0 depends on `axa` 0.13**, so a service moves both together.
 
 ## [0.12.1] - 2026-11-10
 
