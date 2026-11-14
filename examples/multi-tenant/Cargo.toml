@@ -15,11 +15,8 @@ serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-# To mint PASETO tokens in tests, as the auth service would.
-base64 = "0.23"
-ed25519-dalek = "3.0"
-rusty_paseto = { version = "0.10", default-features = false, features = ["v4_public", "serde_json"] }
-sha2 = "0.11"
+# Signs PASETO tokens under a throwaway key, as the auth service would.
+axa-test = { path = "../../crates/axa-test", features = ["paseto"] }
 tower = { version = "0.5", features = ["util"] }
 
 # Standalone, not a member of the axa workspace.

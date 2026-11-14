@@ -486,6 +486,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | TST-1 | `axa-test` | `boot_test` hands back a service's failure to boot for tests. | `a_failed_boot_is_handed_back` |
 | TST-2 | `axa-test` | A request test on a service that cannot boot fails, and its body never runs. | `a_request_test_on_a_service_that_cannot_boot_fails` |
 | TST-3 | `axa-test` | `isolation::assert_hidden` sends each probe with another tenant's headers and fails, naming every wrong one, when a probe of a resource answers other than `404`, a `403` among them, or a list fails or shows the owner's text. | `routes_that_keep_tenants_apart_pass`, `a_403_tells_another_tenant_the_id_exists`, `a_list_that_shows_another_tenants_id_fails`, `the_owner_is_not_another_tenant` |
+| TST-4 | `axa-test` | With the `paseto` feature, `paseto::TestKeys` signs PASETO tokens with the attributes a test names, which a verifier from the same keys accepts through `axa-paseto-auth`'s guard, and which a token from another key, for another audience, or past its expiry is not. | `a_test_token_reaches_the_handler_with_its_tenant`, `another_tenant_sees_nothing_of_acmes`, `tokens_the_guard_must_refuse_are_refused` |
 
 ### 4.14 Databases
 

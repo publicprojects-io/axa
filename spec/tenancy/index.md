@@ -1,7 +1,8 @@
 # Multi-tenancy
 
 A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. TN-1, TN-2, and TN-3 are built, for every Postgres crate, and TN-6. The rest is not yet. It proposes capabilities, each with an id
+13 November 2026. TN-1 to TN-4 and TN-6 are built, TN-2 and TN-3 for every Postgres crate. These are
+the ones with a safety case. The rest wait for two consumers. The rest is not yet. It proposes capabilities, each with an id
 (TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
 [`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
 the first few would give.
@@ -100,8 +101,8 @@ Production refuses to boot when either fails. Development warns, so that a local
 superuser still works, but `axa-test` can run the isolation tests as a role the policies
 apply to.
 
-**TN-4, isolation tests.** The check is done, unreleased, as `axa_test::isolation`, TST-3.
-Minting test tokens is not yet. For `axa-paseto-auth`, a test key and a `token(attrs)` that the
+**TN-4, isolation tests.** Done, unreleased, as T-46: `axa_test::isolation`, TST-3, and
+`axa_test::paseto::TestKeys`, TST-4. For `axa-paseto-auth`, a test key and a `token(attrs)` that the
 guard accepts, as `examples/multi-tenant` writes by hand. Then a helper that, given a
 route that creates a resource and the routes that read, change, and delete it, runs them
 as a second tenant and expects `404` from each.

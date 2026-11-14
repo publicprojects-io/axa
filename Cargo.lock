@@ -915,9 +915,16 @@ dependencies = [
 name = "axa-test"
 version = "0.3.0"
 dependencies = [
+ "authentication-verifier",
  "axa",
+ "axa-paseto-auth",
  "axum",
  "axum-test",
+ "base64 0.23.1",
+ "ed25519-dalek 3.0.0",
+ "rusty_paseto",
+ "serde_json",
+ "sha2 0.11.1",
  "tokio",
 ]
 

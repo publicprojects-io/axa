@@ -21,6 +21,8 @@
 use std::{future::Future, net::SocketAddr};
 
 pub mod isolation;
+#[cfg(feature = "paseto")]
+pub mod paseto;
 
 pub use axa::boot::{BootResult, TestApp};
 use axa::{AppContext, Result};

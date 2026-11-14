@@ -435,7 +435,9 @@ security, so there the tenant in every query is the only fence. Cache a tenant's
 through `cache.for_tenant(tenant.as_str())?`, made per request, never under a key you
 build yourself. Prove the fences with `axa_test::isolation::assert_hidden`: create a
 resource as one tenant, then probe its read, change, and delete routes, and the list, as
-another, which must answer `404` and show nothing. With Keycloak, map a realm role to the tenant
+another, which must answer `404` and show nothing. With `axa-test`'s `paseto` feature, mint each
+tenant's token with `TestKeys::new().token(issuer, audience).attr("tenant", ["acme"])`,
+and build the test guard's verifier from `TestKeys::new().verifier(issuer, audience)`. With Keycloak, map a realm role to the tenant
 in the role map, as `"acme-member": { "tenant": ["acme"] }`.
 
 With `axa-keycloak-auth`:

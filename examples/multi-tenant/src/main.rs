@@ -259,58 +259,38 @@ mod tests {
     use authentication_verifier::Claims;
 
     use super::*;
+    use axa_test::paseto::TestKeys;
     use axum::{
         body::Body,
         http::{Request, StatusCode, header},
     };
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-    use ed25519_dalek::SigningKey;
-    use rusty_paseto::core::{
-        Footer, Key, Paseto, PasetoAsymmetricPrivateKey, Payload, Public, V4,
-    };
     use serde_json::{Value, json};
-    use sha2::{Digest, Sha256};
     use tower::ServiceExt;
 
-    /// A throwaway signing seed for test tokens. It protects nothing.
-    const SEED: [u8; 32] = [7; 32];
     const ISSUER: &str = "authentication-service";
     const AUDIENCE: &str = "multi-tenant";
 
-    fn kid() -> String {
-        let public = SigningKey::from_bytes(&SEED).verifying_key().to_bytes();
-        URL_SAFE_NO_PAD.encode(Sha256::digest(public))
-    }
-
-    /// A token for a caller with `attrs`, signed as the auth service would.
+    /// A token for a caller with `attrs`, an object of lists, signed under Axa's test
+    /// key as the auth service would sign it.
     fn token(attrs: &Value) -> String {
-        let payload = json!({
-            "sub": "11111111-1111-1111-1111-111111111111",
-            "email": "alice@example.com", "name": "Alice",
-            "iss": ISSUER, "aud": AUDIENCE,
-            "exp": 11_700_000_000_i64, "iat": 1_700_000_000, "sid": "test-sid",
-            "attrs": attrs,
-        })
-        .to_string();
-        let key = Key::<64>::from(SigningKey::from_bytes(&SEED).to_keypair_bytes());
-        let private = PasetoAsymmetricPrivateKey::<V4, Public>::from(&key);
-        let footer = format!(r#"{{"kid":"{}"}}"#, kid());
-        let mut builder = Paseto::<V4, Public>::builder();
-        builder.set_payload(Payload::from(payload.as_str()));
-        builder.set_footer(Footer::from(footer.as_str()));
-        builder.try_sign(&private).unwrap()
+        let mut token = TestKeys::new().token(ISSUER, AUDIENCE);
+        for (name, values) in attrs.as_object().unwrap() {
+            let values = values
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap());
+            token = token.attr(name, values);
+        }
+        token.sign()
     }
 
     fn guard() -> Guard {
-        let public = SigningKey::from_bytes(&SEED).verifying_key().to_bytes();
-        let keys = json!({
-            "keys": [{ "kty": "OKP", "crv": "Ed25519", "use": "sig",
-                       "kid": kid(), "x": URL_SAFE_NO_PAD.encode(public) }]
-        });
-        let verifier = Verifier::from_paseto_keys_value(&keys, ISSUER, AUDIENCE).unwrap();
         Guard::new(
             GuardConfig::new("todo"),
-            Arc::new(ReloadableVerifier::new(verifier)),
+            Arc::new(ReloadableVerifier::new(
+                TestKeys::new().verifier(ISSUER, AUDIENCE),
+            )),
             Arc::new(ReloadablePolicy::new(Policy::default_policy())),
         )
     }

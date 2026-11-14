@@ -95,7 +95,8 @@ runs.
 cargo test
 ```
 
-The tests mint tokens with a throwaway key, and check that a caller with no tenant is
+The tests mint tokens with `axa_test::paseto::TestKeys`, a throwaway key, and check that
+a caller with no tenant is
 refused before the database is asked. The test that one tenant never sees another's
 rows needs Postgres, as a role row-level security applies to:
 

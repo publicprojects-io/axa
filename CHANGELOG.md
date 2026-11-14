@@ -23,6 +23,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`axa_postgres_sqlx::begin_with`** (SQX-8, SQX-9): a transaction with settings such
   as `app.tenant` set for its length only, bound, for Postgres row-level security. It
   sets only custom dotted names, and refuses `role`, `search_path`, and the like.
+- **`axa_test::paseto::TestKeys`**, behind `axa-test`'s new `paseto` feature (TST-4):
+  PASETO tokens for tests, signed under a published throwaway key, with
+  `.attr("tenant", ["acme"])` and the rest, and the verifier that accepts them.
 - **`axa_test::isolation`** (TST-3): `assert_hidden` sends probes of a resource as
   another tenant and fails, naming each, on any answer but `404`, a `403` among them,
   or a list that shows the owner's text.

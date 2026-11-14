@@ -42,8 +42,8 @@ T-45 is done, unreleased, with any Postgres database feature, as
 
 T-47 is done, unreleased, as `Cache::for_tenant` in `axa-redis-cache`.
 
-T-46 is half done, unreleased: `axa_test::isolation::assert_hidden`. Minting PASETO test
-tokens in `axa-test` waits on adding its dependencies.
+T-46 is done, unreleased: `axa_test::isolation::assert_hidden`, and
+`axa_test::paseto::TestKeys` behind the `paseto` feature.
 
 T-44 is done, unreleased, in all four Postgres crates: `begin_with` for sqlx, SeaORM, and
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
