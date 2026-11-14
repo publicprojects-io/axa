@@ -47,6 +47,7 @@ fn http() -> Http {
         hsts_max_age: 0,
         csp: None,
         permissions_policy: None,
+        log_tenant: false,
         trusted_proxies: Vec::new(),
     }
 }
@@ -261,6 +262,7 @@ async fn a_304_gets_everything_the_stack_adds() {
         hsts_max_age: 60,
         csp: Some("default-src 'none'".to_string()),
         permissions_policy: None,
+        log_tenant: false,
         ..compressed()
     };
     let app = middleware::apply(tagged("\"v1\""), &config).unwrap();

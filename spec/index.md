@@ -172,6 +172,7 @@ decompression (MID-29), body limit, panic catching.
 | MID-27 | A path in `Http::cross_site_paths`, set in code and matched exactly, ignoring a trailing slash, is not refused by MID-23 or MID-24. No other path is let through by it. | `a_listed_cross_site_path_is_let_through_and_no_other` |
 | MID-28 | The cross-site write guard is inside CORS, the trace, the request id, and the security headers, so its refusal is a problem with all of them. | `a_cross_site_refusal_gets_the_standard_headers` |
 | MID-29 | A request body in `gzip`, `deflate`, `br`, or `zstd` reaches the handler decoded, and the body limit counts decoded bytes, so a small body that expands past it is a `413`, for the extractors and for a handler that reads the body itself. An encoding it cannot decode is a `415` problem, and a body that is not what its encoding says is a `400` problem. | `a_compressed_body_reaches_the_handler_decoded`, `a_small_body_that_expands_past_the_limit_is_refused`, `an_encoding_that_cannot_be_decoded_is_a_problem` |
+| MID-30 | With `log_tenant`, from `HTTP_LOG_TENANT` and off unless set, the request span has an empty `tenant` field for an auth crate's guard to fill, so every log line for the request carries the tenant. Without it, the span has no such field and nothing records one. No metric is labelled by tenant (TN-9). | `the_tenant_is_on_the_span_only_when_asked_for`, `the_tenant_is_logged_only_when_asked_for` |
 
 ### 4.5 Errors
 
@@ -383,6 +384,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | PST-14 | `axa-paseto-auth` | With no verified, allowed caller, as on a public path or with no middleware, `Tenant` is a `401` with `WWW-Authenticate: Bearer`. A token with no tenant, more than one, or one that is not a tenant id is a `403`, code `no_tenant`, quoting none of the token's values, with an `auth_refused` audit line. | `with_no_verified_caller_there_is_no_tenant`, `a_tenant_is_exactly_one_valid_id_from_the_verified_token`, `a_refusal_leaves_one_audit_line_and_an_allowed_request_none` |
 | PST-15 | `axa-paseto-auth` | A tenant id is lower-case ASCII letters, digits, and hyphens, 1 to 63 characters, not starting or ending with a hyphen, as a DNS label is. | `a_tenant_id_is_a_dns_label_in_lower_case` |
 | PST-16 | `axa-paseto-auth` | `Tenant::from_extensions` finds the tenant the extractor finds, from a request's extensions, for code inside the guard such as a limit's key, and writes no audit line. With no verified, allowed caller it is `Unauthenticated`. | `from_extensions_finds_the_tenant_the_extractor_finds` |
+| PST-17 | The guard records the tenant it verified, as PST-13 reads it, on the current span's `tenant` field, which records nothing where the span has none. A token with no tenant leaves the field empty and the request goes on. | `the_guard_records_the_tenant_only_where_the_span_asks` |
 | DSL-1 | `axa-postgres-diesel` | No C database library is linked. | `cargo tree` shows no `pq-sys`, `libpq`, or `openssl`, checked in CI |
 | DSL-2 | `axa-postgres-diesel` | Migrations apply, and reverting takes back exactly the requested steps. | `pooling_and_migrations_against_postgres` |
 | DSL-3 | `axa-postgres-diesel` | A name reaches SQL only through `quote_identifier`. | `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
@@ -414,6 +416,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | KCK-14 | `axa-keycloak-auth` | `Tenant` is exactly one value of the guard's tenant attribute, from the attributes the role map gave a verified, allowed caller, and is otherwise as PST-13 and PST-14. | `a_tenant_is_exactly_one_valid_id_from_the_mapped_roles`, `the_guard_can_name_the_tenant_attribute` |
 | KCK-15 | `axa-keycloak-auth` | A tenant id follows PST-15. | `a_tenant_id_is_a_dns_label_in_lower_case` |
 | KCK-16 | `axa-keycloak-auth` | `Tenant::from_extensions` follows PST-16. | `from_extensions_finds_the_tenant_the_extractor_finds` |
+| KCK-17 | The guard records the tenant as PST-17 says. | `the_guard_records_the_tenant_only_where_the_span_asks` |
 | RDS-7 | `axa-redis-cache` | A log line holds neither a key, which can name a person, nor a stored value. | `an_unreadable_entry_is_logged_without_its_key_or_value`, `a_failed_cache_write_is_logged_without_its_key_or_value`, `a_failed_read_is_logged_without_its_key` (Redis tests, the connection cut and Redis stalled) |
 | RDS-1 | `axa-redis-cache` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis-cache` | Prefixes keep services apart. | `prefixes_keep_services_apart` |

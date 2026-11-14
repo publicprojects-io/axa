@@ -431,6 +431,15 @@ impl Refused {
     }
 }
 
+/// Record the verified caller's tenant on the request span, where the span has a
+/// `tenant` field: Axa declares one only when `HTTP_LOG_TENANT` is on. Elsewhere this
+/// records nothing.
+fn record_tenant(extensions: &axum::http::Extensions) {
+    if let Ok(tenant) = Tenant::from_extensions(extensions) {
+        tracing::Span::current().record("tenant", tenant.as_str());
+    }
+}
+
 /// Middleware applying a [`Guard`] to every request. It also makes the guard
 /// available to [`AuthUser`], and what was decided available to [`Allowed`].
 pub async fn middleware(
@@ -447,6 +456,7 @@ pub async fn middleware(
                 request.extensions_mut().insert(allowed);
             }
             request.extensions_mut().insert(guard);
+            record_tenant(request.extensions());
             next.run(request).await
         }
         Err(rejection) => rejection.into_response(),

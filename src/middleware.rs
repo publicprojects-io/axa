@@ -127,8 +127,10 @@ const UNMATCHED: &str = "unmatched";
 /// The tracing span for a request, so every log line written while serving it
 /// carries its request id. It records the route's template and not the path or
 /// query string: `/unsubscribe/{token}`, not the token, because a path can hold a
-/// secret or a person's identifier just as a query string can.
-fn request_span(request: &Request) -> tracing::Span {
+/// secret or a person's identifier just as a query string can. With `log_tenant`, it
+/// has an empty `tenant` field, which an auth crate's guard fills with the tenant it
+/// verified.
+fn request_span(request: &Request, log_tenant: bool) -> tracing::Span {
     let request_id = request
         .extensions()
         .get::<RequestId>()
@@ -137,12 +139,22 @@ fn request_span(request: &Request) -> tracing::Span {
         .extensions()
         .get::<MatchedPath>()
         .map_or(UNMATCHED, MatchedPath::as_str);
-    tracing::info_span!(
-        "http-request",
-        method = %request.method(),
-        path = %path,
-        request_id = %request_id,
-    )
+    if log_tenant {
+        tracing::info_span!(
+            "http-request",
+            method = %request.method(),
+            path = %path,
+            request_id = %request_id,
+            tenant = tracing::field::Empty,
+        )
+    } else {
+        tracing::info_span!(
+            "http-request",
+            method = %request.method(),
+            path = %path,
+            request_id = %request_id,
+        )
+    }
 }
 
 /// The answer to a panic, in the shape of any other internal failure. The panic's
@@ -359,6 +371,7 @@ fn default_header(name: HeaderName, value: HeaderValue) -> SetResponseHeaderLaye
 ///
 /// Fails when a CORS origin is invalid.
 pub fn apply(router: Router, config: &Http) -> Result<Router> {
+    let log_tenant = config.log_tenant;
     // Innermost, so that a panic's answer passes through everything below.
     let mut router = router
         .layer(CatchPanicLayer::custom(panicked))
@@ -431,7 +444,7 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
         ))
         .layer(
             TraceLayer::new_for_http()
-                .make_span_with(|request: &Request| request_span(request))
+                .make_span_with(move |request: &Request| request_span(request, log_tenant))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
         )
         .layer(from_fn_with_state(
@@ -619,6 +632,7 @@ mod tests {
             hsts_max_age: 31_536_000,
             csp: Some("default-src 'none'".to_string()),
             permissions_policy: Some(crate::config::DEFAULT_PERMISSIONS_POLICY.to_string()),
+            log_tenant: false,
             trusted_proxies: Vec::new(),
         }
     }
@@ -914,6 +928,7 @@ mod tests {
         );
         let none = Http {
             permissions_policy: None,
+            log_tenant: false,
             ..config()
         };
         let router = Router::new().route("/", get(|| async { "ok" }));

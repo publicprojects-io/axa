@@ -463,7 +463,8 @@ security, so there the tenant in every query is the only fence. Cache a tenant's
 through `cache.for_tenant(tenant.as_str())?`, made per request, never under a key you
 build yourself. Limit each tenant apart with `ratelimit::by_key` on a key of
 `(Tenant::from_extensions(request.extensions()).ok()?, class)`, layered inside the guard,
-where the tenant is known. Prove the fences with `axa_test::isolation::assert_hidden`: create a
+where the tenant is known. Set `HTTP_LOG_TENANT=true` to put the tenant on every log line
+of a request; never put a tenant in a metrics label. Prove the fences with `axa_test::isolation::assert_hidden`: create a
 resource as one tenant, then probe its read, change, and delete routes, and the list, as
 another, which must answer `404` and show nothing. With `axa-test`'s `paseto` feature, mint each
 tenant's token with `TestKeys::new().token(issuer, audience).attr("tenant", ["acme"])`,

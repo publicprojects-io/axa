@@ -217,6 +217,11 @@ pub struct Http {
     pub csp: Option<String>,
     /// The `permissions-policy`, if any.
     pub permissions_policy: Option<String>,
+    /// Put the caller's tenant on the request span, so every log line for the request
+    /// carries it, from `HTTP_LOG_TENANT`, off unless set. The auth crates' guards
+    /// record the tenant they verified, and nothing else does. It is never a metrics
+    /// label, as every new tenant would be a new series.
+    pub log_tenant: bool,
     /// Proxies whose `X-Forwarded-For` entries are believed. Empty ignores the header.
     pub trusted_proxies: Vec<ProxyNet>,
 }
@@ -976,6 +981,7 @@ impl Config {
                 hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
                 csp: content_security_policy(&vars, production),
                 permissions_policy: permissions_policy(&vars),
+                log_tenant: vars.flag("HTTP_LOG_TENANT", false),
             },
             workers: vars.named("WORKER_MODE", workers, worker_mode),
         };
@@ -1105,6 +1111,7 @@ impl Config {
                 "HTTP_PERMISSIONS_POLICY",
                 http.permissions_policy.clone().unwrap_or_default(),
             ),
+            ("HTTP_LOG_TENANT", http.log_tenant.to_string()),
             ("WORKER_MODE", format!("{workers:?}")),
         ]
         .map(|(name, value)| (name, redact(name, &value)))
@@ -1472,6 +1479,23 @@ mod tests {
         )
         .unwrap();
         assert_eq!(blank.http.permissions_policy, None);
+    }
+
+    #[test]
+    fn the_tenant_is_logged_only_when_asked_for() {
+        let url = ("DB_URL", "postgres://localhost/x");
+        for environment in [Environment::Development, Environment::Production] {
+            let config = with(&[url], &environment).unwrap();
+            assert!(!config.http.log_tenant, "{environment:?}");
+        }
+        let on = with(
+            &[url, ("HTTP_LOG_TENANT", "true")],
+            &Environment::Production,
+        )
+        .unwrap();
+        assert!(on.http.log_tenant);
+        let typo = [url, ("HTTP_LOG_TENANT", "ture")];
+        assert!(with(&typo, &Environment::Production).is_err());
     }
 
     #[test]

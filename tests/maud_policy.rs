@@ -26,6 +26,7 @@ fn production_http() -> Http {
         hsts_max_age: 31_536_000,
         csp: Some(DEFAULT_CSP.to_string()),
         permissions_policy: None,
+        log_tenant: false,
         trusted_proxies: Vec::new(),
     }
 }

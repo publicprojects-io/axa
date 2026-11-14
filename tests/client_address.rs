@@ -21,6 +21,7 @@ fn http(trusted_proxies: &[&str]) -> Http {
         hsts_max_age: 0,
         csp: None,
         permissions_policy: None,
+        log_tenant: false,
         trusted_proxies: trusted_proxies
             .iter()
             .map(|net| net.parse().unwrap())

@@ -8,6 +8,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
 `axa-paseto-auth`, `axa-keycloak-auth`, and `axa-request-rate-limit`.
 
+### Changed
+
+- **`config::Http` has `log_tenant`**, so a service that builds one by hand adds
+  `log_tenant: false`. See [Upgrading to Axa 0.14](help/upgrading-to-0.14/index.md).
+
 ### Added
 
 - **`Verified` with `AppContext`** (WHK-7): with the `webhooks` feature, the
@@ -20,6 +25,10 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   from a request's extensions, for a `ratelimit::by_key` key of `(tenant, class)`
   layered inside the guard. `examples/multi-tenant` limits each tenant's reads and
   writes apart.
+- **The tenant on the request span** (T-51, TN-9, MID-30, PST-17, KCK-17): with
+  `HTTP_LOG_TENANT=true`, the request span has a `tenant` field, which the auth crates'
+  guards fill with the tenant they verified, so every log line for a request carries
+  it. Off by default. No metric is labelled by tenant.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

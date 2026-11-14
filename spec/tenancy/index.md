@@ -118,6 +118,11 @@ the separation would not hold.
 `examples/multi-tenant` limiting each tenant's reads and writes apart. The layer sits
 inside the guard, where the tenant is known. Each replica counts for itself.
 
+**TN-9, the tenant in logs.** Done, unreleased, as T-51: MID-30, PST-17, and KCK-17.
+`HTTP_LOG_TENANT` gives the request span an empty `tenant` field, made before the guard
+runs, and the guard records the tenant it verified into it. A tenant is never a metrics
+label.
+
 **TN-5, jobs.** `perform_later_in(&tenant, …)`, a nullable `tenant` column, and the tenant
 handed to the worker beside the arguments, so that the worker opens its own tenant
 transaction. Claiming stays fair across jobs, not tenants. Fair claiming per tenant is a

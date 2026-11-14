@@ -365,6 +365,7 @@ place.
 | `SHUTDOWN_DRAIN_SECONDS` | How long, once told to stop, to keep accepting while `/_health/ready` answers `503`, so the orchestrator takes the service out of rotation first. 0 by default. On Kubernetes, a little more than the cluster takes to remove a pod |
 | `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |
 | `HTTP_CONTENT_SECURITY_POLICY` | The `content-security-policy`. Production sends `default-src 'none'; frame-ancestors 'none'` unless this is set, and sends none if it is empty |
+| `HTTP_LOG_TENANT` | Put the caller's tenant, as an auth crate's guard verified it, on the request span, so every log line for a request carries it. Off by default. Never a metrics label |
 | `HTTP_PERMISSIONS_POLICY` | The `permissions-policy`. Unless this is set, it turns off the camera, microphone, location, payment, USB, sensors, and ad topics for every origin, and it sends none if it is empty |
 | `REQUEST_TIMEOUT_SECONDS` | Per-request timeout. `0` turns it off |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated origins |

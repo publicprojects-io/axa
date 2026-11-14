@@ -93,6 +93,7 @@ APP_ENV=staging cargo run
 | `compression` | `HTTP_COMPRESSION` | `true` in production | Enable compression |
 | `csp` | `HTTP_CSP` | `default-src 'none'; frame-ancestors 'none'` in production | Content Security Policy |
 | `cors_allowed_origins` | `CORS_ALLOWED_ORIGINS` | All origins in dev/test, none in prod | CORS allowed origins |
+| `log_tenant` | `HTTP_LOG_TENANT` | `false` | Put the verified tenant on the request span |
 | `timeout_overrides` | N/A | Empty | Per-route timeout overrides |
 | `cross_site_paths` | N/A | Empty | Paths, matched exactly, where the cross-site write guard lets a cross-site write through |
 
@@ -320,6 +321,7 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 | `HTTP_CSP` | String | No | `default-src 'none'; frame-ancestors 'none'` (prod) | Content Security Policy |
 | `CORS_ALLOWED_ORIGINS` | String | No | All (dev) / None (prod) | CORS allowed origins |
 | `HSTS_MAX_AGE_SECONDS` | Number | No | 31,536,000 | HSTS max-age |
+| `HTTP_LOG_TENANT` | Boolean | No | `false` | Put the verified tenant on the request span |
 
 ### Database Variables
 

@@ -69,6 +69,7 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         hsts_max_age: 0,
         csp: None,
         permissions_policy: None,
+        log_tenant: false,
         trusted_proxies: Vec::new(),
     };
     let request = Request::builder()
