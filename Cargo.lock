@@ -573,6 +573,7 @@ dependencies = [
  "sea-orm",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",

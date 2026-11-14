@@ -7,6 +7,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **A JSON Pointer in a rejected JSON body's problem** (ERR-15): a body that parses but
+  has a value that does not fit gets `errors: [{"pointer": "#/items/1/count"}]`,
+  naming where and never what. It uses `serde_path_to_error`, which Axum already uses.
 - **`config::Settings`** (CFG-28 to CFG-30): a service reads its own variables with
   Axa's rules, a blank value unset, every problem named at once, no secret quoted, and
   `finish` refusing a production boot with any problem. `secret` and `required_secret`

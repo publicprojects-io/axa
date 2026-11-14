@@ -368,6 +368,53 @@ fn json_rejection_text(status: StatusCode) -> &'static str {
     }
 }
 
+/// The longest key a pointer names.
+const MAX_POINTER_KEY_BYTES: usize = 64;
+
+/// Where in a JSON body a value did not fit its type, as a JSON Pointer in a URI
+/// fragment (RFC 6901), such as `#/items/2/name`, or `None` at the top of the body.
+///
+/// Only a body that parsed gets one, as only then do the keys come from the type the
+/// route reads: in a body that did not parse, the parser may have been walking keys
+/// nothing reads. It names keys and indexes, never a value. A key is still the caller's
+/// text when the type is a map rather than a struct, so the pointer stops before any
+/// key that is not a short name of ASCII letters, digits, `_`, and `-`.
+fn json_pointer(rejection: &JsonRejection) -> Option<String> {
+    use serde_path_to_error::Segment;
+    let JsonRejection::JsonDataError(rejection) = rejection else {
+        return None;
+    };
+    let mut source = std::error::Error::source(rejection);
+    let error = loop {
+        let error = source?;
+        if let Some(found) = error.downcast_ref::<serde_path_to_error::Error<serde_json::Error>>() {
+            break found;
+        }
+        source = error.source();
+    };
+    let mut pointer = String::from("#");
+    for segment in error.path() {
+        match segment {
+            Segment::Seq { index } => {
+                pointer.push('/');
+                pointer.push_str(&index.to_string());
+            }
+            Segment::Map { key } | Segment::Enum { variant: key }
+                if key.len() <= MAX_POINTER_KEY_BYTES
+                    && !key.is_empty()
+                    && key.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+                    }) =>
+            {
+                pointer.push('/');
+                pointer.push_str(key);
+            }
+            _ => break,
+        }
+    }
+    (pointer.len() > 1).then_some(pointer)
+}
+
 /// A constraint the caller's write broke, which is the caller's doing and not a fault
 /// here: the status, the problem's `code`, and what the caller is told. The database's
 /// own text goes nowhere, because it names the row, the column, and the value.
@@ -713,7 +760,8 @@ impl IntoResponse for Error {
                 let detail = ErrorDetail {
                     code: reason_code(status),
                     detail: Some(json_rejection_text(status).to_string()),
-                    errors: None,
+                    errors: json_pointer(&rejection)
+                        .map(|pointer| serde_json::json!([{ "pointer": pointer }])),
                 };
                 (status, detail)
             }
@@ -1004,6 +1052,57 @@ mod tests {
         assert_eq!(body["code"], "bad_request");
         assert_eq!(body["detail"], "The request body is not valid JSON");
         assert!(!body.to_string().contains("secret"), "{body}");
+    }
+
+    /// The problem for a JSON `body` rejected on its way into `T`.
+    async fn json_problem<T: serde::de::DeserializeOwned>(body: &str) -> (StatusCode, Value) {
+        let request = Request::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body.to_string()))
+            .unwrap();
+        let rejection = Json::<T>::from_request(request, &())
+            .await
+            .map(|_| ())
+            .unwrap_err();
+        problem_of(rejection.into()).await
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code, reason = "only deserialized")]
+    struct Order {
+        items: Vec<Item>,
+    }
+
+    #[derive(Debug, serde::Deserialize)]
+    #[allow(dead_code, reason = "only deserialized")]
+    struct Item {
+        name: String,
+        count: u8,
+    }
+
+    #[tokio::test]
+    async fn a_value_that_does_not_fit_is_pointed_at_and_not_quoted() {
+        let body = r#"{"items":[{"name":"a","count":1},{"name":"secret","count":"secret"}]}"#;
+        let (status, problem) = json_problem::<Order>(body).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(problem["errors"], json!([{ "pointer": "#/items/1/count" }]));
+        assert!(!problem.to_string().contains("secret"), "{problem}");
+
+        let (_, problem) = json_problem::<Order>(r#"{"items":[{"name":"a"}]}"#).await;
+        assert_eq!(problem["errors"], json!([{ "pointer": "#/items/0" }]));
+        let (_, problem) = json_problem::<Order>("[]").await;
+        assert!(problem.get("errors").is_none(), "{problem}");
+    }
+
+    #[tokio::test]
+    async fn a_pointer_stops_before_a_key_that_is_not_a_short_name() {
+        type Counts = std::collections::HashMap<String, std::collections::HashMap<String, u8>>;
+        let (_, problem) = json_problem::<Counts>(r#"{"a":{"hunter 2":"x"}}"#).await;
+        assert_eq!(problem["errors"], json!([{ "pointer": "#/a" }]));
+        let long = "k".repeat(65);
+        let (_, problem) = json_problem::<Counts>(&format!(r#"{{"{long}":{{"b":"x"}}}}"#)).await;
+        assert!(problem.get("errors").is_none(), "{problem}");
+        assert!(!problem.to_string().contains(&long), "{problem}");
     }
 
     #[cfg(feature = "model")]
