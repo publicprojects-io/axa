@@ -939,6 +939,9 @@ cargo clippy --all-targets --features sqlite-seaorm -- -D warnings
 cargo clippy --all-targets --features sqlite-diesel -- -D warnings
 cargo clippy -p axa-transactional-outbox --all-targets --features encryption -- -D warnings
 cargo clippy -p axa-transactional-outbox --all-targets --features seaorm -- -D warnings
+cargo check --lib -p axa --features <each feature, one at a time>   # no dev-dependency to hide a gap
+cargo check --lib -p axa-test --features paseto
+cargo check --lib -p axa-test --features postgres-sqlx
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace

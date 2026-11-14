@@ -259,6 +259,55 @@ The `idempotency` feature provides:
 
 ---
 
+### Step 14: File Uploads
+
+**Do you take files from callers?**
+
+- **No** → Skip
+- **Yes, multipart uploads** → Add `axa = { version = "0.13.0", features = ["upload"] }`
+
+The `upload` feature provides:
+- `upload::read`, holding a multipart body to `Limits` as the bytes arrive
+- Limits on the total, each file, each text field, text held in memory, and the number of parts and files, as `413` problems
+- `Limits::accept`, refusing other file types with `415`
+- Files written to temporary files, deleted unless kept with `persist`, with cleaned names
+
+Sending a file back needs no feature: `format::download` sets a safe
+`content-disposition`. See [`examples/file-drop`](../../examples/file-drop).
+
+---
+
+### Step 15: Webhooks
+
+**Do you send or receive webhooks?**
+
+- **No** → Skip
+- **Yes, Standard Webhooks** → Add `axa = { version = "0.13.0", features = ["webhooks"] }`
+
+The `webhooks` feature provides:
+- `Signer`, signing with HMAC-SHA256 or Ed25519 keys, several while one rotates
+- `Verifier`, accepting a delivery signed by a key it knows within five minutes
+- `Verified`, an extractor that runs a handler only for a verified delivery
+
+---
+
+### Step 16: Outbound HTTP
+
+**Do you fetch URLs that someone else chose**, such as webhook subscribers, avatars,
+or link previews?
+
+- **No** → Skip
+- **Yes** → Add `axa = { version = "0.13.0", features = ["http-client"] }`
+
+The `http-client` feature provides:
+- `Client`, which refuses private, loopback, link-local, and cloud metadata addresses, in the URL, after its own DNS lookup, and on every redirect
+- `allow_hosts` and `allow_nets` to narrow or widen what it reaches
+- `bytes_limited`, reading a response body up to a limit
+
+See [`examples/webhooks`](../../examples/webhooks), which uses both.
+
+---
+
 ## Common Feature Combinations
 
 ### REST API with PostgreSQL
@@ -410,7 +459,7 @@ Each feature adds dependencies. Here's the impact of each:
 
 ### Upgrading from axa 0.9 or earlier
 
-See [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md) for details.
+See [Upgrading to Axa 0.12](../../help/upgrading-to-0.12/index.md) for details.
 
 **Key changes**:
 - The `testing` feature is now the `axa-test` crate
@@ -420,7 +469,7 @@ See [Upgrading to Axa 0.12](help/upgrading-to-0.12/index.md) for details.
 
 ### From Loco
 
-See [Converting a project from Loco to Axa](help/from-loco-into-axa/index.md) for a complete migration guide.
+See [Converting a project from Loco to Axa](../../help/from-loco-into-axa/index.md) for a complete migration guide.
 
 ---
 

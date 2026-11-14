@@ -16,6 +16,10 @@ upgrade, read [Upgrading to Axa 0.13](help/upgrading-to-0.13/index.md).
 
 ### Added
 
+- **Two new examples**: [`examples/webhooks`](examples/webhooks), verifying signed
+  webhooks and sending them to a subscriber that may not be a private address, and
+  [`examples/file-drop`](examples/file-drop), bounded uploads and safe downloads. CI
+  builds and tests both, and now builds each feature alone without dev-dependencies.
 - **`axa-http-client`, as `axa::http_client` behind the new `http-client` feature**
   (OUT-1 to OUT-6): an outbound client, over `reqwest` with rustls, that refuses any
   address that is not public, in the URL in any form, after its own DNS lookup, and on

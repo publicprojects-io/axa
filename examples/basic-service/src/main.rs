@@ -9,6 +9,7 @@
 //! curl http://localhost:1241/_health/ready
 //! ```
 
+use axa::extract::Path;
 use axa::{
     Environment, Result,
     config::{Config, Defaults},
@@ -16,7 +17,6 @@ use axa::{
     prelude::*,
     server,
 };
-use axa::extract::Path;
 use serde::Serialize;
 
 /// A greeting.

@@ -90,7 +90,7 @@ maud = ["dep:axa-maud-templates"]
 tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-accepts-version-negotiation"]
 # Bounded multipart uploads, files spooled to temporary files, as `axa::upload`.
-upload = ["dep:tempfile", "tokio/fs"]
+upload = ["dep:tempfile", "tokio/fs", "tokio/io-util"]
 
 [dependencies]
 axa-postgres-diesel = { version = "0.3.0", path = "crates/axa-postgres-diesel", optional = true }

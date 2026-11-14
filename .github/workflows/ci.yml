@@ -76,6 +76,18 @@ jobs:
         run: cargo clippy --all-targets --features queue -- -D warnings
       - name: Clippy, sqlx
         run: cargo clippy --all-targets --features postgres-sqlx -- -D warnings
+      # Each feature alone, building only the library, so no dev-dependency can turn on
+      # what a feature forgot to: `--all-targets` above builds the tests too, and their
+      # dev-dependencies can hide a missing tokio feature, as one did for `upload`.
+      - name: Each feature alone, without dev-dependencies
+        run: |
+          for feature in $(sed -n '/^\[features\]/,/^\[dependencies\]/p' Cargo.toml | grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' ='); do
+            echo "::group::$feature"
+            cargo check --lib -p axa --features "$feature"
+            echo "::endgroup::"
+          done
+          cargo check --lib -p axa-test --features paseto
+          cargo check --lib -p axa-test --features postgres-sqlx
       # Each database feature alone, as each makes `AppContext::db` its own handle.
       - name: Clippy, each database alone
         run: |
@@ -172,7 +184,7 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
-      # One target directory for all four, so they share the axa build.
+      # One target directory for all of them, so they share the axa build.
       CARGO_TARGET_DIR: ${{ github.workspace }}/target-examples
     services:
       postgres:
@@ -211,7 +223,7 @@ jobs:
 
       - name: Examples
         run: |
-          for example in basic-service todo-api multi-tenant; do
+          for example in basic-service todo-api multi-tenant webhooks file-drop; do
             (cd "examples/$example" && cargo clippy --all-targets -- -D warnings && cargo test)
           done
           (cd examples/todo-api && \

@@ -1,0 +1,18 @@
+[package]
+name = "file-drop"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[dependencies]
+axa = { path = "../..", features = ["upload"] }
+axum = "0.8"
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+# Standalone, not a member of the axa workspace.
+[workspace]

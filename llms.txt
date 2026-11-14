@@ -38,6 +38,8 @@
 - [examples/basic-service/](examples/basic-service/README.md): Minimal axa service
 - [examples/todo-api/](examples/todo-api/README.md): RESTful Todo API with database
 - [examples/multi-tenant/](examples/multi-tenant/README.md): Multi-tenant todo API: tenant from the verified PASETO token, a tenant filter on every query, and Postgres row-level security
+- [examples/webhooks/](examples/webhooks/README.md): Verifying signed webhooks, and signing and sending them with a client that refuses private addresses
+- [examples/file-drop/](examples/file-drop/README.md): Bounded uploads with `upload::read`, and safe downloads with `format::download`
 
 ### Comparison Documents
 

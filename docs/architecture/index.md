@@ -134,41 +134,23 @@ This ensures consistency and prevents regression.
 ### Optional Features (Subcrates)
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         axa (with features)                         │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
-│  │   Database      │  │   Job Queue     │  │  Authentication │   │
-│  │                 │  │                 │  │                 │   │
-│  │  ├─ sqlx         │  │  ├─ queue       │  │  ├─ paseto       │   │
-│  │  ├─ sea-orm      │  │  └─ postgres-job│  │  └─ keycloak    │   │
-│  │  └─ diesel       │  │                 │  │                 │   │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘   │
-│                                                                      │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
-│  │   Observability  │  │   API Docs      │  │  Caching        │   │
-│  │                 │  │                 │  │                 │   │
-│  │  ├─ tracing      │  │  ├─ openapi     │  │  ├─ redis        │   │
-│  │  ├─ opentelemetry│  │  └─ swagger-ui  │  │  └─ memory       │   │
-│  │  └─ prometheus   │  │                 │  │                 │   │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘   │
-│                                                                      │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐   │
-│  │   Web           │  │   Outbox        │  │  Security       │   │
-│  │                 │  │                 │  │                 │   │
-│  │  ├─ session      │  │  ├─ outbox      │  │  ├─ idempotency │   │
-│  │  ├─ tera         │  │  └─ encryption  │  │  └─ ratelimit   │   │
-│  │  └─ cursor-pag   │  │                 │  │                 │   │
-│  └─────────────────┘  └─────────────────┘  └─────────────────┘   │
-│                                                                      │
-│  ┌─────────────────┐  ┌─────────────────┐                          │
-│  │   Versioning    │  │   Test Helpers  │                          │
-│  │                 │  │                 │                          │
-│  │  └─ accepts-v   │  │  └─ axa-test    │                          │
-│  └─────────────────┘  └─────────────────┘                          │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+axa, with features
+│
+├── Databases, one makes AppContext::db its handle
+│   ├── Postgres: postgres-sqlx, postgres-seaorm, postgres-diesel, postgres-toasty
+│   ├── MySQL:    mysql-sqlx, mysql-seaorm, mysql-diesel, mysql-toasty
+│   └── SQLite:   sqlite-sqlx, sqlite-seaorm, sqlite-diesel (not yet published)
+├── Jobs and events:   queue, outbox, outbox-encryption
+├── Authentication:    paseto, keycloak, session
+├── Requests in:       upload, idempotency, ratelimit, versioning, cursor-pagination
+├── Requests out:      http-client, webhooks
+├── Pages:             tera, maud
+├── Caching:           redis
+├── Observability:     tracing, opentelemetry, prometheus
+└── API documents:     openapi
+
+axa-test, a dev-dependency, not a feature: request tests, a Postgres database per
+test, tenant isolation checks, and PASETO test tokens
 ```
 
 Each feature is:
@@ -247,99 +229,31 @@ Each feature is:
 ### Middleware Stack Order
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                    Middleware Stack (Top to Bottom)                 │
-├─────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Your custom layers (added before apply)                     │   │
-│  │  - Run INSIDE the standard stack                              │   │
-│  │  - Get request ID, security headers, CORS                   │   │
-│  │  - Refusals have full headers                                │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Request ID Layer                                          │   │
-│  │  - Keeps caller's x-request-id (sanitized)                   │   │
-│  │  - Mints UUID if none provided                              │   │
-│  │  - Sets request header to match response                     │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Tracing Layer                                              │   │
-│  │  - Logs request start                                       │   │
-│  │  - Adds request ID, method, route template to every log      │   │
-│  │  - NEVER logs path or query (may contain PII)                │   │
-│  │  - Logs response completion                                 │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Security Headers Layer                                    │   │
-│  │  - x-content-type-options: nosniff                          │   │
-│  │  - x-frame-options: DENY                                    │   │
-│  │  - referrer-policy: no-referrer                             │   │
-│  │  - strict-transport-security (if HSTS enabled)             │   │
-│  │  - content-security-policy (if configured)                  │   │
-│  │  - Handler's own headers win over defaults                   │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  CORS Layer                                                │   │
-│  │  - Only added if CORS_ALLOWED_ORIGINS is set                 │   │
-│  │  - Production: no CORS unless origins listed                  │   │
-│  │  - Development: allows all origins                           │   │
-│  │  - Refuses * in production                                   │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Timeout Layer                                             │   │
-│  │  - REQUEST_TIMEOUT_SECONDS (default: 60s in prod)           │   │
-│  │  - Returns 408 Request Timeout                              │   │
-│  │  - Per-route overrides possible                             │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Conditional Request Layer                                 │   │
-│  │  - Handles If-None-Match (304 responses)                    │   │
-│  │  - Handles If-Match (412 responses)                         │   │
-│  │  - Weak and strong ETag comparison                          │   │
-│  │  - Hashes response bodies for ETag generation               │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Compression Layer                                         │   │
-│  │  - Gzip, Brotli, Zstd (if enabled)                          │   │
-│  │  - Only compresses if client accepts                        │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Body Limit Layer                                          │   │
-│  │  - BODY_LIMIT_BYTES (default: 2MB)                          │   │
-│  │  - Returns 413 Payload Too Large                             │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Panic Catch Layer                                        │   │
-│  │  - Turns handler panics into 500                            │   │
-│  │  - Logs panic without message (security)                    │   │
-│  │  - Still applies security headers                           │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Your Router / Handlers                                    │   │
-│  │  - Your route definitions                                   │   │
-│  │  - Your handler code                                        │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                              ↓                                   │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Your custom layers (added after apply)                     │   │
-│  │  - Run OUTSIDE the standard stack                           │   │
-│  │  - Refusals have NO request ID, security headers, CORS      │   │
-│  │  - Body is compressed                                       │   │
-│  └─────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-└─────────────────────────────────────────────────────────────────────┘
+A request passes down this list, and its response back up it.
+
+  Sensitive headers     authorization, cookie, set-cookie never reach a log
+  Request id            keeps a caller's x-request-id once cleaned, or mints one
+  Client address        believes X-Forwarded-For only from TRUSTED_PROXIES
+  Tracing               one line per request: id, method, route template, never the path
+  Security headers      nosniff, DENY, no-referrer, COOP, CORP, permissions-policy,
+                        and CSP and HSTS when set; a handler's own value wins
+  CORS                  only for origins CORS_ALLOWED_ORIGINS lists
+  Cross-site guard      403 for a browser's cross-site unsafe method or WebSocket upgrade
+  Timeout               408 after REQUEST_TIMEOUT_SECONDS, or a route's own
+  Not modified          304 for a GET or HEAD holding its answer's ETag
+  No store              cache-control: no-store on a response that sets a cookie
+  Compression           gzip, Brotli, Zstd when on, never a no-store or cookie response
+  Refusal shaping       plain-text and bare errors become problems, their text dropped
+  Request decompression gzip, deflate, br, zstd bodies decoded; 415 for another
+  Body limit            413 past HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT, 2 MB by default,
+                        counted on decoded bytes
+  Panic catching        a handler's panic is a generic 500
+  Your layers           added to the router before apply, so they get all of the above
+  Your handlers
 ```
+
+A layer added after `apply` sits outside the whole stack: its refusals get no request
+id, security headers, or CORS headers, and it reads response bodies compressed.
 
 ---
 
@@ -536,21 +450,29 @@ axa/
 │   ├── queue.rs               # Queue integration (feature)
 │   ├── db.rs                  # Database helpers
 │   ├── store.rs               # In-process store
+│   ├── upload.rs              # Bounded multipart uploads (feature)
+│   ├── client.rs              # The client's address, behind trusted proxies
 │   ├── boot.rs                # Test boot helpers
 │   └── prelude.rs             # Re-exports
 │
 ├── crates/
 │   ├── axa-environment/        # Environment detection (no deps)
-│   ├── axa-problem-details... # RFC 9457 problem details
-│   ├── axa-sqlx/              # sqlx integration
-│   ├── axa-seaorm/            # SeaORM integration
-│   ├── axa-diesel/            # Diesel integration
-│   ├── axa-postgres-job-queue # Job queue engine
+│   ├── axa-problem/            # RFC 9457 problem details
+│   ├── axa-postgres-sqlx/      # Postgres with sqlx, and the others below
+│   ├── axa-postgres-seaorm/    # Postgres with SeaORM
+│   ├── axa-postgres-diesel/    # Postgres with Diesel, no libpq
+│   ├── axa-postgres-toasty/    # Postgres with Toasty
+│   ├── axa-mysql-*/            # MySQL with sqlx, SeaORM, Diesel, Toasty
+│   ├── axa-sqlite-*/           # SQLite with sqlx, SeaORM, Diesel
+│   ├── axa-postgres-job-queue/ # Job queue engine, and its MySQL and SQLite siblings
 │   ├── axa-transactional-outbox # Outbox implementation
 │   ├── axa-paseto-auth/       # PASETO authentication
 │   ├── axa-keycloak-auth/     # Keycloak authentication
 │   ├── axa-web-session/       # Session management
 │   ├── axa-tera-templates/    # Tera template rendering
+│   ├── axa-maud-templates/    # Maud compile-time templates
+│   ├── axa-webhooks/          # Standard Webhooks signing and verifying
+│   ├── axa-http-client/       # Outbound client refusing private addresses
 │   ├── axa-redis-cache/       # Redis caching
 │   ├── axa-request-rate-limit # Rate limiting
 │   ├── axa-idempotency-key/   # Idempotency keys
@@ -577,9 +499,15 @@ axa/
 │       └── index.md
 │
 ├── spec/
-│   └── index.md                # Single source of truth
+│   ├── index.md                # Single source of truth
+│   ├── tenancy/                # The multi-tenancy study
+│   └── compare/                # Studies of other frameworks
+│
+├── examples/                   # Standalone example services, built in CI
+├── templates/service-template/ # A service to start from
 │
 ├── help/
+│   ├── upgrading-to-0.13/     # Upgrade guides, one per release
 │   ├── upgrading-to-0.3/      # Upgrade guide
 │   ├── from-loco-into-axa/     # Loco migration
 │   ├── from-loco-seaorm...    # SeaORM migration

@@ -14,6 +14,9 @@ This document contains real-world patterns and recipes for common tasks with axa
 6. [Middleware Patterns](#middleware-patterns)
 7. [Testing Patterns](#testing-patterns)
 8. [Production Patterns](#production-patterns)
+9. [Upload and Download Patterns](#upload-and-download-patterns)
+10. [Webhook and Outbound Request Patterns](#webhook-and-outbound-request-patterns)
+11. [Tenant Patterns](#tenant-patterns)
 
 ---
 
@@ -201,7 +204,7 @@ fn test_config_parsing() {
         &Defaults::default(),
         |name| match name {
             "PORT" => Some("8080".to_string()),
-            "DATABASE_URL" => Some("postgres://localhost/test".to_string()),
+            "DB_URL" => Some("postgres://localhost/test".to_string()),
             _ => None,
         },
     ).unwrap();
@@ -209,6 +212,35 @@ fn test_config_parsing() {
     assert_eq!(config.server.port, 8080);
 }
 ```
+
+---
+
+### Reading Your Own Settings
+
+`config::Settings` reads a service's own variables with Axa's rules, so a typo stops a
+production boot rather than being ignored, and a secret may come from a file:
+
+```rust
+use axa::{Environment, config::Settings};
+
+let environment = Environment::Development;
+let settings = Settings::from_lookup(&environment, |name| match name {
+    "UPSTREAM_URL" => Some("https://upstream.example".to_string()),
+    "UPSTREAM_RETRIES" => Some("5".to_string()),
+    _ => None,
+});
+let upstream = settings.required("UPSTREAM_URL");
+let retries: u32 = settings.parsed("UPSTREAM_RETRIES", 3);
+// `UPSTREAM_TOKEN`, or the file `UPSTREAM_TOKEN_FILE` names. Both set is a problem.
+let token = settings.secret("UPSTREAM_TOKEN");
+// Production refuses to boot on any problem; elsewhere they come back as warnings.
+let warnings = settings.finish().unwrap();
+assert_eq!((retries, token, warnings.len()), (5, None, 0));
+assert!(upstream.is_some());
+```
+
+In `main`, use `Settings::from_env(&environment)`. `DB_URL` reads the same way, from
+`DB_URL_FILE`.
 
 ---
 
@@ -765,37 +797,36 @@ async fn test_not_found() {
 
 ### Integration Test with Database
 
-```rust
+With `axa-test`'s `postgres-sqlx` feature, each test gets a migrated database of its
+own, so tests run in parallel and need no clean-up:
+
+```rust,ignore
+use axa_test::postgres::TestDatabase;
+
+static MIGRATOR: sqlx::migrate::Migrator = sqlx::migrate!();
+
 #[tokio::test]
-async fn test_user_creation() {
-    request::<App, _, _>(|server, ctx| async move {
-        // Get the database pool from context
-        let pool = ctx.db::<sqlx::PgPool>().unwrap();
-        
-        // Clean up before test
-        sqlx::query("DELETE FROM users").execute(pool).await.unwrap();
-        
-        // Create user
-        let response = server
-            .post("/api/users")
-            .json(&serde_json::json!({
-                "name": "Test User",
-                "email": "test@example.com"
-            }))
-            .await;
-        
-        assert_eq!(response.status_code(), 201);
-        
-        // Verify in database
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
-            .fetch_one(pool)
-            .await
-            .unwrap();
-        
-        assert_eq!(count, 1);
-    }).await;
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_user_is_created() {
+    let db = TestDatabase::new(&MIGRATOR).await.unwrap();
+    let app = app(db.pool.clone()); // the service's router over this pool
+
+    let request = Request::post("/api/users")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"name":"Test User"}"#))
+        .unwrap();
+    assert_eq!(app.oneshot(request).await.unwrap().status(), 200);
+
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM users")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+    db.close().await;
 }
 ```
+
+Run it with `AXA_TEST_DB_URL` naming a server and a role that may create databases.
 
 ---
 
@@ -950,6 +981,109 @@ async fn tracked_handler(
 
 ---
 
+## Upload and Download Patterns
+
+### Taking a File
+
+```rust,ignore
+use axa::upload::{self, Limits};
+use axum::extract::Multipart;
+
+async fn avatar(multipart: Multipart) -> Result<Response> {
+    let limits = Limits {
+        file_bytes: 2_000_000,
+        files: 1,
+        accept: Some(vec!["image/png", "image/jpeg"]),
+        ..Limits::default()
+    };
+    let upload = upload::read(multipart, &limits).await?; // 413 or 415 as a problem
+    let Some(file) = upload.file("avatar") else {
+        return bad_request("send the image in a part named avatar");
+    };
+    // The temporary file is deleted when `upload` drops: keep it first.
+    let name = file.file_name.clone();
+    upload.files.into_iter().next().unwrap().persist(format!("/srv/avatars/{name}"))?;
+    format::json(serde_json::json!({ "name": name }))
+}
+```
+
+Raise the body limit for that route only:
+`.add("/avatar", middleware::body_limit(post(avatar), 2_100_000))`.
+
+### Sending a File Back
+
+```rust
+let response = axa::format::download(b"a,b\n".to_vec(), "text/csv", "../report.csv").unwrap();
+assert_eq!(
+    response.headers()["content-disposition"],
+    r#"attachment; filename="report.csv""#
+);
+```
+
+Only images, audio, video, and plain text are shown in place. See
+[`examples/file-drop`](../../examples/file-drop).
+
+---
+
+## Webhook and Outbound Request Patterns
+
+### Verifying a Webhook
+
+```rust,ignore
+use axa::webhooks::{Verified, Verifier};
+
+async fn billing(Verified { delivery, body }: Verified) -> Result<Response> {
+    // Runs only for a delivery signed by a key the Verifier in the state knows.
+    let event: Event = serde_json::from_slice(&body)?;
+    format::json(serde_json::json!({ "received": delivery.id }))
+}
+```
+
+With `AppContext` as the state, keep the `Verifier` in `ctx.shared_store` and call
+`verifier.verify(&headers, &body)` in the handler instead.
+
+### Fetching a URL Someone Else Chose
+
+```rust,ignore
+let client = axa::http_client::Client::builder()
+    .https_only(true)
+    .build()?;
+// Refused before sending for a private address in the URL, and at send time for a
+// name that resolves to one, or a redirect to one.
+let response = client.get(&subscriber_url)?.send().await?;
+let body = axa::http_client::bytes_limited(response, 64_000).await?;
+```
+
+See [`examples/webhooks`](../../examples/webhooks), which does both.
+
+---
+
+## Tenant Patterns
+
+### The Tenant From the Token
+
+```rust,ignore
+use axa::paseto::Tenant;
+
+async fn list(State(ctx): State<AppContext>, tenant: Tenant) -> Result<Response> {
+    // `begin_with` sets `app.tenant` for this transaction only, for row-level security.
+    let mut tx = axa::postgres_sqlx::begin_with(&ctx.db, &[("app.tenant", tenant.as_str())]).await?;
+    let rows: Vec<(i64, String)> =
+        sqlx::query_as("SELECT id, title FROM todos WHERE tenant_id = $1 ORDER BY id LIMIT 100")
+            .bind(tenant.as_str())
+            .fetch_all(&mut *tx)
+            .await?;
+    tx.commit().await?;
+    format::json(rows)
+}
+```
+
+Never take the tenant from a header, path, or body. At boot, call
+`axa::db::require_row_security(&pool, &["todos"], &environment).await?`. See
+[`examples/multi-tenant`](../../examples/multi-tenant).
+
+---
+
 ## Common Patterns Summary
 
 | Pattern | Use Case | Files |
@@ -962,6 +1096,9 @@ async fn tracked_handler(
 | Middleware | Cross-cutting concerns | `middleware.rs` |
 | Testing | Verify behavior | `tests/*` |
 | Production | Reliable deployment | `main.rs`, `config.rs` |
+| Uploads | Taking and serving files | `examples/file-drop` |
+| Webhooks | Signed deliveries, safe outbound requests | `examples/webhooks` |
+| Tenants | One table many tenants share | `examples/multi-tenant` |
 
 ---
 

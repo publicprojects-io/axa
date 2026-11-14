@@ -32,7 +32,9 @@
       "examples/README.md",
       "examples/basic-service/README.md",
       "examples/todo-api/README.md",
-      "examples/multi-tenant/README.md"
+      "examples/multi-tenant/README.md",
+      "examples/webhooks/README.md",
+      "examples/file-drop/README.md"
     ],
     "templates": [
       "templates/README.md",

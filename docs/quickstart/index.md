@@ -274,12 +274,13 @@ You now have a working Axa service! Here's what to explore next:
 - [Choosing Features](../features/index.md) - Which crates to use for your use case
 - [Configuration Guide](../configuration/index.md) - All environment variables and defaults
 - [Examples](../examples/index.md) - Real-world patterns and recipes
+- [Example services](../../examples/README.md) - Standalone services to run: a todo API, a multi-tenant API, webhooks, and file uploads
 - [Full Documentation](../README.md) - Complete feature reference
 
 ---
 
 ## Need Help?
 
-- Check the [specification](../spec/index.md) for exact behavior
-- Review the [upgrade guide](../help/upgrading-to-0.13/index.md) if migrating from an older version
-- See [Converting a project from Loco to Axa](../help/from-loco-into-axa/index.md) if converting from Loco
+- Check the [specification](../../spec/index.md) for exact behavior
+- Review the [upgrade guide](../../help/upgrading-to-0.13/index.md) if migrating from an older version
+- See [Converting a project from Loco to Axa](../../help/from-loco-into-axa/index.md) if converting from Loco

@@ -271,7 +271,7 @@ If migrating from Loco, use these equivalent features:
 | Job queue | `axa-postgres-job-queue` |
 | Idempotency | `axa-idempotency-key` |
 
-See [help/from-loco-into-axa/](help/from-loco-into-axa/index.md) for detailed migration.
+See [help/from-loco-into-axa/](../../help/from-loco-into-axa/index.md) for detailed migration.
 
 ### From actix-web
 
@@ -281,13 +281,13 @@ See [help/from-loco-into-axa/](help/from-loco-into-axa/index.md) for detailed mi
 | Middleware | `axa::middleware` |
 | Error handling | `axa::Error` with RFC 9457 |
 
-See [help/axa-for-actix-users/](help/axa-for-actix-users/index.md) for detailed migration.
+See [help/axa-for-actix-users/](../../help/axa-for-actix-users/index.md) for detailed migration.
 
 ---
 
 ## See Also
 
-- [features/](features/index.md) - Complete feature list
-- [quickstart/](quickstart/index.md) - Get started in 5 minutes
-- [configuration/](configuration/index.md) - All configuration options
-- [examples/](examples/index.md) - Real-world usage patterns
+- [features/](../features/index.md) - Complete feature list
+- [quickstart/](../quickstart/index.md) - Get started in 5 minutes
+- [configuration/](../configuration/index.md) - All configuration options
+- [examples/](../examples/index.md) - Real-world usage patterns

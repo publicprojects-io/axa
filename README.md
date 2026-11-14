@@ -79,6 +79,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
+- `upload`, as `axa::upload`: bounded multipart uploads, with limits on the total, each file, each field, and the number of parts, and files written to temporary files
 - [`axa-http-client`](crates/axa-http-client): an outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
 - [`axa-webhooks`](crates/axa-webhooks): Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, several keys while one rotates, and a verifying extractor
 - [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition, and request durations by route template
@@ -87,7 +88,8 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-accepts-version-negotiation`](crates/axa-accepts-version-negotiation): `Accepts-version` negotiation
 
 For tests, add [`axa-test`](crates/axa-test) as a dev-dependency. It has request-level
-test helpers, built on `axum-test`, and is not a feature of `axa`.
+test helpers, built on `axum-test`, a migrated Postgres database for each test, tenant
+isolation checks, and PASETO test tokens, and is not a feature of `axa`.
 
 For MySQL, [`axa-mysql-job-queue`](crates/axa-mysql-job-queue) is the job queue, worker
 pool, and schedules on MySQL 8.4, and for a service on one machine,
@@ -226,14 +228,16 @@ From the outside in:
 |---|---|
 | Request id | Keeps a caller's `x-request-id` after removing unsafe characters, or mints a UUID. Always returned |
 | Tracing | Logs each finished request, and puts the request id, method, and route template on every log line written while serving it. The real path and query string are left out, because either can hold a token or personal data |
-| Panic catching | Turns a handler panic into a `500` |
 | Security headers | `x-content-type-options`, `x-frame-options`, `referrer-policy`, `cross-origin-opener-policy` and `cross-origin-resource-policy` of `same-origin`, `permissions-policy`, and optionally HSTS. A handler's own value wins |
-| No store | `cache-control: no-store` on a response that sets a cookie, unless its handler said how to cache it |
 | CORS | Off unless origins are configured |
+| Cross-site write guard | Answers `403` to an unsafe method or WebSocket upgrade that a browser marks `sec-fetch-site: cross-site`, or, with no `sec-fetch-site`, whose `origin` is not the request's host. A request with neither header, an origin CORS lists, and a path in `Http::cross_site_paths` pass |
 | Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
 | Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
+| No store | `cache-control: no-store` on a response that sets a cookie, unless its handler said how to cache it |
 | Compression | Gzip, Brotli, and Zstd when enabled, but never a response that sets a cookie or is `no-store`, which compression can leak (BREACH) |
+| Request decompression | Decodes a `gzip`, `deflate`, `br`, or `zstd` request body, so the limit below counts decoded bytes. An encoding it cannot decode is `415` |
 | Body limit | Answers `413` over `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, for the extractors and for a handler that reads the body itself. `middleware::body_limit(route, bytes)` raises it on one route |
+| Panic catching | Turns a handler panic into a `500` |
 
 ### Conditional requests
 
@@ -330,6 +334,9 @@ an unmatched path's `404`, a wrong method's `405`, and an extractor's rejection.
 treats any error sent as plain text or with no `content-type` the same way and drops
 the text, so a handler that has something to say returns an `Error`.
 
+A JSON body that parses but holds a value of the wrong type is a `422` whose `errors`
+says where, never what: `[{"pointer": "#/items/1/count"}]`.
+
 ### Configuration
 
 There are no config files. A service states its defaults in code, and the
@@ -401,6 +408,23 @@ let config = Config::from_lookup(
 assert_eq!(config.server.port, 8000);
 ```
 
+A service reads its own variables the same way, with `config::Settings`, and a secret may
+come from a file that `NAME_FILE` names, as a mounted Kubernetes secret does:
+
+```rust
+use axa::{Environment, config::Settings};
+
+let settings = Settings::from_lookup(&Environment::Development, |name| match name {
+    "UPSTREAM_URL" => Some("https://upstream.example".to_string()),
+    _ => None,
+});
+let upstream = settings.required("UPSTREAM_URL");
+let retries: u32 = settings.parsed("UPSTREAM_RETRIES", 3);
+let token = settings.secret("UPSTREAM_TOKEN"); // or from UPSTREAM_TOKEN_FILE
+let warnings = settings.finish().unwrap(); // production refuses to boot on any problem
+# let _ = (upstream, retries, token, warnings);
+```
+
 ### Health checks
 
 There is one route for each probe Kubernetes gives a container. Point each probe at its
@@ -436,7 +460,12 @@ ctx.health_checks = Checks::new().add("search", || async { search::ping().await 
 The route is public, so a caller must not be able to drive load at a dependency.
 One answer, passing or failing, is reused for 5 seconds, and callers during a round
 of checks wait for it. A check gets 2 seconds, and past that it has failed. Change
-these with `Checks::reuse_for` and `Checks::time_limit`. The response carries the
+these with `Checks::reuse_for` and `Checks::time_limit`.
+
+`Checks::migrations` takes a function that names the pending migrations, such as
+`axa::postgres_sqlx::pending`. While one is pending, readiness and startup answer `503`
+naming `migrations`, so a new pod gets no traffic against an old schema, and
+`server::run_once_migrated` starts the job loops only once nothing is pending. The response carries the
 check's name and never its error text, which is only logged. Do not put an address
 in a name.
 
@@ -617,6 +646,45 @@ async fn health_answers() {
     .await;
 }
 ```
+
+With its `postgres-sqlx` feature, `axa_test::postgres::TestDatabase` gives each test a
+Postgres database of its own, cloned from a template migrated once, so tests run in
+parallel without seeing each other's rows:
+
+```rust,ignore
+let db = axa_test::postgres::TestDatabase::new(&MIGRATOR).await?;
+// ... db.pool ...
+db.close().await;
+```
+
+`axa_test::isolation::assert_hidden` checks that one tenant cannot reach another's
+resources, and `axa_test::paseto::TestKeys` mints tokens under a throwaway key.
+
+### Uploads and downloads
+
+`upload::read` holds a multipart body to `Limits`, refusing as the bytes arrive with a
+`413` that names the limit, or a `415` for a file type `accept` does not list. Files go
+to temporary files, with names cleaned, and are deleted unless kept with `persist`.
+`format::download` sends a file with a `content-disposition` that shows only images,
+audio, video, and plain text in place, and downloads anything that could run script.
+
+### Tenants
+
+For a service many tenants share, the tenant comes from the verified token and nowhere
+else: a handler takes `axa::paseto::Tenant` or `axa::keycloak::Tenant`. On Postgres,
+`begin_with` runs a request's transaction with `app.tenant` set, for row-level security,
+and `axa::db::require_row_security` refuses to boot production when a policy could not
+apply. `Cache::for_tenant` keeps one tenant's cached answers from another. See
+[`examples/multi-tenant`](examples/multi-tenant) and the
+[tenancy study](spec/tenancy/index.md).
+
+### Outbound requests and webhooks
+
+`axa::http_client::Client` fetches a URL someone else chose without letting it reach a
+private, loopback, or cloud metadata address, as checked after its own DNS lookup and on
+every redirect. `axa::webhooks` signs and verifies Standard Webhooks deliveries, and its
+`Verified` extractor runs a handler only for a delivery signed by a key it knows. See
+[`examples/webhooks`](examples/webhooks).
 
 ## Requirements
 

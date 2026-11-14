@@ -8,6 +8,8 @@ repository. Run one from its own directory.
 | [basic-service](basic-service/) | Settings, routes, health probes, problems, and tests with `oneshot` | None |
 | [todo-api](todo-api/) | A Postgres pool in `AppContext::db`, migrations at boot, plain SQL, and a database test | Postgres, with `postgres-sqlx` |
 | [multi-tenant](multi-tenant/) | The tenant from a verified PASETO token, a tenant filter on every query, and Postgres row-level security | Postgres, with `postgres-sqlx` and `paseto` |
+| [webhooks](webhooks/) | Verifying signed webhooks, signing and sending them with a client that refuses private addresses, and a secret read with `config::Settings` | None, with `webhooks` and `http-client` |
+| [file-drop](file-drop/) | Bounded uploads with `upload::read`, a raised body limit on one route, and safe downloads | None, with `upload` |
 
 ## Start here
 
