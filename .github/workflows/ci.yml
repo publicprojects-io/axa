@@ -131,6 +131,7 @@ jobs:
         run: |
           cargo test --features queue -- --ignored
           cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
+          cargo test --features postgres-sqlx --test row_security -- --ignored
           cargo test --features outbox --test outbox_shutdown -- --ignored
           cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
           cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
@@ -160,6 +161,68 @@ jobs:
         env:
           AXA_TEST_REDIS_URL: redis://localhost:6379
         run: cargo test -p axa-redis-cache -- --ignored
+
+  examples:
+    name: examples and the service template
+    runs-on: ubuntu-latest
+    # They are standalone packages outside the workspace, so the main job never builds
+    # them, and they drift unless something does.
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      # One target directory for all four, so they share the axa build.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target-examples
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+        env:
+          POSTGRES_USER: axa
+          POSTGRES_PASSWORD: axa
+          POSTGRES_DB: axa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.97 --profile minimal --component clippy
+      - run: rustup default 1.97
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          workspaces: ". -> target-examples"
+
+      - name: Databases for the examples' own tests
+        env:
+          PGPASSWORD: axa
+        # The multi-tenant test runs as a role row-level security applies to: not a
+        # superuser, as axa is.
+        run: |
+          psql -h localhost -U axa -d axa_test \
+            -c "CREATE DATABASE todo_api_test" \
+            -c "CREATE ROLE todo_app LOGIN PASSWORD 'todo_app'" \
+            -c "CREATE DATABASE multi_tenant_test OWNER todo_app"
+
+      - name: Examples
+        run: |
+          for example in basic-service todo-api multi-tenant; do
+            (cd "examples/$example" && cargo clippy --all-targets -- -D warnings && cargo test)
+          done
+          (cd examples/todo-api && \
+            AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/todo_api_test cargo test -- --ignored)
+          (cd examples/multi-tenant && \
+            AXA_TEST_DB_URL=postgres://todo_app:todo_app@localhost:5432/multi_tenant_test \
+            cargo test -- --ignored)
+
+      - name: Service template, against this repository's axa
+        working-directory: templates/service-template
+        run: |
+          cargo clippy --all-targets --config 'patch.crates-io.axa.path="../.."' -- -D warnings
+          cargo test --config 'patch.crates-io.axa.path="../.."'
 
   supply-chain:
     name: supply chain (advisories, licences, sources)

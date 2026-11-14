@@ -888,6 +888,7 @@ cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-postgres-diesel --all-features -e normal   # must show no C database library
 AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --features postgres-sqlx --test row_security -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-job-queue -- --ignored --test-threads=1
@@ -905,6 +906,17 @@ AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-diesel -- --ignored --tes
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test --all-features --test other_databases -- --ignored --test-threads=1
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored
+```
+
+A job of its own builds and tests the examples and the service template, which are
+standalone packages the workspace does not hold. The template builds against this
+repository's `axa`, not the published one. The multi-tenant test runs as a role that is
+not a superuser, so that row-level security applies to it:
+
+```sh
+cargo clippy --all-targets -- -D warnings && cargo test    # in each of examples/*
+AXA_TEST_DB_URL=postgres://... cargo test -- --ignored     # in examples/todo-api and examples/multi-tenant
+cargo test --config 'patch.crates-io.axa.path="../.."'    # in templates/service-template
 ```
 
 Separate jobs check what the code is built from. Actions are pinned to a commit
