@@ -1,0 +1,28 @@
+[package]
+name = "axa-storage-with-apache-arrow-and-aws"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
+description = "Object storage for Axum services over Apache Arrow's object_store: local disk, memory, and S3, refusing keys that climb out, with presigned URLs."
+readme = "README.md"
+repository = "https://github.com/publicprojects-io/axa/"
+license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+keywords = ["storage", "s3", "object-store", "axum", "files"]
+categories = ["filesystem", "web-programming"]
+
+[dependencies]
+bytes = "1"
+# Not the `aws` feature, which builds rustls with aws-lc-rs: beside the ring that the
+# other crates build it with, rustls then has no provider of its own and panics. So the
+# S3 store with ring, and reqwest's TLS with no provider of its own, so it takes ring's.
+object_store = { version = "0.14", default-features = false, features = ["fs", "aws-base", "reqwest", "ring"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

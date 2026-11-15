@@ -82,6 +82,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - `upload`, as `axa::upload`: bounded multipart uploads, with limits on the total, each file, each field, and the number of parts, and files written to temporary files
 - [`axa-http-client`](crates/axa-http-client): an outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
 - [`axa-mail`](crates/axa-mail): mail over SMTP, file, or memory transports chosen by a URL, production refusing SMTP without TLS
+- [`axa-storage-with-apache-arrow-and-aws`](crates/axa-storage-with-apache-arrow-and-aws): object storage on local disk, memory, or S3 over Apache Arrow's `object_store`, keys that cannot climb out, and presigned URLs
 - [`axa-webhooks`](crates/axa-webhooks): Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, several keys while one rotates, and a verifying extractor
 - [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition, and request durations by route template
 - [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process
@@ -699,6 +700,14 @@ the `Verifier` in `ctx.shared_store`. See
 `tls=required`, a `file://` directory, or `memory:`, and production refuses SMTP without
 TLS and the transports that reach no one. `Mailer::memory()` gives a test the `Outbox`
 it sends to. It does not queue mail: send from a job.
+
+### Object storage
+
+`axa::storage::Storage::from_url(url, production)` keeps objects in `s3://bucket/prefix`,
+a `file://` directory, or `memory:`, and production refuses memory and S3 over plain
+`http`. Every object is named by a `Key`, which refuses `..`, `.`, empty segments, a
+leading `/`, and `\`. `presigned_get` and `presigned_put` let a browser reach one S3
+object, for a time.
 
 ## Requirements
 

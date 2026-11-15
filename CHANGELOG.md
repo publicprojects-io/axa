@@ -27,6 +27,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and memory transports. `Mailer::memory` gives a test the `Outbox` it keeps messages
   in. It does not queue mail. It depends on `lettre` 0.11, with rustls on ring and the
   web's root certificates, and no native TLS.
+- `axa-storage-with-apache-arrow-and-aws` 0.1.0, and the `storage` feature as
+  `axa::storage` (T-24, STO-1 to STO-6): `Storage::from_url` keeps objects on S3, on
+  local disk, or in memory, with production refusing memory and S3 over plain `http`.
+  Every object is named by a `Key`, which refuses one that could climb out of the store.
+  `get_limited` refuses an object past its limit before reading it, and
+  `presigned_get` and `presigned_put` sign a URL for one S3 object. It depends on
+  `object_store` 0.14 with `fs`, `aws-base`, and `ring`, and on `reqwest` 0.13 and
+  `rustls` with ring alone: `object_store`'s `aws` feature would build rustls with
+  `aws-lc-rs` beside ring, and rustls would then panic at the first TLS connection in a
+  service with any other TLS feature. `install_ring_provider` installs ring's provider
+  for an S3 store a service builds itself.
 
 ### Changed
 

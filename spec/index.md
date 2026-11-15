@@ -967,6 +967,23 @@ Its tests are in `cargo test`, the SMTP one against a small server on a local po
 | MAIL-4 | The file transport writes one `.eml` file per message into its directory. | `the_file_transport_writes_one_file_per_message` |
 | MAIL-5 | The SMTP transport sends the envelope and the message to the server. | `the_smtp_transport_sends_to_the_server` |
 
+### 4.25 Object storage
+
+`axa-storage-with-apache-arrow-and-aws`, the `storage` feature, keeps objects through
+Apache Arrow's `object_store`, on S3, on local disk, or in memory, as a URL names. S3 is
+configured from the `AWS_` variables `object_store` reads. Its tests are in `cargo test`:
+the local and memory stores read and write real objects, and S3 signing needs no
+network. S3's own reads and writes are `object_store`'s, and are not tested here.
+
+| Id | Requirement | Test |
+|---|---|---|
+| STO-1 | `Key::new` refuses an empty key or segment, a `.` or `..` segment, a leading or trailing `/`, a `\`, a control character, and more than 1024 bytes, and every operation takes a `Key`. | `a_key_cannot_climb_out_or_mean_two_things` |
+| STO-2 | `Storage::from_url` reads `s3://bucket` with an optional prefix, `file:///directory`, and `memory:`, and anything else is `Error::Url`. With `production`, memory, and S3 with an `http://` endpoint or `allow_http`, are `Error::Refused`. | `production_refuses_memory_and_s3_over_plain_http` |
+| STO-3 | `put` writes an object whole, replacing what was there. `get_limited` reads one, `None` when it is missing and `Error::TooLarge` past its limit before reading it. `head` gives its size, and `delete` removes it, a missing object being no error. | `the_memory_store_reads_and_writes`, `the_local_store_reads_and_writes_inside_its_directory` |
+| STO-4 | The local store keeps every object under its directory, and nowhere beside it. | `the_local_store_reads_and_writes_inside_its_directory` |
+| STO-5 | On S3, `presigned_get` and `presigned_put` sign an `https` URL for one object, under the store's prefix, that expires after the time given and holds no secret. The local and memory stores answer `Error::NotSupported`. | `s3_signs_a_url_for_one_object_for_a_time`, `the_memory_store_reads_and_writes` |
+| STO-6 | S3 is reached over rustls with ring alone, as the other crates build it, never with `aws-lc-rs` as well, which leaves rustls no provider of its own. `from_url` installs ring's process-wide provider when none is installed, and `install_ring_provider` does for a store a service builds itself, so a failed TLS connection is an error and never a panic. | `s3_over_tls_with_no_server_is_an_error_and_not_a_panic` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:

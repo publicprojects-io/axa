@@ -61,6 +61,7 @@
 //! | `cursor-pagination` | Signed cursor pages with no total, and `LIKE` escaping, as `axa::cursor_pagination` |
 //! | `http-client` | An outbound HTTP client that refuses private, loopback, and metadata addresses, as `axa::http_client` |
 //! | `mail` | Mail over SMTP, file, or memory transports, production refusing SMTP without TLS, as `axa::mail` |
+//! | `storage` | Object storage on local disk, memory, or S3, keys that cannot climb out, and presigned URLs, as `axa::storage` |
 //! | `upload` | Bounded multipart uploads, files in temporary files, as `axa::upload` |
 //! | `webhooks` | Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, as `axa::webhooks` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
@@ -184,6 +185,8 @@ pub use axa_sqlite_seaorm as sqlite_seaorm;
 pub use axa_sqlite_seaorm::{query, schema};
 #[cfg(feature = "sqlite-sqlx")]
 pub use axa_sqlite_sqlx as sqlite_sqlx;
+#[cfg(feature = "storage")]
+pub use axa_storage_with_apache_arrow_and_aws as storage;
 #[cfg(feature = "tera")]
 pub use axa_tera_templates as tera;
 #[cfg(feature = "tracing")]

@@ -121,6 +121,12 @@ would need `chrono-tz`, which is not added.
 T-23 is done, unreleased, as `axa-mail` and the `mail` feature (MAIL-1 to MAIL-5). The
 memory transport's `Outbox` is what `axa-test` would capture mail with, in T-41.
 
+T-24 is done, unreleased, as `axa-storage-with-apache-arrow-and-aws` and the `storage`
+feature (STO-1 to STO-6). It uses `object_store`'s `aws-base` and `ring` rather than
+`aws`, whose `aws-lc-rs` beside ring left rustls without a provider, and `reqwest` 0.13
+beside the 0.12 `axa-http-client` uses. S3's own reads and writes are not tested here, as
+no S3-compatible image could be pulled.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

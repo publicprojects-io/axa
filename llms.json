@@ -124,6 +124,10 @@
       "crate": "axa-mail"
     },
     {
+      "name": "storage",
+      "crate": "axa-storage-with-apache-arrow-and-aws"
+    },
+    {
       "name": "webhooks",
       "crate": "axa-webhooks"
     },
@@ -389,6 +393,13 @@
       "description": "Mail for Axum services over lettre: SMTP, file, and memory transports, with production refusing SMTP without TLS.",
       "feature": "mail",
       "readme": "crates/axa-mail/README.md"
+    },
+    {
+      "name": "axa-storage-with-apache-arrow-and-aws",
+      "version": "0.1.0",
+      "description": "Object storage for Axum services over Apache Arrow's object_store: local disk, memory, and S3, refusing keys that climb out, with presigned URLs.",
+      "feature": "storage",
+      "readme": "crates/axa-storage-with-apache-arrow-and-aws/README.md"
     },
     {
       "name": "axa-webhooks",

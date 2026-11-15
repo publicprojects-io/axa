@@ -79,6 +79,8 @@ http-client = ["dep:axa-http-client"]
 webhooks = ["dep:axa-webhooks"]
 # Mail over SMTP, file, or memory transports, as `axa::mail`.
 mail = ["dep:axa-mail"]
+# Object storage on local disk, memory, or S3, as `axa::storage`.
+storage = ["dep:axa-storage-with-apache-arrow-and-aws"]
 paseto = ["dep:axa-paseto-auth"]
 # `axa::error` answers with `axa-problem`, so this adds
 # nothing, and stays so that a service naming it still builds.
@@ -104,6 +106,7 @@ axa-cursor-pagination = { version = "0.1.2", path = "crates/axa-cursor-paginatio
 axa-webhooks = { version = "0.1.1", path = "crates/axa-webhooks", optional = true }
 axa-http-client = { version = "0.1.0", path = "crates/axa-http-client", optional = true }
 axa-mail = { version = "0.1.0", path = "crates/axa-mail", optional = true }
+axa-storage-with-apache-arrow-and-aws = { version = "0.1.0", path = "crates/axa-storage-with-apache-arrow-and-aws", optional = true }
 axa-keycloak-auth = { version = "0.5.1", path = "crates/axa-keycloak-auth", optional = true }
 axa-paseto-auth = { version = "0.7.1", path = "crates/axa-paseto-auth", optional = true }
 axa-problem = { version = "0.2.0", path = "crates/axa-problem" }
