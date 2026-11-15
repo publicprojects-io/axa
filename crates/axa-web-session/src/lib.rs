@@ -11,6 +11,7 @@
 //! | `SameSite` | `Lax` | `Lax` |
 //! | Session lifetime | 6 hours | 8 hours |
 //! | Cookie lifetime | 100 days | 7 days |
+//! | Ended a fixed time after sign-in, however busy | No | Yes, 7 days |
 //! | Bound to the client's IP | Yes, when signed | No: phones change networks |
 //! | Stored for an anonymous visitor | Yes | No, until [`sign_in`] |
 //!
@@ -27,8 +28,9 @@
 //! }
 //!
 //! # async fn run() -> Result<(), axa_web_session::Error> {
-//! let store = memory_store(&SessionOptions::development()).await?;
-//! let app: Router = Router::new().route("/", get(sign_in)).layer(layer(store));
+//! let options = SessionOptions::development();
+//! let store = memory_store(&options).await?;
+//! let app: Router = Router::new().route("/", get(sign_in)).layer(layer(store, &options));
 //! # Ok(())
 //! # }
 //! ```
@@ -50,6 +52,10 @@
 //! - Call [`sign_in`] when someone signs in. It starts storing the session and
 //!   gives it a new identifier, so one planted beforehand is worthless.
 //! - Call [`sign_out`] when someone signs out.
+//! - A session in use stays alive past its [`SessionOptions::lifetime`], as each
+//!   request extends it. [`layer`] ends one at [`SessionOptions::sign_in_lifetime`]
+//!   after [`sign_in`], however busy, so a stolen cookie stops working in time. The
+//!   next request after that is an anonymous visitor's.
 //! - [`Session::set_store`] stores a session for any other reason, such as a
 //!   basket. [`SessionOptions::store_every_visitor`] stores them all.
 //!
@@ -63,7 +69,12 @@
 //! Serve the application with connection information, as `axa`'s `server` module
 //! does: `into_make_service_with_connect_info`.
 
-use std::{fmt, time::Duration};
+use std::{
+    fmt,
+    marker::PhantomData,
+    task::{Context, Poll},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use axum_session::DatabasePool;
 pub use axum_session::{
@@ -72,6 +83,8 @@ pub use axum_session::{
 };
 #[cfg(feature = "postgres")]
 pub use axum_session_sqlx::{SessionPgPool, SessionPgSession, SessionPgSessionStore};
+use tower_layer::{Layer, Stack};
+use tower_service::Service;
 use uuid::Uuid;
 
 /// The fewest bytes a key may have. `axum_session` panics on a shorter one, so
@@ -83,6 +96,9 @@ pub const DEFAULT_LIFETIME: Duration = Duration::from_hours(8);
 
 /// How long a long-term session and its cookie last, by default.
 pub const DEFAULT_MAX_LIFETIME: Duration = Duration::from_hours(24 * 7);
+
+/// How long a session lasts after [`sign_in`], however busy, by default.
+pub const DEFAULT_SIGN_IN_LIFETIME: Duration = DEFAULT_MAX_LIFETIME;
 
 /// A session failure.
 #[derive(Debug, thiserror::Error)]
@@ -113,6 +129,7 @@ pub struct SessionOptions {
     table_name: String,
     lifetime: Duration,
     max_lifetime: Duration,
+    sign_in_lifetime: Duration,
     secure: bool,
     store_every_visitor: bool,
     signing_key: Option<Key>,
@@ -127,6 +144,7 @@ impl fmt::Debug for SessionOptions {
             .field("table_name", &self.table_name)
             .field("lifetime", &self.lifetime)
             .field("max_lifetime", &self.max_lifetime)
+            .field("sign_in_lifetime", &self.sign_in_lifetime)
             .field("secure", &self.secure)
             .field("store_every_visitor", &self.store_every_visitor)
             .field("signed", &self.signing_key.is_some())
@@ -174,6 +192,7 @@ impl SessionOptions {
             table_name: "sessions".to_string(),
             lifetime: DEFAULT_LIFETIME,
             max_lifetime: DEFAULT_MAX_LIFETIME,
+            sign_in_lifetime: DEFAULT_SIGN_IN_LIFETIME,
             secure: false,
             store_every_visitor: false,
             signing_key: None,
@@ -206,6 +225,14 @@ impl SessionOptions {
     #[must_use]
     pub fn max_lifetime(mut self, max_lifetime: Duration) -> Self {
         self.max_lifetime = max_lifetime;
+        self
+    }
+
+    /// How long a session lasts after [`sign_in`], however busy. [`layer`] ends it
+    /// then, and the visitor signs in again.
+    #[must_use]
+    pub fn sign_in_lifetime(mut self, sign_in_lifetime: Duration) -> Self {
+        self.sign_in_lifetime = sign_in_lifetime;
         self
     }
 
@@ -253,6 +280,17 @@ impl SessionOptions {
 /// Where a form's token lives in the session.
 const CSRF_KEY: &str = "axa.csrf";
 
+/// Where the time of sign-in lives in the session, in milliseconds since 1970.
+const SIGNED_IN_KEY: &str = "axa.signed_in_at";
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        })
+}
+
 /// Start storing `session`, and give it a new identifier, so one planted before
 /// sign-in is worthless. Any form token from before is dropped too.
 pub fn sign_in<T>(session: &Session<T>)
@@ -261,6 +299,7 @@ where
 {
     session.set_store(true);
     session.remove(CSRF_KEY);
+    session.set(SIGNED_IN_KEY, now_ms());
     session.renew();
 }
 
@@ -343,13 +382,104 @@ pub async fn postgres_store(
     store(Some(pool.into()), options).await
 }
 
-/// The layer that gives handlers a [`Session`].
+/// The layer that gives handlers a [`Session`], ending each at the options'
+/// [`SessionOptions::sign_in_lifetime`] after [`sign_in`].
 #[must_use]
-pub fn layer<T>(store: SessionStore<T>) -> SessionLayer<T>
+pub fn layer<T>(
+    store: SessionStore<T>,
+    options: &SessionOptions,
+) -> Stack<SignInDeadline<T>, SessionLayer<T>>
 where
     T: DatabasePool + Clone + fmt::Debug + Sync + Send + 'static,
 {
-    SessionLayer::new(store)
+    let deadline = SignInDeadline {
+        lifetime_ms: u64::try_from(options.sign_in_lifetime.as_millis()).unwrap_or(u64::MAX),
+        pool: PhantomData,
+    };
+    Stack::new(deadline, SessionLayer::new(store))
+}
+
+/// The part of [`layer`] that ends a session at its time after sign-in. It runs
+/// inside the session layer, before the handler.
+pub struct SignInDeadline<T> {
+    lifetime_ms: u64,
+    pool: PhantomData<fn() -> T>,
+}
+
+impl<T> Clone for SignInDeadline<T> {
+    fn clone(&self) -> Self {
+        Self {
+            lifetime_ms: self.lifetime_ms,
+            pool: PhantomData,
+        }
+    }
+}
+
+impl<T> fmt::Debug for SignInDeadline<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignInDeadline")
+            .field("lifetime_ms", &self.lifetime_ms)
+            .finish()
+    }
+}
+
+impl<S, T> Layer<S> for SignInDeadline<T> {
+    type Service = SignInDeadlineService<S, T>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        SignInDeadlineService {
+            inner,
+            deadline: self.clone(),
+        }
+    }
+}
+
+/// The service [`SignInDeadline`] makes.
+pub struct SignInDeadlineService<S, T> {
+    inner: S,
+    deadline: SignInDeadline<T>,
+}
+
+impl<S: Clone, T> Clone for SignInDeadlineService<S, T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            deadline: self.deadline.clone(),
+        }
+    }
+}
+
+impl<S, T> fmt::Debug for SignInDeadlineService<S, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignInDeadlineService")
+            .field("deadline", &self.deadline)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<S, T, B> Service<http::Request<B>> for SignInDeadlineService<S, T>
+where
+    S: Service<http::Request<B>>,
+    T: DatabasePool + Clone + fmt::Debug + Sync + Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = S::Future;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: http::Request<B>) -> Self::Future {
+        if let Some(session) = request.extensions().get::<Session<T>>()
+            && let Some(at) = session.get::<u64>(SIGNED_IN_KEY)
+            && now_ms().saturating_sub(at) >= self.deadline.lifetime_ms
+        {
+            session.clear();
+            session.destroy();
+        }
+        self.inner.call(request)
+    }
 }
 
 #[cfg(test)]

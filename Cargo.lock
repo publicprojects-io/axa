@@ -1008,12 +1008,15 @@ dependencies = [
  "axum",
  "axum_session",
  "axum_session_sqlx",
+ "http",
  "serde_json",
  "sqlx",
  "thiserror 2.0.21",
  "time",
  "tokio",
  "tower",
+ "tower-layer",
+ "tower-service",
  "uuid",
 ]
 

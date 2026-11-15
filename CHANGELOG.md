@@ -10,6 +10,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa::extract::Patch<T>` (T-35, ERR-16): a field of a `PATCH` body that tells a field
   left out (`Missing`) from one set to `null` (`Null`) and from one set (`Value`), with
   `apply` to change an `Option` to match.
+- `SessionOptions::sign_in_lifetime` in `axa-web-session` (T-34, SES-11): `layer`
+  ends a session that long after `sign_in`, a week by default, however busy it has
+  been, as each request extends a session's idle lifetime.
+
+### Changed
+
+- `axa_web_session::layer` takes the `SessionOptions` too, `layer(store, &options)`, for
+  the sign-in lifetime, and answers a `Stack` of `SignInDeadline` and `SessionLayer`. A
+  session signed in before the upgrade has no time of sign-in, so it runs on to its
+  idle lifetime as before.
 
 ## [0.15.0] - 2026-11-15
 

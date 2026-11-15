@@ -76,7 +76,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-redis-cache`](crates/axa-redis-cache): a Redis cache with mandatory expiry
 - [`axa-openapi-docs`](crates/axa-openapi-docs): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks
 - [`axa-opentelemetry`](crates/axa-opentelemetry): OTLP export of traces and request metrics, off until an endpoint is set
-- [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens. Nothing is stored for a visitor until they sign in
+- [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens, and ended a week after sign-in however busy. Nothing is stored for a visitor until they sign in
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
 - `upload`, as `axa::upload`: bounded multipart uploads, with limits on the total, each file, each field, and the number of parts, and files written to temporary files

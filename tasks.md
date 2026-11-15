@@ -132,6 +132,9 @@ P-2, for each task that needs no new dependency.
 
 T-35 is done, unreleased, as `axa::extract::Patch<T>` (ERR-16).
 
+T-34 is done, unreleased, as `SessionOptions::sign_in_lifetime` in `axa-web-session`,
+which `layer` now takes the options for (SES-11).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

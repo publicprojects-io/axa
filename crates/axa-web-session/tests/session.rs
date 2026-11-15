@@ -71,7 +71,7 @@ async fn app(options: &SessionOptions) -> Router {
         .route("/anonymous", get(anonymous))
         .route("/token", get(token))
         .route("/check", get(check))
-        .layer(layer(store))
+        .layer(layer(store, options))
 }
 
 fn production() -> SessionOptions {
@@ -208,6 +208,38 @@ async fn a_session_survives_between_requests() {
     browser.get(&app, "/put").await;
     assert_eq!(browser.get(&app, "/read").await, "ada");
     assert_eq!(Browser::new().get(&app, "/read").await, "");
+}
+
+#[tokio::test]
+async fn a_busy_session_ends_at_its_sign_in_lifetime() {
+    let lifetime = std::time::Duration::from_millis(400);
+    let app = app(&production().sign_in_lifetime(lifetime)).await;
+    let mut browser = Browser::new();
+    browser.get(&app, "/put").await;
+    let start = std::time::Instant::now();
+    // Used well inside its idle lifetime the whole time, it still ends.
+    while start.elapsed() < lifetime / 2 {
+        assert_eq!(browser.get(&app, "/read").await, "ada");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    tokio::time::sleep(lifetime).await;
+    assert_eq!(browser.get(&app, "/read").await, "", "past its deadline");
+    assert_eq!(browser.get(&app, "/read").await, "", "and gone for good");
+    browser.get(&app, "/put").await;
+    assert_eq!(
+        browser.get(&app, "/read").await,
+        "ada",
+        "signing in again starts afresh"
+    );
+}
+
+#[tokio::test]
+async fn the_sign_in_lifetime_is_a_week_by_default() {
+    assert_eq!(
+        axa_web_session::DEFAULT_SIGN_IN_LIFETIME,
+        std::time::Duration::from_hours(24 * 7)
+    );
+    assert!(format!("{:?}", production()).contains("sign_in_lifetime: 604800s"));
 }
 
 /// The browser's session cookie replaced by `value`, keeping any other cookie.
@@ -400,7 +432,7 @@ mod postgres {
             .route("/put", get(put))
             .route("/read", get(read))
             .route("/visit", get(visit))
-            .layer(layer(store))
+            .layer(layer(store, options))
     }
 
     #[tokio::test]
