@@ -762,6 +762,10 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-28 | An act names its job by id, with no foreign key, so retention deletes the job's row and keeps its acts, and `Queue::acts` still reads them. | `acts_are_kept_when_their_job_is_swept` |
 | WRK-29 | A job queued with `NewJob::tenant` keeps its tenant in a nullable `tenant` column, shown in `JobInfo`, and a handler registered with `handle_with_tenant` gets it, or `None`, beside the arguments. A handler registered with `handle` never runs a tenant's job, which fails saying to use `handle_with_tenant`. Claiming stays fair across jobs, not tenants (TN-5). | `a_job_carries_its_tenant_to_a_handler_that_takes_one` |
 | WRK-30 | A tenant that is not a tenant id, as PST-15 has it, is refused with `Error::NotATenant` before anything is written, and the table's check refuses one whatever writes it. `check` fails on a table with no `tenant` column. | `a_tenant_that_is_not_a_tenant_id_is_refused` |
+| WRK-31 | While a job of the same name, tenant, and `NewJob::unique` key is queued or running, enqueuing another adds nothing and answers that job's id, and the first job's arguments stand. Another name, tenant, or key, or no key, is another job. Once the job completes, fails, is cancelled, or goes to review, the key is free. | `a_job_with_a_key_is_queued_once_while_it_is_queued_or_running` |
+| WRK-32 | The key holds against a job queued in a transaction not yet committed: a second enqueue of the key waits, then answers that job once it commits, or queues its own once it rolls back. A unique index holds it, so it holds across replicas. | `a_key_holds_against_a_job_in_a_transaction_not_yet_committed` |
+| WRK-33 | `retry` leaves a failed job alone, answering `false` and keeping no act, while another job of its key is queued or running. | `a_failed_job_is_not_retried_while_another_of_its_key_is_queued` |
+| WRK-34 | A key is a code, as WRK-26 has it. Any other is refused with `Error::NotACode`, `what` being `unique key`, before anything is written, and the table refuses it too. `check` fails without the `unique_key` column or the unique index. | `a_key_that_is_not_a_code_is_refused` |
 
 ### 4.19 MySQL job queue
 
@@ -772,11 +776,12 @@ names of the tests in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-30, each by the tests named there. | As named in section 4.18 |
+| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-34, each by the tests named there. | As named in section 4.18 |
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
 | MYQ-5 | Names are compared byte for byte, and every time is UTC on the database's clock, whatever the session's `time_zone`. The queue's own transactions run at `READ COMMITTED`, so a claim holds no gap locks. | `two_processes_run_each_job_once`, `a_delayed_job_is_not_claimed_before_its_time` |
+| MYQ-7 | MySQL has no partial index and no `RETURNING`. A virtual `unique_slot`, the tenant and key while the job is queued or running and `NULL` otherwise, carries a unique index with the name, and setup adds the columns and the index each where `information_schema` shows none. So `enqueue_on` takes a connection, `&mut transaction` or a pool's, and runs a unique job's insert and its locking read of the id in a transaction of its own, or a savepoint in the caller's. | `a_key_holds_against_a_job_in_a_transaction_not_yet_committed`, `a_key_that_is_not_a_code_is_refused` |
 | MYQ-6 | MySQL has no `ADD COLUMN IF NOT EXISTS`, so setup adds the `tenant` column only where `information_schema` shows none, in one string run on one connection, and is safe to repeat on a table made by 0.1.0. | `a_job_carries_its_tenant_to_a_handler_that_takes_one`, on the table setup makes first and then adds the column to |
 
 ### 4.20 SQLite job queue
@@ -789,7 +794,7 @@ in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-30, each by the tests named there. | As named in section 4.18 |
+| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-34, each by the tests named there. | As named in section 4.18 |
 | SQJ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, in one `BEGIN IMMEDIATE` transaction. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | SQJ-3 | An act changes its job and keeps the act in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |

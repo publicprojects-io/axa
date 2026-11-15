@@ -57,6 +57,35 @@ ahead of others with `priority`, or give a `timeout`, and then queue with
 `queue::enqueue_job_on` or `Queue::enqueue_job`. `Queue::enqueue_all` queues a batch in
 one transaction, so all or none.
 
+## One job at a time per key
+
+`unique` names a key, and while a job of the same type, tenant, and key is queued or
+running, queuing another adds nothing and answers the id of the one there:
+
+```rust
+# use axa::{AppContext, Result, queue::{self, Queue}, worker::BackgroundWorker};
+# #[derive(serde::Serialize, serde::Deserialize)]
+# struct Args { id: u64 }
+# struct SyncWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<Args> for SyncWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, _: Args) -> Result<()> { Ok(()) }
+# }
+# async fn example(queue: &Queue, id: u64) -> Result<()> {
+let job = queue::job::<SyncWorker, _>(&Args { id })?.unique(format!("sync:{id}"));
+let first = queue.enqueue_job(&job).await?;
+assert_eq!(queue.enqueue_job(&job).await?, first, "already queued");
+# Ok(())
+# }
+```
+
+The first job's arguments, priority, and time stand. Once it completes, fails, is
+cancelled, or goes to review, the key is free again. A unique index holds to this, so it
+holds across replicas, and against a job queued in a transaction that has not yet
+committed. A key is a code, at most 200 characters with no line breaks, and is kept on
+the row, so put an id in it, never personal data.
+
 ## How many at once
 
 `QueueOptions::workers` is how many job loops a process runs, so the most jobs it runs

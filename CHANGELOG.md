@@ -5,6 +5,22 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `NewJob::unique(key)` in all three job queues (T-27, WRK-31 to WRK-34): while a job of
+  the same name, tenant, and key is queued or running, enqueuing another adds nothing and
+  answers that job's id. A unique index holds it, across replicas and against a job in a
+  transaction not yet committed. `retry` leaves a failed job alone while another of its
+  key is queued or running. `JobInfo::unique_key` shows the key. Setup adds a
+  `unique_key` column and the `axa_queue_unique` index, and `check` requires both, so a
+  service on `connect_existing` runs the new `SETUP_STATEMENTS` in a migration first.
+
+### Changed
+
+- `axa_mysql_job_queue::enqueue_on` takes a `&mut MySqlConnection`, such as
+  `&mut transaction`, rather than any executor, as a unique job needs two statements on
+  MySQL (MYQ-7). `Queue::enqueue_job` is unchanged.
+
 ## [0.14.0] - 2026-11-15
 
 This covers `axa` 0.14.0, `axa-test` 0.5.0, `axa-webhooks` 0.1.1,

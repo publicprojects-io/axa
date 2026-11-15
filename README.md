@@ -590,7 +590,8 @@ the record it is about commit together. `Queue::enqueue` uses its own connection
 
 A process runs `workers` jobs at once, 2 by default, and `Queue::limit` holds one job
 type below that. A job may be delayed, given a priority, or given a time limit, and has
-none unless it is given one. `Queue::job` and `counts` say where a job is.
+none unless it is given one. `NewJob::unique` queues a job only if none of its type,
+tenant, and key is queued or running. `Queue::job` and `counts` say where a job is.
 `queue::cancel` and `queue::retry` change it, as an act of a named person for a
 reason, kept in the insert-only `axa_job_acts` in the caller's transaction, and
 `Queue::acts` reads them back. A run that lost its claim is stopped, and its job waits

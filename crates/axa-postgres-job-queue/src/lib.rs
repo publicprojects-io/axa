@@ -122,6 +122,18 @@
 //! handled by some worker, or its jobs wait. A schedule removed from code leaves a
 //! row that nothing reads.
 //!
+//! # One job at a time per key
+//!
+//! [`NewJob::unique`] names a key, such as `"sync:42"`, and while a job of the same
+//! name, tenant, and key is queued or running, queuing another adds nothing and
+//! answers the id of the one there. The first job's arguments, priority, and time
+//! stand. Once it completes, fails, is cancelled, or goes to review, the key is free
+//! again. The table holds to this with a unique index, so it holds across
+//! replicas and for a job queued in a transaction that has not yet committed: a
+//! second enqueue of the key waits for that transaction, and then either finds its
+//! job or queues its own. [`retry()`] leaves a failed job alone while another of its
+//! key is queued or running.
+//!
 //! # Queuing inside a transaction
 //!
 //! [`enqueue_on`] takes the caller's transaction, so a job and the record it is
@@ -165,10 +177,10 @@ pub enum Error {
     Encode(serde_json::Error),
     /// A job failed, or the queue met something it cannot read.
     Job(String),
-    /// Who or why, given for a person's act, is empty, longer than
-    /// [`MAX_REASON_CHARS`], or has a line break.
+    /// Who or why, given for a person's act, or a job's unique key, is empty,
+    /// longer than [`MAX_REASON_CHARS`], or has a line break.
     NotACode {
-        /// Which it was: `by` or `reason`.
+        /// Which it was: `by`, `reason`, or `unique key`.
         what: &'static str,
     },
     /// A job's tenant is not a tenant id: see [`is_tenant_id`].
@@ -245,6 +257,14 @@ const SETUP_TIMEOUT: &str = "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS time
 /// The tenant a job runs for, when it has one, as an auth crate's `Tenant` names it.
 const SETUP_TENANT: &str = "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS tenant TEXT
     CONSTRAINT axa_queue_tenant_id CHECK (tenant ~ '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$')";
+/// The key a job is unique by while it is queued or running, when it has one.
+const SETUP_UNIQUE_KEY: &str = "ALTER TABLE axa_queue ADD COLUMN IF NOT EXISTS unique_key TEXT
+    CONSTRAINT axa_queue_unique_key_code
+    CHECK (length(unique_key) BETWEEN 1 AND 200 AND unique_key !~ '[[:cntrl:]]')";
+/// At most one job queued or running per name, tenant, and key.
+const SETUP_UNIQUE_INDEX: &str = "CREATE UNIQUE INDEX IF NOT EXISTS axa_queue_unique
+    ON axa_queue (name, (COALESCE(tenant, '')), unique_key)
+    WHERE unique_key IS NOT NULL AND status IN ('queued', 'running')";
 const SETUP_CLAIM_INDEX: &str = "CREATE INDEX IF NOT EXISTS axa_queue_claim
     ON axa_queue (priority DESC, run_at) WHERE status = 'queued'";
 const SETUP_SCHEDULE: &str = "CREATE TABLE IF NOT EXISTS axa_schedule (
@@ -310,6 +330,17 @@ const SETUP_LOCK: i64 = 0x0061_7861_5F71;
 const ENQUEUE: &str = "INSERT INTO axa_queue
     (id, name, args, max_attempts, priority, run_at, timeout_ms, tenant)
     VALUES ($1, $2, $3, $4, $5, COALESCE($6, now() + make_interval(secs => $7)), $8, $9)";
+/// Queue a job with a key, or find the one of its name, tenant, and key already
+/// queued or running. `DO UPDATE`, which changes nothing, rather than `DO NOTHING`,
+/// because it returns the job there even when it committed after this statement
+/// began, as a job queued in another transaction may have. `inserted` tells which.
+const ENQUEUE_UNIQUE: &str = "INSERT INTO axa_queue
+    (id, name, args, max_attempts, priority, run_at, timeout_ms, tenant, unique_key)
+    VALUES ($1, $2, $3, $4, $5, COALESCE($6, now() + make_interval(secs => $7)), $8, $9, $10)
+    ON CONFLICT (name, (COALESCE(tenant, '')), unique_key)
+        WHERE unique_key IS NOT NULL AND status IN ('queued', 'running')
+    DO UPDATE SET unique_key = EXCLUDED.unique_key
+    RETURNING id";
 const CLAIM: &str = "UPDATE axa_queue
     SET status = 'running', started_at = now(), updated_at = now(), attempts = attempts + 1
     WHERE id = (
@@ -342,7 +373,7 @@ const PURGE: &str = "DELETE FROM axa_queue
     WHERE status IN ('completed', 'failed', 'cancelled')
       AND updated_at < now() - make_interval(days => $1)";
 const STATUS: &str = "SELECT id, name, status, attempts, max_attempts, priority, error,
-    timeout_ms, tenant, run_at, started_at, created_at, updated_at FROM axa_queue WHERE id = $1";
+    timeout_ms, tenant, unique_key, run_at, started_at, created_at, updated_at FROM axa_queue WHERE id = $1";
 /// A run that lost its claim stops, and its job waits for a person. Another run
 /// may hold the row by now, and this stops that one too, at its next report.
 /// A row already completed is left alone.
@@ -365,6 +396,13 @@ const CANCEL: &str = "WITH changed AS (
 const RETRY_FAILED: &str = "WITH target AS (
         SELECT id, status FROM axa_queue
         WHERE id = $1 AND status IN ('failed', 'needs_review')
+          AND NOT EXISTS (
+              SELECT 1 FROM axa_queue other
+              WHERE other.unique_key = axa_queue.unique_key
+                AND other.name = axa_queue.name
+                AND COALESCE(other.tenant, '') = COALESCE(axa_queue.tenant, '')
+                AND other.status IN ('queued', 'running')
+          )
         FOR UPDATE
     ), changed AS (
         UPDATE axa_queue q
@@ -423,7 +461,7 @@ const SCHEDULE_ADVANCE: &str = "UPDATE axa_schedule
 /// The statements that make the queue's tables, in order, each safe to repeat. A
 /// service whose role may not change the schema runs these in a migration, and calls
 /// [`Queue::connect_existing`]. They need Postgres 14 or later.
-pub const SETUP_STATEMENTS: [&str; 15] = [
+pub const SETUP_STATEMENTS: [&str; 17] = [
     SETUP,
     SETUP_ATTEMPTS,
     SETUP_MAX_ATTEMPTS,
@@ -431,6 +469,8 @@ pub const SETUP_STATEMENTS: [&str; 15] = [
     SETUP_PRIORITY,
     SETUP_TIMEOUT,
     SETUP_TENANT,
+    SETUP_UNIQUE_KEY,
+    SETUP_UNIQUE_INDEX,
     SETUP_CLAIM_INDEX,
     SETUP_SCHEDULE,
     SETUP_ACTS,
@@ -500,6 +540,7 @@ pub struct NewJob {
     when: When,
     timeout: Option<Duration>,
     tenant: Option<String>,
+    unique_key: Option<String>,
 }
 
 impl fmt::Debug for NewJob {
@@ -511,6 +552,7 @@ impl fmt::Debug for NewJob {
             .field("when", &self.when)
             .field("timeout", &self.timeout)
             .field("tenant", &self.tenant)
+            .field("unique_key", &self.unique_key)
             .finish_non_exhaustive()
     }
 }
@@ -527,7 +569,20 @@ impl NewJob {
             when: When::Now,
             timeout: None,
             tenant: None,
+            unique_key: None,
         }
+    }
+
+    /// Queue this job only if no job of its name, tenant, and `key` is queued or
+    /// running: otherwise queuing it adds nothing and answers the id of the one
+    /// there, whose arguments, priority, and time stand. The key is a code, at most
+    /// [`MAX_REASON_CHARS`] characters with no line breaks, such as `"sync:42"`, and
+    /// is kept on the job's row, so it holds no secret or personal data. Enqueuing
+    /// refuses any other key with [`Error::NotACode`].
+    #[must_use]
+    pub fn unique(mut self, key: impl Into<String>) -> Self {
+        self.unique_key = Some(key.into());
+        self
     }
 
     /// Run this job for `tenant`, the id an auth crate's `Tenant` gives, which its
@@ -589,6 +644,12 @@ impl NewJob {
     pub fn tenant_id(&self) -> Option<&str> {
         self.tenant.as_deref()
     }
+
+    /// The key this job is unique by, if any.
+    #[must_use]
+    pub fn unique_key(&self) -> Option<&str> {
+        self.unique_key.as_deref()
+    }
 }
 
 /// The longest tenant id, which a DNS label also allows.
@@ -608,12 +669,15 @@ pub fn is_tenant_id(id: &str) -> bool {
 }
 
 /// Add `job` on `executor`, usually the caller's transaction, and return its id.
-/// The job then commits or rolls back with the transaction.
+/// The job then commits or rolls back with the transaction. A job with a
+/// [`NewJob::unique`] key that is already queued or running adds nothing, and the id
+/// is that job's.
 ///
 /// # Errors
 ///
-/// Fails on a database error, and with [`Error::NotATenant`] for a tenant that is not a
-/// tenant id, before anything is written.
+/// Fails on a database error, with [`Error::NotATenant`] for a tenant that is not a
+/// tenant id, and with [`Error::NotACode`] for a key that is not a code, before
+/// anything is written.
 pub async fn enqueue_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Result<Uuid> {
     if job
         .tenant
@@ -622,25 +686,35 @@ pub async fn enqueue_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Res
     {
         return Err(Error::NotATenant);
     }
+    if let Some(key) = job.unique_key.as_deref() {
+        check_code(key, "unique key")?;
+    }
     let id = Uuid::new_v4();
     let (at, delay) = match job.when {
         When::Now => (None, 0.0),
         When::At(at) => (Some(at), 0.0),
         When::In(delay) => (None, delay.as_secs_f64()),
     };
-    sqlx::query(ENQUEUE)
-        .bind(id)
-        .bind(&job.name)
-        .bind(&job.args)
-        .bind(job.max_attempts)
-        .bind(job.priority)
-        .bind(at)
-        .bind(delay)
-        .bind(job.timeout.map(millis))
-        .bind(job.tenant.as_deref())
-        .execute(executor)
-        .await?;
-    Ok(id)
+    let query = sqlx::query(if job.unique_key.is_some() {
+        ENQUEUE_UNIQUE
+    } else {
+        ENQUEUE
+    })
+    .bind(id)
+    .bind(&job.name)
+    .bind(&job.args)
+    .bind(job.max_attempts)
+    .bind(job.priority)
+    .bind(at)
+    .bind(delay)
+    .bind(job.timeout.map(millis))
+    .bind(job.tenant.as_deref());
+    if let Some(key) = job.unique_key.as_deref() {
+        Ok(query.bind(key).fetch_one(executor).await?.try_get("id")?)
+    } else {
+        query.execute(executor).await?;
+        Ok(id)
+    }
 }
 
 /// Add every job in `jobs` on `connection`, returning their ids in order. On a
@@ -831,6 +905,8 @@ pub struct JobInfo {
     pub timeout: Option<Duration>,
     /// The tenant it runs for, if any.
     pub tenant: Option<String>,
+    /// The key it is unique by while queued or running, if any.
+    pub unique_key: Option<String>,
     /// The text of its last failure. For operators only: it is whatever the job's
     /// error said.
     pub error: Option<String>,
@@ -1108,7 +1184,7 @@ impl Queue {
     /// or a trigger is missing or turned off.
     pub async fn check(&self) -> Result<()> {
         sqlx::query(
-            "SELECT attempts, max_attempts, priority, timeout_ms, tenant FROM axa_queue LIMIT 0",
+            "SELECT attempts, max_attempts, priority, timeout_ms, tenant, unique_key FROM axa_queue LIMIT 0",
         )
         .execute(&self.pool)
         .await?;
@@ -1122,10 +1198,17 @@ impl Queue {
         )
         .execute(&self.pool)
         .await?;
-        let missing: Vec<String> = sqlx::query_scalar(MISSING_TRIGGERS)
+        let mut missing: Vec<String> = sqlx::query_scalar(MISSING_TRIGGERS)
             .bind(ACTS_TRIGGERS.to_vec())
             .fetch_all(&self.pool)
             .await?;
+        let unique_index: bool =
+            sqlx::query_scalar("SELECT to_regclass('axa_queue_unique') IS NOT NULL")
+                .fetch_one(&self.pool)
+                .await?;
+        if !unique_index {
+            missing.push("axa_queue_unique".to_string());
+        }
         if missing.is_empty() {
             Ok(())
         } else {
@@ -1287,6 +1370,7 @@ impl Queue {
                 .try_get::<Option<i64>, _>("timeout_ms")?
                 .map(from_millis),
             tenant: row.try_get("tenant")?,
+            unique_key: row.try_get("unique_key")?,
             error: row.try_get("error")?,
             run_at: row.try_get("run_at")?,
             started_at: row.try_get("started_at")?,

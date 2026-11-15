@@ -106,15 +106,23 @@ the build did not have.
 
 Each needs two services that ask, or one with a safety case, before it starts.
 
+On 2026-11-15 three services, `crm`, `ppm`, and `wpm`, asked for T-23, T-24, T-27, and
+T-29, which passes P-2 for them. The dependencies were approved the same day: `lettre`
+for T-23, `object_store` for T-24 in a crate named `axa-storage-with-apache-arrow-and-aws`,
+and `croner` for T-29.
+
+T-27 is done, unreleased, in all three job queues, as `NewJob::unique` (WRK-31 to WRK-34,
+MYQ-7).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |
-| T-24 | Object storage for local disk, memory, and S3, refusing keys with `..`, with presigned URLs | New crate `axa-storage` | M | `object_store` | Loco, crates.io |
+| T-24 | Object storage for local disk, memory, and S3, refusing keys with `..`, with presigned URLs | New crate `axa-storage-with-apache-arrow-and-aws` | M | `object_store` | Loco, crates.io |
 | T-25 | Rate limits shared across replicas: a token bucket in Postgres in one upsert, and a Redis store, the service choosing whether an outage lets requests through | `axa-request-rate-limit` | M | None, or `redis` | crates.io, actix-web |
 | T-26 | Wake the Postgres queue with `LISTEN` and `NOTIFY`, polling kept as the fallback | `axa-postgres-job-queue` | M | None | crates.io |
 | T-27 | Deduplicated enqueue by a key the caller names | Job queue crates | S | None | crates.io |
 | T-28 | Retry jitter, and a job-chosen delay such as a receiver's `Retry-After`, within limits | Job queue crates | S | None | Svix |
-| T-29 | Cron and calendar schedules beside `Schedule::every`, keeping each due time queued once | Job queue crates | M | A cron parser | Loco |
+| T-29 | Cron and calendar schedules beside `Schedule::every`, keeping each due time queued once | Job queue crates | M | `croner` | Loco |
 | T-30 | Background migrations for SQL that cannot run in a transaction, such as `CREATE INDEX CONCURRENTLY`, under an advisory lock, each recorded | `axa-postgres-sqlx` | M | None | Svix |
 | T-31 | An optional internal listener, `INTERNAL_PORT`, for the health routes and metrics, with the spec's health requirements updated to match | `src/server.rs`, `spec/health` | M | None | Atuin, Sentry Relay |
 | T-32 | A static token or Basic credential guard for operator routes, compared in constant time | Auth crates | S | None | actix-web |

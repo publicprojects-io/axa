@@ -1414,3 +1414,170 @@ async fn a_tenant_that_is_not_a_tenant_id_is_refused() {
     .await;
     assert!(direct.is_err());
 }
+
+// Unique keys.
+
+async fn set_status(queue: &Queue, id: Uuid, status: &str) {
+    sqlx::query("UPDATE axa_queue SET status = $2 WHERE id = $1")
+        .bind(id)
+        .bind(status)
+        .execute(queue.pool())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_job_with_a_key_is_queued_once_while_it_is_queued_or_running() {
+    let queue = fresh(quick()).await;
+    let job = |id: i64| NewJob::new("Sync", serde_json::json!({ "id": id })).unique("sync:42");
+    assert_eq!(job(1).unique_key(), Some("sync:42"));
+    let first = queue.enqueue_job(&job(1)).await.unwrap();
+    assert_eq!(queue.enqueue_job(&job(2)).await.unwrap(), first);
+    set_status(&queue, first, "running").await;
+    assert_eq!(queue.enqueue_job(&job(3)).await.unwrap(), first);
+    assert_eq!(
+        queue
+            .job(first)
+            .await
+            .unwrap()
+            .unwrap()
+            .unique_key
+            .as_deref(),
+        Some("sync:42")
+    );
+    let args: serde_json::Value = sqlx::query_scalar("SELECT args FROM axa_queue WHERE id = $1")
+        .bind(first)
+        .fetch_one(queue.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        args,
+        serde_json::json!({ "id": 1 }),
+        "the first job's arguments stand"
+    );
+
+    // Another tenant, another name, or another key is another job, and so is one
+    // with no key.
+    let others = [
+        job(4).tenant("acme"),
+        NewJob::new("Other", serde_json::Value::Null).unique("sync:42"),
+        NewJob::new("Sync", serde_json::Value::Null).unique("sync:43"),
+        NewJob::new("Sync", serde_json::Value::Null),
+        NewJob::new("Sync", serde_json::Value::Null),
+    ];
+    let mut ids = HashSet::from([first]);
+    for other in &others {
+        assert!(
+            ids.insert(queue.enqueue_job(other).await.unwrap()),
+            "{other:?}"
+        );
+    }
+    assert_eq!(queue.enqueue_job(&job(5).tenant("acme")).await.unwrap(), {
+        let acme: Uuid = sqlx::query_scalar("SELECT id FROM axa_queue WHERE tenant = 'acme'")
+            .fetch_one(queue.pool())
+            .await
+            .unwrap();
+        acme
+    });
+
+    // Once the job is done in any way, the key is free again.
+    let mut last = first;
+    for status in ["completed", "failed", "cancelled", "needs_review"] {
+        set_status(&queue, last, status).await;
+        let next = queue.enqueue_job(&job(6)).await.unwrap();
+        assert_ne!(next, last, "free after {status}");
+        last = next;
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_key_holds_against_a_job_in_a_transaction_not_yet_committed() {
+    let queue = Arc::new(fresh(quick()).await);
+    let job = || NewJob::new("Sync", serde_json::Value::Null).unique("sync:7");
+    for commit in [true, false] {
+        sqlx::query("DELETE FROM axa_queue")
+            .execute(queue.pool())
+            .await
+            .unwrap();
+        let mut transaction = queue.pool().begin().await.unwrap();
+        let held = axa_postgres_job_queue::enqueue_on(&mut *transaction, &job())
+            .await
+            .unwrap();
+        let other = {
+            let queue = Arc::clone(&queue);
+            tokio::spawn(async move { queue.enqueue_job(&job()).await.unwrap() })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        assert!(
+            !other.is_finished(),
+            "the second enqueue waits for the first"
+        );
+        if commit {
+            transaction.commit().await.unwrap();
+            assert_eq!(other.await.unwrap(), held, "and then finds its job");
+        } else {
+            transaction.rollback().await.unwrap();
+            assert_ne!(other.await.unwrap(), held, "or queues its own");
+        }
+        assert_eq!(
+            count(queue.pool(), "SELECT count(*) FROM axa_queue").await,
+            1
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_failed_job_is_not_retried_while_another_of_its_key_is_queued() {
+    let queue = fresh(quick()).await;
+    let job = || NewJob::new("Sync", serde_json::Value::Null).unique("sync:9");
+    let failed = queue.enqueue_job(&job()).await.unwrap();
+    set_status(&queue, failed, "failed").await;
+    let queued = queue.enqueue_job(&job()).await.unwrap();
+    assert!(!retry(&queue, failed).await, "another of its key is queued");
+    assert_eq!(state(&queue, failed).await, JobState::Failed);
+    assert!(
+        queue.acts(failed).await.unwrap().is_empty(),
+        "and no act is kept"
+    );
+    set_status(&queue, queued, "completed").await;
+    assert!(
+        retry(&queue, failed).await,
+        "and once it is done, it may be"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_key_that_is_not_a_code_is_refused() {
+    let queue = fresh(quick()).await;
+    for bad in [String::new(), "a\nb".to_string(), "k".repeat(201)] {
+        let job = NewJob::new("Sync", serde_json::Value::Null).unique(bad.clone());
+        assert!(
+            matches!(
+                queue.enqueue_job(&job).await,
+                Err(Error::NotACode { what: "unique key" })
+            ),
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        count(queue.pool(), "SELECT count(*) FROM axa_queue").await,
+        0
+    );
+    let direct = sqlx::query(
+        "INSERT INTO axa_queue (id, name, args, unique_key) VALUES ($1, 'x', 'null', '')",
+    )
+    .bind(Uuid::new_v4())
+    .execute(queue.pool())
+    .await;
+    assert!(direct.is_err(), "the table refuses it too");
+    // And a queue without the key's index is stopped at boot.
+    sqlx::query("DROP INDEX axa_queue_unique")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    assert!(Queue::connect_existing(&uri(), quick()).await.is_err());
+}

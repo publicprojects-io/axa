@@ -320,6 +320,9 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
   `start --worker`. Call `queue::warn_if_unserved` at boot so a forgotten worker shows up.
 - A job gets one attempt by default, because a retry repeats its work. Raise
   `max_attempts` only for jobs written to be repeated.
+- `queue::job::<W, _>(&args)?.unique(key)` queues a job only if none of its type, tenant,
+  and key is queued or running, and answers the id of the one there. The key is a code
+  kept on the row, such as `sync:42`.
 - Use `queue::enqueue_on` to queue on the caller's sqlx transaction, so the job and its
   record commit together. `Queue::enqueue` uses its own connection, which can leave a
   job for a record that rolled back.
