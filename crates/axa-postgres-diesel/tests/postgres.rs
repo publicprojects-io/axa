@@ -308,3 +308,60 @@ async fn every_connection_starts_with_the_session_settings() {
         .unwrap_err();
     assert!(refused.to_string().contains("read-only"), "{refused}");
 }
+
+/// The table a stale plan test reads.
+mod stale {
+    diesel::table! {
+        /// One text column, first a `VARCHAR`.
+        diesel_stale_plan (x) {
+            /// The value.
+            x -> Text,
+        }
+    }
+}
+use stale::diesel_stale_plan;
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
+    use axa_postgres_diesel::{is_stale_plan, note_stale_plan};
+    use diesel::QueryDsl;
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    // One connection, so the statement cached on it is the one that goes stale.
+    let mut config = PoolConfig::new(uri);
+    config.max_connections = 1;
+    let pool = connect(&config).await.unwrap();
+    // Diesel caches the prepared statement of a query it builds.
+    let select = || diesel_stale_plan::table.select(diesel_stale_plan::x);
+    {
+        let mut connection = pool.get().await.unwrap();
+        for statement in [
+            "DROP TABLE IF EXISTS diesel_stale_plan",
+            "CREATE TABLE diesel_stale_plan (x VARCHAR(10))",
+            "INSERT INTO diesel_stale_plan VALUES ('1')",
+        ] {
+            diesel::sql_query(statement)
+                .execute(&mut connection)
+                .await
+                .unwrap();
+        }
+        select().load::<String>(&mut connection).await.unwrap();
+        // Diesel reads either type as text, but Postgres refuses the cached plan.
+        diesel::sql_query("ALTER TABLE diesel_stale_plan ALTER COLUMN x TYPE TEXT")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        let error = select().load::<String>(&mut connection).await.unwrap_err();
+        assert!(is_stale_plan(&error), "{error:?}");
+        assert!(note_stale_plan(&error));
+    }
+
+    // The pool hands out a fresh connection, where the statement is prepared again.
+    let mut connection = pool.get().await.unwrap();
+    let rows = select().load::<String>(&mut connection).await.unwrap();
+    assert_eq!(rows, ["1"]);
+    diesel::sql_query("DROP TABLE diesel_stale_plan")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}

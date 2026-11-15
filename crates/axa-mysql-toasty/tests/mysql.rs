@@ -239,3 +239,54 @@ async fn ssl_mode_in_the_url_asks_for_tls() {
             .is_err()
     );
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    let mut writer = fresh().await;
+    for statement in [
+        "DROP TABLE IF EXISTS axa_read_only",
+        "CREATE TABLE axa_read_only (x INT)",
+    ] {
+        toasty::sql::statement(statement)
+            .exec(&mut writer)
+            .await
+            .unwrap();
+    }
+    let config = PoolConfig {
+        statement_timeout_ms: 1234,
+        read_only: true,
+        ..PoolConfig::new(uri())
+    };
+    let db = connect(&config, toasty::models!(Person)).await.unwrap();
+    // Every connection, not only the first: a transaction holds one, so hold two.
+    let (mut one, mut two) = (db.clone(), db.clone());
+    let mut first = one.transaction().await.unwrap();
+    let mut second = two.transaction().await.unwrap();
+    for transaction in [&mut first, &mut second] {
+        let rows = toasty::sql::query(
+            "SELECT CAST(@@SESSION.max_execution_time AS SIGNED), \
+             CAST(@@SESSION.transaction_read_only AS SIGNED)",
+        )
+        .column_types([Type::I64, Type::I64])
+        .exec(transaction)
+        .await
+        .unwrap();
+        match rows.first() {
+            Some(Value::Record(record)) => {
+                assert_eq!(record.fields, [Value::I64(1234), Value::I64(1)]);
+            }
+            other => panic!("{other:?}"),
+        }
+        let refused = toasty::sql::statement("INSERT INTO axa_read_only VALUES (1)")
+            .exec(transaction)
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains("READ ONLY"), "{refused}");
+    }
+    drop((first, second));
+    toasty::sql::statement("DROP TABLE axa_read_only")
+        .exec(&mut writer)
+        .await
+        .unwrap();
+}

@@ -312,3 +312,46 @@ async fn ssl_mode_verify_ca_and_verify_identity_refuse_an_untrusted_server() {
         assert!(error.to_string().contains("certificate"), "{mode}: {error}");
     }
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    #[derive(QueryableByName)]
+    struct Settings {
+        #[diesel(sql_type = BigInt)]
+        timeout: i64,
+        #[diesel(sql_type = BigInt)]
+        read_only: i64,
+    }
+    let writer = pool().await;
+    execute(&writer, "DROP TABLE IF EXISTS axa_read_only")
+        .await
+        .unwrap();
+    execute(&writer, "CREATE TABLE axa_read_only (x INT)")
+        .await
+        .unwrap();
+    let mut config = PoolConfig::new(url_with(None));
+    config.statement_timeout_ms = 1234;
+    config.read_only = true;
+    let pool = pool_from(config).await;
+    // Every connection, not only the first: hold two at once.
+    let mut first = pool.get().await.unwrap();
+    let mut second = pool.get().await.unwrap();
+    for connection in [&mut first, &mut second] {
+        let settings: Settings = diesel::sql_query(
+            "SELECT CAST(@@SESSION.max_execution_time AS SIGNED) AS timeout, \
+             CAST(@@SESSION.transaction_read_only AS SIGNED) AS read_only",
+        )
+        .get_result(&mut **connection)
+        .await
+        .unwrap();
+        assert_eq!(settings.timeout, 1234);
+        assert_eq!(settings.read_only, 1);
+        let refused = diesel::sql_query("INSERT INTO axa_read_only VALUES (1)")
+            .execute(&mut **connection)
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains("READ ONLY"), "{refused}");
+    }
+    execute(&writer, "DROP TABLE axa_read_only").await.unwrap();
+}

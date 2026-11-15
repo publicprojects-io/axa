@@ -171,13 +171,19 @@ pub struct Database {
     pub auto_migrate: bool,
     /// Empty the tables at boot. Only ever on under `test`.
     pub dangerously_truncate: bool,
-    /// Postgres's `statement_timeout` on every connection, in milliseconds, from
-    /// `DB_STATEMENT_TIMEOUT_MS`. `0`, the default, sets none.
+    /// A statement timeout on every connection, in milliseconds, from
+    /// `DB_STATEMENT_TIMEOUT_MS`: Postgres's `statement_timeout`, or `MySQL`'s
+    /// `max_execution_time`, which stops only a read-only `SELECT`. `0`, the default,
+    /// sets none.
     pub statement_timeout_ms: u64,
     /// Postgres's `application_name` on every connection, from `DB_APPLICATION_NAME`,
-    /// or the database name stem in [`Defaults`]. Empty sets none.
+    /// or the database name stem in [`Defaults`]. Empty sets none. `MySQL` has no
+    /// session setting for it, and none of its drivers here sends the
+    /// `program_name` connection attribute, so `MySQL` connections go without.
     pub application_name: String,
-    /// Open every transaction read-only, from `DB_READ_ONLY`, as for a read replica.
+    /// Open every transaction read-only, from `DB_READ_ONLY`, as for a read replica:
+    /// Postgres's `default_transaction_read_only`, or `MySQL`'s
+    /// `transaction_read_only`.
     pub read_only: bool,
 }
 
@@ -416,22 +422,21 @@ fn application_name<F: Fn(&str) -> Option<String>>(vars: &Settings<F>, stem: &st
     }
 }
 
-/// A statement timeout or read-only mode works only on Postgres, so asking for either
-/// with another database is a problem, rather than a setting silently ignored.
-fn session_settings_need_postgres<F: Fn(&str) -> Option<String>>(
+/// A statement timeout or read-only mode works only on Postgres and `MySQL`, so asking
+/// for either with `SQLite` is a problem, rather than a setting silently ignored.
+fn session_settings_need_postgres_or_mysql<F: Fn(&str) -> Option<String>>(
     vars: &Settings<F>,
     database: &Database,
 ) {
-    let postgres = cfg!(any(
-        axa_db = "postgres_sqlx",
-        axa_db = "postgres_seaorm",
-        axa_db = "postgres_diesel",
-        axa_db = "postgres_toasty"
+    let sqlite = cfg!(any(
+        axa_db = "sqlite_sqlx",
+        axa_db = "sqlite_seaorm",
+        axa_db = "sqlite_diesel"
     ));
-    let none = cfg!(axa_db = "none");
-    if !postgres && !none && (database.statement_timeout_ms > 0 || database.read_only) {
+    if sqlite && (database.statement_timeout_ms > 0 || database.read_only) {
         vars.problem(
-            "DB_STATEMENT_TIMEOUT_MS and DB_READ_ONLY work only with a Postgres database"
+            "DB_STATEMENT_TIMEOUT_MS and DB_READ_ONLY work only with a Postgres or MySQL \
+             database"
                 .to_string(),
         );
     }
@@ -986,7 +991,7 @@ impl Config {
             workers: vars.named("WORKER_MODE", workers, worker_mode),
         };
 
-        session_settings_need_postgres(&vars, &config.database);
+        session_settings_need_postgres_or_mysql(&vars, &config.database);
 
         // Fail closed: a production service that misread a setting would run
         // with something nobody chose, and a warning there is read too late.
@@ -1630,36 +1635,52 @@ mod tests {
         assert_eq!(config.database.application_name, "");
     }
 
-    /// Only a build whose database is not Postgres can ask for what only Postgres has.
-    #[cfg(not(any(
-        axa_db = "none",
-        axa_db = "postgres_sqlx",
-        axa_db = "postgres_seaorm",
-        axa_db = "postgres_diesel",
-        axa_db = "postgres_toasty"
-    )))]
+    /// Only a `SQLite` build can ask for what only Postgres and `MySQL` have.
+    #[cfg(any(
+        axa_db = "sqlite_sqlx",
+        axa_db = "sqlite_seaorm",
+        axa_db = "sqlite_diesel"
+    ))]
     #[test]
-    fn production_refuses_postgres_session_settings_on_another_database() {
-        let url = if cfg!(any(
-            axa_db = "mysql_sqlx",
-            axa_db = "mysql_seaorm",
-            axa_db = "mysql_diesel",
-            axa_db = "mysql_toasty"
-        )) {
-            "mysql://localhost/x"
-        } else {
-            "sqlite://x.sqlite3"
-        };
+    fn production_refuses_session_settings_on_sqlite() {
         for pair in [
             ("DB_STATEMENT_TIMEOUT_MS", "5000"),
             ("DB_READ_ONLY", "true"),
         ] {
-            let error = with(&[("DB_URL", url), pair], &Environment::Production).unwrap_err();
+            let error = with(
+                &[("DB_URL", "sqlite://x.sqlite3"), pair],
+                &Environment::Production,
+            )
+            .unwrap_err();
             assert!(
-                error.to_string().contains("only with a Postgres database"),
+                error
+                    .to_string()
+                    .contains("only with a Postgres or MySQL database"),
                 "{error}"
             );
         }
+    }
+
+    /// A `MySQL` build takes the statement timeout and read-only mode, in production too.
+    #[cfg(any(
+        axa_db = "mysql_sqlx",
+        axa_db = "mysql_seaorm",
+        axa_db = "mysql_diesel",
+        axa_db = "mysql_toasty"
+    ))]
+    #[test]
+    fn production_takes_session_settings_on_mysql() {
+        let config = with(
+            &[
+                ("DB_URL", "mysql://localhost/x"),
+                ("DB_STATEMENT_TIMEOUT_MS", "5000"),
+                ("DB_READ_ONLY", "true"),
+            ],
+            &Environment::Production,
+        )
+        .unwrap();
+        assert_eq!(config.database.statement_timeout_ms, 5000);
+        assert!(config.database.read_only);
     }
 
     #[test]

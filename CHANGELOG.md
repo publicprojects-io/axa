@@ -7,7 +7,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
 `axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`,
-`axa-cursor-pagination`, the three job queues, and `axa-transactional-outbox`.
+`axa-cursor-pagination`, the three job queues, `axa-transactional-outbox`, the four
+MySQL crates, and the SeaORM, Diesel, and Toasty Postgres crates.
 
 ### Changed
 
@@ -17,6 +18,12 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   `Queue::connect_existing` runs `SETUP_STATEMENTS` again before it deploys.
 - **`config::Http` has `log_tenant`**, so a service that builds one by hand adds
   `log_tenant: false`. See [Upgrading to Axa 0.14](help/upgrading-to-0.14/index.md).
+- **Each MySQL crate's `PoolConfig` has `statement_timeout_ms` and `read_only`**, so
+  code that builds one field by field adds them.
+- **`DB_STATEMENT_TIMEOUT_MS` and `DB_READ_ONLY` work on MySQL** (CFG-27), where
+  production refused them before. SQLite still refuses both.
+- **A stale plan through SeaORM, Diesel, or Toasty is a `503`** (DB-10) to try again,
+  rather than a `500`, as it was already through sqlx.
 
 ### Added
 
@@ -52,6 +59,15 @@ This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
   `axa-transactional-outbox` keeps the event's tenant, which the relay gets as
   `Claimed::tenant`. Order is kept per tenant, topic, and key, and the fingerprint
   covers the tenant, while an event with none keeps its old fingerprint.
+- **MySQL session settings** (T-17, MYX-15, MYO-13, MYD-12, MYT-10): in all four
+  MySQL crates, `statement_timeout_ms` sets `max_execution_time`, which stops only a
+  read-only `SELECT`, and `read_only` sets `transaction_read_only`, in one
+  `SET SESSION` on each connection. MySQL has no application name a session can set.
+- **Stale plans retired in every Postgres pool** (T-18, SOR-7, DSL-8, TOA-6):
+  `is_stale_plan` and `note_stale_plan` in `axa-postgres-seaorm`,
+  `axa-postgres-diesel`, and `axa-postgres-toasty`, as `axa-postgres-sqlx` has had, so
+  a connection whose cached plan a migration made stale is retired and the next
+  attempt prepares it afresh. Toasty's pool records each one itself.
 - **`Verifier::without_keys`, `Verifier::has_keys`, and `Refusal::NoKey`** in
   `axa-webhooks` 0.1.1 (WHK-6): a verifier with no key refuses every delivery, as a
   `500`, rather than letting one through.

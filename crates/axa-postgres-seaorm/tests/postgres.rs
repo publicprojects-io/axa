@@ -420,3 +420,46 @@ async fn every_connection_starts_with_the_session_settings() {
         .unwrap_err();
     assert!(refused.to_string().contains("read-only"), "{refused}");
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
+    use axa_postgres_seaorm::{is_stale_plan, note_stale_plan};
+    let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+    // One connection, so the statement cached on it is the one that goes stale.
+    let mut config = PoolConfig::new(uri);
+    config.min_connections = 0;
+    config.max_connections = 1;
+    let db = connect(&config).await.unwrap();
+    for statement in [
+        "DROP TABLE IF EXISTS seaorm_stale_plan",
+        "CREATE TABLE seaorm_stale_plan (x INT)",
+        "INSERT INTO seaorm_stale_plan VALUES (1)",
+    ] {
+        db.execute_unprepared(statement).await.unwrap();
+    }
+    // A bound value, so the statement is prepared and cached on the connection.
+    let select = || {
+        Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT * FROM seaorm_stale_plan WHERE $1",
+            [true.into()],
+        )
+    };
+    db.query_all_raw(select()).await.unwrap();
+    db.execute_unprepared("ALTER TABLE seaorm_stale_plan ALTER COLUMN x TYPE TEXT")
+        .await
+        .unwrap();
+
+    let error = db.query_all_raw(select()).await.unwrap_err();
+    assert!(is_stale_plan(&error), "{error:?}");
+    assert!(note_stale_plan(&error));
+
+    // The pool hands out a fresh connection, where the statement is prepared again.
+    let rows = db.query_all_raw(select()).await.unwrap();
+    let x: String = rows[0].try_get("", "x").unwrap();
+    assert_eq!(x, "1");
+    db.execute_unprepared("DROP TABLE seaorm_stale_plan")
+        .await
+        .unwrap();
+}

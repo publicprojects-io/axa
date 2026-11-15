@@ -49,8 +49,12 @@ T-44 is done, in 0.13.0, in all four Postgres crates: `begin_with` for sqlx, Sea
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
 MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
 
-T-17 is done, in 0.13.0, for the four Postgres crates. MySQL has its own forms of each,
-and they wait for a service that asks.
+T-17 is done, in 0.13.0, for the four Postgres crates, and since 0.13.0 for the four
+MySQL crates too: `max_execution_time`, which stops only a read-only `SELECT`, and
+`transaction_read_only`, in one `SET SESSION` on each connection (MYX-15, MYO-13,
+MYD-12, MYT-10). MySQL has no application name a session can set, and none of its
+drivers here sends the `program_name` connection attribute, so `DB_APPLICATION_NAME`
+reaches Postgres alone.
 
 T-19 is done, in 0.13.0, as `Checks::migrations`, `Checks::migrated`, and
 `server::run_once_migrated`, for any database, as the service passes its crate's
@@ -75,7 +79,10 @@ T-21 is done, in 0.13.0, as `config::Settings`, with `_FILE` secrets for a servi
 own settings and for `DB_URL`.
 
 T-18 is done, in 0.13.0, as `note_stale_plan` and a `before_acquire` hook in every pool
-`axa_postgres_sqlx::connect` opens.
+`axa_postgres_sqlx::connect` opens, and since 0.13.0 in the other three Postgres crates:
+SeaORM's sqlx `before_acquire`, a deadpool `pre_recycle` hook for Diesel, and, as
+Toasty's pool has no such hook, a driver whose connections report themselves invalid
+(SOR-7, DSL-8, TOA-6). `axa::Error` records each (DB-10).
 
 T-20 is done, in 0.13.0, with `tower-http`'s `decompression-full`, which adds no crate
 the build did not have.

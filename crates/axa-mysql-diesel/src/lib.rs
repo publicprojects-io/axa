@@ -128,6 +128,13 @@ pub struct PoolConfig {
     /// How long a caller waits for a connection, whether a free one or a new one,
     /// before it gets an error.
     pub wait_timeout: Duration,
+    /// `MySQL`'s `max_execution_time` on every connection, in milliseconds, which
+    /// stops a read-only `SELECT` that runs longer, and no other statement. `0` sets
+    /// none.
+    pub statement_timeout_ms: u64,
+    /// Make every transaction read-only, with `transaction_read_only`, as for a read
+    /// replica or a reporting service, so that a write is refused by the database.
+    pub read_only: bool,
 }
 
 impl std::fmt::Debug for PoolConfig {
@@ -135,6 +142,8 @@ impl std::fmt::Debug for PoolConfig {
         f.debug_struct("PoolConfig")
             .field("max_connections", &self.max_connections)
             .field("wait_timeout", &self.wait_timeout)
+            .field("statement_timeout_ms", &self.statement_timeout_ms)
+            .field("read_only", &self.read_only)
             .finish_non_exhaustive()
     }
 }
@@ -147,8 +156,32 @@ impl PoolConfig {
             uri: uri.into(),
             max_connections: 10,
             wait_timeout: Duration::from_secs(5),
+            statement_timeout_ms: 0,
+            read_only: false,
         }
     }
+
+    /// The one statement that sets the session settings on a new connection, or
+    /// `None` when there are none to set.
+    #[must_use]
+    pub fn session_statement(&self) -> Option<String> {
+        session_statement(self.statement_timeout_ms, self.read_only)
+    }
+}
+
+/// `SET SESSION` for each session setting asked for, as one statement, or `None`.
+/// The values are a number and a fixed word, so nothing a caller sends reaches it.
+fn session_statement(statement_timeout_ms: u64, read_only: bool) -> Option<String> {
+    let mut settings = Vec::new();
+    if statement_timeout_ms > 0 {
+        settings.push(format!(
+            "SESSION max_execution_time = {statement_timeout_ms}"
+        ));
+    }
+    if read_only {
+        settings.push("SESSION transaction_read_only = ON".to_string());
+    }
+    (!settings.is_empty()).then(|| format!("SET {}", settings.join(", ")))
 }
 
 /// How strictly a connection uses TLS, as `sqlx`'s `ssl-mode` names it.
@@ -180,6 +213,8 @@ struct Target {
     opts: Opts,
     mode: SslMode,
     ca: Option<PathBuf>,
+    /// The session settings, run on each new connection and after a reset.
+    setup: Option<String>,
 }
 
 /// `mysql_async`'s own TLS parameters, refused in favour of `ssl-mode`.
@@ -261,6 +296,7 @@ fn parse_uri(uri: &str) -> Result<Target, Error> {
         opts,
         mode: mode.unwrap_or(SslMode::Preferred),
         ca,
+        setup: None,
     })
 }
 
@@ -283,6 +319,7 @@ async fn open(target: &Target, ssl: Option<SslOpts>) -> mysql_async::Result<mysq
     let builder = OptsBuilder::from_opts(target.opts.clone())
         .stmt_cache_size(0)
         .client_found_rows(true)
+        .setup(target.setup.iter().cloned().collect())
         .ssl_opts(ssl);
     mysql_async::Conn::new(builder).await
 }
@@ -311,7 +348,10 @@ async fn establish(target: Target) -> ConnectionResult<AsyncMysqlConnection> {
 ///
 /// Fails when the URL cannot be read or the pool's settings are invalid.
 pub fn pool(config: &PoolConfig) -> Result<Pool, Error> {
-    let target = parse_uri(&config.uri)?;
+    let target = Target {
+        setup: config.session_statement(),
+        ..parse_uri(&config.uri)?
+    };
     let mut setup = ManagerConfig::default();
     setup.custom_setup = Box::new(move |_uri| Box::pin(establish(target.clone())));
     let manager = AsyncDieselConnectionManager::new_with_config(&config.uri, setup);
@@ -562,6 +602,19 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_settings_become_one_set_statement() {
+        assert_eq!(session_statement(0, false), None);
+        assert_eq!(
+            session_statement(5000, true).as_deref(),
+            Some("SET SESSION max_execution_time = 5000, SESSION transaction_read_only = ON")
+        );
+        assert_eq!(
+            session_statement(5000, false).as_deref(),
+            Some("SET SESSION max_execution_time = 5000")
+        );
+    }
 
     #[test]
     fn debug_text_leaves_out_the_connection_string() {

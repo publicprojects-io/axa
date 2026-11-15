@@ -24,7 +24,13 @@
 //! A database behind a private certificate authority needs a custom connection
 //! setup, which [`pool_with_tls`] accepts.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 use deadpool::Runtime;
 pub use diesel;
@@ -40,7 +46,7 @@ use diesel_async::{
     AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, RunQueryDsl, TransactionManager,
     pooled_connection::{
         AsyncDieselConnectionManager, ManagerConfig,
-        deadpool::{BuildError, Object, Pool as DeadPool, PoolError},
+        deadpool::{BuildError, Hook, HookError, Object, Pool as DeadPool, PoolError},
     },
 };
 pub use diesel_migrations;
@@ -272,7 +278,72 @@ pub fn pool_with_tls(config: &PoolConfig, tls: rustls::ClientConfig) -> Result<P
         .wait_timeout(Some(config.wait_timeout))
         .create_timeout(Some(config.wait_timeout))
         .runtime(Runtime::Tokio1)
+        // Retire a connection whose cached statements a migration has made stale.
+        .pre_recycle(Hook::sync_fn(|_connection, metrics| {
+            if opened_before_last_stale_plan(metrics.created) {
+                Err(HookError::message("opened before a stale plan"))
+            } else {
+                Ok(())
+            }
+        }))
         .build()?)
+}
+
+/// When this process first needed a clock for stale plans.
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// Nanoseconds after [`EPOCH`] that a stale plan was last seen, plus one, or `0` for
+/// never.
+static LAST_STALE_PLAN: AtomicU64 = AtomicU64::new(0);
+
+fn epoch() -> Instant {
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// Whether `error` is Postgres refusing a statement this connection prepared before a
+/// migration changed what it returns: "cached plan must not change result type",
+/// under SQLSTATE `0A000`, which Diesel does not pass on. Each pooled connection that
+/// cached the statement fails so once, and a fresh connection does not.
+#[must_use]
+pub fn is_stale_plan(error: &QueryError) -> bool {
+    matches!(
+        error,
+        QueryError::DatabaseError(DatabaseErrorKind::Unknown, info)
+            if info.message().contains("cached plan must not change result type")
+    )
+}
+
+/// Record `error` if it is a stale plan, so that every connection opened before now is
+/// retired when next taken from the pool, from every pool [`connect`] or
+/// [`pool_with_tls`] built in this process, and the next attempt runs on a fresh one.
+/// Returns whether it was. `axa::Error` calls this for every Diesel error it answers,
+/// so a service that turns Diesel errors into it needs nothing more.
+pub fn note_stale_plan(error: &QueryError) -> bool {
+    if !is_stale_plan(error) {
+        return false;
+    }
+    let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
+    LAST_STALE_PLAN.fetch_max(since.saturating_add(1), Ordering::SeqCst);
+    true
+}
+
+/// Whether a connection opened at `created` was opened at or before the last stale
+/// plan.
+fn opened_before_last_stale_plan(created: Instant) -> bool {
+    opened_before(
+        AtomicU64::load(&LAST_STALE_PLAN, Ordering::SeqCst),
+        created.saturating_duration_since(epoch()),
+    )
+}
+
+/// Whether a connection opened at `opened` since [`EPOCH`] was opened at or before
+/// `last`, as [`LAST_STALE_PLAN`] holds it. One opened before the epoch counts as
+/// opened at it.
+fn opened_before(last: u64, opened: Duration) -> bool {
+    if last == 0 {
+        return false;
+    }
+    opened <= Duration::from_nanos(last - 1)
 }
 
 /// Open a pool and prove it works with one connection.
@@ -671,6 +742,20 @@ mod tests {
             session_uri("postgres://db/app?sslmode=require", 0, "orders", false).unwrap(),
             "postgres://db/app?sslmode=require&application_name=orders"
         );
+    }
+
+    #[test]
+    fn a_connection_is_retired_only_if_opened_by_the_last_stale_plan() {
+        let second = Duration::from_secs(1);
+        // Never a stale plan: nothing is retired.
+        assert!(!opened_before(0, second));
+        // A stale plan at 5s: a connection opened at 0s, 1s, or 5s goes, one at 6s
+        // stays.
+        let at_five = 5_000_000_000 + 1;
+        assert!(opened_before(at_five, Duration::ZERO));
+        assert!(opened_before(at_five, second));
+        assert!(opened_before(at_five, 5 * second));
+        assert!(!opened_before(at_five, 6 * second));
     }
 
     #[test]

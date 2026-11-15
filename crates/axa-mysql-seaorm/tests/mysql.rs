@@ -496,3 +496,46 @@ mod shared {
         assert!(error.to_string().contains("no database"), "{error}");
     }
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    use axa_mysql_seaorm::sea_orm::TransactionTrait;
+    let writer = database().await;
+    for statement in [
+        "DROP TABLE IF EXISTS axa_read_only",
+        "CREATE TABLE axa_read_only (x INT)",
+    ] {
+        writer.execute_unprepared(statement).await.unwrap();
+    }
+    let mut config = PoolConfig::new(url());
+    config.statement_timeout_ms = 1234;
+    config.read_only = true;
+    let db = connect(&config).await.unwrap();
+    // Every connection, not only the first: a transaction holds one, so hold two.
+    let first = db.begin().await.unwrap();
+    let second = db.begin().await.unwrap();
+    for transaction in [&first, &second] {
+        let row = transaction
+            .query_one_raw(Statement::from_string(
+                DbBackend::MySql,
+                "SELECT @@SESSION.max_execution_time AS timeout, \
+                 @@SESSION.transaction_read_only AS read_only",
+            ))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.try_get::<u64>("", "timeout").unwrap(), 1234);
+        assert_eq!(row.try_get::<i64>("", "read_only").unwrap(), 1);
+        let refused = transaction
+            .execute_unprepared("INSERT INTO axa_read_only VALUES (1)")
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains("READ ONLY"), "{refused}");
+    }
+    drop((first, second));
+    writer
+        .execute_unprepared("DROP TABLE axa_read_only")
+        .await
+        .unwrap();
+}

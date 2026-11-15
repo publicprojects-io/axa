@@ -130,7 +130,15 @@ check for a third-party API: a pod that is not ready gets no traffic at all.
 On Postgres, set `DB_STATEMENT_TIMEOUT_MS` a little under `REQUEST_TIMEOUT_SECONDS`, so a
 query never outlives the request that asked for it, and `DB_READ_ONLY` for a service on a
 read replica. `pg_stat_activity` names the service by its database name stem unless
-`DB_APPLICATION_NAME` says otherwise.
+`DB_APPLICATION_NAME` says otherwise. On MySQL the same two settings work, but the
+timeout, `max_execution_time`, stops only a read-only `SELECT`, and there is no
+application name. SQLite takes neither.
+
+A migration that changes what a query returns makes the plans that pooled Postgres
+connections cached fail once, with "cached plan must not change result type". Each Axa
+Postgres pool retires those connections, and `axa::Error` answers that failure `503`
+with `Retry-After`, so a client's retry succeeds: turn the error into `axa::Error`, or
+call the crate's `note_stale_plan`, and do nothing more.
 
 In production, where Axa does not migrate at boot, name the migrations with
 `ctx.health_checks = ctx.health_checks.migrations(...)`, passing a closure that calls

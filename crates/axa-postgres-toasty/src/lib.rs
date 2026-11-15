@@ -28,11 +28,29 @@
 //! is no `revert`. Generate migrations with `toasty-cli`, embed them with
 //! [`toasty::embed_migrations!`], and apply them with [`migrate`].
 
-use std::time::Duration;
+use std::{
+    borrow::Cow,
+    future::Future,
+    pin::Pin,
+    sync::{
+        Arc, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, Instant},
+};
 
 pub use toasty;
+use toasty::db::{Capability, ConnectContext, Driver};
 use toasty::{Db, ModelSet, Transaction, migration::MigrationSet};
-use toasty_core::stmt::{Type, Value};
+use toasty_core::{
+    driver::{Connection, ExecResponse, Operation},
+    schema::{
+        Schema,
+        db::{AppliedMigration, Migration},
+        diff,
+    },
+    stmt::{Type, Value},
+};
 
 /// The handle a service holds: Toasty's [`Db`], which owns a connection pool.
 pub type Pool = Db;
@@ -217,12 +235,204 @@ fn percent_encode(value: &str) -> String {
 ///
 /// Fails when the URL is not one Toasty reads, or the database cannot be reached.
 pub async fn connect(config: &PoolConfig, models: ModelSet) -> Result<Pool, Error> {
-    let db = config
-        .builder(models)
-        .connect(&config.connection_uri()?)
-        .await?;
+    let driver = Retiring(toasty::db::Connect::new(&config.connection_uri()?).await?);
+    let db = config.builder(models).build(driver).await?;
     ping(&db).await?;
     Ok(db)
+}
+
+/// A future a driver returns, as `async_trait` writes it.
+type Boxed<'a, T> = Pin<Box<dyn Future<Output = toasty::Result<T>> + Send + 'a>>;
+
+/// Toasty's driver, with each connection retired once a stale plan is seen on it, or
+/// when it was opened at or before the last stale plan.
+#[derive(Debug)]
+struct Retiring(toasty::db::Connect);
+
+/// A connection, and when it was opened.
+#[derive(Debug)]
+struct RetiringConnection {
+    inner: Box<dyn Connection>,
+    opened: Instant,
+}
+
+impl Driver for Retiring {
+    fn url(&self) -> Cow<'_, str> {
+        self.0.url()
+    }
+
+    fn capability(&self) -> &'static Capability {
+        self.0.capability()
+    }
+
+    fn connect<'a, 'b, 'c>(&'a self, cx: &'b ConnectContext) -> Boxed<'c, Box<dyn Connection>>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        Box::pin(async move {
+            let inner = self.0.connect(cx).await?;
+            Ok(Box::new(RetiringConnection {
+                inner,
+                opened: Instant::now(),
+            }) as Box<dyn Connection>)
+        })
+    }
+
+    fn max_connections(&self) -> Option<usize> {
+        self.0.max_connections()
+    }
+
+    fn generate_migration(&self, schema_diff: &diff::Schema<'_>) -> Migration {
+        self.0.generate_migration(schema_diff)
+    }
+
+    fn reset_db<'a, 'c>(&'a self) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        Self: 'c,
+    {
+        self.0.reset_db()
+    }
+}
+
+impl Connection for RetiringConnection {
+    fn exec<'a, 'b, 'c>(
+        &'a mut self,
+        schema: &'b Arc<Schema>,
+        plan: Operation,
+    ) -> Boxed<'c, ExecResponse>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        Box::pin(async move {
+            let response = self.inner.exec(schema, plan).await;
+            // The pool asks `is_valid` after every operation, so this one goes now.
+            if let Err(error) = &response {
+                note_stale_plan(error);
+            }
+            response
+        })
+    }
+
+    fn is_valid(&self) -> bool {
+        self.inner.is_valid() && !opened_before_last_stale_plan(self.opened)
+    }
+
+    fn ping<'a, 'c>(&'a mut self) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        Self: 'c,
+    {
+        if opened_before_last_stale_plan(self.opened) {
+            return Box::pin(async {
+                Err(toasty::Error::connection_lost(std::io::Error::other(
+                    "opened before a stale plan",
+                )))
+            });
+        }
+        self.inner.ping()
+    }
+
+    fn push_schema<'a, 'b, 'c>(&'a mut self, schema: &'b Schema) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        self.inner.push_schema(schema)
+    }
+
+    fn applied_migrations<'a, 'c>(&'a mut self) -> Boxed<'c, Vec<AppliedMigration>>
+    where
+        'a: 'c,
+        Self: 'c,
+    {
+        self.inner.applied_migrations()
+    }
+
+    fn apply_migration<'a, 'b, 'm, 'c>(
+        &'a mut self,
+        id: u64,
+        name: &'b str,
+        migration: &'m Migration,
+    ) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        'b: 'c,
+        'm: 'c,
+        Self: 'c,
+    {
+        self.inner.apply_migration(id, name, migration)
+    }
+}
+
+/// When this process first needed a clock for stale plans.
+static EPOCH: OnceLock<Instant> = OnceLock::new();
+
+/// Nanoseconds after [`EPOCH`] that a stale plan was last seen, plus one, or `0` for
+/// never.
+static LAST_STALE_PLAN: AtomicU64 = AtomicU64::new(0);
+
+fn epoch() -> Instant {
+    *EPOCH.get_or_init(Instant::now)
+}
+
+/// Whether `error` is Postgres refusing a statement this connection prepared before a
+/// migration changed what it returns: SQLSTATE `0A000` with "cached plan must not
+/// change result type". Each pooled connection that cached the statement fails so
+/// once, and a fresh connection does not.
+#[must_use]
+pub fn is_stale_plan(error: &Error) -> bool {
+    let mut source: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(current) = source {
+        if let Some(postgres) = current.downcast_ref::<tokio_postgres::Error>() {
+            return postgres.as_db_error().is_some_and(|error| {
+                error.code().code() == "0A000"
+                    && error
+                        .message()
+                        .contains("cached plan must not change result type")
+            });
+        }
+        source = current.source();
+    }
+    false
+}
+
+/// Record `error` if it is a stale plan, so that every connection opened before now is
+/// retired, from every pool [`connect`] opened in this process. Returns whether it
+/// was. A pool from [`connect`] records each error itself, so a service needs nothing
+/// more: the connection that failed goes at once, and each other one opened before
+/// it goes when it is next pinged, or after its next operation.
+pub fn note_stale_plan(error: &Error) -> bool {
+    if !is_stale_plan(error) {
+        return false;
+    }
+    let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
+    LAST_STALE_PLAN.fetch_max(since.saturating_add(1), Ordering::SeqCst);
+    true
+}
+
+/// Whether a connection opened at `opened` was opened at or before the last stale
+/// plan.
+fn opened_before_last_stale_plan(opened: Instant) -> bool {
+    opened_before(
+        LAST_STALE_PLAN.load(Ordering::SeqCst),
+        opened.saturating_duration_since(epoch()),
+    )
+}
+
+/// Whether a connection opened at `opened` since [`EPOCH`] was opened at or before
+/// `last`, as [`LAST_STALE_PLAN`] holds it. One opened before the epoch counts as
+/// opened at it.
+fn opened_before(last: u64, opened: Duration) -> bool {
+    if last == 0 {
+        return false;
+    }
+    opened <= Duration::from_nanos(last - 1)
 }
 
 /// Check the database connection.
@@ -528,6 +738,20 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_connection_is_retired_only_if_opened_by_the_last_stale_plan() {
+        let second = Duration::from_secs(1);
+        // Never a stale plan: nothing is retired.
+        assert!(!opened_before(0, second));
+        // A stale plan at 5s: a connection opened at 0s, 1s, or 5s goes, one at 6s
+        // stays.
+        let at_five = 5_000_000_000 + 1;
+        assert!(opened_before(at_five, Duration::ZERO));
+        assert!(opened_before(at_five, second));
+        assert!(opened_before(at_five, 5 * second));
+        assert!(!opened_before(at_five, 6 * second));
+    }
 
     #[test]
     fn session_settings_become_connection_parameters() {

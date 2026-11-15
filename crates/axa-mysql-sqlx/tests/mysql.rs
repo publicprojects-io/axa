@@ -312,3 +312,42 @@ async fn one_function_serves_the_pool_and_a_transaction() {
     });
     assert_eq!(spawned.await.unwrap().unwrap(), 0);
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn every_connection_starts_with_the_session_settings() {
+    let writer = pool().await;
+    for statement in [
+        "DROP TABLE IF EXISTS axa_read_only",
+        "CREATE TABLE axa_read_only (x INT)",
+    ] {
+        sqlx::raw_sql(statement).execute(&writer).await.unwrap();
+    }
+    let mut config = PoolConfig::new(uri());
+    config.statement_timeout_ms = 1234;
+    config.read_only = true;
+    let pool = connect(&config).await.unwrap();
+    // Every connection, not only the first: hold two at once.
+    let mut first = pool.acquire().await.unwrap();
+    let mut second = pool.acquire().await.unwrap();
+    for connection in [&mut *first, &mut *second] {
+        let row = sqlx::query(
+            "SELECT @@SESSION.max_execution_time AS timeout, \
+             @@SESSION.transaction_read_only AS read_only",
+        )
+        .fetch_one(&mut *connection)
+        .await
+        .unwrap();
+        assert_eq!(row.get::<u64, _>("timeout"), 1234);
+        assert_eq!(row.get::<i64, _>("read_only"), 1);
+        let refused = sqlx::query("INSERT INTO axa_read_only VALUES (1)")
+            .execute(&mut *connection)
+            .await
+            .unwrap_err();
+        assert!(refused.to_string().contains("READ ONLY"), "{refused}");
+    }
+    sqlx::raw_sql("DROP TABLE axa_read_only")
+        .execute(&writer)
+        .await
+        .unwrap();
+}

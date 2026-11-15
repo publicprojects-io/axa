@@ -298,3 +298,41 @@ async fn every_connection_starts_with_the_session_settings() {
     // Toasty reads a read-only refusal into an error of its own, not a SQLSTATE.
     assert!(refused.to_string().contains("read-only"), "{refused}");
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
+    use axa_postgres_toasty::is_stale_plan;
+    // One connection, so the statement cached on it is the one that goes stale.
+    let mut config = PoolConfig::new(uri());
+    config.max_connections = 1;
+    let mut db = connect(&config, toasty::models!(Person)).await.unwrap();
+    for statement in [
+        "DROP TABLE IF EXISTS toasty_stale_plan",
+        "CREATE TABLE toasty_stale_plan (x VARCHAR(10))",
+        "INSERT INTO toasty_stale_plan VALUES ('1')",
+    ] {
+        toasty::sql::statement(statement)
+            .exec(&mut db)
+            .await
+            .unwrap();
+    }
+    // Toasty caches the prepared statement on the connection.
+    let select = "SELECT x FROM toasty_stale_plan";
+    toasty::sql::query(select).exec(&mut db).await.unwrap();
+    toasty::sql::statement("ALTER TABLE toasty_stale_plan ALTER COLUMN x TYPE TEXT")
+        .exec(&mut db)
+        .await
+        .unwrap();
+
+    let error = toasty::sql::query(select).exec(&mut db).await.unwrap_err();
+    assert!(is_stale_plan(&error), "{error:?}");
+
+    // The pool retired the connection, so the statement is prepared again.
+    let rows = toasty::sql::query(select).exec(&mut db).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    toasty::sql::statement("DROP TABLE toasty_stale_plan")
+        .exec(&mut db)
+        .await
+        .unwrap();
+}

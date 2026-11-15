@@ -73,6 +73,13 @@ pub struct PoolConfig {
     pub connect_timeout_ms: u64,
     /// How long an idle connection stays open, in milliseconds.
     pub idle_timeout_ms: u64,
+    /// `MySQL`'s `max_execution_time` on every connection, in milliseconds, which
+    /// stops a read-only `SELECT` that runs longer, and no other statement. `0` sets
+    /// none.
+    pub statement_timeout_ms: u64,
+    /// Make every transaction read-only, with `transaction_read_only`, as for a read
+    /// replica or a reporting service, so that a write is refused by the database.
+    pub read_only: bool,
 }
 
 impl std::fmt::Debug for PoolConfig {
@@ -83,6 +90,8 @@ impl std::fmt::Debug for PoolConfig {
             .field("max_connections", &self.max_connections)
             .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field("idle_timeout_ms", &self.idle_timeout_ms)
+            .field("statement_timeout_ms", &self.statement_timeout_ms)
+            .field("read_only", &self.read_only)
             .finish_non_exhaustive()
     }
 }
@@ -97,18 +106,55 @@ impl PoolConfig {
             max_connections: 10,
             connect_timeout_ms: 5_000,
             idle_timeout_ms: 600_000,
+            statement_timeout_ms: 0,
+            read_only: false,
         }
     }
 
-    /// The sqlx options these settings describe.
+    /// The sqlx options these settings describe, with the session settings set on
+    /// each connection as it opens.
     #[must_use]
     pub fn options(&self) -> MySqlPoolOptions {
+        let setup = self.session_statement();
         MySqlPoolOptions::new()
             .min_connections(self.min_connections)
             .max_connections(self.max_connections)
             .acquire_timeout(Duration::from_millis(self.connect_timeout_ms))
             .idle_timeout(Duration::from_millis(self.idle_timeout_ms))
+            .after_connect(move |connection, _meta| {
+                let setup = setup.clone();
+                Box::pin(async move {
+                    if let Some(setup) = setup {
+                        sqlx::raw_sql(AssertSqlSafe(setup))
+                            .execute(connection)
+                            .await?;
+                    }
+                    Ok(())
+                })
+            })
     }
+
+    /// The one statement that sets the session settings on a new connection, or
+    /// `None` when there are none to set.
+    #[must_use]
+    pub fn session_statement(&self) -> Option<String> {
+        session_statement(self.statement_timeout_ms, self.read_only)
+    }
+}
+
+/// `SET SESSION` for each session setting asked for, as one statement, or `None`.
+/// The values are a number and a fixed word, so nothing a caller sends reaches it.
+fn session_statement(statement_timeout_ms: u64, read_only: bool) -> Option<String> {
+    let mut settings = Vec::new();
+    if statement_timeout_ms > 0 {
+        settings.push(format!(
+            "SESSION max_execution_time = {statement_timeout_ms}"
+        ));
+    }
+    if read_only {
+        settings.push("SESSION transaction_read_only = ON".to_string());
+    }
+    (!settings.is_empty()).then(|| format!("SET {}", settings.join(", ")))
 }
 
 /// Open a pool and prove it works with one connection.
@@ -502,6 +548,23 @@ mod tests {
         assert_eq!(options.get_max_connections(), 7);
         assert_eq!(options.get_acquire_timeout(), Duration::from_millis(1_500));
         assert_eq!(options.get_idle_timeout(), Some(Duration::from_secs(9)));
+    }
+
+    #[test]
+    fn session_settings_become_one_set_statement() {
+        assert_eq!(session_statement(0, false), None);
+        assert_eq!(
+            session_statement(5000, false).as_deref(),
+            Some("SET SESSION max_execution_time = 5000")
+        );
+        assert_eq!(
+            session_statement(0, true).as_deref(),
+            Some("SET SESSION transaction_read_only = ON")
+        );
+        assert_eq!(
+            session_statement(5000, true).as_deref(),
+            Some("SET SESSION max_execution_time = 5000, SESSION transaction_read_only = ON")
+        );
     }
 
     #[test]

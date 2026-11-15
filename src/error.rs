@@ -500,7 +500,8 @@ fn sqlite_unavailable(code: &str) -> bool {
 
 /// Whether a sqlx error, from any database, is one that cannot serve for now: a pool
 /// with no free connection or one closed, a connection lost, the database's own
-/// code for it, or, on the `postgres-sqlx` pool, a statement a migration made stale.
+/// code for it, or, on the `postgres-sqlx` pool, a statement a migration made stale
+/// (and on the other Postgres pools, in their own functions here).
 #[cfg(has_sqlx)]
 fn sqlx_unavailable(error: &sqlx::Error) -> bool {
     // A statement a migration made stale: the pool retires the connections that cached
@@ -564,6 +565,11 @@ fn seaorm_sqlx(error: &sea_orm::DbErr) -> Option<&sqlx::Error> {
 /// Whether a `SeaORM` error is a database that cannot serve for now.
 #[cfg(has_seaorm)]
 fn seaorm_unavailable(error: &sea_orm::DbErr) -> bool {
+    // A statement a migration made stale, as for sqlx.
+    #[cfg(feature = "postgres-seaorm")]
+    if axa_postgres_seaorm::note_stale_plan(error) {
+        return true;
+    }
     matches!(
         error,
         sea_orm::DbErr::ConnectionAcquire(_) | sea_orm::DbErr::Conn(_)
@@ -574,6 +580,13 @@ fn seaorm_unavailable(error: &sea_orm::DbErr) -> bool {
 #[cfg(has_diesel)]
 fn diesel_unavailable(error: &DieselError) -> bool {
     use diesel_crates::diesel::result::{DatabaseErrorKind, Error as QueryError};
+    // A statement a migration made stale, as for sqlx.
+    #[cfg(feature = "postgres-diesel")]
+    if let DieselError::Query(query) = error
+        && axa_postgres_diesel::note_stale_plan(query)
+    {
+        return true;
+    }
     matches!(
         error,
         DieselError::Pool(_)
@@ -610,7 +623,9 @@ fn toasty_unavailable(error: &toasty_crate::Error) -> bool {
         return true;
     }
     #[cfg(feature = "postgres-toasty")]
-    if axa_postgres_toasty::sql_state(error).is_some_and(postgres_unavailable) {
+    if axa_postgres_toasty::sql_state(error).is_some_and(postgres_unavailable)
+        || axa_postgres_toasty::note_stale_plan(error)
+    {
         return true;
     }
     #[cfg(feature = "mysql-toasty")]
@@ -920,6 +935,25 @@ mod tests {
             let error = QueryError::DatabaseError(kind, Box::new("secret".to_string()));
             assert_unavailable(error.into()).await;
         }
+    }
+
+    /// DB-10 through Diesel, which passes on Postgres's message and not its code.
+    #[cfg(feature = "postgres-diesel")]
+    #[tokio::test]
+    async fn a_stale_plan_through_diesel_is_a_503_to_try_again() {
+        use super::diesel_crates::diesel::result::{DatabaseErrorKind, Error as QueryError};
+        let stale = || {
+            QueryError::DatabaseError(
+                DatabaseErrorKind::Unknown,
+                Box::new("cached plan must not change result type".to_string()),
+            )
+        };
+        assert!(axa_postgres_diesel::is_stale_plan(&stale()));
+        assert_unavailable(stale().into()).await;
+        // Another unknown database error is still the service's own 500.
+        let other =
+            QueryError::DatabaseError(DatabaseErrorKind::Unknown, Box::new("x".to_string()));
+        assert!(!axa_postgres_diesel::is_stale_plan(&other));
     }
 
     #[cfg(has_toasty)]

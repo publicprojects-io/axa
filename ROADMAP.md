@@ -17,7 +17,7 @@ This document outlines the planned development path for axa. See
   - Bounded multipart uploads, `axa::upload` (T-14)
   - Safe downloads, `format::download` (T-15)
   - A Postgres database per test in `axa-test` (T-16)
-  - Postgres session settings (T-17)
+  - Postgres session settings (T-17), and MySQL's since
   - Recovery from stale prepared statements (T-18)
   - Readiness that waits for migrations (T-19)
   - Decoded compressed request bodies (T-20)

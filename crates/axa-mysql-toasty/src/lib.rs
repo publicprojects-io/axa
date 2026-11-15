@@ -47,12 +47,27 @@
 //! is no `revert`. Generate migrations with `toasty-cli`, embed them with
 //! [`toasty::embed_migrations!`], and apply them with [`migrate`].
 
-use std::time::Duration;
+use std::{borrow::Cow, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use sqlx::mysql::MySqlDatabaseError;
 pub use toasty;
-use toasty::{Db, ModelSet, migration::MigrationSet};
-use toasty_core::stmt::{Type, Value};
+use toasty::{
+    Db, ModelSet,
+    db::{Capability, ConnectContext, Driver},
+    migration::MigrationSet,
+};
+use toasty_core::{
+    driver::{
+        Connection, ExecResponse, Operation,
+        operation::{RawSql, RawSqlRet},
+    },
+    schema::{
+        Schema,
+        db::{AppliedMigration, Migration},
+        diff,
+    },
+    stmt::{Type, Value},
+};
 
 /// The handle a service holds: Toasty's [`Db`], which owns a connection pool.
 pub type Pool = Db;
@@ -72,6 +87,13 @@ pub struct PoolConfig {
     pub connect_timeout_ms: u64,
     /// How long a connection may sit unused before it is closed, in milliseconds.
     pub idle_timeout_ms: u64,
+    /// `MySQL`'s `max_execution_time` on every connection, in milliseconds, which
+    /// stops a read-only `SELECT` that runs longer, and no other statement. `0` sets
+    /// none.
+    pub statement_timeout_ms: u64,
+    /// Make every transaction read-only, with `transaction_read_only`, as for a read
+    /// replica or a reporting service, so that a write is refused by the database.
+    pub read_only: bool,
 }
 
 impl std::fmt::Debug for PoolConfig {
@@ -80,6 +102,8 @@ impl std::fmt::Debug for PoolConfig {
             .field("max_connections", &self.max_connections)
             .field("connect_timeout_ms", &self.connect_timeout_ms)
             .field("idle_timeout_ms", &self.idle_timeout_ms)
+            .field("statement_timeout_ms", &self.statement_timeout_ms)
+            .field("read_only", &self.read_only)
             .finish_non_exhaustive()
     }
 }
@@ -94,7 +118,16 @@ impl PoolConfig {
             max_connections: 10,
             connect_timeout_ms: 5_000,
             idle_timeout_ms: 600_000,
+            statement_timeout_ms: 0,
+            read_only: false,
         }
+    }
+
+    /// The one statement that sets the session settings on a new connection, or
+    /// `None` when there are none to set.
+    #[must_use]
+    pub fn session_statement(&self) -> Option<String> {
+        session_statement(self.statement_timeout_ms, self.read_only)
     }
 
     /// A Toasty builder with these settings and `models`, ready to connect.
@@ -118,9 +151,166 @@ impl PoolConfig {
 ///
 /// Fails when the URL is not one Toasty reads, or the database cannot be reached.
 pub async fn connect(config: &PoolConfig, models: ModelSet) -> Result<Pool, Error> {
-    let db = config.builder(models).connect(&config.uri).await?;
+    let builder = &mut config.builder(models);
+    let db = match config.session_statement() {
+        Some(setup) => {
+            let driver = toasty::db::Connect::new(&config.uri).await?;
+            builder
+                .build(Setting {
+                    driver,
+                    setup: setup.into(),
+                })
+                .await?
+        }
+        None => builder.connect(&config.uri).await?,
+    };
     ping(&db).await?;
     Ok(db)
+}
+
+/// `SET SESSION` for each session setting asked for, as one statement, or `None`.
+/// The values are a number and a fixed word, so nothing a caller sends reaches it.
+fn session_statement(statement_timeout_ms: u64, read_only: bool) -> Option<String> {
+    let mut settings = Vec::new();
+    if statement_timeout_ms > 0 {
+        settings.push(format!(
+            "SESSION max_execution_time = {statement_timeout_ms}"
+        ));
+    }
+    if read_only {
+        settings.push("SESSION transaction_read_only = ON".to_string());
+    }
+    (!settings.is_empty()).then(|| format!("SET {}", settings.join(", ")))
+}
+
+/// A future a driver returns, as `async_trait` writes it.
+type Boxed<'a, T> = Pin<Box<dyn Future<Output = toasty::Result<T>> + Send + 'a>>;
+
+/// Toasty's driver, with the session settings set on each connection before its
+/// first operation. Toasty's `MySQL` driver has no hook of its own for it.
+#[derive(Debug)]
+struct Setting {
+    driver: toasty::db::Connect,
+    setup: Arc<str>,
+}
+
+/// A connection, and the settings it has still to set, if any.
+#[derive(Debug)]
+struct SettingConnection {
+    inner: Box<dyn Connection>,
+    setup: Option<Arc<str>>,
+}
+
+impl Driver for Setting {
+    fn url(&self) -> Cow<'_, str> {
+        self.driver.url()
+    }
+
+    fn capability(&self) -> &'static Capability {
+        self.driver.capability()
+    }
+
+    fn connect<'a, 'b, 'c>(&'a self, cx: &'b ConnectContext) -> Boxed<'c, Box<dyn Connection>>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        Box::pin(async move {
+            let inner = self.driver.connect(cx).await?;
+            Ok(Box::new(SettingConnection {
+                inner,
+                setup: Some(self.setup.clone()),
+            }) as Box<dyn Connection>)
+        })
+    }
+
+    fn max_connections(&self) -> Option<usize> {
+        self.driver.max_connections()
+    }
+
+    fn generate_migration(&self, schema_diff: &diff::Schema<'_>) -> Migration {
+        self.driver.generate_migration(schema_diff)
+    }
+
+    fn reset_db<'a, 'c>(&'a self) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        Self: 'c,
+    {
+        self.driver.reset_db()
+    }
+}
+
+impl Connection for SettingConnection {
+    fn exec<'a, 'b, 'c>(
+        &'a mut self,
+        schema: &'b Arc<Schema>,
+        plan: Operation,
+    ) -> Boxed<'c, ExecResponse>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        Box::pin(async move {
+            // Kept until it succeeds, so a connection never runs a query without it.
+            if let Some(setup) = &self.setup {
+                let set = RawSql {
+                    sql: setup.to_string(),
+                    params: Vec::new(),
+                    ret: RawSqlRet::None,
+                };
+                self.inner.exec(schema, set.into()).await?;
+                self.setup = None;
+            }
+            self.inner.exec(schema, plan).await
+        })
+    }
+
+    fn is_valid(&self) -> bool {
+        self.inner.is_valid()
+    }
+
+    fn ping<'a, 'c>(&'a mut self) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        Self: 'c,
+    {
+        self.inner.ping()
+    }
+
+    fn push_schema<'a, 'b, 'c>(&'a mut self, schema: &'b Schema) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        'b: 'c,
+        Self: 'c,
+    {
+        self.inner.push_schema(schema)
+    }
+
+    fn applied_migrations<'a, 'c>(&'a mut self) -> Boxed<'c, Vec<AppliedMigration>>
+    where
+        'a: 'c,
+        Self: 'c,
+    {
+        self.inner.applied_migrations()
+    }
+
+    fn apply_migration<'a, 'b, 'm, 'c>(
+        &'a mut self,
+        id: u64,
+        name: &'b str,
+        migration: &'m Migration,
+    ) -> Boxed<'c, ()>
+    where
+        'a: 'c,
+        'b: 'c,
+        'm: 'c,
+        Self: 'c,
+    {
+        self.inner.apply_migration(id, name, migration)
+    }
 }
 
 /// Check the database connection.
@@ -345,6 +535,19 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_settings_become_one_set_statement() {
+        assert_eq!(session_statement(0, false), None);
+        assert_eq!(
+            session_statement(5000, true).as_deref(),
+            Some("SET SESSION max_execution_time = 5000, SESSION transaction_read_only = ON")
+        );
+        assert_eq!(
+            session_statement(0, true).as_deref(),
+            Some("SET SESSION transaction_read_only = ON")
+        );
+    }
 
     #[test]
     fn debug_text_leaves_out_the_connection_string() {
