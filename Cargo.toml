@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.14.0"
+version = "0.15.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -129,7 +129,7 @@ axa-sqlite-diesel = { version = "0.1.0", path = "crates/axa-sqlite-diesel", opti
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-accepts-version-negotiation = { version = "0.2.1", path = "crates/axa-accepts-version-negotiation", optional = true }
-axa-postgres-job-queue = { version = "0.3.0", path = "crates/axa-postgres-job-queue", optional = true }
+axa-postgres-job-queue = { version = "0.4.0", path = "crates/axa-postgres-job-queue", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }

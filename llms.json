@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -55,6 +55,7 @@
       "help/upgrading-to-0.11/index.md",
       "help/upgrading-to-0.13/index.md",
       "help/upgrading-to-0.14/index.md",
+      "help/upgrading-to-0.15/index.md",
       "help/upgrading-to-0.12/index.md"
     ],
     "comparisons": [
@@ -354,14 +355,14 @@
     },
     {
       "name": "axa-postgres-job-queue",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
       "name": "axa-mysql-job-queue",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-mysql-job-queue/README.md"
@@ -459,7 +460,7 @@
     },
     {
       "name": "axa-test",
-      "version": "0.5.0",
+      "version": "0.6.0",
       "description": "Request-level test helpers for Axa services, built on axum-test, with a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"

@@ -111,17 +111,17 @@ T-29, which passes P-2 for them. The dependencies were approved the same day: `l
 for T-23, `object_store` for T-24 in a crate named `axa-storage-with-apache-arrow-and-aws`,
 and `croner` for T-29.
 
-T-27 is done, unreleased, in all three job queues, as `NewJob::unique` (WRK-31 to WRK-34,
+T-27 is done, in 0.15.0, in all three job queues, as `NewJob::unique` (WRK-31 to WRK-34,
 MYQ-7).
 
-T-29 is done, unreleased, in all three job queues and `axa::queue`, as `Schedule::cron` and
+T-29 is done, in 0.15.0, in all three job queues and `axa::queue`, as `Schedule::cron` and
 `Queue::cron` (WRK-35 to WRK-39). Times are in UTC: a time zone with daylight saving
 would need `chrono-tz`, which is not added.
 
-T-23 is done, unreleased, as `axa-mail` and the `mail` feature (MAIL-1 to MAIL-5). The
+T-23 is done, in 0.15.0, as `axa-mail` and the `mail` feature (MAIL-1 to MAIL-5). The
 memory transport's `Outbox` is what `axa-test` would capture mail with, in T-41.
 
-T-24 is done, unreleased, as `axa-storage-with-apache-arrow-and-aws` and the `storage`
+T-24 is done, in 0.15.0, as `axa-storage-with-apache-arrow-and-aws` and the `storage`
 feature (STO-1 to STO-6). It uses `object_store`'s `aws-base` and `ring` rather than
 `aws`, whose `aws-lc-rs` beside ring left rustls without a provider, and `reqwest` 0.13
 beside the 0.12 `axa-http-client` uses. S3's own reads and writes are not tested here, as

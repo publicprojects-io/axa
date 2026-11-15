@@ -5,11 +5,18 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.14.0
+## Current Version: 0.15.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.15.0
+- Four Stage 3 tasks that `crm`, `ppm`, and `wpm` asked for:
+  - A job queued once per key while one is queued or running, `NewJob::unique` (T-27)
+  - Cron schedules, `Schedule::cron`, over `croner` (T-29)
+  - `axa-mail`, over `lettre` (T-23)
+  - `axa-storage-with-apache-arrow-and-aws`, over `object_store` (T-24)
 
 ### Version 0.14.0
 - `axa::webhooks::Verified` with `AppContext` as the state, taking the `Verifier` from
@@ -64,15 +71,8 @@ This document outlines the planned development path for axa. See
 
 ## Next
 
-Stages 1 and 2 are done. On 2026-11-15 three services, `crm`, `ppm`, and `wpm`, asked
-for four Stage 3 tasks, which passes P-2 for them:
-
-- **T-27**: Deduplicated enqueue by key, `NewJob::unique` (done, unreleased)
-- **T-29**: Cron schedules, `Schedule::cron`, over `croner` (done, unreleased)
-- **T-23**: `axa-mail`, over `lettre` (done, unreleased)
-- **T-24**: `axa-storage-with-apache-arrow-and-aws`, over `object_store` (done, unreleased)
-
-The rest waits under P-2, below.
+Stages 1 and 2 are done, and T-23, T-24, T-27, and T-29 of Stage 3. The rest waits
+under P-2, below.
 
 ---
 
@@ -82,13 +82,9 @@ The rest waits under P-2, below.
 
 Each item waits until two services request it, or one has a compelling safety case:
 
-- **T-23**: Mail crate with SMTP, file, and memory transports (`axa-mail`)
-- **T-24**: Object storage for local disk, memory, and S3 (`axa-storage`)
 - **T-25**: Rate limits shared across replicas via Postgres/Redis
 - **T-26**: Wake Postgres queue with `LISTEN` and `NOTIFY`
-- **T-27**: Deduplicated enqueue by key
 - **T-28**: Retry jitter and job-chosen delays
-- **T-29**: Cron and calendar schedules
 - **T-30**: Background migrations for SQL that cannot run in transactions
 - **T-31**: Internal listener for health and metrics
 - **T-32**: Static token/Basic credential guard for operator routes

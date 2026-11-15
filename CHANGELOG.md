@@ -3,7 +3,14 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.15.0] - 2026-11-15
+
+This covers `axa` 0.15.0, `axa-test` 0.6.0, `axa-postgres-job-queue` 0.4.0,
+`axa-mysql-job-queue` 0.3.0, and two new crates, `axa-mail` 0.1.0 and
+`axa-storage-with-apache-arrow-and-aws` 0.1.0. `axa-sqlite-job-queue` has unique jobs and
+cron schedules too, but stays unpublished with the other SQLite crates, and as in 0.13
+and 0.14 the `sqlite-*` features are left out of the published `axa`. To upgrade, read
+[Upgrading to Axa 0.15](help/upgrading-to-0.15/index.md).
 
 ### Added
 
