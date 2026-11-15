@@ -14,6 +14,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   key is queued or running. `JobInfo::unique_key` shows the key. Setup adds a
   `unique_key` column and the `axa_queue_unique` index, and `check` requires both, so a
   service on `connect_existing` runs the new `SETUP_STATEMENTS` in a migration first.
+- `Schedule::cron(name, pattern, job)` in all three job queues, and `Queue::cron` in
+  `axa::queue` (T-29, WRK-35 to WRK-39): a job at each time a cron pattern names, such
+  as `"0 2 * * *"`, in UTC on the database's clock, each due time queued once across
+  replicas, missed times queued once, and a due time skipped while the last job runs.
+  `ScheduleInfo::cron` and `Schedule::cron_pattern` give the pattern. Setup adds a `cron`
+  column to `axa_schedule`, which `check` requires. The queues depend on `croner` 4,
+  with its `chrono` feature only.
 
 ### Changed
 

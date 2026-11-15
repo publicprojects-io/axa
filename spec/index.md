@@ -766,6 +766,11 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-32 | The key holds against a job queued in a transaction not yet committed: a second enqueue of the key waits, then answers that job once it commits, or queues its own once it rolls back. A unique index holds it, so it holds across replicas. | `a_key_holds_against_a_job_in_a_transaction_not_yet_committed` |
 | WRK-33 | `retry` leaves a failed job alone, answering `false` and keeping no act, while another job of its key is queued or running. | `a_failed_job_is_not_retried_while_another_of_its_key_is_queued` |
 | WRK-34 | A key is a code, as WRK-26 has it. Any other is refused with `Error::NotACode`, `what` being `unique key`, before anything is written, and the table refuses it too. `check` fails without the `unique_key` column or the unique index. | `a_key_that_is_not_a_code_is_refused` |
+| WRK-35 | `Schedule::cron(name, pattern, job)` queues a job at each time the cron pattern names, as `croner` reads it, in UTC on the database's clock. Its first time is the pattern's next after the row is made, and `schedules` gives its pattern and no interval. | `a_cron_schedule_first_runs_at_its_patterns_next_time`, `a_cron_schedule_names_its_next_times_in_utc` |
+| WRK-36 | Times a cron schedule missed while every process was down queue one job, and its next time is the pattern's next after now. A due time is skipped while its last job is queued or running, and the schedule moves on to its next. | `a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy` |
+| WRK-37 | Across any number of processes ticking at once, each due time of a cron schedule is queued once. | `replicas_ticking_a_cron_schedule_queue_each_due_time_once` |
+| WRK-38 | A schedule whose pattern changed, or that changed from an interval to a pattern, takes its next time from the new pattern. | `a_changed_pattern_takes_its_next_time_from_the_new_one` |
+| WRK-39 | A cron pattern that does not parse, or names no time to come, panics at boot. | `a_bad_cron_pattern_is_refused_at_boot` |
 
 ### 4.19 MySQL job queue
 
@@ -776,7 +781,7 @@ names of the tests in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-34, each by the tests named there. | As named in section 4.18 |
+| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-39, each by the tests named there. | As named in section 4.18 |
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
@@ -794,7 +799,7 @@ in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-34, each by the tests named there. | As named in section 4.18 |
+| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-39, each by the tests named there. | As named in section 4.18 |
 | SQJ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, in one `BEGIN IMMEDIATE` transaction. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | SQJ-3 | An act changes its job and keeps the act in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |

@@ -1535,3 +1535,156 @@ async fn a_key_that_is_not_a_code_is_refused() {
         .unwrap();
     assert!(Queue::connect_existing(&uri(), quick()).await.is_err());
 }
+
+// Cron schedules.
+
+type Time = axa_sqlite_job_queue::DateTime<axa_sqlite_job_queue::Utc>;
+use chrono::TimeDelta;
+
+fn cron(queue: &mut Queue, name: &str, pattern: &str) {
+    queue.schedule(Schedule::cron(
+        name,
+        pattern,
+        NewJob::new("Tick", serde_json::json!({ "from": name })),
+    ));
+}
+
+async fn set_due(pool: &SqlitePool, name: &str, seconds_ago: u32) {
+    sqlx::query(
+        "UPDATE axa_schedule
+         SET due_at = CAST(unixepoch('subsec') * 1000000 AS INTEGER) - ?1 * 1000000
+         WHERE name = ?2",
+    )
+    .bind(seconds_ago)
+    .bind(name)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The schedule's due time, and the database's now.
+async fn due_and_now(pool: &SqlitePool, name: &str) -> (Time, Time) {
+    let row = sqlx::query(
+        "SELECT due_at, CAST(unixepoch('subsec') * 1000000 AS INTEGER) AS now
+         FROM axa_schedule WHERE name = ?1",
+    )
+    .bind(name)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (time(row.get("due_at")), time(row.get("now")))
+}
+
+#[tokio::test]
+async fn a_cron_schedule_first_runs_at_its_patterns_next_time() {
+    use chrono::Timelike;
+    let mut queue = fresh(quick()).await;
+    cron(&mut queue, "at-two", "0 2 * * *");
+    assert_eq!(queue.tick_schedules().await.unwrap(), 0, "not due at boot");
+    let (due, now) = due_and_now(queue.pool(), "at-two").await;
+    assert!(due > now && due - now <= TimeDelta::hours(24));
+    assert_eq!(
+        (due.hour(), due.minute(), due.second()),
+        (2, 0, 0),
+        "in UTC"
+    );
+    let info = queue.schedules().await.unwrap();
+    assert_eq!(info[0].cron.as_deref(), Some("0 2 * * *"));
+    assert_eq!(info[0].interval, None);
+}
+
+#[tokio::test]
+async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
+    let mut queue = fresh(quick()).await;
+    cron(&mut queue, "secondly", "* * * * * *");
+    queue.tick_schedules().await.unwrap();
+    // Every process was down for a week.
+    set_due(queue.pool(), "secondly", 7 * 86_400).await;
+    assert_eq!(
+        queue.tick_schedules().await.unwrap(),
+        1,
+        "one job for them all"
+    );
+    let (due, now) = due_and_now(queue.pool(), "secondly").await;
+    assert!(
+        due > now - TimeDelta::seconds(1),
+        "the next is the pattern's after now"
+    );
+    assert_eq!(
+        due.timestamp_subsec_micros(),
+        0,
+        "on the pattern's whole second"
+    );
+    // Due again while its job is still queued: skipped, and moved on.
+    set_due(queue.pool(), "secondly", 1).await;
+    assert_eq!(queue.tick_schedules().await.unwrap(), 0);
+    assert_eq!(jobs_named(queue.pool(), "Tick").await, 1);
+    let (due, now) = due_and_now(queue.pool(), "secondly").await;
+    assert!(due > now - TimeDelta::seconds(1));
+    // Once it finished, the next due time queues again.
+    sqlx::query("UPDATE axa_queue SET status = 'completed'")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    set_due(queue.pool(), "secondly", 1).await;
+    assert_eq!(queue.tick_schedules().await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn a_changed_pattern_takes_its_next_time_from_the_new_one() {
+    use chrono::Timelike;
+    let mut queue = fresh(quick()).await;
+    every(&mut queue, "nightly", Duration::from_hours(24));
+    queue.tick_schedules().await.unwrap();
+    let mut queue = replica(quick()).await;
+    cron(&mut queue, "nightly", "0 2 * * *");
+    queue.tick_schedules().await.unwrap();
+    let (due, _) = due_and_now(queue.pool(), "nightly").await;
+    assert_eq!(due.hour(), 2, "from an interval to a pattern");
+    let mut queue = replica(quick()).await;
+    cron(&mut queue, "nightly", "0 3 * * *");
+    queue.tick_schedules().await.unwrap();
+    let (due, _) = due_and_now(queue.pool(), "nightly").await;
+    assert_eq!(due.hour(), 3, "from one pattern to another");
+    let info = queue.schedules().await.unwrap();
+    assert_eq!(info[0].cron.as_deref(), Some("0 3 * * *"));
+}
+
+#[tokio::test]
+async fn replicas_ticking_a_cron_schedule_queue_each_due_time_once() {
+    let mut replicas = Vec::new();
+    replicas.push(fresh(quick()).await);
+    for _ in 0..5 {
+        replicas.push(replica(quick()).await);
+    }
+    for queue in &mut replicas {
+        cron(queue, "race", "* * * * * *");
+    }
+    let pool = replicas[0].pool().clone();
+    let replicas: Vec<_> = replicas.into_iter().map(Arc::new).collect();
+    let ticks: Vec<_> = replicas
+        .iter()
+        .map(|queue| {
+            let queue = queue.clone();
+            tokio::spawn(async move {
+                let end = tokio::time::Instant::now() + Duration::from_millis(4_500);
+                let mut mine = 0;
+                while tokio::time::Instant::now() < end {
+                    mine += queue.tick_schedules().await.unwrap();
+                    finish_unheld(queue.pool()).await;
+                }
+                mine
+            })
+        })
+        .collect();
+    let mut total = 0;
+    for tick in ticks {
+        total += tick.await.unwrap();
+    }
+    let jobs = jobs_named(&pool, "Tick").await;
+    assert_eq!(i64::try_from(total).unwrap(), jobs);
+    assert!(
+        (3..=5).contains(&jobs),
+        "one job a second for 4.5 seconds: {jobs}"
+    );
+}

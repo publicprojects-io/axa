@@ -288,8 +288,35 @@ queue.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_a
 ```
 
 The first time is used only when the row is made, so a schedule every 24 hours first
-due at 02:00 runs at 02:00 each day, on the database's clock in UTC. A more general
-"daily at 02:00" form, with time zones, is later work.
+due at 02:00 runs at 02:00 each day, on the database's clock in UTC.
+
+## Cron schedules
+
+`cron` queues a job at each time a cron pattern names, in UTC on the database's clock:
+
+```rust
+# use axa::{AppContext, Result, queue::Queue, worker::BackgroundWorker};
+# struct ReportWorker;
+# #[async_trait::async_trait]
+# impl BackgroundWorker<()> for ReportWorker {
+#     fn build(_: &AppContext) -> Self { Self }
+#     async fn perform(&self, _: ()) -> Result<()> { Ok(()) }
+# }
+# fn example(queue: &mut Queue) -> Result<()> {
+queue.cron::<_, ReportWorker>("nightly-report", "0 2 * * *", &())?;
+queue.cron::<_, ReportWorker>("weekday-digest", "0 9 * * MON-FRI", &())?;
+# Ok(())
+# }
+```
+
+A pattern has five fields, minute, hour, day of month, month, and day of week, or six
+with seconds first. Its first time is the pattern's next after the row is made. The rules
+above hold: each due time is queued once across processes, times missed while every
+process was down queue one job and the next time is the pattern's next after now, and a
+due time is skipped while the last job is queued or running. A changed pattern takes its
+next time from the new pattern. A pattern that does not parse, or names no time to come,
+panics at boot. Times are UTC: a schedule for 09:00 in a zone with daylight saving moves
+by an hour twice a year.
 
 The worker process ticks schedules on every poll, `poll_interval`, 1 second by default,
 so a due job is queued within about that. A process with no job loops can call

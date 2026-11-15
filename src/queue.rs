@@ -277,7 +277,31 @@ impl Queue {
         Ok(())
     }
 
-    /// Add a schedule built with [`Schedule::every`], as for a first time.
+    /// Queue a job of worker `W` with `args` at each time the cron `pattern` names, in
+    /// UTC, under the schedule name `name`, such as `"0 2 * * *"` for 02:00 each day.
+    /// See [`Schedule::cron`].
+    ///
+    /// # Errors
+    ///
+    /// Fails when the arguments cannot be encoded.
+    ///
+    /// # Panics
+    ///
+    /// When the name is empty, over 200 characters, or used twice, or the pattern
+    /// does not parse or names no time to come.
+    pub fn cron<A, W>(&mut self, name: &str, pattern: &str, args: &A) -> Result<()>
+    where
+        A: Serialize + DeserializeOwned + Send + Sync + 'static,
+        W: BackgroundWorker<A>,
+    {
+        let job = job::<W, A>(args)?;
+        self.engine_mut()
+            .schedule(Schedule::cron(name, pattern, job));
+        Ok(())
+    }
+
+    /// Add a schedule built with [`Schedule::every`] or [`Schedule::cron`], as for a
+    /// first time.
     ///
     /// # Panics
     ///

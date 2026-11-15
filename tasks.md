@@ -114,6 +114,10 @@ and `croner` for T-29.
 T-27 is done, unreleased, in all three job queues, as `NewJob::unique` (WRK-31 to WRK-34,
 MYQ-7).
 
+T-29 is done, unreleased, in all three job queues and `axa::queue`, as `Schedule::cron` and
+`Queue::cron` (WRK-35 to WRK-39). Times are in UTC: a time zone with daylight saving
+would need `chrono-tz`, which is not added.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

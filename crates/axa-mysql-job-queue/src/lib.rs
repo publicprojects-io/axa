@@ -129,6 +129,14 @@
 //!   It applies only when the row is made, so a schedule every 24 hours first due
 //!   at 02:00 runs at 02:00 each day, on the database's clock in UTC.
 //!
+//! [`Schedule::cron`] queues a job at the times a cron pattern names, such as
+//! `"0 2 * * *"` for 02:00 each day, in UTC on the database's clock. Its due times
+//! are the pattern's, so the same three rules hold: each due time is queued once, times
+//! missed while every process was down queue one job and the next time is the
+//! pattern's next after now, and a due time is skipped while the last job is queued or
+//! running. Its first time is the pattern's next after the row is made, and a changed
+//! pattern takes its next time from the new pattern.
+//!
 //! [`Queue::run`] ticks the schedules on every poll, and a service with no job
 //! loops can call [`Queue::tick_schedules`] itself. A schedule's job type must be
 //! handled by some worker, or its jobs wait. A schedule removed from code leaves a
@@ -323,6 +331,17 @@ const SETUP_SCHEDULE: &str = "CREATE TABLE IF NOT EXISTS axa_schedule (
     created_at DATETIME(6) NOT NULL,
     updated_at DATETIME(6) NOT NULL
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_bin";
+/// A schedule's cron pattern, when it has one instead of an interval, added only where
+/// `information_schema` shows none.
+const SETUP_SCHEDULE_CRON: &str = "SET @axa_schedule_cron = IF(
+    (SELECT COUNT(*) FROM information_schema.columns
+        WHERE table_schema = DATABASE() AND table_name = 'axa_schedule'
+          AND column_name = 'cron') = 0,
+    'ALTER TABLE axa_schedule ADD COLUMN cron VARCHAR(255) NULL',
+    'DO 0');
+PREPARE axa_schedule_cron FROM @axa_schedule_cron;
+EXECUTE axa_schedule_cron;
+DEALLOCATE PREPARE axa_schedule_cron";
 /// A person's acts on jobs. This table is a record (P-7): it is only ever inserted
 /// into, and its triggers refuse `UPDATE` and `DELETE`. A job row is state, and
 /// retention deletes it, so an act names its job by id with no foreign key, and keeps
@@ -455,17 +474,25 @@ const COUNTS: &str = "SELECT
     FROM axa_queue";
 /// Make the row if there is none. The upsert changes nothing on a row that exists.
 const SCHEDULE_CREATE: &str = "INSERT INTO axa_schedule
-    (name, due_at, interval_ms, seen_at, created_at, updated_at)
-    VALUES (?, COALESCE(?, UTC_TIMESTAMP(6)), ?, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6),
+    (name, due_at, interval_ms, cron, seen_at, created_at, updated_at)
+    VALUES (?, COALESCE(?, UTC_TIMESTAMP(6)), ?, ?, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6),
         UTC_TIMESTAMP(6))
     ON DUPLICATE KEY UPDATE name = name";
 /// Say this schedule is still in code: restore it if it was archived, and note the
-/// interval. `seen_at` moves at most once a minute, so a tick does not write each poll.
+/// interval or pattern. A changed pattern takes its next time from the new pattern.
+/// MySQL sets columns left to right, so `due_at` reads the old `cron`. `seen_at`
+/// moves at most once a minute, so a tick does not write each poll. The values are
+/// the interval, the pattern twice, the next time, the pattern, the name, the
+/// interval, and the pattern.
 const SCHEDULE_SEEN: &str = "UPDATE axa_schedule
-    SET seen_at = UTC_TIMESTAMP(6), archived_at = NULL, interval_ms = ?
+    SET seen_at = UTC_TIMESTAMP(6), archived_at = NULL, interval_ms = ?,
+        due_at = IF(? IS NOT NULL AND NOT (cron <=> ?), ?, due_at),
+        cron = ?
     WHERE name = ? AND (archived_at IS NOT NULL OR NOT (interval_ms <=> ?)
-        OR seen_at < UTC_TIMESTAMP(6) - INTERVAL 1 MINUTE)";
-const SCHEDULE_LOCK: &str = "SELECT last_job, due_at <= UTC_TIMESTAMP(6) AS due FROM axa_schedule
+        OR NOT (cron <=> ?) OR seen_at < UTC_TIMESTAMP(6) - INTERVAL 1 MINUTE)";
+const SCHEDULE_LOCK: &str =
+    "SELECT last_job, due_at <= UTC_TIMESTAMP(6) AS due, UTC_TIMESTAMP(6) AS now
+    FROM axa_schedule
     WHERE name = ? AND archived_at IS NULL FOR UPDATE SKIP LOCKED";
 /// Archive schedules no live process has in code. A row any process still ticks
 /// is seen within a minute, so one unseen for `stale_minutes` is in none, and an
@@ -474,7 +501,7 @@ const SCHEDULE_LOCK: &str = "SELECT last_job, due_at <= UTC_TIMESTAMP(6) AS due 
 const SCHEDULE_ARCHIVE: &str = "UPDATE axa_schedule
     SET archived_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6)
     WHERE archived_at IS NULL AND seen_at < UTC_TIMESTAMP(6) - INTERVAL ? MINUTE{kept}";
-const SCHEDULES: &str = "SELECT s.name, s.interval_ms, s.due_at, s.last_job, s.seen_at,
+const SCHEDULES: &str = "SELECT s.name, s.interval_ms, s.cron, s.due_at, s.last_job, s.seen_at,
     s.archived_at, s.created_at, q.status AS last_status, q.error AS last_error
     FROM axa_schedule s LEFT JOIN axa_queue q ON q.id = s.last_job ORDER BY s.name";
 const SCHEDULE_BUSY: &str = "SELECT EXISTS (SELECT 1 FROM axa_queue
@@ -487,6 +514,10 @@ const SCHEDULE_ADVANCE: &str = "UPDATE axa_schedule
             MICROSECOND,
         last_job = COALESCE(?, last_job), updated_at = UTC_TIMESTAMP(6)
     WHERE name = ?";
+/// A cron schedule's next due time, the pattern's next after now.
+const SCHEDULE_ADVANCE_TO: &str = "UPDATE axa_schedule
+    SET due_at = ?, last_job = COALESCE(?, last_job), updated_at = UTC_TIMESTAMP(6)
+    WHERE name = ?";
 /// The isolation level for the queue's own transactions. Under the default,
 /// `REPEATABLE READ`, a claim would hold gap locks that make other loops and
 /// `INSERT`s wait.
@@ -497,12 +528,13 @@ const READ_COMMITTED: &str = "SET TRANSACTION ISOLATION LEVEL READ COMMITTED";
 /// [`Queue::connect_existing`]. They need MySQL 8.4 or later, and a role that may
 /// create triggers. Run them as plain SQL, such as with [`sqlx::raw_sql`]: MySQL does
 /// not prepare `CREATE TRIGGER`.
-pub const SETUP_STATEMENTS: [&str; 8] = [
+pub const SETUP_STATEMENTS: [&str; 9] = [
     SETUP,
     SETUP_TENANT,
     SETUP_UNIQUE_KEY,
     SETUP_UNIQUE_INDEX,
     SETUP_SCHEDULE,
+    SETUP_SCHEDULE_CRON,
     SETUP_ACTS,
     SETUP_ACTS_UPDATE,
     SETUP_ACTS_DELETE,
@@ -1035,20 +1067,52 @@ pub struct Counts {
     pub oldest_ready_seconds: f64,
 }
 
-/// A job queued every interval. See [Schedules](crate#schedules).
+/// A job queued every interval, or at the times a cron pattern names. See
+/// [Schedules](crate#schedules).
 #[derive(Clone)]
 pub struct Schedule {
     name: String,
-    interval: Duration,
+    times: Times,
     first: Option<DateTime<Utc>>,
     job: NewJob,
+}
+
+/// When a schedule is due.
+#[derive(Clone)]
+enum Times {
+    Every(Duration),
+    /// The parsed pattern, and the pattern as written, which `croner` would rewrite.
+    Cron(Box<croner::Cron>, String),
+}
+
+impl Times {
+    fn interval(&self) -> Option<Duration> {
+        match self {
+            Self::Every(interval) => Some(*interval),
+            Self::Cron(..) => None,
+        }
+    }
+
+    fn pattern(&self) -> Option<&str> {
+        match self {
+            Self::Every(_) => None,
+            Self::Cron(_, pattern) => Some(pattern),
+        }
+    }
+}
+
+/// The time after `now` a cron pattern names.
+fn next_after(cron: &croner::Cron, now: DateTime<Utc>) -> Result<DateTime<Utc>> {
+    cron.find_next_occurrence(&now, false)
+        .map_err(|error| Error::Job(format!("the cron pattern has no next time: {error}")))
 }
 
 impl fmt::Debug for Schedule {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Schedule")
             .field("name", &self.name)
-            .field("interval", &self.interval)
+            .field("interval", &self.times.interval())
+            .field("cron", &self.times.pattern())
             .field("first", &self.first)
             .field("job", &self.job)
             .finish()
@@ -1065,18 +1129,45 @@ impl Schedule {
     /// second, as Axum panics on a bad route: these are mistakes in code, found at
     /// boot.
     pub fn every(name: impl Into<String>, interval: Duration, job: NewJob) -> Self {
-        let name = name.into();
-        assert!(
-            !name.is_empty() && name.len() <= 200,
-            "a schedule name must be 1 to 200 characters"
-        );
+        let name = checked_name(name.into());
         assert!(
             interval >= Duration::from_secs(1),
             "the schedule {name} needs an interval of at least a second"
         );
         Self {
             name,
-            interval,
+            times: Times::Every(interval),
+            first: None,
+            job: NewJob {
+                when: When::Now,
+                ..job
+            },
+        }
+    }
+
+    /// Queue `job` at each time the cron `pattern` names, in UTC on the database's
+    /// clock, under the schedule name `name`. The pattern has five fields, minute to
+    /// day of week, or six with seconds first, as `croner` reads them: `"0 2 * * *"` is
+    /// 02:00 each day, and `"0 9 * * MON-FRI"` 09:00 each weekday. A delay set on `job`
+    /// is ignored. The first time is the pattern's next after the row is made.
+    ///
+    /// # Panics
+    ///
+    /// When the name is empty or over 200 characters, or the pattern does not parse
+    /// or names no time to come, as Axum panics on a bad route: these are mistakes in
+    /// code, found at boot.
+    pub fn cron(name: impl Into<String>, pattern: &str, job: NewJob) -> Self {
+        let name = checked_name(name.into());
+        let cron: croner::Cron = pattern
+            .parse()
+            .unwrap_or_else(|error| panic!("the schedule {name} has a bad cron pattern: {error}"));
+        assert!(
+            next_after(&cron, Utc::now()).is_ok(),
+            "the cron pattern of the schedule {name} names no time to come"
+        );
+        Self {
+            name,
+            times: Times::Cron(Box::new(cron), pattern.to_string()),
             first: None,
             job: NewJob {
                 when: When::Now,
@@ -1087,11 +1178,24 @@ impl Schedule {
 
     /// The first due time, used only when the schedule's row is made. With an
     /// interval of 24 hours and a first time at 02:00 UTC, the job runs at 02:00
-    /// each day. Without one, the first is as soon as the row is made.
+    /// each day. Without one, the first is as soon as the row is made. A cron
+    /// schedule's first time is its pattern's, and it ignores this.
     #[must_use]
     pub const fn first_at(mut self, first: DateTime<Utc>) -> Self {
         self.first = Some(first);
         self
+    }
+
+    /// The schedule's interval, or `None` for a cron schedule.
+    #[must_use]
+    pub fn interval(&self) -> Option<Duration> {
+        self.times.interval()
+    }
+
+    /// The schedule's cron pattern, or `None` for one every interval.
+    #[must_use]
+    pub fn cron_pattern(&self) -> Option<&str> {
+        self.times.pattern()
     }
 
     /// The schedule's name.
@@ -1101,14 +1205,25 @@ impl Schedule {
     }
 }
 
+/// Refuse a schedule name that is empty or over 200 characters.
+fn checked_name(name: String) -> String {
+    assert!(
+        !name.is_empty() && name.len() <= 200,
+        "a schedule name must be 1 to 200 characters"
+    );
+    name
+}
+
 /// What the table holds of one schedule.
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct ScheduleInfo {
     /// Its name.
     pub name: String,
-    /// Its interval, as the code last had it.
+    /// Its interval, as the code last had it, or `None` for a cron schedule.
     pub interval: Option<Duration>,
+    /// Its cron pattern, as the code last had it, or `None` for one every interval.
+    pub cron: Option<String>,
     /// When it is next due.
     pub due_at: DateTime<Utc>,
     /// The last job it queued.
@@ -1284,7 +1399,7 @@ impl Queue {
         .execute(&self.pool)
         .await?;
         sqlx::query(
-            "SELECT name, due_at, last_job, interval_ms, seen_at, archived_at FROM axa_schedule LIMIT 0",
+            "SELECT name, due_at, last_job, interval_ms, cron, seen_at, archived_at FROM axa_schedule LIMIT 0",
         )
             .execute(&self.pool)
             .await?;
@@ -1591,17 +1706,33 @@ impl Queue {
     async fn tick(&self, schedule: &Schedule) -> Result<bool> {
         // Outside the transaction: an upsert locks the row it meets, and replicas
         // would then wait on each other instead of skipping.
-        let interval = millis(schedule.interval);
+        let interval = schedule.times.interval().map(millis);
+        let pattern = schedule.times.pattern();
+        let first = match &schedule.times {
+            Times::Every(_) => schedule.first,
+            Times::Cron(cron, _) => {
+                let now: DateTime<Utc> = sqlx::query_scalar("SELECT UTC_TIMESTAMP(6)")
+                    .fetch_one(&self.pool)
+                    .await?;
+                Some(next_after(cron, now)?)
+            }
+        };
         sqlx::query(SCHEDULE_CREATE)
             .bind(&schedule.name)
-            .bind(schedule.first)
+            .bind(first)
             .bind(interval)
+            .bind(pattern)
             .execute(&self.pool)
             .await?;
         sqlx::query(SCHEDULE_SEEN)
             .bind(interval)
+            .bind(pattern)
+            .bind(pattern)
+            .bind(first)
+            .bind(pattern)
             .bind(&schedule.name)
             .bind(interval)
+            .bind(pattern)
             .execute(&self.pool)
             .await?;
         let mut transaction = self.begin().await?;
@@ -1633,14 +1764,26 @@ impl Queue {
         } else {
             Some(enqueue_on(&mut transaction, &schedule.job).await?)
         };
-        let step = micros(schedule.interval);
-        sqlx::query(SCHEDULE_ADVANCE)
-            .bind(step)
-            .bind(step)
-            .bind(job)
-            .bind(&schedule.name)
-            .execute(&mut *transaction)
-            .await?;
+        match &schedule.times {
+            Times::Every(interval) => {
+                let step = micros(*interval);
+                sqlx::query(SCHEDULE_ADVANCE)
+                    .bind(step)
+                    .bind(step)
+                    .bind(job)
+                    .bind(&schedule.name)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+            Times::Cron(cron, _) => {
+                sqlx::query(SCHEDULE_ADVANCE_TO)
+                    .bind(next_after(cron, row.try_get("now")?)?)
+                    .bind(job)
+                    .bind(&schedule.name)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+        }
         transaction.commit().await?;
         if job.is_some() {
             tracing::debug!(schedule = %schedule.name, "schedule queued its job");
@@ -1683,6 +1826,7 @@ impl Queue {
                     interval: row
                         .try_get::<Option<i64>, _>("interval_ms")?
                         .map(from_millis),
+                    cron: row.try_get("cron")?,
                     due_at: row.try_get("due_at")?,
                     last_job: row.try_get("last_job")?,
                     last_state: row
@@ -2046,7 +2190,12 @@ mod tests {
     fn the_debug_text_leaves_out_arguments() {
         let job = NewJob::new("Report", serde_json::json!({ "nhs": "943 476 5919" }));
         let schedule = Schedule::every("nightly", Duration::from_hours(1), job.clone());
-        for text in [format!("{job:?}"), format!("{schedule:?}")] {
+        let cron = Schedule::cron("at-two", "0 2 * * *", job.clone());
+        for text in [
+            format!("{job:?}"),
+            format!("{schedule:?}"),
+            format!("{cron:?}"),
+        ] {
             assert!(text.contains("Report"), "{text}");
             assert!(!text.contains("943"), "{text}");
         }
@@ -2084,6 +2233,47 @@ mod tests {
             "fast",
             Duration::from_millis(10),
             NewJob::new("J", serde_json::Value::Null),
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "bad cron pattern")]
+    fn a_bad_cron_pattern_is_refused_at_boot() {
+        let _ = Schedule::cron(
+            "bad",
+            "61 * * * *",
+            NewJob::new("J", serde_json::Value::Null),
+        );
+    }
+
+    #[test]
+    fn a_cron_schedule_names_its_next_times_in_utc() {
+        let schedule = Schedule::cron(
+            "weekdays",
+            "0 9 * * MON-FRI",
+            NewJob::new("J", serde_json::Value::Null),
+        );
+        assert_eq!(schedule.cron_pattern(), Some("0 9 * * MON-FRI"));
+        assert_eq!(schedule.interval(), None);
+        let Times::Cron(cron, _) = &schedule.times else {
+            panic!("a cron schedule")
+        };
+        // Friday 2026-11-13 09:00 UTC is due, so the next after it is Monday's.
+        let friday = DateTime::parse_from_rfc3339("2026-11-13T09:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let monday = DateTime::parse_from_rfc3339("2026-11-16T09:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(next_after(cron, friday).unwrap(), monday);
+        assert_eq!(
+            Schedule::every(
+                "e",
+                Duration::from_secs(5),
+                NewJob::new("J", serde_json::Value::Null)
+            )
+            .interval(),
+            Some(Duration::from_secs(5))
         );
     }
 

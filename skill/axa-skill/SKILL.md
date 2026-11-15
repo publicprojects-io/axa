@@ -344,7 +344,8 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
 - A job in **`needs_review`** lost its claim and was stopped, so it may have run in part
   or twice. Nothing retries it: check what it did, then call `queue::retry`, which is
   kept as `released`.
-- **Schedules** are `queue.every::<_, W>("name", interval, &args)?` in code, never config.
+- **Schedules** are `queue.every::<_, W>("name", interval, &args)?`, or
+  `queue.cron::<_, W>("name", "0 2 * * *", &args)?` in UTC, in code, never config.
   Each due time is queued once across replicas, missed times come to one job, and a time
   is skipped while the last job runs. Schedule the `axa-idempotency-key` sweep this way. A
   schedule removed from code is archived, and returns if put back.

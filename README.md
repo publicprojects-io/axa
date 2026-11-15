@@ -595,8 +595,8 @@ tenant, and key is queued or running. `Queue::job` and `counts` say where a job 
 `queue::cancel` and `queue::retry` change it, as an act of a named person for a
 reason, kept in the insert-only `axa_job_acts` in the caller's transaction, and
 `Queue::acts` reads them back. A run that lost its claim is stopped, and its job waits
-in `needs_review` for a person. `Queue::every` queues a job each interval, once per due
-time across replicas, with no drift, one job for times missed, and no stacking, and a
+in `needs_review` for a person. `Queue::every` queues a job each interval, and
+`Queue::cron` at the times a cron pattern names, in UTC, once per due time across replicas, with no drift, one job for times missed, and no stacking, and a
 schedule removed from code is archived, not deleted. See
 [Background jobs and schedules](help/background-jobs/index.md).
 
