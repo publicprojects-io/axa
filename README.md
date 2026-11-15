@@ -166,7 +166,8 @@ fn folders() -> Routes {
 ```
 
 A `"/"` route is served at the prefix with no trailing slash, and two methods on
-one path merge. The fields are public, so a test can check what is mounted
+one path merge. A request for `/api/folders/` is a `308` to `/api/folders`, keeping the
+query, and runs no handler. The fields are public, so a test can check what is mounted
 without booting anything:
 
 ```rust

@@ -21,6 +21,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (T-37, CLI-13): asks the server on this machine for `/_health/live` or
   `/_health/ready` and exits non-zero unless it answers `2xx` in 5 seconds, for an image
   with no `curl`.
+- A trailing slash on a mounted path, `/api/folders/`, is a `308` to `/api/folders`,
+  keeping the query, method, and body (T-42, RTE-9). It runs no handler, and a path with
+  nothing mounted behind it is still the `404`.
 
 ### Changed
 

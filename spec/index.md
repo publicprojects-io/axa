@@ -133,6 +133,7 @@ The variables are listed in `README.md`.
 | RTE-6 | `AppRoutes::into_app` applies the standard middleware. | `into_app_applies_the_standard_middleware` |
 | RTE-7 | `AppRoutes::mounted`, `Routes::mounted`, and `Handler::methods` list every route as `(method, full path)`. `HEAD` is left out beside `GET`, and a handler for every method shows as `ANY`, so a census cannot miss it. | `mounted_lists_every_method_and_full_path`, `mounted_includes_the_health_routes_and_a_handler_for_any_method`, `head_is_left_out_beside_get`, `methods_survive_a_layer` |
 | RTE-8 | Methods come from `MethodRouter`'s debug text, the one place Axum says. A change in that text fails a test by name. | `the_debug_text_still_says_what_is_mounted` |
+| RTE-9 | A path that matches no route, but would with its trailing slashes taken off, is a `308` to that form, keeping the query, for any method. No handler runs for it, so a guard judging the request by its path sees only the mounted form. A path with nothing mounted behind it, or whose form would begin `//`, is the `404`. | `a_trailing_slash_is_a_308_to_the_mounted_form_keeping_the_query`, `a_slash_with_nothing_mounted_behind_it_is_a_404_and_never_leaves_the_site`, `the_redirect_runs_no_handler_and_passes_through_the_standard_stack` |
 
 ### 4.4 Middleware
 

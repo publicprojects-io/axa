@@ -140,6 +140,8 @@ needs neither (OPR-1 to OPR-3).
 
 T-37 is done, unreleased, as `service health` and `cli::health` (CLI-13).
 
+T-42 is done, unreleased, in `AppRoutes::into_router` (RTE-9).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

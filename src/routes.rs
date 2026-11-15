@@ -15,6 +15,11 @@
 //!
 //! [`AppRoutes::mounted`] lists what is served, for a route census test.
 //!
+//! A path with a trailing slash that is mounted without one, such as
+//! `/api/folders/`, answers `308 Permanent Redirect` to the mounted form, keeping the
+//! query and, as `308` does, the method and body. Nothing is served at the slashed
+//! form, so a guard that judges a request by its path sees only the mounted one.
+//!
 //! [`Routes::timeout`] and [`Routes::add_with_timeout`] give a route its own
 //! time limit in place of `REQUEST_TIMEOUT_SECONDS`:
 //!
@@ -32,9 +37,16 @@
 
 use std::time::Duration;
 
-use axum::{Router, routing::MethodRouter};
+use axum::{
+    Router,
+    body::Body,
+    http::{HeaderValue, Request, StatusCode, Uri, header::LOCATION},
+    response::{IntoResponse, Response},
+    routing::{MethodRouter, any},
+};
+use tower_service::Service;
 
-use crate::{AppContext, Result, config::Config, health, middleware};
+use crate::{AppContext, Error, Result, config::Config, health, middleware};
 
 /// One route in a [`Routes`] group.
 #[derive(Clone, Debug)]
@@ -246,13 +258,24 @@ impl AppRoutes {
             .collect()
     }
 
-    /// The routes as a stateless router with no middleware applied.
+    /// The routes as a stateless router with no middleware applied. A path that
+    /// matches no route, but would without its trailing slashes, is a `308` to that
+    /// form.
     pub fn into_router(self, ctx: AppContext) -> Router {
         let mut router = Router::new();
+        // The same paths with handlers that only say a path matched, so the
+        // redirect asks whether the other form is mounted without serving it.
+        let mut mounted = Router::new();
+        let mut seen = std::collections::HashSet::new();
         for (path, handler) in self.collect() {
+            if seen.insert(path.clone()) {
+                mounted = mounted.route(&path, any(|| async { StatusCode::NO_CONTENT }));
+            }
             router = router.route(&path, handler);
         }
-        router.with_state(ctx)
+        router
+            .fallback(move |uri: Uri| slash_redirect(mounted.clone(), uri))
+            .with_state(ctx)
     }
 
     /// The routes as a router with the standard middleware applied.
@@ -263,6 +286,37 @@ impl AppRoutes {
     pub fn into_app(self, ctx: AppContext) -> Result<Router> {
         let config: std::sync::Arc<Config> = ctx.config.clone();
         middleware::apply(self.into_router(ctx), &config.http)
+    }
+}
+
+/// The `308` to `uri` without its trailing slashes when `mounted` matches that
+/// form, and otherwise the `404` for a path that matches nothing.
+async fn slash_redirect(mounted: Router, uri: Uri) -> Response {
+    let path = uri.path();
+    let trimmed = path.trim_end_matches('/');
+    // `//host` would send a browser to another site.
+    if trimmed.len() == path.len() || trimmed.is_empty() || trimmed.starts_with("//") {
+        return Error::NotFound.into_response();
+    }
+    let Ok(probe) = Request::get(trimmed).body(Body::empty()) else {
+        return Error::NotFound.into_response();
+    };
+    let mut mounted = mounted;
+    // A router is always ready, so it needs no `poll_ready` first.
+    let matched = mounted
+        .call(probe)
+        .await
+        .is_ok_and(|answer| answer.status() == StatusCode::NO_CONTENT);
+    if !matched {
+        return Error::NotFound.into_response();
+    }
+    let location = match uri.query() {
+        Some(query) => format!("{trimmed}?{query}"),
+        None => trimmed.to_string(),
+    };
+    match HeaderValue::try_from(location) {
+        Ok(location) => (StatusCode::PERMANENT_REDIRECT, [(LOCATION, location)]).into_response(),
+        Err(_) => Error::NotFound.into_response(),
     }
 }
 
@@ -327,6 +381,79 @@ mod tests {
     async fn a_trailing_slash_route_is_served_at_the_prefix() {
         let router = table().into_router(context());
         assert_eq!(status(router, "GET", "/api/things").await, StatusCode::OK);
+    }
+
+    async fn answer(router: Router, method: &str, path: &str) -> (StatusCode, Option<String>) {
+        let request = Request::builder()
+            .method(method)
+            .uri(path)
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        let location = response
+            .headers()
+            .get(LOCATION)
+            .map(|value| value.to_str().unwrap().to_string());
+        (response.status(), location)
+    }
+
+    #[tokio::test]
+    async fn a_trailing_slash_is_a_308_to_the_mounted_form_keeping_the_query() {
+        let router = table().into_router(context());
+        let redirect = |path: &str| (StatusCode::PERMANENT_REDIRECT, Some(path.to_string()));
+        assert_eq!(
+            answer(router.clone(), "GET", "/api/things/").await,
+            redirect("/api/things")
+        );
+        assert_eq!(
+            answer(router.clone(), "GET", "/api/things/7/?a=b&c").await,
+            redirect("/api/things/7?a=b&c")
+        );
+        assert_eq!(
+            answer(router.clone(), "POST", "/api/things//").await,
+            redirect("/api/things")
+        );
+        let health = AppRoutes::with_default_routes().into_router(context());
+        assert_eq!(
+            answer(health, "GET", "/_health/live/").await,
+            redirect("/_health/live")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_slash_with_nothing_mounted_behind_it_is_a_404_and_never_leaves_the_site() {
+        let router = table().into_router(context());
+        for path in [
+            "/nothing/",
+            "/",
+            "//api/things/",
+            "///",
+            "/api/things/7/extra/",
+        ] {
+            let (status, location) = answer(router.clone(), "GET", path).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{path}");
+            assert_eq!(location, None, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn the_redirect_runs_no_handler_and_passes_through_the_standard_stack() {
+        let ran = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = ran.clone();
+        let routes = AppRoutes::empty().add_route(Routes::new().prefix("/admin").add(
+            "/",
+            get(move || {
+                counted.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                async { "secret" }
+            }),
+        ));
+        let app = routes.into_app(context()).unwrap();
+        let (status, location) = answer(app, "GET", "/admin/").await;
+        assert_eq!(
+            (status, location.as_deref()),
+            (StatusCode::PERMANENT_REDIRECT, Some("/admin"))
+        );
+        assert_eq!(ran.load(std::sync::atomic::Ordering::SeqCst), 0);
     }
 
     #[tokio::test]

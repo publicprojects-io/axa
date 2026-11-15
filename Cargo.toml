@@ -145,6 +145,9 @@ serde_path_to_error = "0.1"
 tempfile = { version = "3", optional = true }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+# Direct only to ask the route table whether a path is mounted, for the trailing-slash
+# redirect. Already in every build, through `axum` and `hyper`.
+tower-service = "0.3"
 tower-http = { version = "0.7", features = ["catch-panic", "compression-full", "cors", "decompression-full", "sensitive-headers", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
