@@ -69,7 +69,7 @@ for four Stage 3 tasks, which passes P-2 for them:
 
 - **T-27**: Deduplicated enqueue by key, `NewJob::unique` (done, unreleased)
 - **T-29**: Cron schedules, `Schedule::cron`, over `croner` (done, unreleased)
-- **T-23**: `axa-mail`, over `lettre`
+- **T-23**: `axa-mail`, over `lettre` (done, unreleased)
 - **T-24**: `axa-storage-with-apache-arrow-and-aws`, over `object_store`
 
 The rest waits under P-2, below.

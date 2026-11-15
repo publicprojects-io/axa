@@ -21,6 +21,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ScheduleInfo::cron` and `Schedule::cron_pattern` give the pattern. Setup adds a `cron`
   column to `axa_schedule`, which `check` requires. The queues depend on `croner` 4,
   with its `chrono` feature only.
+- `axa-mail` 0.1.0, and the `mail` feature as `axa::mail` (T-23, MAIL-1 to MAIL-5):
+  `Mailer::from_url` sends over `smtps://`, `smtp://` with `tls=required`, a `file://`
+  directory, or `memory:`, and with `production` refuses SMTP without TLS and the file
+  and memory transports. `Mailer::memory` gives a test the `Outbox` it keeps messages
+  in. It does not queue mail. It depends on `lettre` 0.11, with rustls on ring and the
+  web's root certificates, and no native TLS.
 
 ### Changed
 

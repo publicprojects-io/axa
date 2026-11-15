@@ -952,6 +952,21 @@ the connection for it.
 | OUT-5 | Every redirect is checked as the first URL is, one from `https` to `http` is refused, and past `max_redirects`, 5 by default, it is `Refused::TooManyRedirects`. With 0 it follows none, and a redirect to a scheme other than `http` and `https` is not followed. | `every_redirect_is_checked`, `a_redirect_is_checked_and_never_downgrades_or_runs_on` |
 | OUT-6 | `bytes_limited` refuses a body past its limit as the bytes arrive, whether or not it has a `content-length`. | `a_body_is_refused_past_its_limit_with_or_without_a_length` |
 
+### 4.24 Mail
+
+`axa-mail`, the `mail` feature, sends mail over `lettre`, through a transport a URL
+names. It does not queue mail: `send` waits for the server, and a failure is the
+caller's, so a service sends from a job. Nothing in it logs a message or an address.
+Its tests are in `cargo test`, the SMTP one against a small server on a local port.
+
+| Id | Requirement | Test |
+|---|---|---|
+| MAIL-1 | `Mailer::from_url` reads `smtps://`, `smtp://` with `tls=required`, `smtp://` with `tls=opportunistic` or none, `file://`, and `memory:`. Anything else is `Error::Url`. | `a_url_names_its_kind_of_transport` |
+| MAIL-2 | With `production`, SMTP in the clear or with `tls=opportunistic`, and the file and memory transports, are `Error::Refused`. Neither an error nor a mailer's `Debug` text quotes the URL, which may hold a password. | `production_refuses_mail_without_tls_or_that_reaches_no_one` |
+| MAIL-3 | `Mailer::memory` gives a mailer and the `Outbox` it keeps each message in, with the envelope's sender and recipients, the subject, and the whole message. Clones of the mailer share it, and `take` empties it. | `the_memory_transport_keeps_each_message_for_a_test` |
+| MAIL-4 | The file transport writes one `.eml` file per message into its directory. | `the_file_transport_writes_one_file_per_message` |
+| MAIL-5 | The SMTP transport sends the envelope and the message to the server. | `the_smtp_transport_sends_to_the_server` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:

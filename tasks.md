@@ -118,6 +118,9 @@ T-29 is done, unreleased, in all three job queues and `axa::queue`, as `Schedule
 `Queue::cron` (WRK-35 to WRK-39). Times are in UTC: a time zone with daylight saving
 would need `chrono-tz`, which is not added.
 
+T-23 is done, unreleased, as `axa-mail` and the `mail` feature (MAIL-1 to MAIL-5). The
+memory transport's `Outbox` is what `axa-test` would capture mail with, in T-41.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

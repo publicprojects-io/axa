@@ -60,6 +60,7 @@
 //! | `outbox-encryption` | `outbox`, with payloads sealed at rest under the service's keys |
 //! | `cursor-pagination` | Signed cursor pages with no total, and `LIKE` escaping, as `axa::cursor_pagination` |
 //! | `http-client` | An outbound HTTP client that refuses private, loopback, and metadata addresses, as `axa::http_client` |
+//! | `mail` | Mail over SMTP, file, or memory transports, production refusing SMTP without TLS, as `axa::mail` |
 //! | `upload` | Bounded multipart uploads, files in temporary files, as `axa::upload` |
 //! | `webhooks` | Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, as `axa::webhooks` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
@@ -135,6 +136,8 @@ pub use axa_http_client as http_client;
 pub use axa_idempotency_key as idempotency;
 #[cfg(feature = "keycloak")]
 pub use axa_keycloak_auth as keycloak;
+#[cfg(feature = "mail")]
+pub use axa_mail as mail;
 #[cfg(feature = "maud")]
 pub use axa_maud_templates as maud;
 #[cfg(feature = "mysql-diesel")]

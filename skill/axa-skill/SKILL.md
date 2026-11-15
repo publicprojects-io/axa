@@ -78,6 +78,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Multipart uploads with limits, files in temporary files | `upload` |
 | Signing or verifying Standard Webhooks | `webhooks` |
 | Fetching a URL someone else chose, never a private address | `http-client` |
+| Sending mail over SMTP with TLS, or to a file or memory in development and tests | `mail` |
 
 `features` lists one name per subcrate, and each subcrate is also usable alone.
 `Environment` lives in `axa-environment`, which has no dependencies, so a migration

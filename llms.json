@@ -120,6 +120,10 @@
       "crate": "axa-cursor-pagination"
     },
     {
+      "name": "mail",
+      "crate": "axa-mail"
+    },
+    {
       "name": "webhooks",
       "crate": "axa-webhooks"
     },
@@ -378,6 +382,13 @@
       "description": "An outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect.",
       "feature": "http-client",
       "readme": "crates/axa-http-client/README.md"
+    },
+    {
+      "name": "axa-mail",
+      "version": "0.1.0",
+      "description": "Mail for Axum services over lettre: SMTP, file, and memory transports, with production refusing SMTP without TLS.",
+      "feature": "mail",
+      "readme": "crates/axa-mail/README.md"
     },
     {
       "name": "axa-webhooks",
