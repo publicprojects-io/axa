@@ -113,6 +113,7 @@ pub mod logger;
 pub mod middleware;
 #[cfg(feature = "model")]
 pub mod model;
+pub mod operator;
 pub mod prelude;
 #[cfg(feature = "queue")]
 pub mod queue;

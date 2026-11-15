@@ -247,6 +247,10 @@
       "purpose": "Bounded multipart uploads, files spooled to temporary files (feature `upload`)"
     },
     {
+      "name": "operator",
+      "purpose": "A guard for operator routes, with a static bearer token or Basic credential compared in constant time"
+    },
+    {
       "name": "extract",
       "purpose": "Extractors that reject with a problem saying what was wrong, and Patch<T> for a field left out, null, or set"
     },

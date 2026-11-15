@@ -511,6 +511,10 @@ With `axa-keycloak-auth`:
 - Until discovery succeeds every token is refused, and the service still boots. Use
   `KeycloakVerifier::ready` for `/_health/ready`.
 
+For an admin page or tool rather than a user, guard the router with
+`axa::operator::protect(router, &Operator::bearer(token)?)`, the token from a secret
+store, at least 32 bytes. It compares in constant time and answers `401` otherwise.
+
 With `axa-paseto-auth` 0.3 and later, `parse_bool` returns `Option<bool>`. `None` is a word it does not
 know, so refuse to start on it, because a typo read as off could turn enforcement off.
 

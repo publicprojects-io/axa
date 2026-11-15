@@ -713,6 +713,14 @@ a `file://` directory, or `memory:`, and production refuses memory and S3 over p
 leading `/`, and `\`. `presigned_get` and `presigned_put` let a browser reach one S3
 object, for a time.
 
+### Operator routes
+
+`axa::operator::protect(router, &operator)` answers the routes of an admin or tooling
+router only for one of the `Operator`'s credentials, `Operator::bearer(token)` or
+`Operator::basic(user, password)`, compared in constant time. Anything else is a `401`
+with `WWW-Authenticate`. A token under 32 bytes, or a password under 16, is refused at
+boot, and `Operator::or` holds a second while one is rotated.
+
 ## Requirements
 
 - Rust 1.97 or newer, on edition 2024

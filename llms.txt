@@ -97,6 +97,7 @@
 - [context](src/context.rs): `AppContext`, plain Axum state
 - [db](src/db.rs): Database helpers for the context
 - [error](src/error.rs): The error type and its HTTP mapping
+- [operator](src/operator.rs): A guard for operator routes, with a static bearer token or Basic credential compared in constant time
 - [extract](src/extract.rs): Extractors that reject with a problem saying what was wrong, and `Patch<T>` for a field left out, `null`, or set
 - [upload](src/upload.rs) (feature `upload`): Bounded multipart uploads, files spooled to temporary files
 - [format](src/format.rs): Response helpers, and downloads with a safe `content-disposition`

@@ -986,6 +986,17 @@ network. S3's own reads and writes are `object_store`'s, and are not tested here
 | STO-5 | On S3, `presigned_get` and `presigned_put` sign an `https` URL for one object, under the store's prefix, that expires after the time given and holds no secret. The local and memory stores answer `Error::NotSupported`. | `s3_signs_a_url_for_one_object_for_a_time`, `the_memory_store_reads_and_writes` |
 | STO-6 | S3 is reached over rustls with ring alone, as the other crates build it, never with `aws-lc-rs` as well, which leaves rustls no provider of its own. `from_url` installs ring's process-wide provider when none is installed, and `install_ring_provider` does for a store a service builds itself, so a failed TLS connection is an error and never a panic. | `s3_over_tls_with_no_server_is_an_error_and_not_a_panic` |
 
+### 4.26 Operator routes
+
+`axa::operator`, always included, guards routes for operators and tools, such as an
+admin page, with one static credential rather than a signed-in user.
+
+| Id | Requirement | Test |
+|---|---|---|
+| OPR-1 | `protect` answers a route of its router only for an `authorization` header carrying one of the `Operator`'s credentials, its scheme in any case. Anything else is a `401` problem, code `unauthorized`, quoting nothing sent, with a `WWW-Authenticate` header for each scheme accepted. Routes outside the router are untouched, and a path under it that matches no route is the app's `404`. | `only_the_token_passes_and_the_rest_of_the_app_is_open`, `a_path_matching_no_operator_route_is_the_apps_404`, `basic_credentials_pass_and_both_schemes_are_offered` |
+| OPR-2 | A credential is compared against each one held, each in time that depends only on the held one's length. | `a_comparison_of_a_different_length_is_unequal` |
+| OPR-3 | `Operator::bearer` refuses a token under 32 bytes, over 1024, or with a byte that is not visible ASCII, and `Operator::basic` an empty user, one with a `:`, a password under 16 bytes, or a control character. `Debug` shows how many of each scheme it holds, never a credential. | `a_weak_credential_is_refused_at_boot`, `debug_output_hides_the_credentials`, `base64_matches_the_standard_alphabet_and_padding` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:

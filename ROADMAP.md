@@ -77,6 +77,7 @@ dependency:
 
 - **T-35**: Tri-state `Patch<T>` (done, unreleased)
 - **T-34**: Session deadline from sign-in (done, unreleased)
+- **T-32**: Static token or Basic credential guard for operator routes (done, unreleased)
 
 ---
 
@@ -91,7 +92,6 @@ Each item waits until two services request it, or one has a compelling safety ca
 - **T-28**: Retry jitter and job-chosen delays
 - **T-30**: Background migrations for SQL that cannot run in transactions
 - **T-31**: Internal listener for health and metrics
-- **T-32**: Static token/Basic credential guard for operator routes
 - **T-33**: Opaque API tokens with scopes and expiry
 - **T-36**: Form context for Tera pages
 - **T-37**: `health` command for images without `curl`

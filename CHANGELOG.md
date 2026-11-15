@@ -13,6 +13,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `SessionOptions::sign_in_lifetime` in `axa-web-session` (T-34, SES-11): `layer`
   ends a session that long after `sign_in`, a week by default, however busy it has
   been, as each request extends a session's idle lifetime.
+- `axa::operator` (T-32, OPR-1 to OPR-3): `protect(router, &operator)` refuses each route
+  of a router without one of the `Operator`'s bearer tokens or Basic credentials, with a
+  `401` and `WWW-Authenticate`, comparing in constant time. `Operator::or` holds more
+  than one while one is rotated.
 
 ### Changed
 
