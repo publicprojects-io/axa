@@ -485,6 +485,7 @@ service start [--worker | --all] [--binding ADDR] [--port PORT]
 service db migrate | down [STEPS] | reset | status | truncate
 service task [NAME] [KEY:VALUE ...]
 service check
+service health [--ready] [--port PORT]
 ```
 
 `axa::cli::parse` reads it, and takes the service's name, version, and description
@@ -507,6 +508,12 @@ process stays refused whatever the flag says. `Cli::parse()` refuses them too.
 and other secrets redacted, and exits, non-zero if refused. It connects to nothing,
 and it knows only the settings Axa reads. `Config::apply_cli` applies the `start`
 overrides.
+
+`health` asks the server running on this machine for `/_health/live`, or
+`/_health/ready` with `--ready`, and exits non-zero unless it answers `2xx` within 5
+seconds, so an image with no `curl` can still have a container health check:
+`HEALTHCHECK CMD ["/service", "health"]`. A service answers it with
+`axa::cli::health` before it connects to anything.
 
 ### Tasks
 

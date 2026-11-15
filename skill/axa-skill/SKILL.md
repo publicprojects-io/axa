@@ -183,6 +183,10 @@ let cli = axa::cli::parse(
 # }
 ```
 
+Answer `Command::Check` with `axa::cli::check`, and `Command::Health { ready, port }` with
+`axa::cli::health`, before connecting to anything. `service health` is the container's
+health check in an image with no `curl`.
+
 ## Writing handlers
 
 - Return `axa::Result<T>`. A failed database call then answers a generic `500`, and the

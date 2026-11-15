@@ -1009,13 +1009,19 @@ impl Config {
     /// Apply the command line's overrides. Only `start` has any: `--binding`
     /// and `--port`.
     pub fn apply_cli(&mut self, cli: &Cli) {
-        if let Command::Start { binding, port, .. } = &cli.command {
-            if let Some(binding) = binding {
-                self.server.binding.clone_from(binding);
+        match &cli.command {
+            Command::Start { binding, port, .. } => {
+                if let Some(binding) = binding {
+                    self.server.binding.clone_from(binding);
+                }
+                if let Some(port) = port {
+                    self.server.port = *port;
+                }
             }
-            if let Some(port) = port {
-                self.server.port = *port;
-            }
+            Command::Health {
+                port: Some(port), ..
+            } => self.server.port = *port,
+            _ => {}
         }
     }
 

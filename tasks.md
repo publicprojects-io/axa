@@ -138,6 +138,8 @@ which `layer` now takes the options for (SES-11).
 T-32 is done, unreleased, as `axa::operator`, in `axa` rather than the auth crates, as it
 needs neither (OPR-1 to OPR-3).
 
+T-37 is done, unreleased, as `service health` and `cli::health` (CLI-13).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

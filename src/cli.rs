@@ -8,9 +8,19 @@
 //! service db migrate | down [STEPS] | reset | status | truncate
 //! service task [NAME] [KEY:VALUE ...]
 //! service check
+//! service health [--ready] [--port PORT]
 //! ```
 
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+    time::Duration,
+};
+
 use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, error::ErrorKind};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
+};
 
 use crate::{
     Environment, Error, Result,
@@ -73,6 +83,16 @@ pub enum Command {
     /// Validate the configuration, print the effective settings with secrets
     /// redacted, and exit. Touches no database or other dependency.
     Check,
+    /// Ask the running server on this machine whether it is live, or with
+    /// `--ready` ready, for an image with no `curl`. Exits non-zero if not.
+    Health {
+        /// Ask `/_health/ready` rather than `/_health/live`.
+        #[arg(short, long)]
+        ready: bool,
+        /// Override the port to ask on.
+        #[arg(short, long)]
+        port: Option<u16>,
+    },
 }
 
 /// A database action.
@@ -227,6 +247,83 @@ pub fn check(environment: &Environment, defaults: &Defaults) -> Result<()> {
     Ok(())
 }
 
+/// How long `health` waits for the server, from connecting to its answer.
+pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The `health` command: ask the server on this machine, at the configured binding
+/// and port, for [`crate::health::LIVE`], or [`crate::health::READY`] with `ready`.
+/// A binding to every address, such as `0.0.0.0`, is asked on loopback.
+///
+/// # Errors
+///
+/// Fails when the configuration is refused, the server cannot be reached in
+/// [`HEALTH_TIMEOUT`], or it answers other than `2xx`, so `main` exits non-zero.
+pub async fn health(
+    environment: &Environment,
+    defaults: &Defaults,
+    ready: bool,
+    port: Option<u16>,
+) -> Result<()> {
+    let config = Config::from_lookup(environment, defaults, |name| std::env::var(name).ok())?;
+    let port = port.unwrap_or(config.server.port);
+    let path = if ready {
+        crate::health::READY
+    } else {
+        crate::health::LIVE
+    };
+    probe(&config.server.binding, port, path, HEALTH_TIMEOUT).await?;
+    println!("{path}: ok");
+    Ok(())
+}
+
+/// Ask `GET path` of the server at `binding` and `port`, and succeed on a `2xx`. A
+/// binding to every address is asked on loopback.
+///
+/// # Errors
+///
+/// Fails when the server cannot be reached within `timeout`, or answers other than
+/// `2xx`.
+pub async fn probe(binding: &str, port: u16, path: &str, timeout: Duration) -> Result<()> {
+    let host = match binding.parse::<IpAddr>() {
+        Ok(IpAddr::V4(ip)) if ip.is_unspecified() => IpAddr::V4(Ipv4Addr::LOCALHOST).to_string(),
+        Ok(IpAddr::V6(ip)) if ip.is_unspecified() => IpAddr::V6(Ipv6Addr::LOCALHOST).to_string(),
+        _ => binding.to_string(),
+    };
+    let ask = async {
+        let mut stream = TcpStream::connect((host.as_str(), port)).await?;
+        let request =
+            format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+        stream.write_all(request.as_bytes()).await?;
+        let mut head = [0_u8; 64];
+        let mut read = 0;
+        while read < 12 {
+            let more = stream.read(&mut head[read..]).await?;
+            if more == 0 {
+                break;
+            }
+            read += more;
+        }
+        Ok::<_, std::io::Error>(head[..read].to_vec())
+    };
+    let head = tokio::time::timeout(timeout, ask)
+        .await
+        .map_err(|_| Error::string(&format!("{path}: no answer from port {port} in time")))?
+        .map_err(|error| Error::string(&format!("{path}: port {port}: {error}")))?;
+    let status = std::str::from_utf8(&head)
+        .ok()
+        .and_then(|text| {
+            text.strip_prefix("HTTP/1.1 ")
+                .or_else(|| text.strip_prefix("HTTP/1.0 "))
+        })
+        .and_then(|rest| rest.get(..3))
+        .and_then(|code| code.parse::<u16>().ok());
+    match status {
+        Some(code) if (200..300).contains(&code) => Ok(()),
+        Some(code) => Err(Error::string(&format!("{path}: answered {code}"))),
+        None => Err(Error::string(&format!("{path}: not an HTTP answer"))),
+    }
+}
+
 /// The text the `check` command prints, reading settings through `lookup`.
 /// Each line is one setting. Anything secret-shaped is replaced by
 /// [`crate::config::REDACTED`].
@@ -340,6 +437,88 @@ mod tests {
     fn the_environment_flag_works_after_the_subcommand() {
         let cli = parse(&["svc", "start", "--environment", "production"]);
         assert_eq!(cli.environment.as_deref(), Some("production"));
+    }
+
+    #[test]
+    fn health_takes_ready_and_a_port() {
+        let Command::Health { ready, port } = parse(&["svc", "health"]).command else {
+            panic!("expected health");
+        };
+        assert!(!ready);
+        assert_eq!(port, None);
+        let Command::Health { ready, port } =
+            parse(&["svc", "health", "--ready", "--port", "9000"]).command
+        else {
+            panic!("expected health");
+        };
+        assert!(ready);
+        assert_eq!(port, Some(9000));
+    }
+
+    /// A server on a local port that answers each connection with `answer`.
+    async fn answering(answer: &'static str) -> (u16, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut asked = vec![0_u8; 1024];
+            let read = stream.read(&mut asked).await.unwrap();
+            stream.write_all(answer.as_bytes()).await.unwrap();
+            String::from_utf8_lossy(&asked[..read]).to_string()
+        });
+        (port, server)
+    }
+
+    #[tokio::test]
+    async fn health_passes_on_a_2xx_and_asks_the_path() {
+        let (port, server) = answering("HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n").await;
+        probe("0.0.0.0", port, crate::health::READY, HEALTH_TIMEOUT)
+            .await
+            .unwrap();
+        let asked = server.await.unwrap();
+        assert!(
+            asked.starts_with("GET /_health/ready HTTP/1.1\r\n"),
+            "{asked}"
+        );
+    }
+
+    #[tokio::test]
+    async fn health_fails_on_any_other_answer_or_none() {
+        let (port, _server) = answering("HTTP/1.1 503 Service Unavailable\r\n\r\n").await;
+        let error = probe("127.0.0.1", port, crate::health::READY, HEALTH_TIMEOUT)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("answered 503"), "{error}");
+        let (port, _server) = answering("garbage").await;
+        assert!(
+            probe("127.0.0.1", port, crate::health::LIVE, HEALTH_TIMEOUT)
+                .await
+                .is_err()
+        );
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = closed.local_addr().unwrap().port();
+        drop(closed);
+        assert!(
+            probe("127.0.0.1", port, crate::health::LIVE, HEALTH_TIMEOUT)
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn health_gives_up_on_a_server_that_does_not_answer() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let error = probe(
+            "127.0.0.1",
+            port,
+            crate::health::LIVE,
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("in time"), "{error}");
+        drop(listener);
     }
 
     #[test]

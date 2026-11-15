@@ -193,6 +193,9 @@ impl App {
         if matches!(cli.command, Command::Check) {
             return axa::cli::check(&environment, &defaults());
         }
+        if let Command::Health { ready, port } = cli.command {
+            return axa::cli::health(&environment, &defaults(), ready, port).await;
+        }
         let mut config = ServiceConfig::from_env(&environment, &defaults())?;
         config.apply_cli(&cli);
         let ctx = Self::context(environment, config).await?;
@@ -217,7 +220,7 @@ impl App {
                 };
                 tasks.run(&name, &ctx, &parse_vars(&params)?).await
             }
-            Command::Check => Ok(()), // Answered above.
+            Command::Check | Command::Health { .. } => Ok(()), // Answered above.
         }
     }
 }

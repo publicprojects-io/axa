@@ -17,9 +17,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   of a router without one of the `Operator`'s bearer tokens or Basic credentials, with a
   `401` and `WWW-Authenticate`, comparing in constant time. `Operator::or` holds more
   than one while one is rotated.
+- `service health [--ready] [--port PORT]`, as `Command::Health` and `cli::health`
+  (T-37, CLI-13): asks the server on this machine for `/_health/live` or
+  `/_health/ready` and exits non-zero unless it answers `2xx` in 5 seconds, for an image
+  with no `curl`.
 
 ### Changed
 
+- `cli::Command` has a `Health` variant, so a `match` on it adds an arm, answering it
+  with `axa::cli::health` before connecting to anything.
 - `axa_web_session::layer` takes the `SessionOptions` too, `layer(store, &options)`, for
   the sign-in lifetime, and answers a `Stack` of `SignInDeadline` and `SessionLayer`. A
   session signed in before the upgrade has no time of sign-in, so it runs on to its
