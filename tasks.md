@@ -127,6 +127,11 @@ feature (STO-1 to STO-6). It uses `object_store`'s `aws-base` and `ring` rather 
 beside the 0.12 `axa-http-client` uses. S3's own reads and writes are not tested here, as
 no S3-compatible image could be pulled.
 
+On 2026-11-15 the maintainer asked for the rest of the backlog to go ahead, in place of
+P-2, for each task that needs no new dependency.
+
+T-35 is done, unreleased, as `axa::extract::Patch<T>` (ERR-16).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

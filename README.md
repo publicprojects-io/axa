@@ -339,6 +339,10 @@ the text, so a handler that has something to say returns an `Error`.
 A JSON body that parses but holds a value of the wrong type is a `422` whose `errors`
 says where, never what: `[{"pointer": "#/items/1/count"}]`.
 
+`extract::Patch<T>` is a field of a `PATCH` body, marked `#[serde(default)]`, that tells
+a field left out from one set to `null`: `Missing`, `Null`, or `Value`. `apply` changes
+an `Option` to match.
+
 ### Configuration
 
 There are no config files. A service states its defaults in code, and the

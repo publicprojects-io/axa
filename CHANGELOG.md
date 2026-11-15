@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `axa::extract::Patch<T>` (T-35, ERR-16): a field of a `PATCH` body that tells a field
+  left out (`Missing`) from one set to `null` (`Null`) and from one set (`Value`), with
+  `apply` to change an `Option` to match.
+
 ## [0.15.0] - 2026-11-15
 
 This covers `axa` 0.15.0, `axa-test` 0.6.0, `axa-postgres-job-queue` 0.4.0,

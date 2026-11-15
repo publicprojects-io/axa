@@ -299,6 +299,9 @@ a `down` does not protect `db reset`.
 - Use `axa::extract::{Json, Path, Query}` in handlers where a caller should be told what
   was wrong. Axum's, which the prelude still exports, reject with a problem with no
   `detail`.
+- Give a `PATCH` body `axa::extract::Patch<T>` fields marked `#[serde(default)]`, so a
+  field left out (`Missing`) is not taken for one set to `null` (`Null`), and change the
+  stored value with `apply`.
 - A violated unique or foreign key constraint answers `409`, so a handler need not map
   it unless it means something else.
 - `PageParams::resolve` works with `?`. `Page::bounds` gives `LIMIT` and `OFFSET`, and

@@ -248,7 +248,7 @@
     },
     {
       "name": "extract",
-      "purpose": "Extractors that reject with a problem saying what was wrong"
+      "purpose": "Extractors that reject with a problem saying what was wrong, and Patch<T> for a field left out, null, or set"
     },
     {
       "name": "format",

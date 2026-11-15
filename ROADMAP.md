@@ -71,8 +71,11 @@ This document outlines the planned development path for axa. See
 
 ## Next
 
-Stages 1 and 2 are done, and T-23, T-24, T-27, and T-29 of Stage 3. The rest waits
-under P-2, below.
+Stages 1 and 2 are done, and T-23, T-24, T-27, and T-29 of Stage 3. On 2026-11-15 the
+maintainer asked for the rest of the backlog to go ahead, for each task that needs no new
+dependency:
+
+- **T-35**: Tri-state `Patch<T>` (done, unreleased)
 
 ---
 
@@ -90,7 +93,6 @@ Each item waits until two services request it, or one has a compelling safety ca
 - **T-32**: Static token/Basic credential guard for operator routes
 - **T-33**: Opaque API tokens with scopes and expiry
 - **T-34**: Session deadline from sign-in
-- **T-35**: Tri-state `Patch<T>`
 - **T-36**: Form context for Tera pages
 - **T-37**: `health` command for images without `curl`
 - **T-38**: Tokio runtime and task metrics

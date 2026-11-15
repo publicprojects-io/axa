@@ -21,12 +21,34 @@
 //!
 //! The prelude keeps Axum's, because changing a name it exports would change what
 //! existing handlers mean. A service opts in by importing these.
+//!
+//! [`Patch`] is a field of a `PATCH` body that tells a field left out from one set to
+//! `null`, which `Option` cannot:
+//!
+//! ```
+//! use axa::extract::Patch;
+//! use serde::Deserialize;
+//!
+//! #[derive(Deserialize)]
+//! struct Change {
+//!     #[serde(default)]
+//!     nickname: Patch<String>,
+//! }
+//!
+//! let change: Change = serde_json::from_str(r#"{"nickname": null}"#).unwrap();
+//! let mut nickname = Some("Ada".to_string());
+//! change.nickname.apply(&mut nickname);
+//! assert_eq!(nickname, None);
+//!
+//! let change: Change = serde_json::from_str("{}").unwrap();
+//! assert!(change.nickname.is_missing());
+//! ```
 
 use axum::{
     extract::{FromRequest, FromRequestParts},
     response::{IntoResponse, Response},
 };
-use serde::Serialize;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::Error;
 
@@ -50,6 +72,83 @@ pub struct Path<T>(pub T);
 #[derive(Debug, Clone, Copy, Default, FromRequestParts)]
 #[from_request(via(axum::extract::Query), rejection(Error))]
 pub struct Query<T>(pub T);
+
+/// A field of a `PATCH` body: left out, set to `null`, or set to a value.
+///
+/// Mark the field `#[serde(default)]`, so a body without it is [`Patch::Missing`]
+/// rather than a `422` for a missing field. When writing one out, mark it
+/// `#[serde(skip_serializing_if = "Patch::is_missing")]`, as a missing field has no
+/// value to write: on its own it is written as `null`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum Patch<T> {
+    /// The field was left out, so the value is unchanged.
+    #[default]
+    Missing,
+    /// The field was `null`, so the value is cleared.
+    Null,
+    /// The field was set to this value.
+    Value(T),
+}
+
+impl<T> Patch<T> {
+    /// Whether the field was left out.
+    #[must_use]
+    pub const fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+
+    /// Whether the field was `null`.
+    #[must_use]
+    pub const fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
+
+    /// The value the field was set to, if any.
+    #[must_use]
+    pub const fn value(&self) -> Option<&T> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::Missing | Self::Null => None,
+        }
+    }
+
+    /// `None` when the field was left out, `Some(None)` when it was `null`, and
+    /// `Some(Some(value))` when it was set.
+    #[must_use]
+    pub fn into_option(self) -> Option<Option<T>> {
+        match self {
+            Self::Missing => None,
+            Self::Null => Some(None),
+            Self::Value(value) => Some(Some(value)),
+        }
+    }
+
+    /// Change `target` as the field says: left alone when it was left out, cleared
+    /// when it was `null`, and replaced when it was set.
+    pub fn apply(self, target: &mut Option<T>) {
+        if let Some(value) = self.into_option() {
+            *target = value;
+        }
+    }
+}
+
+impl<T> From<Option<T>> for Patch<T> {
+    fn from(value: Option<T>) -> Self {
+        value.map_or(Self::Null, Self::Value)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for Patch<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Option::<T>::deserialize(deserializer).map(Self::from)
+    }
+}
+
+impl<T: Serialize> Serialize for Patch<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.value().serialize(serializer)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -159,5 +258,75 @@ mod tests {
             let code = code.to_ascii_lowercase().replace(' ', "_");
             assert!(body.contains(&format!("\"code\":\"{code}\"")), "{body}");
         }
+    }
+
+    #[derive(Deserialize, Serialize)]
+    struct Change {
+        #[serde(default, skip_serializing_if = "Patch::is_missing")]
+        nickname: Patch<String>,
+        #[serde(default)]
+        size: Patch<u8>,
+    }
+
+    #[test]
+    fn a_patch_tells_a_missing_field_from_null_and_from_a_value() {
+        let change: Change = serde_json::from_str("{}").unwrap();
+        assert_eq!(change.nickname, Patch::Missing);
+        assert!(change.nickname.is_missing());
+        let change: Change = serde_json::from_str(r#"{"nickname":null}"#).unwrap();
+        assert_eq!(change.nickname, Patch::Null);
+        assert!(change.nickname.is_null());
+        let change: Change = serde_json::from_str(r#"{"nickname":"Ada","size":3}"#).unwrap();
+        assert_eq!(change.nickname.value().map(String::as_str), Some("Ada"));
+        assert_eq!(change.size, Patch::Value(3));
+        assert_eq!(change.size.into_option(), Some(Some(3)));
+    }
+
+    #[test]
+    fn applying_a_patch_keeps_clears_or_replaces() {
+        let mut target = Some(1_u8);
+        Patch::Missing.apply(&mut target);
+        assert_eq!(target, Some(1));
+        Patch::Value(2).apply(&mut target);
+        assert_eq!(target, Some(2));
+        Patch::Null.apply(&mut target);
+        assert_eq!(target, None);
+    }
+
+    #[test]
+    fn a_missing_patch_is_not_written_and_null_is() {
+        let change = Change {
+            nickname: Patch::Missing,
+            size: Patch::Null,
+        };
+        assert_eq!(serde_json::to_string(&change).unwrap(), r#"{"size":null}"#);
+        let change = Change {
+            nickname: Patch::Value("Ada".into()),
+            size: Patch::Value(3),
+        };
+        assert_eq!(
+            serde_json::to_string(&change).unwrap(),
+            r#"{"nickname":"Ada","size":3}"#
+        );
+    }
+
+    #[tokio::test]
+    async fn a_patch_of_the_wrong_type_is_a_422_that_quotes_nothing() {
+        let app = Router::new().route(
+            "/me",
+            axum::routing::patch(|Json(change): Json<Change>| async move {
+                format!("{:?}", change.size)
+            }),
+        );
+        let request = Request::patch("/me")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(r#"{"size":"secret"}"#))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8(bytes.to_vec()).unwrap();
+        assert!(!body.contains("secret"), "{body}");
+        assert!(body.contains("#/size"), "{body}");
     }
 }
