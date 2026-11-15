@@ -3,12 +3,18 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.14.0] - 2026-11-15
 
-This covers `axa`, `axa-webhooks` 0.1.1, and the unreleased changes to
-`axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`,
-`axa-cursor-pagination`, the three job queues, `axa-transactional-outbox`, the four
-MySQL crates, and the SeaORM, Diesel, and Toasty Postgres crates.
+This covers `axa` 0.14.0, `axa-test` 0.5.0, `axa-webhooks` 0.1.1,
+`axa-paseto-auth` 0.7.1, `axa-keycloak-auth` 0.5.1, `axa-cursor-pagination` 0.1.2,
+`axa-postgres-seaorm` 0.4.1, `axa-postgres-diesel` 0.3.1, `axa-postgres-toasty` 0.2.1,
+`axa-postgres-job-queue` 0.3.0, `axa-mysql-job-queue` 0.2.0,
+`axa-transactional-outbox` 0.4.0, and `axa-mysql-sqlx`, `axa-mysql-seaorm`,
+`axa-mysql-diesel`, and `axa-mysql-toasty` 0.2.0. `axa-request-rate-limit` changed only
+in its tests and docs, so it is not republished. `axa-sqlite-job-queue` has the tenant
+column too, but stays unpublished with the other SQLite crates, and as in 0.13 the
+`sqlite-*` features are left out of the published `axa`. To upgrade, read
+[Upgrading to Axa 0.14](help/upgrading-to-0.14/index.md).
 
 ### Changed
 

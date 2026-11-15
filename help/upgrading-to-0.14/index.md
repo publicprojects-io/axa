@@ -1,6 +1,6 @@
 # Upgrading to Axa 0.14
 
-This covers a service on 0.13, and is written as 0.14 is built. Most services upgrade by
+This covers a service on 0.13. Most services upgrade by
 changing the version. A service that builds a configuration struct field by field adds
 the new fields.
 

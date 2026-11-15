@@ -113,29 +113,29 @@ character after the prefix keeps them apart whatever a key holds, and a tenant i
 no `:`, so no tenant's key is another's. A cache with no prefix is refused a tenant, as
 the separation would not hold.
 
-**TN-7, a limit per tenant.** Done, unreleased, as T-49: RAT-16, with
+**TN-7, a limit per tenant.** Done in 0.14.0, as T-49: RAT-16, with
 `Tenant::from_extensions` in both auth crates (PST-16, KCK-16) for the key, and
 `examples/multi-tenant` limiting each tenant's reads and writes apart. The layer sits
 inside the guard, where the tenant is known. Each replica counts for itself.
 
-**TN-9, the tenant in logs.** Done, unreleased, as T-51: MID-30, PST-17, and KCK-17.
+**TN-9, the tenant in logs.** Done in 0.14.0, as T-51: MID-30, PST-17, and KCK-17.
 `HTTP_LOG_TENANT` gives the request span an empty `tenant` field, made before the guard
 runs, and the guard records the tenant it verified into it. A tenant is never a metrics
 label.
 
-**TN-11, a suspended tenant.** Done, unreleased, as T-53: PST-18 and KCK-18.
+**TN-11, a suspended tenant.** Done in 0.14.0, as T-53: PST-18 and KCK-18.
 `refuse_suspended` takes a `SuspendedCheck`, a function the service passes in, as
 suspension belongs to the issuer. It runs on every request, so it answers from memory.
 
-**TN-8, a cursor bound to the tenant.** Done, unreleased, as T-50: PAG-15,
+**TN-8, a cursor bound to the tenant.** Done in 0.14.0, as T-50: PAG-15,
 `CursorPage::new_in`. The context goes into the hash the cursor is signed over, after a
 byte no query part can hold and its length, so no context reads as another.
 
-**TN-10, the outbox.** Done, unreleased, as T-52: OBX-40 and OBX-41. A `tenant` column on
+**TN-10, the outbox.** Done in 0.14.0, as T-52: OBX-40 and OBX-41. A `tenant` column on
 the events and on what is owed, a line per tenant, topic, and key, and a second
 fingerprint that covers the tenant and is the first, byte for byte, without one.
 
-**TN-5, jobs.** Done, unreleased, as T-48: WRK-29, WRK-30, JOB-5, and MYQ-6, in all three
+**TN-5, jobs.** Done in 0.14.0, as T-48: WRK-29, WRK-30, JOB-5, and MYQ-6, in all three
 job queues. `BackgroundWorker::perform_later_for(ctx, tenant, args)`, a nullable `tenant`
 column checked as a tenant id, and the tenant handed to the worker's `perform_for`
 beside the arguments, so that the worker opens its own tenant transaction. It is

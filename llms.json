@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -297,14 +297,14 @@
   "crates": [
     {
       "name": "axa-postgres-diesel",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "Diesel on PostgreSQL: pooling, migrations, and test resets for Axum services, in pure Rust.",
       "feature": "postgres-diesel",
       "readme": "crates/axa-postgres-diesel/README.md"
     },
     {
       "name": "axa-postgres-toasty",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "Toasty on PostgreSQL: connections, migrations, and test resets for Axum services.",
       "feature": "postgres-toasty",
       "readme": "crates/axa-postgres-toasty/README.md"
@@ -318,7 +318,7 @@
     },
     {
       "name": "axa-keycloak-auth",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
       "readme": "crates/axa-keycloak-auth/README.md"
@@ -339,21 +339,21 @@
     },
     {
       "name": "axa-transactional-outbox",
-      "version": "0.3.0",
+      "version": "0.4.0",
       "description": "A transactional outbox and relay on Postgres for Axum services, that keeps a record of what it delivered and refused.",
       "feature": "outbox",
       "readme": "crates/axa-transactional-outbox/README.md"
     },
     {
       "name": "axa-postgres-job-queue",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
       "name": "axa-mysql-job-queue",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-mysql-job-queue/README.md"
@@ -367,7 +367,7 @@
     },
     {
       "name": "axa-cursor-pagination",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services.",
       "feature": "cursor-pagination",
       "readme": "crates/axa-cursor-pagination/README.md"
@@ -388,7 +388,7 @@
     },
     {
       "name": "axa-paseto-auth",
-      "version": "0.7.0",
+      "version": "0.7.1",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto-auth/README.md"
@@ -416,7 +416,7 @@
     },
     {
       "name": "axa-postgres-seaorm",
-      "version": "0.4.0",
+      "version": "0.4.1",
       "description": "SeaORM on PostgreSQL: connections, migrations, schema helpers, and test resets for Axum services, with an easy path from Loco.",
       "feature": "postgres-seaorm",
       "readme": "crates/axa-postgres-seaorm/README.md"
@@ -437,7 +437,7 @@
     },
     {
       "name": "axa-test",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "description": "Request-level test helpers for Axa services, built on axum-test, with a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
@@ -479,28 +479,28 @@
     },
     {
       "name": "axa-mysql-sqlx",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "MySQL pooling, migrations, and test resets over sqlx for Axum services.",
       "feature": "mysql-sqlx",
       "readme": "crates/axa-mysql-sqlx/README.md"
     },
     {
       "name": "axa-mysql-seaorm",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "SeaORM connections, migrations, schema helpers, and test resets for Axum services on MySQL.",
       "feature": "mysql-seaorm",
       "readme": "crates/axa-mysql-seaorm/README.md"
     },
     {
       "name": "axa-mysql-diesel",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Diesel pooling, migrations, and test resets for Axum services on MySQL, in pure Rust.",
       "feature": "mysql-diesel",
       "readme": "crates/axa-mysql-diesel/README.md"
     },
     {
       "name": "axa-mysql-toasty",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Toasty connections, migrations, and test resets for Axum services, on MySQL.",
       "feature": "mysql-toasty",
       "readme": "crates/axa-mysql-toasty/README.md"

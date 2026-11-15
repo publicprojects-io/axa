@@ -5,11 +5,25 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.13.0
+## Current Version: 0.14.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.14.0
+- `axa::webhooks::Verified` with `AppContext` as the state, taking the `Verifier` from
+  `ctx.shared_store` and failing closed without one (WHK-6, WHK-7), with
+  `axa-webhooks` 0.1.1
+- The rest of multi-tenancy, which three services asked for (T-48 to T-53):
+  - A limit per tenant (T-49)
+  - A tenant on the request span, never a metrics label (T-51)
+  - A suspended tenant refused with `403`, code `tenant_suspended` (T-53)
+  - A cursor bound to the tenant (T-50)
+  - A tenant on a job (T-48)
+  - A tenant on an outbox event (T-52)
+- MySQL session settings: a statement timeout and read-only mode (T-17)
+- Stale plans retired in the SeaORM, Diesel, and Toasty Postgres pools (T-18)
 
 ### Version 0.13.0
 - Stage 2 tasks (capabilities with a safety case):
@@ -17,7 +31,7 @@ This document outlines the planned development path for axa. See
   - Bounded multipart uploads, `axa::upload` (T-14)
   - Safe downloads, `format::download` (T-15)
   - A Postgres database per test in `axa-test` (T-16)
-  - Postgres session settings (T-17), and MySQL's since
+  - Postgres session settings (T-17), and MySQL's in 0.14.0
   - Recovery from stale prepared statements (T-18)
   - Readiness that waits for migrations (T-19)
   - Decoded compressed request bodies (T-20)
@@ -48,18 +62,7 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Next: Version 0.14.0
-
-- `axa::webhooks::Verified` with `AppContext` as the state, taking the `Verifier` from
-  `ctx.shared_store` and failing closed without one (WHK-6, WHK-7), with
-  `axa-webhooks` 0.1.1
-- The rest of multi-tenancy, which three services asked for (T-48 to T-53):
-  - A limit per tenant (T-49), done
-  - A tenant on the request span, never a metrics label (T-51), done
-  - A suspended tenant refused with `403`, code `tenant_suspended` (T-53), done
-  - A cursor bound to the tenant (T-50), done
-  - A tenant on a job (T-48), done
-  - A tenant on an outbox event (T-52), done
+## Next
 
 Stages 1 and 2 are done. The rest waits under P-2, below.
 
@@ -91,6 +94,7 @@ Each item waits until two services request it, or one has a compelling safety ca
 - **T-40**: OpenAPI conformance checks in tests
 - **T-41**: Captured logs and mail in `axa-test`
 - **T-42**: Trailing-slash policy with `308` redirects
+- **T-54**: SQL Server, over `tiberius`, held for a service and its dependencies
 
 ---
 

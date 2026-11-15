@@ -49,7 +49,7 @@ T-44 is done, in 0.13.0, in all four Postgres crates: `begin_with` for sqlx, Sea
 Toasty, and `set_local` inside a Diesel transaction, whose transactions are closures.
 MySQL and SQLite have no row-level security, so their crates have no T-44 or T-45.
 
-T-17 is done, in 0.13.0, for the four Postgres crates, and since 0.13.0 for the four
+T-17 is done, in 0.13.0, for the four Postgres crates, and in 0.14.0 for the four
 MySQL crates too: `max_execution_time`, which stops only a read-only `SELECT`, and
 `transaction_read_only`, in one `SET SESSION` on each connection (MYX-15, MYO-13,
 MYD-12, MYT-10). MySQL has no application name a session can set, and none of its
@@ -79,7 +79,7 @@ T-21 is done, in 0.13.0, as `config::Settings`, with `_FILE` secrets for a servi
 own settings and for `DB_URL`.
 
 T-18 is done, in 0.13.0, as `note_stale_plan` and a `before_acquire` hook in every pool
-`axa_postgres_sqlx::connect` opens, and since 0.13.0 in the other three Postgres crates:
+`axa_postgres_sqlx::connect` opens, and in 0.14.0 in the other three Postgres crates:
 SeaORM's sqlx `before_acquire`, a deadpool `pre_recycle` hook for Diesel, and, as
 Toasty's pool has no such hook, a driver whose connections report themselves invalid
 (SOR-7, DSL-8, TOA-6). `axa::Error` records each (DB-10).
@@ -138,21 +138,21 @@ so each passes P-2 on one consumer with a safety case, and
 for two. On 2026-11-14 three services, `crm`, `ppm`, and `wpm`,
 asked for multi-tenancy, which passes P-2 for the rest.
 
-T-49 is done, unreleased, as RAT-16 and `Tenant::from_extensions` in both auth crates.
+T-49 is done, in 0.14.0, as RAT-16 and `Tenant::from_extensions` in both auth crates.
 
-T-51 is done, unreleased, as `HTTP_LOG_TENANT` (MID-30), with the guards recording the
+T-51 is done, in 0.14.0, as `HTTP_LOG_TENANT` (MID-30), with the guards recording the
 tenant (PST-17, KCK-17).
 
-T-53 is done, unreleased, as `refuse_suspended` and `SuspendedCheck` in both auth crates
+T-53 is done, in 0.14.0, as `refuse_suspended` and `SuspendedCheck` in both auth crates
 (PST-18, KCK-18).
 
-T-50 is done, unreleased, as `CursorPage::new_in` (PAG-15).
+T-50 is done, in 0.14.0, as `CursorPage::new_in` (PAG-15).
 
-T-48 is done, unreleased, in all three job queues and `BackgroundWorker`, as a `tenant`
+T-48 is done, in 0.14.0, in all three job queues and `BackgroundWorker`, as a `tenant`
 column, `NewJob::tenant`, `handle_with_tenant`, `perform_later_for`, and `perform_for`
 (WRK-29, WRK-30, JOB-5, MYQ-6).
 
-T-52 is done, unreleased, as `Event::for_tenant` and `Claimed::tenant` in
+T-52 is done, in 0.14.0, as `Event::for_tenant` and `Claimed::tenant` in
 `axa-transactional-outbox` (OBX-40, OBX-41). With it, T-43 to T-53 are all done.
 
 | Id | Task | Where | Effort | New dependency | Case |
