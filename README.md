@@ -595,7 +595,10 @@ lost with its worker. A job that panics fails, and its loop carries on.
 
 A job gets one attempt by default, because a retry repeats its work. Raise
 `max_attempts` for the queue, or override `BackgroundWorker::max_attempts` for jobs
-written to be repeated, and each retry then waits twice as long as the last. A job
+written to be repeated, and each retry then waits about twice as long as the last,
+spread at random so jobs that failed together do not return together. A job that knows
+when to come back, from a receiver's `Retry-After`, fails with
+`Error::RetryAfter(RetryAfter::new(delay, reason))`, held between a second and an hour. A job
 lost with its worker is queued again if it has attempts left and otherwise fails,
 so a crash cannot loop forever. Finished rows are deleted after `retention_days`.
 

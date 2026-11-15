@@ -775,6 +775,8 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-37 | Across any number of processes ticking at once, each due time of a cron schedule is queued once. | `replicas_ticking_a_cron_schedule_queue_each_due_time_once` |
 | WRK-38 | A schedule whose pattern changed, or that changed from an interval to a pattern, takes its next time from the new pattern. | `a_changed_pattern_takes_its_next_time_from_the_new_one` |
 | WRK-39 | A cron pattern that does not parse, or names no time to come, panics at boot. | `a_bad_cron_pattern_is_refused_at_boot` |
+| WRK-40 | A job retried after a failure waits its doubling backoff, capped at an hour, spread at random over the upper half of it, so the waits of jobs that failed together differ. | `a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose` |
+| WRK-41 | A handler whose error is `RetryAfter`, or a `BackgroundWorker` whose error is `axa::Error::RetryAfter`, is tried again after the delay it chose, held between a second and an hour, in place of the backoff, keeping its reason as the error. It still counts as an attempt. | `a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose`, `a_retry_after_error_carries_its_delay_and_others_none`, `a_job_that_asks_for_a_delay_is_tried_again_after_it`, `a_worker_that_asks_for_a_delay_is_tried_again_after_it` |
 
 ### 4.19 MySQL job queue
 
@@ -785,7 +787,7 @@ names of the tests in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-39, each by the tests named there. | As named in section 4.18 |
+| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-41, each by the tests named there. | As named in section 4.18 |
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
@@ -803,7 +805,7 @@ in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-39, each by the tests named there. | As named in section 4.18 |
+| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, and WRK-28 to WRK-41, each by the tests named there. | As named in section 4.18 |
 | SQJ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, in one `BEGIN IMMEDIATE` transaction. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | SQJ-3 | An act changes its job and keeps the act in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |

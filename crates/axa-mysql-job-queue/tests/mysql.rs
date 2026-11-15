@@ -1741,3 +1741,24 @@ async fn replicas_ticking_a_cron_schedule_queue_each_due_time_once() {
         "one job a second for 4.5 seconds: {jobs}"
     );
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn a_job_that_asks_for_a_delay_is_tried_again_after_it() {
+    let mut queue = fresh(quick()).await;
+    queue.handle("Busy", |_| async {
+        Err(axa_mysql_job_queue::RetryAfter::new(
+            Duration::from_mins(2),
+            "the receiver is busy",
+        ))
+    });
+    let job = NewJob::new("Busy", serde_json::Value::Null).max_attempts(Some(3));
+    let id = queue.enqueue_job(&job).await.unwrap();
+    assert!(queue.run_one().await.unwrap());
+    let info = queue.job(id).await.unwrap().unwrap();
+    assert_eq!(info.state, JobState::Queued);
+    assert_eq!(info.error.as_deref(), Some("the receiver is busy"));
+    let wait = (info.run_at - info.updated_at).num_milliseconds();
+    assert!((119_000..=121_000).contains(&wait), "{wait}");
+    assert!(!queue.run_one().await.unwrap(), "not before its time");
+}

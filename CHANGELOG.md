@@ -24,6 +24,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A trailing slash on a mounted path, `/api/folders/`, is a `308` to `/api/folders`,
   keeping the query, method, and body (T-42, RTE-9). It runs no handler, and a path with
   nothing mounted behind it is still the `404`.
+- Retry jitter, and a delay a job chooses, in all three job queues (T-28, WRK-40,
+  WRK-41): a retry's doubling backoff is spread at random over its upper half, and a
+  handler failing with `RetryAfter`, or a worker with `axa::Error::RetryAfter`, is tried
+  again after its own delay, held between a second and an hour.
 
 ### Changed
 

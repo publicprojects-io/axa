@@ -86,6 +86,27 @@ holds across replicas, and against a job queued in a transaction that has not ye
 committed. A key is a code, at most 200 characters with no line breaks, and is kept on
 the row, so put an id in it, never personal data.
 
+## Retries
+
+A job gets one attempt unless its worker's `max_attempts` says more, because a retry
+repeats its work. Each retry waits about twice as long as the last, from the queue's
+`retry_backoff`, up to an hour, spread at random over the upper half of that wait, so a
+hundred jobs that failed in the same outage do not all come back in the same second.
+
+A job told when to come back, such as by a `429` or `503` with `Retry-After`, says so:
+
+```rust,ignore
+use axa::queue::RetryAfter;
+
+if response.status() == 429 {
+    let delay = retry_after(&response).unwrap_or(Duration::from_secs(60));
+    return Err(Error::RetryAfter(RetryAfter::new(delay, "the receiver is rate limiting")));
+}
+```
+
+The delay is held between a second and an hour. It still counts as an attempt, so a job
+with none left fails as any other.
+
 ## How many at once
 
 `QueueOptions::workers` is how many job loops a process runs, so the most jobs it runs

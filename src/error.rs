@@ -111,6 +111,11 @@ pub enum Error {
     /// A background-job failure.
     #[error("worker error: {0}")]
     Worker(String),
+    /// A job's failure that asks to be tried again after a delay, such as a
+    /// receiver's `Retry-After`. From a handler, it is a `500` as any other.
+    #[cfg(feature = "queue")]
+    #[error(transparent)]
+    RetryAfter(axa_postgres_job_queue::RetryAfter),
     /// A model-layer failure, from any database.
     #[cfg(feature = "model")]
     #[error(transparent)]
@@ -805,6 +810,8 @@ impl IntoResponse for Error {
             | Self::JSON(_)
             | Self::Worker(_)
             | Self::Any(_) => internal(),
+            #[cfg(feature = "queue")]
+            Self::RetryAfter(_) => internal(),
             #[cfg(feature = "model")]
             Self::Model(_) => internal(),
             #[cfg(has_seaorm)]

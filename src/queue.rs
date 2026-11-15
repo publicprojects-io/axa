@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 pub use axa_postgres_job_queue::{
     Act, ActKind, Counts, DateTime, JobInfo, JobState, MAX_REASON_CHARS, NewJob, QueueOptions,
-    SETUP_STATEMENTS, Schedule, ScheduleInfo, Utc,
+    RetryAfter, SETUP_STATEMENTS, Schedule, ScheduleInfo, Utc,
 };
 
 use crate::{AppContext, Error, Result, worker::BackgroundWorker};
@@ -239,7 +239,14 @@ impl Queue {
                 let worker = worker.clone();
                 async move {
                     let args: A = serde_json::from_value(args).map_err(Error::from)?;
-                    worker.perform_for(tenant, args).await
+                    // Boxed, so the queue finds a `RetryAfter` inside.
+                    worker.perform_for(tenant, args).await.map_err(|error| {
+                        let boxed: Box<dyn std::error::Error + Send + Sync> = match error {
+                            Error::RetryAfter(retry) => Box::new(retry),
+                            other => Box::new(other),
+                        };
+                        boxed
+                    })
                 }
             });
     }
@@ -634,6 +641,39 @@ mod tests {
             .await
             .unwrap()
             .get("attempts")
+    }
+
+    /// Asks to be tried again in two minutes.
+    struct BusyWorker;
+
+    #[async_trait]
+    impl BackgroundWorker<()> for BusyWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, (): ()) -> Result<()> {
+            Err(Error::RetryAfter(RetryAfter::new(
+                Duration::from_mins(2),
+                "the receiver is busy",
+            )))
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn a_worker_that_asks_for_a_delay_is_tried_again_after_it() {
+        let _table = TABLE.lock().await;
+        let mut queue = queue().await;
+        queue.register(BusyWorker);
+        let job = NewJob::new("BusyWorker", serde_json::json!(null)).max_attempts(Some(3));
+        let id = queue.enqueue_job(&job).await.unwrap();
+        assert!(queue.run_one().await.unwrap());
+        let info = queue.job(&id).await.unwrap().unwrap();
+        assert_eq!(info.state, JobState::Queued);
+        assert_eq!(info.error.as_deref(), Some("the receiver is busy"));
+        let wait = (info.run_at - info.updated_at).num_milliseconds();
+        assert!((119_000..=121_000).contains(&wait), "{wait}");
     }
 
     #[tokio::test]

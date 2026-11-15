@@ -80,9 +80,12 @@
 //!
 //! A job gets [`QueueOptions::max_attempts`] tries, unless it was queued with its
 //! own limit. The default is one, because a retry repeats the job's work, and only
-//! its author knows that is safe. Each retry waits twice as long as the last,
-//! starting from [`QueueOptions::retry_backoff`]. A job that panics counts as
-//! failed, and its loop carries on.
+//! its author knows that is safe. Each retry waits about twice as long as the last,
+//! starting from [`QueueOptions::retry_backoff`], spread at random over the upper
+//! half of that wait so jobs that failed together do not all come back at once. A
+//! handler that knows better, such as from a receiver's `Retry-After`, returns
+//! [`RetryAfter`] as its error. A job that panics counts as failed, and its loop
+//! carries on.
 //!
 //! # Lost jobs
 //!
@@ -246,7 +249,7 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-type JobFuture = Pin<Box<dyn Future<Output = Result<(), String>> + Send>>;
+type JobFuture = Pin<Box<dyn Future<Output = Result<(), Failure>> + Send>>;
 type Handler = Arc<dyn Fn(Option<String>, serde_json::Value) -> JobFuture + Send + Sync>;
 
 /// What a job queued for a tenant fails with when its handler takes no tenant.
@@ -601,6 +604,104 @@ pub fn backoff(base: Duration, attempts: i32) -> Duration {
         .unwrap_or(0)
         .min(16);
     base.saturating_mul(1 << doublings).min(MAX_BACKOFF)
+}
+
+/// The shortest delay a job may choose with [`RetryAfter`].
+pub const MIN_RETRY_AFTER: Duration = Duration::from_secs(1);
+
+/// A job's error that also says when to try it again, such as a receiver's
+/// `Retry-After`. Return it as a handler's error: the next attempt waits `delay`,
+/// held between [`MIN_RETRY_AFTER`] and an hour, rather than the backoff. It still
+/// counts as an attempt, so a job out of attempts fails as any other.
+#[derive(Debug, Clone)]
+pub struct RetryAfter {
+    delay: Duration,
+    reason: String,
+}
+
+impl RetryAfter {
+    /// Try again after `delay`, keeping `reason` as the job's error.
+    #[must_use]
+    pub fn new(delay: Duration, reason: impl Into<String>) -> Self {
+        Self {
+            delay,
+            reason: reason.into(),
+        }
+    }
+
+    /// The delay the job asked for, before it is held to its limits.
+    #[must_use]
+    pub const fn delay(&self) -> Duration {
+        self.delay
+    }
+}
+
+impl fmt::Display for RetryAfter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl std::error::Error for RetryAfter {}
+
+/// How a run failed: the text kept on the row, and any delay the job chose.
+struct Failure {
+    text: String,
+    retry_in: Option<Duration>,
+}
+
+impl Failure {
+    fn from_error<E: fmt::Display + 'static>(error: E) -> Self {
+        let any = &error as &dyn std::any::Any;
+        // A handler's own error, or one boxed, as `axa`'s workers hand theirs on.
+        let retry_in = any
+            .downcast_ref::<RetryAfter>()
+            .or_else(|| {
+                any.downcast_ref::<Box<dyn std::error::Error + Send + Sync>>()
+                    .and_then(|boxed| boxed.downcast_ref::<RetryAfter>())
+            })
+            .map(RetryAfter::delay);
+        Self {
+            text: error.to_string(),
+            retry_in,
+        }
+    }
+}
+
+impl From<String> for Failure {
+    fn from(text: String) -> Self {
+        Self {
+            text,
+            retry_in: None,
+        }
+    }
+}
+
+impl fmt::Display for Failure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.text)
+    }
+}
+
+/// Spread `wait` over its upper half at random, so jobs that failed together do
+/// not all try again at once.
+#[must_use]
+pub fn jittered(wait: Duration) -> Duration {
+    let random = Uuid::new_v4().as_u128();
+    #[allow(clippy::cast_precision_loss)]
+    let fraction = (random % 1_000_000) as f64 / 1_000_000.0;
+    wait.mul_f64(0.5 + fraction / 2.0)
+}
+
+/// How long to wait before the attempt after `attempts`: the delay a job chose,
+/// held between [`MIN_RETRY_AFTER`] and an hour, or else the doubling backoff
+/// from `base`, jittered.
+#[must_use]
+pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Duration {
+    match chosen {
+        Some(delay) => delay.clamp(MIN_RETRY_AFTER, MAX_BACKOFF),
+        None => jittered(backoff(base, attempts)),
+    }
 }
 
 /// Cut `text` to at most [`MAX_ERROR`] bytes, on a character boundary.
@@ -1345,7 +1446,7 @@ struct Claimed {
 /// How a run ended.
 enum Outcome {
     /// The job answered, or failed, timed out, or panicked, with this text.
-    Done(Result<(), String>),
+    Done(Result<(), Failure>),
     /// The run lost its claim and was stopped, for this reason.
     Lost(String),
 }
@@ -1490,10 +1591,12 @@ impl Queue {
         let handler = Arc::new(handler);
         let run: Handler = Arc::new(move |tenant, args| {
             if tenant.is_some() {
-                return Box::pin(std::future::ready(Err(NO_TENANT_HANDLER.to_string())));
+                return Box::pin(std::future::ready(Err(NO_TENANT_HANDLER
+                    .to_string()
+                    .into())));
             }
             let job = handler(args);
-            Box::pin(async move { job.await.map_err(|error| error.to_string()) })
+            Box::pin(async move { job.await.map_err(Failure::from_error) })
         });
         self.handlers.insert(name.into(), run);
     }
@@ -1511,7 +1614,7 @@ impl Queue {
         let handler = Arc::new(handler);
         let run: Handler = Arc::new(move |tenant, args| {
             let job = handler(tenant, args);
-            Box::pin(async move { job.await.map_err(|error| error.to_string()) })
+            Box::pin(async move { job.await.map_err(Failure::from_error) })
         });
         self.handlers.insert(name.into(), run);
     }
@@ -1890,13 +1993,13 @@ impl Queue {
             tokio::select! {
                 finished = &mut job.0 => {
                     return Outcome::Done(finished.unwrap_or_else(|_| {
-                        Err(Error::Job("the job panicked".to_string()).to_string())
+                        Err(Error::Job("the job panicked".to_string()).to_string().into())
                     }));
                 }
                 () = &mut deadline => {
                     let limit = claim.timeout.unwrap_or_default();
                     return Outcome::Done(Err(
-                        Error::Job(format!("timed out after {}s", limit.as_secs_f64())).to_string(),
+                        Error::Job(format!("timed out after {}s", limit.as_secs_f64())).to_string().into(),
                     ));
                 }
                 () = tokio::time::sleep(every) => {
@@ -2015,9 +2118,9 @@ impl Queue {
                 let run = handler(job.tenant.clone(), job.args.clone());
                 self.supervise(run, &job).await
             }
-            None => Outcome::Done(Err(
-                Error::Job(format!("no handler for job {}", job.name)).to_string()
-            )),
+            None => Outcome::Done(Err(Error::Job(format!("no handler for job {}", job.name))
+                .to_string()
+                .into())),
         };
         let (id, name, attempts) = (job.id, job.name.as_str(), job.attempts);
         let finished = match outcome {
@@ -2037,9 +2140,9 @@ impl Queue {
             }
             Outcome::Done(Err(error)) if attempts < job.limit => {
                 tracing::warn!(job = %name, %id, attempts, %error, "job failed, will retry");
-                let wait = backoff(self.options.retry_backoff, attempts);
+                let wait = retry_wait(self.options.retry_backoff, attempts, error.retry_in);
                 sqlx::query(RETRY)
-                    .bind(cut(error))
+                    .bind(cut(error.text))
                     .bind(micros(wait))
                     .bind(id)
                     .bind(attempts)
@@ -2050,7 +2153,7 @@ impl Queue {
                 tracing::error!(job = %name, %id, attempts, %error, "job failed");
                 sqlx::query(FINISH)
                     .bind("failed")
-                    .bind(cut(error))
+                    .bind(cut(error.text))
                     .bind(id)
                     .bind(attempts)
                     .execute(&self.pool)
@@ -2177,6 +2280,42 @@ mod tests {
         assert_eq!(backoff(base, 2), base * 2);
         assert_eq!(backoff(base, 3), base * 4);
         assert_eq!(backoff(base, 1_000), MAX_BACKOFF);
+    }
+
+    #[test]
+    fn a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose() {
+        let base = Duration::from_secs(30);
+        for _ in 0..200 {
+            let wait = retry_wait(base, 2, None);
+            assert!(wait >= base && wait <= base * 2, "{wait:?}");
+        }
+        let waits: HashSet<_> = (0..20).map(|_| retry_wait(base, 1, None)).collect();
+        assert!(waits.len() > 1, "the waits are spread");
+        assert_eq!(retry_wait(Duration::ZERO, 3, None), Duration::ZERO);
+        let chosen = Some(Duration::from_secs(90));
+        assert_eq!(retry_wait(base, 1, chosen), Duration::from_secs(90));
+        assert_eq!(retry_wait(base, 1, Some(Duration::ZERO)), MIN_RETRY_AFTER);
+        assert_eq!(
+            retry_wait(base, 1, Some(Duration::from_hours(9))),
+            MAX_BACKOFF
+        );
+    }
+
+    #[test]
+    fn a_retry_after_error_carries_its_delay_and_others_none() {
+        let chosen = Failure::from_error(RetryAfter::new(Duration::from_secs(7), "busy"));
+        assert_eq!(
+            (chosen.text.as_str(), chosen.retry_in),
+            ("busy", Some(Duration::from_secs(7)))
+        );
+        let boxed: Box<dyn std::error::Error + Send + Sync> =
+            Box::new(RetryAfter::new(Duration::from_secs(8), "boxed"));
+        assert_eq!(
+            Failure::from_error(boxed).retry_in,
+            Some(Duration::from_secs(8))
+        );
+        let plain = Failure::from_error("broken".to_string());
+        assert_eq!((plain.text.as_str(), plain.retry_in), ("broken", None));
     }
 
     #[test]

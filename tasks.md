@@ -142,6 +142,9 @@ T-37 is done, unreleased, as `service health` and `cli::health` (CLI-13).
 
 T-42 is done, unreleased, in `AppRoutes::into_router` (RTE-9).
 
+T-28 is done, unreleased, in all three job queues and `axa::queue`, as `jittered`,
+`retry_wait`, `RetryAfter`, and `axa::Error::RetryAfter` (WRK-40, WRK-41).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

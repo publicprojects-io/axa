@@ -80,6 +80,7 @@ dependency:
 - **T-32**: Static token or Basic credential guard for operator routes (done, unreleased)
 - **T-37**: `health` command for images without `curl` (done, unreleased)
 - **T-42**: Trailing-slash policy with `308` redirects (done, unreleased)
+- **T-28**: Retry jitter and job-chosen delays (done, unreleased)
 
 ---
 
@@ -91,7 +92,6 @@ Each item waits until two services request it, or one has a compelling safety ca
 
 - **T-25**: Rate limits shared across replicas via Postgres/Redis
 - **T-26**: Wake Postgres queue with `LISTEN` and `NOTIFY`
-- **T-28**: Retry jitter and job-chosen delays
 - **T-30**: Background migrations for SQL that cannot run in transactions
 - **T-31**: Internal listener for health and metrics
 - **T-33**: Opaque API tokens with scopes and expiry
