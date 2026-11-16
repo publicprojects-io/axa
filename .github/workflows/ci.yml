@@ -86,8 +86,6 @@ jobs:
             cargo check --lib -p axa --features "$feature"
             echo "::endgroup::"
           done
-          cargo check --lib -p axa-test --features paseto
-          cargo check --lib -p axa-test --features postgres-sqlx
       # Each database feature alone, as each makes `AppContext::db` its own handle.
       - name: Clippy, each database alone
         run: |
@@ -101,12 +99,21 @@ jobs:
           cargo clippy --all-targets --features sqlite-sqlx -- -D warnings
           cargo clippy --all-targets --features sqlite-seaorm -- -D warnings
           cargo clippy --all-targets --features sqlite-diesel -- -D warnings
-      # Each outbox feature alone, as a service turns it on: code behind one
-      # feature can lint clean only beside the other.
-      - name: Clippy, outbox features one at a time
+      # Each subcrate feature alone, read from the manifests so a new one is covered:
+      # code behind one feature can lint clean only beside another, as `redis` did
+      # beside `postgres` in `axa-request-rate-limit`. Each also builds as a library
+      # alone, so no dev-dependency turns on what it forgot to.
+      - name: Clippy, each subcrate feature alone
         run: |
-          cargo clippy -p axa-transactional-outbox --all-targets --features encryption -- -D warnings
-          cargo clippy -p axa-transactional-outbox --all-targets --features seaorm -- -D warnings
+          for manifest in crates/*/Cargo.toml; do
+            crate=$(basename "$(dirname "$manifest")")
+            for feature in $(sed -n '/^\[features\]/,/^\[/p' "$manifest" | grep -oE '^[a-z][a-z0-9_-]* =' | tr -d ' =' | grep -vx default); do
+              echo "::group::$crate $feature"
+              cargo clippy -p "$crate" --all-targets --features "$feature" -- -D warnings
+              cargo check --lib -p "$crate" --features "$feature"
+              echo "::endgroup::"
+            done
+          done
       - name: Clippy, all features
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
