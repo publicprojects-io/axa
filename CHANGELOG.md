@@ -10,6 +10,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa-request-rate-limit` 0.3.2 builds `thiserror` only with its `postgres` or `redis`
   feature, which `shared` needs it for, where 0.3.1 built it always. With `redis` alone,
   `Store::purge` no longer warns that `window` is unused.
+- `axa_mysql_job_queue::cancel` says that a cancel meeting a worker's claim of the same
+  job can fail with a deadlock, SQLSTATE `40001`, to roll back and try again (WRK-8).
+  Its test does so, where it failed when MySQL ended the cancel.
 
 ## [0.16.0] - 2026-11-16
 

@@ -935,8 +935,10 @@ fn check_code(text: &str, what: &'static str) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Fails on a database error, after which the transaction must be rolled back, and
-/// with [`Error::NotACode`] when `by` or `reason` is empty, longer than
+/// Fails on a database error, after which the transaction must be rolled back. A
+/// cancel that meets a worker claiming the same job can fail with a deadlock, SQLSTATE
+/// `40001`, as MySQL may end either side: roll back and try again. It also fails with
+/// [`Error::NotACode`] when `by` or `reason` is empty, longer than
 /// [`MAX_REASON_CHARS`], or has a line break, before anything is written.
 pub async fn cancel(
     transaction: &mut Transaction<'_, MySql>,

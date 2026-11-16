@@ -84,14 +84,24 @@ async fn count(pool: &MySqlPool, sql: &'static str) -> i64 {
     sqlx::query_scalar(sql).fetch_one(pool).await.unwrap()
 }
 
-/// Cancel `id` as a person would, in a transaction of its own.
+/// Cancel `id` as a person would, in a transaction of its own, trying again when
+/// MySQL picks it as the victim of a deadlock with a loop's claim.
 async fn cancel(queue: &Queue, id: Uuid) -> bool {
-    let mut transaction = queue.pool().begin().await.unwrap();
-    let cancelled = axa_mysql_job_queue::cancel(&mut transaction, id, "ops:alice", "test_cancel")
-        .await
-        .unwrap();
-    transaction.commit().await.unwrap();
-    cancelled
+    loop {
+        let mut transaction = queue.pool().begin().await.unwrap();
+        match axa_mysql_job_queue::cancel(&mut transaction, id, "ops:alice", "test_cancel").await {
+            Ok(cancelled) => {
+                transaction.commit().await.unwrap();
+                return cancelled;
+            }
+            Err(Error::Database(sqlx::Error::Database(error)))
+                if error.code().as_deref() == Some("40001") =>
+            {
+                transaction.rollback().await.unwrap();
+            }
+            Err(error) => panic!("cancel failed: {error}"),
+        }
+    }
 }
 
 /// Retry `id` as a person would, in a transaction of its own.
