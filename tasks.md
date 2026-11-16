@@ -130,56 +130,56 @@ no S3-compatible image could be pulled.
 On 2026-11-15 the maintainer asked for the rest of the backlog to go ahead, in place of
 P-2, for each task that needs no new dependency.
 
-T-35 is done, unreleased, as `axa::extract::Patch<T>` (ERR-16).
+T-35 is done, in 0.16.0, as `axa::extract::Patch<T>` (ERR-16).
 
-T-34 is done, unreleased, as `SessionOptions::sign_in_lifetime` in `axa-web-session`,
+T-34 is done, in 0.16.0, as `SessionOptions::sign_in_lifetime` in `axa-web-session`,
 which `layer` now takes the options for (SES-11).
 
-T-32 is done, unreleased, as `axa::operator`, in `axa` rather than the auth crates, as it
+T-32 is done, in 0.16.0, as `axa::operator`, in `axa` rather than the auth crates, as it
 needs neither (OPR-1 to OPR-3).
 
-T-37 is done, unreleased, as `service health` and `cli::health` (CLI-13).
+T-37 is done, in 0.16.0, as `service health` and `cli::health` (CLI-13).
 
-T-42 is done, unreleased, in `AppRoutes::into_router` (RTE-9).
+T-42 is done, in 0.16.0, in `AppRoutes::into_router` (RTE-9).
 
-T-28 is done, unreleased, in all three job queues and `axa::queue`, as `jittered`,
+T-28 is done, in 0.16.0, in all three job queues and `axa::queue`, as `jittered`,
 `retry_wait`, `RetryAfter`, and `axa::Error::RetryAfter` (WRK-40, WRK-41).
 
-T-41 is done, unreleased, as `axa_test::logs` and `axa_test::mail`, with
+T-41 is done, in 0.16.0, as `axa_test::logs` and `axa_test::mail`, with
 `Mailer::outbox` in `axa-mail` (TST-8, TST-9, MAIL-6).
 
-T-26 is done, unreleased, in `axa-postgres-job-queue`, as the `axa_queue_notify` trigger
+T-26 is done, in 0.16.0, in `axa-postgres-job-queue`, as the `axa_queue_notify` trigger
 and a listener in `Queue::run` (WRK-42). MySQL and SQLite have no `NOTIFY`, and poll.
 
-T-33 is done, unreleased, as the new crate `axa-api-tokens` and the `api-tokens` feature
+T-33 is done, in 0.16.0, as the new crate `axa-api-tokens` and the `api-tokens` feature
 (TOK-1 to TOK-4). It is a crate rather than a module so a service that does not issue
 tokens does not build `sha2`.
 
-T-31 is done, unreleased, as `INTERNAL_PORT` and `Server::internal_port`, with the health
+T-31 is done, in 0.16.0, as `INTERNAL_PORT` and `Server::internal_port`, with the health
 spec's new section (HLT-14, HLT-15).
 
-T-36 is done, unreleased, as `axa::extract::Form` and `FormContext`, which a Tera page
+T-36 is done, in 0.16.0, as `axa::extract::Form` and `FormContext`, which a Tera page
 reads as `form` (ERR-17, ERR-18). `axa-tera-templates` needed no change.
 
-T-30 is done, unreleased, as `Background`, `run_background`, and `pending_background` in
+T-30 is done, in 0.16.0, as `Background`, `run_background`, and `pending_background` in
 `axa-postgres-sqlx` (SQX-13, SQX-14).
 
-T-25 is done, unreleased, as `axa_request_rate_limit::shared`, behind its `postgres` and
+T-25 is done, in 0.16.0, as `axa_request_rate_limit::shared`, behind its `postgres` and
 `redis` features (RAT-17 to RAT-19). It counts in a fixed window, as the in-process
 `Limiter` does, rather than a token bucket.
 
 On 2026-11-16 the maintainer approved the new dependencies for T-38, T-39, and T-40, and
 declined T-54's.
 
-T-38 is done, unreleased, as `axa_prometheus_metrics::runtime::TokioMetrics`, behind the
+T-38 is done, in 0.16.0, as `axa_prometheus_metrics::runtime::TokioMetrics`, behind the
 crate's `tokio` feature and `axa`'s `prometheus-tokio` (PRM-3). It reads only the runtime
 metrics stable Tokio has, and counts tasks a service names rather than every request.
 
-T-39 is done, unreleased, as `PROXY_PROTOCOL_FROM` and `Server::proxy_protocol_from`,
+T-39 is done, in 0.16.0, as `PROXY_PROTOCOL_FROM` and `Server::proxy_protocol_from`,
 over `ppp` (SRV-17). It is a range list of its own, rather than `TRUSTED_PROXIES`, as a
 proxy that sends `X-Forwarded-For` does not send a PROXY header.
 
-T-40 is done, unreleased, as `axa_test::openapi::Conformance`, behind `axa-test`'s
+T-40 is done, in 0.16.0, as `axa_test::openapi::Conformance`, behind `axa-test`'s
 `openapi` feature (TST-10). It checks responses, not requests, and OpenAPI 3.1 only.
 
 | Id | Task | Where | Effort | New dependency | Sources |

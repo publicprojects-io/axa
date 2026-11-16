@@ -2,7 +2,7 @@
 
 > Accessories library for Axum websites, databases, microservices, and more. A library, not a framework: `main.rs` stays ordinary Axum and
 > calls into this crate, with no lifecycle hooks, route macros, or generated code. sqlx is
-> the preferred way to reach a database. Version 0.15.0, Rust 1.97 or newer.
+> the preferred way to reach a database. Version 0.16.0, Rust 1.97 or newer.
 
 ## Docs
 
@@ -80,6 +80,7 @@
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)
 - [Upgrading to 0.13](help/upgrading-to-0.13/index.md)
 - [Upgrading to 0.14](help/upgrading-to-0.14/index.md)
+- [Upgrading to 0.16](help/upgrading-to-0.16/index.md)
 - [Upgrading to 0.15](help/upgrading-to-0.15/index.md)
 - [Upgrading to 0.12](help/upgrading-to-0.12/index.md)
 - [Upgrading to 0.11](help/upgrading-to-0.11/index.md)

@@ -3,7 +3,15 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [0.16.0] - 2026-11-16
+
+This covers `axa` 0.16.0, `axa-test` 0.7.0, `axa-postgres-job-queue` 0.5.0,
+`axa-web-session` 0.2.0, the new `axa-api-tokens` 0.1.0, and `axa-mail` 0.1.1,
+`axa-mysql-job-queue` 0.3.1, `axa-postgres-sqlx` 0.2.1, `axa-prometheus-metrics` 0.1.2,
+and `axa-request-rate-limit` 0.3.1. `axa-sqlite-job-queue` has retry jitter too, but stays
+unpublished with the other SQLite crates, and as since 0.13 the `sqlite-*` features are
+left out of the published `axa`. To upgrade, read
+[Upgrading to Axa 0.16](help/upgrading-to-0.16/index.md).
 
 ### Added
 

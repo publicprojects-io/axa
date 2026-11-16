@@ -7,7 +7,7 @@
 //!
 //! ```toml
 //! [dependencies]
-//! axa = { version = "0.15", features = ["maud"] }
+//! axa = { version = "0.16", features = ["maud"] }
 //! maud = "0.27"
 //! ```
 //!

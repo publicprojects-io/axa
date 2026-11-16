@@ -5,11 +5,31 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.15.0
+## Current Version: 0.16.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.16.0
+- The rest of Stage 3, which the maintainer asked to go ahead on 2026-11-15 and
+  2026-11-16:
+  - **T-35**: Tri-state `Patch<T>`
+  - **T-34**: Session deadline from sign-in
+  - **T-32**: Static token or Basic credential guard for operator routes
+  - **T-37**: `health` command for images without `curl`
+  - **T-42**: Trailing-slash policy with `308` redirects
+  - **T-28**: Retry jitter and job-chosen delays
+  - **T-41**: Captured logs and mail in `axa-test`
+  - **T-26**: Wake the Postgres queue with `LISTEN` and `NOTIFY`
+  - **T-33**: Opaque API tokens with scopes and expiry, `axa-api-tokens`
+  - **T-31**: Internal listener for health and metrics, `INTERNAL_PORT`
+  - **T-36**: `extract::Form` and a form context for Tera pages
+  - **T-30**: Background migrations for SQL that cannot run in a transaction
+  - **T-25**: Rate limits shared across replicas in Postgres or Redis
+  - **T-38**: Tokio runtime and task metrics, `prometheus-tokio`
+  - **T-39**: PROXY protocol from `PROXY_PROTOCOL_FROM`
+  - **T-40**: OpenAPI conformance checks in `axa-test`
 
 ### Version 0.15.0
 - Four Stage 3 tasks that `crm`, `ppm`, and `wpm` asked for:
@@ -71,26 +91,8 @@ This document outlines the planned development path for axa. See
 
 ## Next
 
-Stages 1 and 2 are done, and T-23, T-24, T-27, and T-29 of Stage 3. On 2026-11-15 the
-maintainer asked for the rest of the backlog to go ahead, for each task that needs no new
-dependency:
-
-- **T-35**: Tri-state `Patch<T>` (done, unreleased)
-- **T-34**: Session deadline from sign-in (done, unreleased)
-- **T-32**: Static token or Basic credential guard for operator routes (done, unreleased)
-- **T-37**: `health` command for images without `curl` (done, unreleased)
-- **T-42**: Trailing-slash policy with `308` redirects (done, unreleased)
-- **T-28**: Retry jitter and job-chosen delays (done, unreleased)
-- **T-41**: Captured logs and mail in `axa-test` (done, unreleased)
-- **T-26**: Wake the Postgres queue with `LISTEN` and `NOTIFY` (done, unreleased)
-- **T-33**: Opaque API tokens with scopes and expiry, `axa-api-tokens` (done, unreleased)
-- **T-31**: Internal listener for health and metrics, `INTERNAL_PORT` (done, unreleased)
-- **T-36**: `extract::Form` and a form context for Tera pages (done, unreleased)
-- **T-30**: Background migrations for SQL that cannot run in a transaction (done, unreleased)
-- **T-25**: Rate limits shared across replicas in Postgres or Redis (done, unreleased)
-- **T-38**: Tokio runtime and task metrics, `prometheus-tokio` (done, unreleased)
-- **T-39**: PROXY protocol from `PROXY_PROTOCOL_FROM` (done, unreleased)
-- **T-40**: OpenAPI conformance checks in `axa-test` (done, unreleased)
+Stages 1 and 2 are done, and all of Stage 3 but T-54, which waits on its dependencies.
+A release with breaking changes needs the maintainer's go-ahead.
 
 ---
 

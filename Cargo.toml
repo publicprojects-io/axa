@@ -11,7 +11,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.15.0"
+version = "0.16.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -113,17 +113,17 @@ axa-cursor-pagination = { version = "0.1.2", path = "crates/axa-cursor-paginatio
 axa-webhooks = { version = "0.1.1", path = "crates/axa-webhooks", optional = true }
 axa-api-tokens = { version = "0.1.0", path = "crates/axa-api-tokens", optional = true }
 axa-http-client = { version = "0.1.0", path = "crates/axa-http-client", optional = true }
-axa-mail = { version = "0.1.0", path = "crates/axa-mail", optional = true }
+axa-mail = { version = "0.1.1", path = "crates/axa-mail", optional = true }
 axa-storage-with-apache-arrow-and-aws = { version = "0.1.0", path = "crates/axa-storage-with-apache-arrow-and-aws", optional = true }
 axa-keycloak-auth = { version = "0.5.1", path = "crates/axa-keycloak-auth", optional = true }
 axa-paseto-auth = { version = "0.7.1", path = "crates/axa-paseto-auth", optional = true }
 axa-problem = { version = "0.2.0", path = "crates/axa-problem" }
-axa-prometheus-metrics = { version = "0.1.1", path = "crates/axa-prometheus-metrics", optional = true }
-axa-request-rate-limit = { version = "0.3.0", path = "crates/axa-request-rate-limit", optional = true }
+axa-prometheus-metrics = { version = "0.1.2", path = "crates/axa-prometheus-metrics", optional = true }
+axa-request-rate-limit = { version = "0.3.1", path = "crates/axa-request-rate-limit", optional = true }
 axa-redis-cache = { version = "0.2.0", path = "crates/axa-redis-cache", optional = true }
 axa-postgres-seaorm = { version = "0.4.1", path = "crates/axa-postgres-seaorm", optional = true }
-axa-web-session = { version = "0.1.0", path = "crates/axa-web-session", optional = true }
-axa-postgres-sqlx = { version = "0.2.0", path = "crates/axa-postgres-sqlx", optional = true }
+axa-web-session = { version = "0.2.0", path = "crates/axa-web-session", optional = true }
+axa-postgres-sqlx = { version = "0.2.1", path = "crates/axa-postgres-sqlx", optional = true }
 axa-tera-templates = { version = "0.2.1", path = "crates/axa-tera-templates", optional = true }
 axa-maud-templates = { version = "0.1.0", path = "crates/axa-maud-templates", optional = true }
 axa-postgres-toasty = { version = "0.2.1", path = "crates/axa-postgres-toasty", optional = true }
@@ -137,7 +137,7 @@ axa-sqlite-diesel = { version = "0.1.0", path = "crates/axa-sqlite-diesel", opti
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-accepts-version-negotiation = { version = "0.2.1", path = "crates/axa-accepts-version-negotiation", optional = true }
-axa-postgres-job-queue = { version = "0.4.0", path = "crates/axa-postgres-job-queue", optional = true }
+axa-postgres-job-queue = { version = "0.5.0", path = "crates/axa-postgres-job-queue", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }

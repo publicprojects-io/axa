@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -56,6 +56,7 @@
       "help/upgrading-to-0.13/index.md",
       "help/upgrading-to-0.14/index.md",
       "help/upgrading-to-0.15/index.md",
+      "help/upgrading-to-0.16/index.md",
       "help/upgrading-to-0.12/index.md"
     ],
     "comparisons": [
@@ -153,6 +154,10 @@
       "crate": "axa-prometheus-metrics"
     },
     {
+      "name": "prometheus-tokio",
+      "crate": "axa-prometheus-metrics"
+    },
+    {
       "name": "redis",
       "crate": "axa-redis-cache"
     },
@@ -178,6 +183,14 @@
     },
     {
       "name": "ratelimit",
+      "crate": "axa-request-rate-limit"
+    },
+    {
+      "name": "ratelimit-postgres",
+      "crate": "axa-request-rate-limit"
+    },
+    {
+      "name": "ratelimit-redis",
       "crate": "axa-request-rate-limit"
     },
     {
@@ -363,14 +376,14 @@
     },
     {
       "name": "axa-postgres-job-queue",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
       "name": "axa-mysql-job-queue",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-mysql-job-queue/README.md"
@@ -405,7 +418,7 @@
     },
     {
       "name": "axa-mail",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "description": "Mail for Axum services over lettre: SMTP, file, and memory transports, with production refusing SMTP without TLS.",
       "feature": "mail",
       "readme": "crates/axa-mail/README.md"
@@ -440,7 +453,7 @@
     },
     {
       "name": "axa-prometheus-metrics",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "description": "Prometheus text exposition for Axum services.",
       "feature": "prometheus",
       "readme": "crates/axa-prometheus-metrics/README.md"
@@ -461,21 +474,21 @@
     },
     {
       "name": "axa-web-session",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "Web sessions for Axum services over axum_session, with safe defaults.",
       "feature": "session",
       "readme": "crates/axa-web-session/README.md"
     },
     {
       "name": "axa-postgres-sqlx",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "description": "PostgreSQL pooling, migrations, and test resets over sqlx for Axum services.",
       "feature": "postgres-sqlx",
       "readme": "crates/axa-postgres-sqlx/README.md"
     },
     {
       "name": "axa-test",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "description": "Request-level test helpers for Axa services, built on axum-test, with captured logs, the memory mailer's outbox behind its `mail` feature, and a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
@@ -503,7 +516,7 @@
     },
     {
       "name": "axa-request-rate-limit",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "description": "In-process request limits, per client or per key, and failed-login lockout for Axum services.",
       "feature": "ratelimit",
       "readme": "crates/axa-request-rate-limit/README.md"

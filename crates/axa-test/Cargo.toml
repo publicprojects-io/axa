@@ -1,6 +1,6 @@
 [package]
 name = "axa-test"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 rust-version = "1.97"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -26,7 +26,7 @@ openapi = ["dep:jsonschema"]
 postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:tokio"]
 
 [dependencies]
-axa = { version = "0.15.0", path = "../.." }
+axa = { version = "0.16.0", path = "../.." }
 axum-test = "21"
 authentication-verifier = { version = "0.9", optional = true }
 base64 = { version = "0.23", optional = true }
