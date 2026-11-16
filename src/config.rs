@@ -1288,12 +1288,12 @@ mod tests {
         );
 
         let unset = with(&[url], &Environment::Production).unwrap();
-        assert!(unset.server.proxy_protocol_from.is_empty());
+        assert_eq!(unset.server.proxy_protocol_from, []);
 
         let bad = [url, ("PROXY_PROTOCOL_FROM", "10.0.0.0/33")];
         assert!(with(&bad, &Environment::Production).is_err());
         let config = with(&bad, &Environment::Development).unwrap();
-        assert!(config.server.proxy_protocol_from.is_empty());
+        assert_eq!(config.server.proxy_protocol_from, []);
     }
 
     #[test]

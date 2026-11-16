@@ -525,7 +525,7 @@ mod tests {
         assert_eq!(form.value("nickname"), None, "null is left out");
         assert_eq!(form.value("tags"), None, "a list is left out");
         assert_eq!(form.errors("email").len(), 2);
-        assert!(form.errors("age").is_empty());
+        assert_eq!(form.errors("age"), [] as [String; 0]);
         assert!(!form.is_valid());
         assert!(FormContext::new(&sign_up()).is_valid());
         let shown = serde_json::to_string(&form).unwrap();

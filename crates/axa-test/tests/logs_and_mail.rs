@@ -15,7 +15,7 @@ async fn logs_are_captured_for_the_test_and_a_secret_can_be_checked_absent() {
     assert!(logs.contains("sign-in refused"));
     logs.assert_absent("hunter2");
     logs.clear();
-    assert!(logs.lines().is_empty());
+    assert_eq!(logs.lines(), Vec::<serde_json::Value>::new());
 }
 
 #[tokio::test]

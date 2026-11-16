@@ -457,7 +457,10 @@ async fn background_migrations_run_outside_a_transaction_once_each() {
     assert_eq!(ran.unwrap(), ["notes_by_item", "items_by_state"]);
     assert!(table_exists(&pool, "notes_by_item").await);
     assert!(table_exists(&pool, "items_by_state").await);
-    assert!(pending_background(&pool, &all).await.unwrap().is_empty());
+    assert_eq!(
+        pending_background(&pool, &all).await.unwrap(),
+        Vec::<String>::new()
+    );
     assert_eq!(
         run_background(&pool, &all).await.unwrap().unwrap(),
         Vec::<String>::new()
