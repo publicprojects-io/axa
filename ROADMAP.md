@@ -5,11 +5,15 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.16.0
+## Current Version: 0.16.1
 
 ---
 
 ## Recently Completed
+
+### Version 0.16.1
+- **`axa-minijinja-templates`**: MiniJinja (Jinja2) templates, behind the `minijinja`
+  feature
 
 ### Version 0.16.0
 - The rest of Stage 3, which the maintainer asked to go ahead on 2026-11-15 and

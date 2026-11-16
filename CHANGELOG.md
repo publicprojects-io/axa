@@ -5,6 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-16
+
+This covers `axa` 0.16.1, which adds the `minijinja` feature for the new
+`axa-minijinja-templates` 0.1.0. Nothing else changes, and nothing needs upgrading. As
+since 0.13, the `sqlite-*` features are left out of the published `axa`.
+
 ### Added
 
 - **`axa-minijinja-templates` 0.1.0, behind the `minijinja` feature, as `axa::minijinja`**:
