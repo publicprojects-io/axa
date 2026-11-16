@@ -3,6 +3,14 @@
 All notable changes to this project are documented in this file. The format
 is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `axa-request-rate-limit` 0.3.2 builds `thiserror` only with its `postgres` or `redis`
+  feature, which `shared` needs it for, where 0.3.1 built it always. With `redis` alone,
+  `Store::purge` no longer warns that `window` is unused.
+
 ## [0.16.0] - 2026-11-16
 
 This covers `axa` 0.16.0, `axa-test` 0.7.0, `axa-postgres-job-queue` 0.5.0,

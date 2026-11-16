@@ -173,6 +173,16 @@ impl Store {
     /// # Errors
     ///
     /// Fails on a database error.
+    // With Redis alone, there is nothing to delete or wait for.
+    #[cfg_attr(
+        not(feature = "postgres"),
+        allow(
+            unknown_lints,
+            unused_variables,
+            clippy::unused_async,
+            clippy::unused_async_trait_impl
+        )
+    )]
     pub async fn purge(&self, window: NonZeroU32) -> Result<u64, String> {
         match self {
             #[cfg(feature = "postgres")]
