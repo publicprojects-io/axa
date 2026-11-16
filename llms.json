@@ -383,7 +383,7 @@
     },
     {
       "name": "axa-mysql-job-queue",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-mysql-job-queue/README.md"
@@ -516,7 +516,7 @@
     },
     {
       "name": "axa-request-rate-limit",
-      "version": "0.3.1",
+      "version": "0.3.2",
       "description": "In-process request limits, per client or per key, and failed-login lockout for Axum services.",
       "feature": "ratelimit",
       "readme": "crates/axa-request-rate-limit/README.md"
