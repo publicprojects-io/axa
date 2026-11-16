@@ -47,6 +47,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa::extract::Form` and `FormContext` (T-36, ERR-17, ERR-18): a form body rejected
   with a `415` or `422` problem quoting nothing, and the values and field errors of a
   form sent back to be fixed, for a Tera page, with secret fields hidden.
+- Limits shared across replicas in `axa-request-rate-limit` (T-25, RAT-17 to RAT-19):
+  with its `postgres` or `redis` feature, or `axa`'s `ratelimit-postgres` or
+  `ratelimit-redis`, `shared::SharedLimiter` counts each request in one upsert on
+  Postgres, or one atomic `INCR` and `EXPIRE NX` on Redis, keyed by a hash under the
+  service's secret. `WhenDown` is the service's choice of what a store outage does. The
+  crate gains optional `sqlx` and `redis`, already in the workspace, and `thiserror`.
 - Background migrations in `axa-postgres-sqlx` (T-30, SQX-13, SQX-14): `Background`
   names statements that cannot run in a transaction, such as `CREATE INDEX
   CONCURRENTLY`, and `run_background` runs those not yet recorded in

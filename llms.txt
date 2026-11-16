@@ -159,7 +159,7 @@ Each of these gives the same things for its library:
 - [axa-storage-with-apache-arrow-and-aws](crates/axa-storage-with-apache-arrow-and-aws/README.md) (feature `storage`): Object storage for Axum services over Apache Arrow's object_store: local disk, memory, and S3, refusing keys that climb out, with presigned URLs
 - [axa-webhooks](crates/axa-webhooks/README.md) (feature `webhooks`): Standard Webhooks signing and verifying, with HMAC-SHA256 and Ed25519 keys, for Axum services
 - [axa-prometheus-metrics](crates/axa-prometheus-metrics/README.md) (feature `prometheus`): Prometheus text exposition, and request durations by route template for Axum services
-- [axa-request-rate-limit](crates/axa-request-rate-limit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services
+- [axa-request-rate-limit](crates/axa-request-rate-limit/README.md) (feature `ratelimit`): In-process request limits, per client or per key, and failed-login lockout for Axum services, and limits shared across replicas in Postgres or Redis (features `ratelimit-postgres`, `ratelimit-redis`)
 - [axa-idempotency-key](crates/axa-idempotency-key/README.md) (feature `idempotency`): Idempotency-Key handling over Postgres for Axum services
 - [axa-accepts-version-negotiation](crates/axa-accepts-version-negotiation/README.md) (feature `versioning`): Header-based API version negotiation for Axum services
 - [axa-tracing](crates/axa-tracing/README.md) (feature `tracing`): Redaction, request tracking, and asynchronous diagnostics over tracing for Axum services

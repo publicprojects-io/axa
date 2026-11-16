@@ -164,6 +164,10 @@ reads as `form` (ERR-17, ERR-18). `axa-tera-templates` needed no change.
 T-30 is done, unreleased, as `Background`, `run_background`, and `pending_background` in
 `axa-postgres-sqlx` (SQX-13, SQX-14).
 
+T-25 is done, unreleased, as `axa_request_rate_limit::shared`, behind its `postgres` and
+`redis` features (RAT-17 to RAT-19). It counts in a fixed window, as the in-process
+`Limiter` does, rather than a token bucket.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

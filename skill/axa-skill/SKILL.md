@@ -74,6 +74,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Prometheus exposition | `prometheus` |
 | RFC 9457 problem details | Always included, as `axa::problem` |
 | Request limits per client or per key, and failed-login lockout | `ratelimit` |
+| A request limit shared across replicas, in Postgres or Redis | `ratelimit-postgres`, `ratelimit-redis` |
 | `Idempotency-Key` on writes, over Postgres | `idempotency` |
 | `Accepts-version` negotiation | `versioning` |
 | Multipart uploads with limits, files in temporary files | `upload` |

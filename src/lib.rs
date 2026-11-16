@@ -70,6 +70,7 @@
 //! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
 //! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
 //! | `ratelimit` | In-process request limits and failed-login lockout, as `axa::ratelimit` |
+//! | `ratelimit-postgres`, `ratelimit-redis` | `ratelimit`, with `shared::SharedLimiter`, a limit shared across replicas, counted in Postgres or Redis |
 //! | `versioning` | `Accepts-version` negotiation, as `axa::versioning` |
 //!
 //! # Origin

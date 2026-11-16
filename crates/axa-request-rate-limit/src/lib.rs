@@ -141,6 +141,9 @@
 //! from each. A client can send up to twice the limit across the end of a window.
 //! A limit protects a service from a noisy client. It does not stop a distributed attack.
 
+#[cfg(any(feature = "postgres", feature = "redis"))]
+pub mod shared;
+
 use std::{
     collections::HashMap,
     fmt,

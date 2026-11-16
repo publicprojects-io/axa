@@ -9,6 +9,14 @@ Counting by a key of the service's own (`by_key`), the choice for a full table
 limit per key (`set_limit_for`), and the warning about one proxy were added for one service so far, the electronic
 patient record service. No second service uses them yet.
 
+## Across replicas
+
+With the `postgres` or `redis` feature, `shared::SharedLimiter` counts in a store every
+replica shares, in one statement per request, so three replicas give a client one
+limit, not three. The store holds only a hash of each client keyed by the service's
+secret. `WhenDown` makes the service say what an outage of the store does: let requests
+through, or refuse them with a `503`.
+
 ## License
 
 See [LICENSE.md](https://github.com/publicprojects-io/axa/blob/main/LICENSE.md).

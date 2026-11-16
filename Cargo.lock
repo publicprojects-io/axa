@@ -891,7 +891,10 @@ version = "0.3.0"
 dependencies = [
  "axa-problem",
  "axum",
+ "redis",
  "serde_json",
+ "sqlx",
+ "thiserror 2.0.21",
  "tokio",
  "tower",
  "tracing",

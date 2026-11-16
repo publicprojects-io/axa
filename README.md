@@ -91,7 +91,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-storage-with-apache-arrow-and-aws`](crates/axa-storage-with-apache-arrow-and-aws): object storage on local disk, memory, or S3 over Apache Arrow's `object_store`, keys that cannot climb out, and presigned URLs
 - [`axa-webhooks`](crates/axa-webhooks): Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, several keys while one rotates, and a verifying extractor
 - [`axa-prometheus-metrics`](crates/axa-prometheus-metrics): Prometheus text exposition, and request durations by route template
-- [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process
+- [`axa-request-rate-limit`](crates/axa-request-rate-limit): request limits per client or per key, and failed-login lockout, counted in one process, or across replicas in Postgres or Redis with `ratelimit-postgres` or `ratelimit-redis`
 - [`axa-idempotency-key`](crates/axa-idempotency-key): `Idempotency-Key` handling over Postgres, so a retried write gets its first answer back. [Where the layer goes](help/idempotency-keys/index.md)
 - [`axa-accepts-version-negotiation`](crates/axa-accepts-version-negotiation): `Accepts-version` negotiation
 

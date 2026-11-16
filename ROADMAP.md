@@ -87,6 +87,7 @@ dependency:
 - **T-31**: Internal listener for health and metrics, `INTERNAL_PORT` (done, unreleased)
 - **T-36**: `extract::Form` and a form context for Tera pages (done, unreleased)
 - **T-30**: Background migrations for SQL that cannot run in a transaction (done, unreleased)
+- **T-25**: Rate limits shared across replicas in Postgres or Redis (done, unreleased)
 
 ---
 
@@ -96,7 +97,6 @@ dependency:
 
 Each item waits until two services request it, or one has a compelling safety case:
 
-- **T-25**: Rate limits shared across replicas via Postgres/Redis
 - **T-38**: Tokio runtime and task metrics
 - **T-39**: PROXY protocol support
 - **T-40**: OpenAPI conformance checks in tests
