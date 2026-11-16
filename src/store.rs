@@ -11,7 +11,7 @@
 use std::{
     any::{Any, TypeId},
     collections::HashMap,
-    sync::{Arc, RwLock},
+    sync::{Arc, PoisonError, RwLock},
 };
 
 use axum::{
@@ -35,25 +35,22 @@ impl std::fmt::Debug for Store {
 
 impl Store {
     /// Insert a value, replacing any earlier value of the same type.
-    ///
-    /// # Panics
-    ///
-    /// If a previous holder of the lock panicked.
     pub fn insert<T: Send + Sync + 'static>(&self, value: T) {
         self.values
             .write()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(TypeId::of::<T>(), Arc::new(value));
     }
 
     /// Get a shared handle to the value of type `T`.
-    ///
-    /// # Panics
-    ///
-    /// If a previous holder of the lock panicked.
     #[must_use]
     pub fn get_ref<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
-        let value = self.values.read().unwrap().get(&TypeId::of::<T>())?.clone();
+        let value = self
+            .values
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&TypeId::of::<T>())?
+            .clone();
         value.downcast::<T>().ok()
     }
 
@@ -64,13 +61,12 @@ impl Store {
     }
 
     /// Whether a value of type `T` is present.
-    ///
-    /// # Panics
-    ///
-    /// If a previous holder of the lock panicked.
     #[must_use]
     pub fn contains<T: Send + Sync + 'static>(&self) -> bool {
-        self.values.read().unwrap().contains_key(&TypeId::of::<T>())
+        self.values
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(&TypeId::of::<T>())
     }
 }
 
@@ -109,6 +105,21 @@ mod tests {
         assert_eq!(store.get::<u32>(), Some(2));
         assert_eq!(store.get::<String>().as_deref(), Some("text"));
         assert!(!store.contains::<u8>());
+    }
+
+    #[test]
+    fn a_panic_while_the_lock_is_held_does_not_break_the_store() {
+        let store = Store::default();
+        store.insert(1_u32);
+        let poisoned = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _held = store.values.write().unwrap();
+            panic!("a handler panicked while holding the lock");
+        }));
+        assert!(poisoned.is_err());
+        assert!(store.values.is_poisoned());
+        store.insert(2_u32);
+        assert_eq!(store.get::<u32>(), Some(2));
+        assert!(store.contains::<u32>());
     }
 
     // With a database in the context, a test cannot build one.

@@ -26,3 +26,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [lints]
 workspace = true
+
+# `reqwest` is named only to choose its TLS features for `object_store`, never in code.
+[package.metadata.cargo-machete]
+ignored = ["reqwest"]

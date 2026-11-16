@@ -70,13 +70,12 @@ pub const MAX_CONNECTIONS: usize = 10_000;
 pub struct Shutdown(watch::Receiver<bool>);
 
 impl Shutdown {
-    /// One that never begins.
+    /// One that never begins. Every one shares a single sender that lives as long
+    /// as the process, so calling this for each request costs no memory that stays.
     #[must_use]
     pub fn never() -> Self {
-        let (sender, receiver) = watch::channel(false);
-        // Kept, so that the receiver never sees its sender go.
-        std::mem::forget(sender);
-        Self(receiver)
+        static NEVER: std::sync::OnceLock<watch::Sender<bool>> = std::sync::OnceLock::new();
+        Self(NEVER.get_or_init(|| watch::channel(false).0).subscribe())
     }
 
     /// One that begins when `begun` turns `true`, for a test.
@@ -998,6 +997,18 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(&body[..], b"false");
+    }
+
+    #[tokio::test]
+    async fn every_never_shares_one_sender_and_none_begins() {
+        let (first, second) = (Shutdown::never(), Shutdown::never());
+        assert!(first.0.same_channel(&second.0));
+        assert!(!first.has_begun());
+        let waited = tokio::time::timeout(Duration::from_millis(20), first.begun()).await;
+        assert!(
+            waited.is_err(),
+            "a shutdown that never begins was seen to begin"
+        );
     }
 
     /// Whether a server closes on a client that starts its headers and stalls.

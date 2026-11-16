@@ -5,6 +5,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `server::Shutdown::never`, which the extractor falls back to for a request served
+  other than by `axa::server`, leaked a channel's sender on every call. Every one now
+  shares one sender (SRV-16).
+- `store::Store` no longer panics on every later call once something panicked while
+  holding its lock. Its changes are whole, so it goes on with what it holds (STR-2).
+
+### Changed
+
+- CI refuses `unwrap`, `dbg!`, `todo!`, `unimplemented!`, and `mem::forget` in library
+  code, and `cargo machete` is told which dependencies are there only for their features.
+
 ## [0.16.1] - 2026-11-16
 
 This covers `axa` 0.16.1, which adds the `minijinja` feature for the new
