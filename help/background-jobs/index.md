@@ -339,6 +339,10 @@ next time from the new pattern. A pattern that does not parse, or names no time 
 panics at boot. Times are UTC: a schedule for 09:00 in a zone with daylight saving moves
 by an hour twice a year.
 
+A job queued wakes an idle worker at once, through `LISTEN` and `NOTIFY` on the
+`axa_queue` channel, on one connection of the queue's pool. A delayed job, or one queued
+while the listener reconnects, waits for the next poll.
+
 The worker process ticks schedules on every poll, `poll_interval`, 1 second by default,
 so a due job is queued within about that. A process with no job loops can call
 `queue.tick_schedules()` itself.

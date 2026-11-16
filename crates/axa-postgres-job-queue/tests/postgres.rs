@@ -1761,3 +1761,46 @@ async fn a_job_that_asks_for_a_delay_is_tried_again_after_it() {
     assert!((119_000..=121_000).contains(&wait), "{wait}");
     assert!(!queue.run_one().await.unwrap(), "not before its time");
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_queued_job_wakes_an_idle_loop_before_its_next_poll() {
+    let mut queue = fresh(QueueOptions {
+        poll_interval: Duration::from_mins(1),
+        ..quick()
+    })
+    .await;
+    let ran = Arc::new(AtomicUsize::new(0));
+    {
+        let ran = ran.clone();
+        queue.handle("Ping", move |_| {
+            let ran = ran.clone();
+            async move {
+                ran.fetch_add(1, Ordering::SeqCst);
+                Ok::<(), String>(())
+            }
+        });
+    }
+    let (queue, stop, run) = start(queue);
+    // Every loop has polled once and found nothing, and the listener is in place.
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let began = Instant::now();
+    queue
+        .enqueue("Ping", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let mut tx = queue.pool().begin().await.unwrap();
+    enqueue_all_on(&mut tx, &[NewJob::new("Ping", serde_json::Value::Null)])
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    until(async || ran.load(Ordering::SeqCst) == 2).await;
+    assert_eq!(ran.load(Ordering::SeqCst), 2);
+    assert!(
+        began.elapsed() < Duration::from_secs(5),
+        "{:?}",
+        began.elapsed()
+    );
+    stop.send(true).unwrap();
+    run.await.unwrap();
+}

@@ -586,7 +586,9 @@ With the `queue` feature, jobs live in one `axa_queue` table. `Queue::connect` c
 it, and `Queue::connect_existing` changes no schema, for a role that may not: a
 migration then runs `queue::SETUP_STATEMENTS`.
 It needs no broker: Postgres `FOR UPDATE SKIP LOCKED` lets each worker loop claim
-the oldest ready job in one statement, so no two loops ever claim the same row.
+the oldest ready job in one statement, so no two loops ever claim the same row. A new
+job is announced with `NOTIFY` as its transaction commits, so an idle worker starts it
+at once, and polling every `poll_interval` covers a delayed job and a dropped listener.
 
 A job moves from `queued` to `running` to `completed` or `failed`, keeping its
 error text on the row. A running job reports in every `heartbeat_interval`, so it

@@ -779,6 +779,7 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-39 | A cron pattern that does not parse, or names no time to come, panics at boot. | `a_bad_cron_pattern_is_refused_at_boot` |
 | WRK-40 | A job retried after a failure waits its doubling backoff, capped at an hour, spread at random over the upper half of it, so the waits of jobs that failed together differ. | `a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose` |
 | WRK-41 | A handler whose error is `RetryAfter`, or a `BackgroundWorker` whose error is `axa::Error::RetryAfter`, is tried again after the delay it chose, held between a second and an hour, in place of the backoff, keeping its reason as the error. It still counts as an attempt. | `a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose`, `a_retry_after_error_carries_its_delay_and_others_none`, `a_job_that_asks_for_a_delay_is_tried_again_after_it`, `a_worker_that_asks_for_a_delay_is_tried_again_after_it` |
+| WRK-42 | In the Postgres queue, a job queued is announced on `NOTIFY axa_queue` when its transaction commits, once per statement, and `run` listens on one connection, so an idle loop starts it at once rather than at its next poll. Polling stays, for a job whose time comes, and while the listener is down, which it opens again after a poll interval. | `a_queued_job_wakes_an_idle_loop_before_its_next_poll` |
 
 ### 4.19 MySQL job queue
 

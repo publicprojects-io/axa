@@ -148,6 +148,9 @@ T-28 is done, unreleased, in all three job queues and `axa::queue`, as `jittered
 T-41 is done, unreleased, as `axa_test::logs` and `axa_test::mail`, with
 `Mailer::outbox` in `axa-mail` (TST-8, TST-9, MAIL-6).
 
+T-26 is done, unreleased, in `axa-postgres-job-queue`, as the `axa_queue_notify` trigger
+and a listener in `Queue::run` (WRK-42). MySQL and SQLite have no `NOTIFY`, and poll.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

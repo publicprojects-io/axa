@@ -82,6 +82,7 @@ dependency:
 - **T-42**: Trailing-slash policy with `308` redirects (done, unreleased)
 - **T-28**: Retry jitter and job-chosen delays (done, unreleased)
 - **T-41**: Captured logs and mail in `axa-test` (done, unreleased)
+- **T-26**: Wake the Postgres queue with `LISTEN` and `NOTIFY` (done, unreleased)
 
 ---
 
@@ -92,7 +93,6 @@ dependency:
 Each item waits until two services request it, or one has a compelling safety case:
 
 - **T-25**: Rate limits shared across replicas via Postgres/Redis
-- **T-26**: Wake Postgres queue with `LISTEN` and `NOTIFY`
 - **T-30**: Background migrations for SQL that cannot run in transactions
 - **T-31**: Internal listener for health and metrics
 - **T-33**: Opaque API tokens with scopes and expiry

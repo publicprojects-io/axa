@@ -32,6 +32,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   keeps a test's logs as JSON lines, with `assert_absent` for a secret, and the `mail`
   feature's `mail::outbox` reads the memory `Mailer` a service keeps in its store,
   through the new `Mailer::outbox`.
+- `LISTEN` and `NOTIFY` in the Postgres job queue (T-26, WRK-42): a trigger announces a
+  queued job on `axa_queue` as its transaction commits, and `run` listens on one
+  connection of its pool, so an idle loop starts the job at once. Polling stays as the
+  fallback. `SETUP_STATEMENTS` has two more, which a service on `connect_existing` runs
+  in a migration; without them the queue polls as before. `Queue::connect` opens one
+  more connection for the listener.
 
 ### Changed
 

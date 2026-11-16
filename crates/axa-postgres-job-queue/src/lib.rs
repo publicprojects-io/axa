@@ -4,6 +4,12 @@
 //! highest priority, oldest first, in a single statement using `FOR UPDATE SKIP
 //! LOCKED`, so two loops can never claim the same row and no broker is needed.
 //!
+//! A job queued is announced with `NOTIFY axa_queue` when its transaction commits,
+//! and [`Queue::run`] listens on one connection of its pool, so an idle loop starts
+//! a job at once rather than at its next poll. Polling every
+//! [`QueueOptions::poll_interval`] stays, for a job whose time comes, and for any
+//! notice lost while the listener reconnects.
+//!
 //! ```no_run
 //! use std::time::Duration;
 //! use axa_postgres_job_queue::{NewJob, Queue, QueueOptions, Schedule};
@@ -170,7 +176,7 @@ use std::{
 };
 
 use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, watch};
 use uuid::Uuid;
 
 pub use sqlx::types::chrono::{DateTime, Utc};
@@ -325,6 +331,19 @@ const SETUP_ACTS_TRUNCATE: &str = "CREATE OR REPLACE TRIGGER axa_job_acts_refuse
 const SETUP_ACTS_ALWAYS: &str = "ALTER TABLE axa_job_acts
     ENABLE ALWAYS TRIGGER axa_job_acts_refuse,
     ENABLE ALWAYS TRIGGER axa_job_acts_refuse_truncate";
+/// The channel a queued job is announced on.
+pub const NOTIFY_CHANNEL: &str = "axa_queue";
+/// Announces new jobs once per statement, delivered when the transaction commits.
+const SETUP_NOTIFY_FUNCTION: &str = "CREATE OR REPLACE FUNCTION axa_queue_notify() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_notify('axa_queue', '');
+    RETURN NULL;
+END
+$$";
+const SETUP_NOTIFY: &str = "CREATE OR REPLACE TRIGGER axa_queue_notify
+    AFTER INSERT ON axa_queue
+    FOR EACH STATEMENT EXECUTE FUNCTION axa_queue_notify()";
 /// The refusing triggers [`Queue::check`] requires, each set to fire always.
 const ACTS_TRIGGERS: [&str; 2] = ["axa_job_acts_refuse", "axa_job_acts_refuse_truncate"];
 const MISSING_TRIGGERS: &str = "SELECT want FROM unnest($1::text[]) AS want
@@ -485,7 +504,7 @@ const SCHEDULE_ADVANCE_TO: &str = "UPDATE axa_schedule
 /// The statements that make the queue's tables, in order, each safe to repeat. A
 /// service whose role may not change the schema runs these in a migration, and calls
 /// [`Queue::connect_existing`]. They need Postgres 14 or later.
-pub const SETUP_STATEMENTS: [&str; 18] = [
+pub const SETUP_STATEMENTS: [&str; 20] = [
     SETUP,
     SETUP_ATTEMPTS,
     SETUP_MAX_ATTEMPTS,
@@ -504,6 +523,8 @@ pub const SETUP_STATEMENTS: [&str; 18] = [
     SETUP_ACTS_ROWS,
     SETUP_ACTS_TRUNCATE,
     SETUP_ACTS_ALWAYS,
+    SETUP_NOTIFY_FUNCTION,
+    SETUP_NOTIFY,
 ];
 
 /// The longest `by` or `reason` kept on an act, in characters.
@@ -1336,7 +1357,8 @@ impl Queue {
     async fn open(uri: &str, options: QueueOptions) -> Result<Self> {
         let loops = u32::try_from(options.workers).unwrap_or(u32::MAX);
         let pool = PgPoolOptions::new()
-            .max_connections(loops.saturating_add(2))
+            // The loops, housekeeping, schedules, and the listener.
+            .max_connections(loops.saturating_add(3))
             .connect(uri)
             .await?;
         Ok(Self::from_pool(pool, options))
@@ -2057,8 +2079,16 @@ impl Queue {
                 },
             ))));
         }
+        let wake = Arc::new(Notify::new());
+        loops.push(AbortOnDrop(tokio::spawn(listen(
+            self.pool.clone(),
+            wake.clone(),
+            self.options.poll_interval,
+            shutdown.clone(),
+        ))));
         for _ in 0..self.options.workers.max(1) {
             let queue = self.clone();
+            let wake = wake.clone();
             let mut shutdown = shutdown.clone();
             loops.push(AbortOnDrop(tokio::spawn(async move {
                 while !*shutdown.borrow() {
@@ -2069,6 +2099,7 @@ impl Queue {
                     if !worked {
                         tokio::select! {
                             () = tokio::time::sleep(queue.options.poll_interval) => {},
+                            () = wake.notified() => {},
                             _ = shutdown.changed() => {},
                         }
                     }
@@ -2084,6 +2115,42 @@ impl Queue {
     #[must_use]
     pub fn handled(&self) -> HashSet<&str> {
         self.handlers.keys().map(String::as_str).collect()
+    }
+}
+
+/// Wake the idle job loops at each notice on [`NOTIFY_CHANNEL`], until `shutdown`.
+/// A listener that fails is opened again after `gap`, the loops polling meanwhile.
+async fn listen(
+    pool: PgPool,
+    wake: Arc<Notify>,
+    gap: Duration,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    while !*shutdown.borrow() {
+        match sqlx::postgres::PgListener::connect_with(&pool).await {
+            Ok(mut listener) => match listener.listen(NOTIFY_CHANNEL).await {
+                Ok(()) => loop {
+                    tokio::select! {
+                        notice = listener.try_recv() => match notice {
+                            // A notice, or a dropped connection, which the next call opens again:
+                            // a notice sent meanwhile is lost, so wake the loops to look.
+                            Ok(_) => wake.notify_waiters(),
+                            Err(error) => {
+                                tracing::warn!(%error, "job queue listener failed, polling");
+                                break;
+                            }
+                        },
+                        _ = shutdown.changed() => return,
+                    }
+                },
+                Err(error) => tracing::warn!(%error, "job queue could not listen, polling"),
+            },
+            Err(error) => tracing::warn!(%error, "job queue could not listen, polling"),
+        }
+        tokio::select! {
+            () = tokio::time::sleep(gap) => {},
+            _ = shutdown.changed() => {},
+        }
     }
 }
 
