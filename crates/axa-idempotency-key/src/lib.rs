@@ -745,8 +745,10 @@ impl Stored {
         let headers: Vec<(String, String)> = serde_json::from_str(self.headers.as_deref()?).ok()?;
         let mut response = Response::new(Body::from(self.body.clone()?));
         *response.status_mut() = StatusCode::from_u16(status).ok()?;
+        // Appended, so a header sent more than once, such as two `link`s, comes back
+        // as many times.
         for (name, value) in headers {
-            response.headers_mut().insert(
+            response.headers_mut().append(
                 HeaderName::try_from(name).ok()?,
                 HeaderValue::try_from(value).ok()?,
             );
@@ -852,13 +854,16 @@ fn fingerprint(method: &str, path: &str, query: &str, body: &[u8]) -> String {
         })
 }
 
-/// The headers worth keeping, as JSON. A value that is not text is dropped.
+/// The headers worth keeping, every value of each, as JSON. A value that is not text is
+/// dropped.
 fn kept_headers(headers: &HeaderMap) -> String {
     let kept: Vec<(&str, &str)> = KEPT_HEADERS
         .iter()
-        .filter_map(|name| {
-            let value = headers.get(name)?.to_str().ok()?;
-            Some((name.as_str(), value))
+        .flat_map(|name| {
+            headers
+                .get_all(name)
+                .iter()
+                .filter_map(|value| Some((name.as_str(), value.to_str().ok()?)))
         })
         .collect();
     serde_json::json!(kept).to_string()
@@ -1115,6 +1120,20 @@ mod tests {
         headers.insert("x-request-id", HeaderValue::from_static("first"));
         assert_eq!(kept_headers(&headers), r#"[["location","/things/1"]]"#);
         assert_eq!(kept_headers(&HeaderMap::new()), "[]");
+    }
+
+    #[test]
+    fn a_header_sent_twice_is_kept_and_replayed_twice() {
+        let mut headers = HeaderMap::new();
+        headers.append(header::LINK, HeaderValue::from_static("</a>; rel=\"self\""));
+        headers.append(header::LINK, HeaderValue::from_static("</b>; rel=\"next\""));
+        let row = Stored {
+            headers: Some(kept_headers(&headers)),
+            ..stored("done", "a")
+        };
+        let replay = row.replay().unwrap();
+        let links: Vec<_> = replay.headers().get_all(header::LINK).iter().collect();
+        assert_eq!(links, [r#"</a>; rel="self""#, r#"</b>; rel="next""#]);
     }
 
     #[test]

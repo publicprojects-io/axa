@@ -729,8 +729,11 @@ async fn bind_and_serve(
         served = served => served,
         () = async {
             stopping.notified().await;
-            let drained = Instant::now() + Duration::from_secs(config.shutdown_drain_seconds);
-            grace(config, drained).await;
+            // A drain too long to add to now is one for ever, not a panic.
+            match Instant::now().checked_add(Duration::from_secs(config.shutdown_drain_seconds)) {
+                Some(drained) => grace(config, drained).await,
+                None => std::future::pending().await,
+            }
         } => {
             tracing::warn!("requests were still running at the shutdown time limit");
             Ok(())
@@ -837,14 +840,17 @@ pub(crate) async fn run_after(
     // A server that could not start was never told to stop.
     let told = *told.get_or_init(Instant::now);
     let _ = stop_jobs.send(true);
-    if let Some(jobs) = jobs {
+    if let Some(mut jobs) = jobs {
         tokio::select! {
-            finished = jobs => {
+            finished = &mut jobs => {
                 finished.map_err(|error| Error::string(&format!("job loops failed: {error}")))?;
             }
-            // A job left running is recovered as lost by the next worker.
+            // Stopped, not left running detached: dropping the handle alone would not.
+            // A job cut off is recovered as lost by the next worker.
             () = grace(config, told) => {
                 tracing::warn!("jobs were still running at the shutdown time limit");
+                jobs.abort();
+                let _ = jobs.await;
             }
         }
     }
@@ -1691,6 +1697,33 @@ mod tests {
         .concat();
         let answer = through_a_balancer("10.0.0.0/8", &forged).await.unwrap();
         assert!(answer.starts_with("HTTP/1.1 400"), "{answer}");
+    }
+
+    #[tokio::test]
+    async fn a_drain_too_long_to_add_to_now_does_not_panic_at_shutdown() {
+        let config = Server {
+            port: 0,
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds: 1,
+            shutdown_drain_seconds: u64::MAX,
+            header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
+            send_stall_timeout_seconds: 0,
+            max_connections: 1,
+            internal_port: None,
+            proxy_protocol_from: Vec::new(),
+        };
+        let server = tokio::spawn(async move {
+            bind_and_serve(Router::new(), &config, std::future::ready(())).await
+        });
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        if server.is_finished() {
+            assert!(server.await.unwrap().is_ok());
+        } else {
+            server.abort();
+            assert!(!server.await.unwrap_err().is_panic());
+        }
     }
 
     #[tokio::test]

@@ -870,7 +870,20 @@ mod tests {
         }
 
         async fn perform(&self, (): ()) -> Result<()> {
+            HUNG.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _running = Hung;
             std::future::pending().await
+        }
+    }
+
+    /// How many `HangWorker` jobs are running now.
+    static HUNG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+    struct Hung;
+
+    impl Drop for Hung {
+        fn drop(&mut self) {
+            HUNG.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
@@ -905,6 +918,11 @@ mod tests {
         let ended = tokio::time::timeout(Duration::from_secs(5), run).await;
         ended.expect("a hung job held shutdown").unwrap();
         assert_eq!(status_of(&queue, &id).await.0, "running");
+        assert_eq!(
+            HUNG.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "the hung job was left running after shutdown"
+        );
     }
 
     #[tokio::test]

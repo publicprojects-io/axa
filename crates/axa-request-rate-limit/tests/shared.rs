@@ -105,9 +105,48 @@ async fn postgres_replicas_share_one_limit_and_store_no_address() {
         "{keys:?}"
     );
     a_window_ends(store.clone()).await;
-    assert!(
-        store.purge(n(1)).await.unwrap() >= 1,
-        "ended windows are purged"
+    tokio::time::sleep(Duration::from_millis(1100)).await;
+    assert_eq!(
+        store.purge(n(1)).await.unwrap(),
+        1,
+        "the ended one-second window is purged, and the open minute windows kept"
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_purge_keeps_a_longer_limit_s_open_window() {
+    let store = postgres().await;
+    let hourly = SharedLimiter::new(
+        store.clone(),
+        "login",
+        n(2),
+        n(3600),
+        &SECRET,
+        WhenDown::Refuse,
+    )
+    .unwrap();
+    let short = SharedLimiter::new(
+        store.clone(),
+        "short",
+        n(1),
+        n(1),
+        &SECRET,
+        WhenDown::Refuse,
+    )
+    .unwrap();
+    assert_eq!(hourly.check("k").await.unwrap().remaining, 1);
+    assert!(short.check("k").await.unwrap().allowed);
+    tokio::time::sleep(Duration::from_millis(2100)).await;
+    assert_eq!(
+        store.purge(n(1)).await.unwrap(),
+        1,
+        "only the ended short window"
+    );
+    assert_eq!(
+        hourly.check("k").await.unwrap().remaining,
+        0,
+        "the hourly count survived the purge"
     );
 }
 

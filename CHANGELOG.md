@@ -18,6 +18,21 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Security**: `axa-keycloak-auth` told a refused caller whether the header was
   missing, was not a bearer token, or the route had no middleware. Each is now
   `invalid token`, as a bad token is, with the reason in the log (KCK-4).
+- `axa-request-rate-limit`: `shared::Store::purge` deleted every count whose window
+  index was below the given window's, across every limit in the table, so purging with
+  a one-minute window reset an hourly limit, such as for sign-ins, at each purge. Each
+  row now keeps its own window length, added to an existing table at connect, and is
+  purged by it (RAT-18).
+- `axa-idempotency-key` kept and replayed only the first value of a header sent more
+  than once, such as two `link`s. Every value now is (IDM-2).
+- `axa-postgres-job-queue`: a notice that came while a loop was finding nothing was
+  lost, so the job waited for the next poll. The loop now listens before it looks
+  (WRK-42).
+- `server::run` dropped the job loops at the shutdown time limit, which left a hung job
+  running detached. It is now stopped (SRV-5).
+- A `SHUTDOWN_DRAIN_SECONDS` too large to add to the clock panicked at shutdown, cutting
+  off requests in flight. It now drains for ever, as a shutdown limit that large waits
+  (SRV-15).
 
 ### Changed
 

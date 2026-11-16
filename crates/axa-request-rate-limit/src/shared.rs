@@ -93,17 +93,24 @@ const POSTGRES_SETUP: &str = "CREATE UNLOGGED TABLE IF NOT EXISTS axa_rate_limit
     count BIGINT NOT NULL
 )";
 
+/// Each row's own window length, so [`Store::purge`] ends each limit's windows by
+/// its own length. A table made before 0.3.3 gains it, empty until a row is counted.
+#[cfg(feature = "postgres")]
+const POSTGRES_WINDOW_COLUMN: &str =
+    "ALTER TABLE axa_rate_limits ADD COLUMN IF NOT EXISTS window_seconds BIGINT";
+
 /// Counts one request in the window the database's clock is in, and answers the count
 /// and the seconds until that window ends.
 #[cfg(feature = "postgres")]
 const POSTGRES_COUNT: &str = "WITH now AS (
     SELECT floor(extract(epoch FROM clock_timestamp()))::bigint AS second
 )
-INSERT INTO axa_rate_limits AS held (key, window_index, count)
-SELECT $1, now.second / $2, 1 FROM now
+INSERT INTO axa_rate_limits AS held (key, window_index, count, window_seconds)
+SELECT $1, now.second / $2, 1, $2 FROM now
 ON CONFLICT (key) DO UPDATE SET
     count = CASE WHEN held.window_index = EXCLUDED.window_index THEN held.count + 1 ELSE 1 END,
-    window_index = EXCLUDED.window_index
+    window_index = EXCLUDED.window_index,
+    window_seconds = EXCLUDED.window_seconds
 RETURNING count, $2 - (SELECT second FROM now) % $2 AS reset";
 
 impl Store {
@@ -116,6 +123,7 @@ impl Store {
     #[cfg(feature = "postgres")]
     pub async fn postgres(pool: sqlx::PgPool) -> Result<Self, sqlx::Error> {
         sqlx::query(POSTGRES_SETUP).execute(&pool).await?;
+        sqlx::query(POSTGRES_WINDOW_COLUMN).execute(&pool).await?;
         Ok(Self::Postgres(pool))
     }
 
@@ -167,8 +175,10 @@ impl Store {
         }
     }
 
-    /// Delete counts from windows that have ended. Redis expires its own. Run this
-    /// on a schedule, such as hourly.
+    /// Delete counts from windows that have ended, each by its own limit's window, so
+    /// limits of different lengths can share one store. `window` is used only for a
+    /// row counted before 0.3.3, which has no window of its own. Redis expires its own.
+    /// Run this on a schedule, such as hourly.
     ///
     /// # Errors
     ///
@@ -188,7 +198,8 @@ impl Store {
             #[cfg(feature = "postgres")]
             Self::Postgres(pool) => sqlx::query(
                 "DELETE FROM axa_rate_limits
-                 WHERE window_index < floor(extract(epoch FROM clock_timestamp()))::bigint / $1",
+                 WHERE (window_index + 1) * COALESCE(window_seconds, $1)
+                     <= floor(extract(epoch FROM clock_timestamp()))::bigint",
             )
             .bind(i64::from(window.get()))
             .execute(pool)

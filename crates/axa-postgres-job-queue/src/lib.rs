@@ -2092,17 +2092,13 @@ impl Queue {
             let mut shutdown = shutdown.clone();
             loops.push(AbortOnDrop(tokio::spawn(async move {
                 while !*shutdown.borrow() {
-                    let worked = queue.run_one().await.unwrap_or_else(|error| {
-                        tracing::error!(%error, "job queue error");
-                        false
-                    });
-                    if !worked {
-                        tokio::select! {
-                            () = tokio::time::sleep(queue.options.poll_interval) => {},
-                            () = wake.notified() => {},
-                            _ = shutdown.changed() => {},
-                        }
-                    }
+                    let round = async {
+                        queue.run_one().await.unwrap_or_else(|error| {
+                            tracing::error!(%error, "job queue error");
+                            false
+                        })
+                    };
+                    work_or_wait(&wake, queue.options.poll_interval, &mut shutdown, round).await;
                 }
             })));
         }
@@ -2115,6 +2111,27 @@ impl Queue {
     #[must_use]
     pub fn handled(&self) -> HashSet<&str> {
         self.handlers.keys().map(String::as_str).collect()
+    }
+}
+
+/// Run `round`, and when it found no work, wait for `poll`, a wake, or shutdown. The
+/// wait is listened for before `round` starts, so a notice that comes while `round`
+/// looks, after it found nothing, still wakes the loop rather than being lost.
+async fn work_or_wait(
+    wake: &Notify,
+    poll: Duration,
+    shutdown: &mut watch::Receiver<bool>,
+    round: impl Future<Output = bool>,
+) {
+    let woken = wake.notified();
+    tokio::pin!(woken);
+    woken.as_mut().enable();
+    if !round.await {
+        tokio::select! {
+            () = tokio::time::sleep(poll) => {},
+            () = woken => {},
+            _ = shutdown.changed() => {},
+        }
     }
 }
 
@@ -2182,6 +2199,26 @@ impl<T> Drop for AbortOnDrop<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_wake_during_a_round_that_found_nothing_is_not_lost() {
+        let wake = Notify::new();
+        let (_stop, mut shutdown) = watch::channel(false);
+        // The notice comes while the round looks, before the loop would wait.
+        let round = async {
+            wake.notify_waiters();
+            false
+        };
+        let waited = tokio::time::timeout(
+            Duration::from_secs(5),
+            work_or_wait(&wake, Duration::from_hours(1), &mut shutdown, round),
+        )
+        .await;
+        assert!(
+            waited.is_ok(),
+            "the wake was lost and the loop waited for its poll"
+        );
+    }
 
     #[test]
     fn each_retry_waits_twice_as_long_up_to_a_limit() {
