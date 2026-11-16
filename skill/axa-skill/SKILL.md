@@ -546,6 +546,11 @@ For a test that needs Postgres, `axa-test`'s `postgres-sqlx` feature gives
 template migrated once, on the server `AXA_TEST_DB_URL` names. Use `db.pool`, and end
 with `db.close().await`; a guard dropped without it is cleaned up, but later.
 
+Check logs with `let logs = axa_test::logs::capture();`, and that a secret was never
+logged with `logs.assert_absent(token)`. For mail, give the service `memory:` as its mail
+URL, keep the `Mailer` in `ctx.shared_store`, and read what it sent with `axa-test`'s
+`mail` feature: `axa_test::mail::outbox(&ctx.shared_store).take()`.
+
 Use `AppRoutes::mounted` for a route census: it lists every route as `(method, full
 path)`, without booting anything.
 

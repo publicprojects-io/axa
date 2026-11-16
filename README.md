@@ -679,6 +679,11 @@ db.close().await;
 `axa_test::isolation::assert_hidden` checks that one tenant cannot reach another's
 resources, and `axa_test::paseto::TestKeys` mints tokens under a throwaway key.
 
+`axa_test::logs::capture()` keeps what a test logs, as JSON lines, so it can check a
+line was written, or with `assert_absent` that a token never was. With the `mail`
+feature, a service given `memory:` as its mail URL keeps its `Mailer` in
+`ctx.shared_store`, and `axa_test::mail::outbox(&ctx.shared_store)` reads what it sent.
+
 ### Uploads and downloads
 
 `upload::read` holds a multipart body to `Limits`, refusing as the bytes arrive with a

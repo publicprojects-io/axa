@@ -16,9 +16,10 @@ paseto = [
     "dep:base64",
     "dep:ed25519-dalek",
     "dep:rusty_paseto",
-    "dep:serde_json",
     "dep:sha2",
 ]
+# The outbox of a service's memory mailer.
+mail = ["axa/mail"]
 # A Postgres database of its own for each test, cloned from a template migrated once.
 postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:tokio"]
 
@@ -29,8 +30,10 @@ authentication-verifier = { version = "0.9", optional = true }
 base64 = { version = "0.23", optional = true }
 ed25519-dalek = { version = "3.0", optional = true }
 rusty_paseto = { version = "0.10", default-features = false, features = ["v4_public", "serde_json"], optional = true }
-serde_json = { version = "1", optional = true }
+serde_json = "1"
 sha2 = { version = "0.11", optional = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "json"] }
 axa-postgres-sqlx = { version = "0.2.0", path = "../axa-postgres-sqlx", optional = true }
 tokio = { version = "1", features = ["rt"], optional = true }
 

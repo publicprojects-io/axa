@@ -33,6 +33,19 @@ async fn the_memory_transport_keeps_each_message_for_a_test() {
 }
 
 #[tokio::test]
+async fn a_memory_mailer_from_a_url_hands_its_outbox_to_a_test() {
+    let mailer = Mailer::from_url("memory:", false).unwrap();
+    let outbox = mailer.outbox().expect("a memory mailer has an outbox");
+    mailer.send(&message("From the service")).await.unwrap();
+    assert_eq!(
+        outbox.sent()[0].subject.as_deref(),
+        Some("From the service")
+    );
+    let dir = tempfile::tempdir().unwrap();
+    assert!(Mailer::file(dir.path()).outbox().is_none());
+}
+
+#[tokio::test]
 async fn the_file_transport_writes_one_file_per_message() {
     let dir = tempfile::tempdir().unwrap();
     let url = format!("file://{}", dir.path().display());

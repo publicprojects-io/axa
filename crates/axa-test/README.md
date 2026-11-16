@@ -8,7 +8,7 @@ real requests to its full router, middleware and all, with no port opened.
 
 ```toml
 [dev-dependencies]
-axa-test = "0.4"
+axa-test = "0.6"
 ```
 
 ```rust,ignore
@@ -27,6 +27,26 @@ It depends on `axa`, so it is a dev-dependency: it never ships in a service's bi
 A crate that lists its own `axum-test` should use the same major version, 21, or it
 gets two copies, and errors that say `TestServer` does not match `TestServer`.
 
+## Logs
+
+`axa_test::logs::capture()` keeps what the test's thread logs, as JSON lines, until it is
+dropped, a request through `TestServer` included:
+
+```rust,ignore
+let logs = axa_test::logs::capture();
+server.post("/sign-in").json(&form).await;
+assert!(logs.contains("sign-in refused"));
+logs.assert_absent(&form.password);
+```
+
+## Mail
+
+With the `mail` feature, give the service `memory:` as its mail URL in tests, so it
+builds its `Mailer` as in production and keeps it in `ctx.shared_store`. Then
+`axa_test::mail::outbox(&ctx.shared_store)` reads what it sent, and fails the test if
+the mailer would send real mail. `mail::sent_to(&outbox, address)` picks one
+recipient's messages.
+
 ## Tenants
 
 `axa_test::isolation::assert_hidden` checks that one tenant cannot reach another's
@@ -39,7 +59,7 @@ that accepts them, for a service whose guard is `axa-paseto-auth`:
 
 ```toml
 [dev-dependencies]
-axa-test = { version = "0.4", features = ["paseto"] }
+axa-test = { version = "0.6", features = ["paseto"] }
 ```
 
 Never use these keys outside tests: anyone can mint a token they verify.
@@ -53,7 +73,7 @@ role that may create databases:
 
 ```toml
 [dev-dependencies]
-axa-test = { version = "0.4", features = ["postgres-sqlx"] }
+axa-test = { version = "0.6", features = ["postgres-sqlx"] }
 ```
 
 ```rust,ignore

@@ -81,6 +81,7 @@ dependency:
 - **T-37**: `health` command for images without `curl` (done, unreleased)
 - **T-42**: Trailing-slash policy with `308` redirects (done, unreleased)
 - **T-28**: Retry jitter and job-chosen delays (done, unreleased)
+- **T-41**: Captured logs and mail in `axa-test` (done, unreleased)
 
 ---
 
@@ -99,7 +100,6 @@ Each item waits until two services request it, or one has a compelling safety ca
 - **T-38**: Tokio runtime and task metrics
 - **T-39**: PROXY protocol support
 - **T-40**: OpenAPI conformance checks in tests
-- **T-41**: Captured logs and mail in `axa-test`
 - **T-54**: SQL Server, over `tiberius`, held for a service and its dependencies
 
 ---

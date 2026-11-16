@@ -28,6 +28,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   WRK-41): a retry's doubling backoff is spread at random over its upper half, and a
   handler failing with `RetryAfter`, or a worker with `axa::Error::RetryAfter`, is tried
   again after its own delay, held between a second and an hour.
+- Captured logs and mail in `axa-test` (T-41, TST-8, TST-9, MAIL-6): `logs::capture`
+  keeps a test's logs as JSON lines, with `assert_absent` for a secret, and the `mail`
+  feature's `mail::outbox` reads the memory `Mailer` a service keeps in its store,
+  through the new `Mailer::outbox`.
 
 ### Changed
 

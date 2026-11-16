@@ -295,6 +295,17 @@ impl Mailer {
         )
     }
 
+    /// The [`Outbox`] of a memory mailer, from [`Mailer::memory`] or `memory:`, so a
+    /// test can read what a service sent through the mailer it built itself. `None`
+    /// for any other transport.
+    #[must_use]
+    pub fn outbox(&self) -> Option<Outbox> {
+        match &self.transport {
+            Transport::Memory(outbox) => Some(outbox.clone()),
+            _ => None,
+        }
+    }
+
     /// Whether the transport can be reached: for SMTP, a connection and `NOOP`. The
     /// file and memory transports always can. For a readiness check.
     ///
