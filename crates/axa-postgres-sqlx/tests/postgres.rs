@@ -8,8 +8,8 @@
 use std::path::Path;
 
 use axa_postgres_sqlx::{
-    Db, PoolConfig, begin_with, connect, dangerously_recreate, is_unique_violation, migrate,
-    pending, ping, revert,
+    BACKGROUND_LOCK, Background, Db, PoolConfig, begin_with, connect, dangerously_recreate,
+    is_unique_violation, migrate, pending, pending_background, ping, revert, run_background,
     sqlx::{self, PgPool, Row, migrate::Migrator},
     status, truncate,
 };
@@ -402,4 +402,132 @@ async fn every_connection_starts_with_the_session_settings() {
         .as_database_error()
         .and_then(axa_postgres_sqlx::sqlx::error::DatabaseError::code);
     assert_eq!(code.as_deref(), Some("25006"), "{refused:?}");
+}
+
+const NOTES_BY_ITEM: Background = Background {
+    name: "notes_by_item",
+    statements: &[
+        "DROP INDEX CONCURRENTLY IF EXISTS notes_by_item",
+        "CREATE INDEX CONCURRENTLY notes_by_item ON notes (item_id)",
+    ],
+};
+
+const ITEMS_BY_STATE: Background = Background {
+    name: "items_by_state",
+    statements: &["CREATE INDEX CONCURRENTLY items_by_state ON items (state)"],
+};
+
+const BROKEN: Background = Background {
+    name: "broken",
+    statements: &["CREATE INDEX CONCURRENTLY broken ON no_such_table (x)"],
+};
+
+const FIXED: Background = Background {
+    name: "broken",
+    statements: &["CREATE INDEX CONCURRENTLY broken ON items (name)"],
+};
+
+const BLANK: Background = Background {
+    name: "",
+    statements: &[],
+};
+
+async fn fresh_for_background() -> PgPool {
+    let pool = pool().await;
+    dangerously_recreate(&pool, &migrator().await)
+        .await
+        .unwrap();
+    sqlx::query("DROP TABLE IF EXISTS axa_background_migrations")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn background_migrations_run_outside_a_transaction_once_each() {
+    let pool = fresh_for_background().await;
+    let all = [NOTES_BY_ITEM, ITEMS_BY_STATE];
+    assert_eq!(
+        pending_background(&pool, &all).await.unwrap(),
+        ["notes_by_item", "items_by_state"]
+    );
+    let ran = run_background(&pool, &all).await.unwrap();
+    assert_eq!(ran.unwrap(), ["notes_by_item", "items_by_state"]);
+    assert!(table_exists(&pool, "notes_by_item").await);
+    assert!(table_exists(&pool, "items_by_state").await);
+    assert!(pending_background(&pool, &all).await.unwrap().is_empty());
+    assert_eq!(
+        run_background(&pool, &all).await.unwrap().unwrap(),
+        Vec::<String>::new()
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_process_finding_the_lock_held_runs_nothing() {
+    let pool = fresh_for_background().await;
+    let mut holder = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(BACKGROUND_LOCK)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    assert_eq!(run_background(&pool, &[NOTES_BY_ITEM]).await.unwrap(), None);
+    assert!(!table_exists(&pool, "notes_by_item").await);
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(BACKGROUND_LOCK)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    drop(holder);
+    assert!(
+        run_background(&pool, &[NOTES_BY_ITEM])
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_failed_background_migration_is_left_to_run_again_and_frees_the_lock() {
+    let pool = fresh_for_background().await;
+    assert!(
+        run_background(&pool, &[NOTES_BY_ITEM, BROKEN])
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        pending_background(&pool, &[NOTES_BY_ITEM, BROKEN])
+            .await
+            .unwrap(),
+        ["broken"]
+    );
+    let ran = run_background(&pool, &[NOTES_BY_ITEM, FIXED])
+        .await
+        .unwrap();
+    assert_eq!(
+        ran.unwrap(),
+        ["broken"],
+        "the lock was freed, and only it ran"
+    );
+}
+
+#[tokio::test]
+async fn a_background_migration_named_twice_or_badly_is_refused() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
+        .unwrap();
+    let twice = run_background(&pool, &[NOTES_BY_ITEM, NOTES_BY_ITEM]).await;
+    assert!(
+        matches!(twice, Err(sqlx::Error::Configuration(_))),
+        "{twice:?}"
+    );
+    let blank = run_background(&pool, &[BLANK]).await;
+    assert!(
+        matches!(blank, Err(sqlx::Error::Configuration(_))),
+        "{blank:?}"
+    );
 }

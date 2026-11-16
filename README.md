@@ -34,6 +34,11 @@ them: `AppContext::db` becomes its pool, `axa::db::connect` opens it from config
 any of them, `axa::model` and `axa::validation` give model errors and validation, and a
 broken constraint answers `409` or `422`.
 
+SQL that cannot run in a transaction, such as `CREATE INDEX CONCURRENTLY`, goes in a
+`axa::postgres_sqlx::Background` migration rather than a sqlx file. `run_background`
+runs those not yet recorded, one process at a time under an advisory lock, and
+`pending_background` names them for `Checks::migrations`.
+
 Each crate, and the `axa` feature that turns it on, is named for its database and
 library:
 

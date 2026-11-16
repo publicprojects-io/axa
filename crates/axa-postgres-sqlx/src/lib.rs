@@ -638,6 +638,156 @@ pub async fn pending(pool: &PgPool, migrator: &Migrator) -> Result<Vec<String>, 
         .collect())
 }
 
+/// A migration of statements that cannot run in a transaction, such as
+/// `CREATE INDEX CONCURRENTLY`, which sqlx's migrator runs each file in. Name each one
+/// once and never change it: its name is what marks it done.
+///
+/// A statement that fails partway can leave something behind, as a failed
+/// `CREATE INDEX CONCURRENTLY` leaves an invalid index, so begin with what clears it:
+///
+/// ```
+/// use axa_postgres_sqlx::Background;
+///
+/// const NOTES_BY_ITEM: Background = Background {
+///     name: "2026_11_notes_by_item",
+///     statements: &[
+///         "DROP INDEX CONCURRENTLY IF EXISTS notes_by_item",
+///         "CREATE INDEX CONCURRENTLY notes_by_item ON notes (item_id)",
+///     ],
+/// };
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Background {
+    /// Its name, 1 to 200 characters with no control characters, recorded once it has
+    /// run.
+    pub name: &'static str,
+    /// Its statements, each run alone, outside any transaction, in order.
+    pub statements: &'static [&'static str],
+}
+
+/// The table background migrations are recorded in.
+pub const BACKGROUND_TABLE: &str = "axa_background_migrations";
+
+/// The advisory lock one process holds while it runs background migrations.
+pub const BACKGROUND_LOCK: i64 = 0x6178_615f_6267_6d00;
+
+const BACKGROUND_SETUP: &str = "CREATE TABLE IF NOT EXISTS axa_background_migrations (
+    name TEXT PRIMARY KEY,
+    finished_at TIMESTAMPTZ NOT NULL DEFAULT now()
+)";
+
+fn check_background(migrations: &[Background]) -> Result<(), sqlx::Error> {
+    let mut names = std::collections::HashSet::new();
+    for migration in migrations {
+        let name = migration.name;
+        if name.is_empty() || name.chars().count() > 200 || name.chars().any(char::is_control) {
+            return Err(sqlx::Error::Configuration(
+                "a background migration's name must be 1 to 200 characters with no control characters".into(),
+            ));
+        }
+        if !names.insert(name) {
+            return Err(sqlx::Error::Configuration(
+                format!("the background migration {name} is named twice").into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn background_done(
+    connection: &mut sqlx::PgConnection,
+) -> Result<std::collections::HashSet<String>, sqlx::Error> {
+    let exists: bool =
+        sqlx::query_scalar("SELECT to_regclass('axa_background_migrations') IS NOT NULL")
+            .fetch_one(&mut *connection)
+            .await?;
+    if !exists {
+        return Ok(std::collections::HashSet::new());
+    }
+    let names: Vec<String> = sqlx::query_scalar("SELECT name FROM axa_background_migrations")
+        .fetch_all(&mut *connection)
+        .await?;
+    Ok(names.into_iter().collect())
+}
+
+/// Run each of `migrations` not yet recorded, in order, outside any transaction,
+/// recording each once all its statements have run. One process at a time holds
+/// [`BACKGROUND_LOCK`], so replicas booting together do not run one twice: a process
+/// that cannot take it answers `None` at once, and the one that holds it answers the
+/// names it ran. A failure stops the run, leaves that migration unrecorded, so the next
+/// run tries it again, and releases the lock.
+///
+/// # Errors
+///
+/// Fails on a name that is empty, too long, or used twice, on a database error, or on
+/// a statement that fails.
+pub async fn run_background(
+    pool: &PgPool,
+    migrations: &[Background],
+) -> Result<Option<Vec<String>>, sqlx::Error> {
+    check_background(migrations)?;
+    let mut connection = pool.acquire().await?;
+    let locked: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock($1)")
+        .bind(BACKGROUND_LOCK)
+        .fetch_one(&mut *connection)
+        .await?;
+    if !locked {
+        return Ok(None);
+    }
+    let ran = run_background_locked(&mut connection, migrations).await;
+    let unlocked = sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(BACKGROUND_LOCK)
+        .execute(&mut *connection)
+        .await;
+    if unlocked.is_err() {
+        // The lock goes with the connection, so do not hand it back to the pool.
+        connection.detach();
+    }
+    ran.map(Some)
+}
+
+async fn run_background_locked(
+    connection: &mut sqlx::PgConnection,
+    migrations: &[Background],
+) -> Result<Vec<String>, sqlx::Error> {
+    sqlx::query(BACKGROUND_SETUP)
+        .execute(&mut *connection)
+        .await?;
+    let done = background_done(connection).await?;
+    let mut ran = Vec::new();
+    for migration in migrations.iter().filter(|m| !done.contains(m.name)) {
+        for statement in migration.statements {
+            // `&'static`, so written in the code and never built from input.
+            sqlx::raw_sql(*statement).execute(&mut *connection).await?;
+        }
+        sqlx::query("INSERT INTO axa_background_migrations (name) VALUES ($1)")
+            .bind(migration.name)
+            .execute(&mut *connection)
+            .await?;
+        ran.push(migration.name.to_string());
+    }
+    Ok(ran)
+}
+
+/// The names of `migrations` not yet recorded, in order, for
+/// `Checks::migrations`.
+///
+/// # Errors
+///
+/// Fails on a database error.
+pub async fn pending_background(
+    pool: &PgPool,
+    migrations: &[Background],
+) -> Result<Vec<String>, sqlx::Error> {
+    let mut connection = pool.acquire().await?;
+    let done = background_done(&mut connection).await?;
+    Ok(migrations
+        .iter()
+        .filter(|migration| !done.contains(migration.name))
+        .map(|migration| migration.name.to_string())
+        .collect())
+}
+
 /// Empty `tables`, restarting their sequences. Each name goes through
 /// [`quote_identifier`].
 ///

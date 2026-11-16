@@ -148,6 +148,11 @@ In production, where Axa does not migrate at boot, name the migrations with
 your database crate's `pending`. Readiness and startup then fail, naming `migrations`,
 until they have run, and `server::run_once_migrated` holds the workers back too.
 
+Put `CREATE INDEX CONCURRENTLY` and other SQL that cannot run in a transaction in an
+`axa_postgres_sqlx::Background` migration, starting with `DROP INDEX CONCURRENTLY IF
+EXISTS` for the same index, and run them with `run_background(&pool, &BACKGROUND)` after
+`migrate`. A replica that finds another running them gets `None`.
+
 With layers of your own, such as an auth guard, call `into_router`, add them, and then
 call `middleware::apply`. Added after `into_app`, a layer sits outside the standard
 stack: its refusals have no request id, security headers, or CORS headers, and it has no
