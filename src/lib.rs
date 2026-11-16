@@ -64,6 +64,7 @@
 //! | `storage` | Object storage on local disk, memory, or S3, keys that cannot climb out, and presigned URLs, as `axa::storage` |
 //! | `upload` | Bounded multipart uploads, files in temporary files, as `axa::upload` |
 //! | `webhooks` | Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, as `axa::webhooks` |
+//! | `api-tokens` | Opaque API tokens kept only as a SHA-256 hash, with scopes, expiry, and last use, as `axa::api_tokens` |
 //! | `keycloak` | Keycloak bearer authentication and ABAC enforcement, as `axa::keycloak` |
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
@@ -129,6 +130,8 @@ pub mod worker;
 
 #[cfg(feature = "versioning")]
 pub use axa_accepts_version_negotiation as versioning;
+#[cfg(feature = "api-tokens")]
+pub use axa_api_tokens as api_tokens;
 #[cfg(feature = "cursor-pagination")]
 pub use axa_cursor_pagination as cursor_pagination;
 pub use axa_environment as environment;

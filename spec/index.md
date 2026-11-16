@@ -1005,6 +1005,19 @@ admin page, with one static credential rather than a signed-in user.
 | OPR-2 | A credential is compared against each one held, each in time that depends only on the held one's length. | `a_comparison_of_a_different_length_is_unequal` |
 | OPR-3 | `Operator::bearer` refuses a token under 32 bytes, over 1024, or with a byte that is not visible ASCII, and `Operator::basic` an empty user, one with a `:`, a password under 16 bytes, or a control character. `Debug` shows how many of each scheme it holds, never a credential. | `a_weak_credential_is_refused_at_boot`, `debug_output_hides_the_credentials`, `base64_matches_the_standard_alphabet_and_padding` |
 
+### 4.27 API tokens
+
+`axa-api-tokens`, the `api-tokens` feature, issues and checks opaque API tokens. It
+keeps no table: a service stores each `Record` itself, finds it by the token's id, and
+answers every refusal with the same `401`.
+
+| Id | Requirement | Test |
+|---|---|---|
+| TOK-1 | `issue` makes `<prefix>_<id>_<secret>`, the id 32 hex digits and the secret 62 with 244 random bits, and gives the SHA-256 hash of the secret to store. Its `Debug` shows the id and hash, never the token. | `an_issued_token_has_the_prefix_and_only_its_hash_is_kept`, `a_secret_has_the_randomness_of_two_uuids` |
+| TOK-2 | `Record::verify` passes only the token issued with the record, comparing in constant time, and then refuses a revoked record and one past its expiry. `Verified::allows` holds only the record's scopes. | `a_token_verifies_against_its_own_record_only`, `a_revoked_or_expired_token_is_refused` |
+| TOK-3 | `Verified::record_use` is true when the token was never used or last recorded a minute ago or more. | `last_use_is_recorded_at_most_once_a_minute` |
+| TOK-4 | `parse` and `parse_bearer` take only a token under the given prefix in its exact form, and a prefix or scope only in its short code form. | `only_a_well_formed_token_under_the_prefix_parses`, `prefixes_and_scopes_are_short_codes` |
+
 ## 5. Verification
 
 CI runs all of this on every push, in `.github/workflows/ci.yml`:

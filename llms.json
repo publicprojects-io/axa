@@ -125,6 +125,10 @@
       "crate": "axa-mail"
     },
     {
+      "name": "api-tokens",
+      "crate": "axa-api-tokens"
+    },
+    {
       "name": "storage",
       "crate": "axa-storage-with-apache-arrow-and-aws"
     },
@@ -391,6 +395,13 @@
       "description": "An outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect.",
       "feature": "http-client",
       "readme": "crates/axa-http-client/README.md"
+    },
+    {
+      "name": "axa-api-tokens",
+      "version": "0.1.0",
+      "description": "Opaque API tokens with a prefix, kept only as a SHA-256 hash, with scopes, expiry, and last use.",
+      "feature": "api-tokens",
+      "readme": "crates/axa-api-tokens/README.md"
     },
     {
       "name": "axa-mail",

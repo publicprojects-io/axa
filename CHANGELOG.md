@@ -38,6 +38,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   fallback. `SETUP_STATEMENTS` has two more, which a service on `connect_existing` runs
   in a migration; without them the queue polls as before. `Queue::connect` opens one
   more connection for the listener.
+- `axa-api-tokens` 0.1.0, and the `api-tokens` feature as `axa::api_tokens` (T-33, TOK-1
+  to TOK-4): `issue` makes `<prefix>_<id>_<secret>` tokens, kept only as the secret's
+  SHA-256 hash, and `Record::verify` checks one in constant time against its scopes,
+  expiry, and revocation, saying when to record its last use. It keeps no table of its
+  own, and needs no new dependency: `sha2`, `uuid`, and `thiserror` are in the
+  workspace.
 
 ### Changed
 

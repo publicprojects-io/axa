@@ -81,6 +81,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
 - `upload`, as `axa::upload`: bounded multipart uploads, with limits on the total, each file, each field, and the number of parts, and files written to temporary files
 - [`axa-http-client`](crates/axa-http-client): an outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
+- [`axa-api-tokens`](crates/axa-api-tokens): opaque API tokens with a prefix, kept only as a SHA-256 hash, with scopes, expiry, and last use
 - [`axa-mail`](crates/axa-mail): mail over SMTP, file, or memory transports chosen by a URL, production refusing SMTP without TLS
 - [`axa-storage-with-apache-arrow-and-aws`](crates/axa-storage-with-apache-arrow-and-aws): object storage on local disk, memory, or S3 over Apache Arrow's `object_store`, keys that cannot climb out, and presigned URLs
 - [`axa-webhooks`](crates/axa-webhooks): Standard Webhooks signing and verifying, HMAC-SHA256 and Ed25519, several keys while one rotates, and a verifying extractor
@@ -730,6 +731,15 @@ a `file://` directory, or `memory:`, and production refuses memory and S3 over p
 `http`. Every object is named by a `Key`, which refuses `..`, `.`, empty segments, a
 leading `/`, and `\`. `presigned_get` and `presigned_put` let a browser reach one S3
 object, for a time.
+
+### API tokens
+
+`axa::api_tokens::issue(&prefix)` makes a token such as `crm_<id>_<secret>`, to show its
+owner once, and the id and SHA-256 hash a service keeps in its own table, with scopes,
+an expiry, and a revoked flag. On a request, `parse_bearer` splits the header, the
+service finds the record by id, and `Record::verify` compares the hash in constant time
+and refuses a revoked or expired token. `Verified::allows(scope)` checks a scope, and
+`record_use` says when to write the last use, at most once a minute.
 
 ### Operator routes
 

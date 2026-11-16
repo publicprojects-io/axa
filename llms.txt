@@ -154,6 +154,7 @@ Each of these gives the same things for its library:
 - [axa-transactional-outbox](crates/axa-transactional-outbox/README.md) (feature `outbox`, and `outbox-encryption` to seal payloads at rest): A transactional outbox and relay on Postgres for Axum services
 - [axa-cursor-pagination](crates/axa-cursor-pagination/README.md) (feature `cursor-pagination`): Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services
 - [axa-http-client](crates/axa-http-client/README.md) (feature `http-client`): An outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
+- [axa-api-tokens](crates/axa-api-tokens/README.md) (feature `api-tokens`): Opaque API tokens with a prefix, kept only as a SHA-256 hash, with scopes, expiry, and last use.
 - [axa-mail](crates/axa-mail/README.md) (feature `mail`): Mail for Axum services over lettre: SMTP, file, and memory transports, with production refusing SMTP without TLS
 - [axa-storage-with-apache-arrow-and-aws](crates/axa-storage-with-apache-arrow-and-aws/README.md) (feature `storage`): Object storage for Axum services over Apache Arrow's object_store: local disk, memory, and S3, refusing keys that climb out, with presigned URLs
 - [axa-webhooks](crates/axa-webhooks/README.md) (feature `webhooks`): Standard Webhooks signing and verifying, with HMAC-SHA256 and Ed25519 keys, for Axum services

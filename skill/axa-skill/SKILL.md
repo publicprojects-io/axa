@@ -517,6 +517,11 @@ With `axa-keycloak-auth`:
 - Until discovery succeeds every token is refused, and the service still boots. Use
   `KeycloakVerifier::ready` for `/_health/ready`.
 
+For machine clients, issue API tokens with `axa::api_tokens::issue(&prefix)`: show
+`token()` once, and keep only `id()`, `hash()`, scopes, and an expiry in your own table.
+Verify with `parse_bearer`, a lookup by id, and `Record::verify`, and answer every
+refusal with the same `401`.
+
 For an admin page or tool rather than a user, guard the router with
 `axa::operator::protect(router, &Operator::bearer(token)?)`, the token from a secret
 store, at least 32 bytes. It compares in constant time and answers `401` otherwise.
