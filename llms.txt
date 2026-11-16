@@ -145,6 +145,7 @@ Each of these gives the same things for its library:
 ### Templates
 
 - [axa-maud-templates](crates/axa-maud-templates/README.md) (feature `maud`): Maud compile-time HTML templates with safe escaping and generic errors for Axum services
+- [axa-minijinja-templates](crates/axa-minijinja-templates/README.md) (feature `minijinja`): MiniJinja templates with safe escaping, strict undefined values, and generic errors for Axum services
 - [axa-tera-templates](crates/axa-tera-templates/README.md) (feature `tera`): Tera templates with safe escaping and generic errors for Axum services
 
 ### Other optional features

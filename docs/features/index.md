@@ -198,6 +198,7 @@ The `cursor-pagination` feature provides:
 - **No** → Skip
 - **Yes, Tera templates** → Add `axa = { version = "0.16.0", features = ["tera"] }`
 - **Yes, Maud templates** → Add `axa = { version = "0.16.0", features = ["maud"] }`
+- **Yes, MiniJinja (Jinja2) templates** → Add `axa = { version = "0.16.0", features = ["minijinja"] }`
 
 The `tera` feature provides:
 - Safe HTML escaping by default
@@ -208,6 +209,13 @@ The `maud` feature provides:
 - Compile-time HTML templates
 - Safe escaping by default
 - Generic errors
+
+The `minijinja` feature provides:
+- Jinja2 templates, loaded and parsed at boot
+- Safe HTML escaping by default
+- A missing value is an error, not blank output
+- Generic errors
+- Template inheritance
 
 ---
 
@@ -404,6 +412,7 @@ Perfect for: Financial services, healthcare, government
 | `openapi` | | | | | | | | ✅ | | | | |
 | `tera` | | | | | | | | | ✅ | | | |
 | `maud` | | | | | | | | | ✅ | | | |
+| `minijinja` | | | | | | | | | ✅ | | | |
 | `tracing` | | | | | | | | | | ✅ | | |
 | `prometheus` | | | | | | | | | | | ✅ | |
 | `opentelemetry` | | | | | | | | | | ✅ | ✅ | |
@@ -446,6 +455,7 @@ Each feature adds dependencies. Here's the impact of each:
 | `openapi` | axa-openapi-docs | |
 | `tera` | axa-tera-templates | |
 | `maud` | axa-maud-templates, maud | Compile-time templates |
+| `minijinja` | axa-minijinja-templates, minijinja | Jinja2 templates |
 | `tracing` | axa-tracing | |
 | `prometheus` | axa-prometheus-metrics | |
 | `opentelemetry` | axa-opentelemetry | |

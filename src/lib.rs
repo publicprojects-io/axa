@@ -50,6 +50,7 @@
 //! | `postgres-toasty` | Toasty on Postgres, as `axa::postgres_toasty` |
 //! | `tera` | Tera templates with safe escaping, as `axa::tera` |
 //! | `maud` | Maud compile-time templates with safe escaping, as `axa::maud` |
+//! | `minijinja` | MiniJinja templates with safe escaping and strict undefined values, as `axa::minijinja` |
 //! | `tracing` | Redaction, request tracking, and asynchronous diagnostics, as `axa::tracing` |
 //! | `session` | Web sessions with safe defaults, as `axa::session` |
 //! | `postgres-sqlx` | sqlx on Postgres: pooling, migrations, and test resets, as `axa::postgres_sqlx` |
@@ -148,6 +149,8 @@ pub use axa_keycloak_auth as keycloak;
 pub use axa_mail as mail;
 #[cfg(feature = "maud")]
 pub use axa_maud_templates as maud;
+#[cfg(feature = "minijinja")]
+pub use axa_minijinja_templates as minijinja;
 #[cfg(feature = "mysql-diesel")]
 pub use axa_mysql_diesel as mysql_diesel;
 #[cfg(feature = "mysql-seaorm")]

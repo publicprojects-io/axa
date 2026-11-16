@@ -98,6 +98,7 @@ redis = ["dep:axa-redis-cache"]
 session = ["dep:axa-web-session"]
 tera = ["dep:axa-tera-templates"]
 maud = ["dep:axa-maud-templates"]
+minijinja = ["dep:axa-minijinja-templates"]
 tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-accepts-version-negotiation"]
 # Bounded multipart uploads, files spooled to temporary files, as `axa::upload`.
@@ -126,6 +127,7 @@ axa-web-session = { version = "0.2.0", path = "crates/axa-web-session", optional
 axa-postgres-sqlx = { version = "0.2.1", path = "crates/axa-postgres-sqlx", optional = true }
 axa-tera-templates = { version = "0.2.1", path = "crates/axa-tera-templates", optional = true }
 axa-maud-templates = { version = "0.1.0", path = "crates/axa-maud-templates", optional = true }
+axa-minijinja-templates = { version = "0.1.0", path = "crates/axa-minijinja-templates", optional = true }
 axa-postgres-toasty = { version = "0.2.1", path = "crates/axa-postgres-toasty", optional = true }
 axa-mysql-sqlx = { version = "0.2.0", path = "crates/axa-mysql-sqlx", optional = true }
 axa-mysql-seaorm = { version = "0.2.0", path = "crates/axa-mysql-seaorm", optional = true }

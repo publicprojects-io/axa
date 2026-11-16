@@ -5,6 +5,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`axa-minijinja-templates` 0.1.0, behind the `minijinja` feature, as `axa::minijinja`**:
+  MiniJinja (Jinja2) templates, with what `axa-tera-templates` gives Tera. HTML templates
+  escape values unless a template says `safe`, a missing value is an error rather than
+  blank output, though `{% if %}` and `default` may test one, every template under a
+  directory is parsed at boot, a failed render answers a generic `500`, and a `Page`
+  sends its own content security policy (MJT-1 to MJT-5).
+
 ## Subcrates - 2026-11-16
 
 `axa-request-rate-limit` 0.3.2 and `axa-mysql-job-queue` 0.3.2, with no new `axa`:

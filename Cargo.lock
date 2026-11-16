@@ -545,6 +545,7 @@ dependencies = [
  "axa-keycloak-auth",
  "axa-mail",
  "axa-maud-templates",
+ "axa-minijinja-templates",
  "axa-mysql-diesel",
  "axa-mysql-seaorm",
  "axa-mysql-sqlx",
@@ -689,6 +690,18 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "maud",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "axa-minijinja-templates"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "minijinja",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
 ]
@@ -3862,6 +3875,15 @@ name = "mime"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d5848f5a9e8117cf94f2f90faac24a87ff81600ff8628c1e3deaab572e76bfa1"
+
+[[package]]
+name = "minijinja"
+version = "3.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "509eeb2603a84eccabb4d75f6ec8ba23b46bbf441aaeb863d6b83a5887fd51e4"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "minimal-lexical"

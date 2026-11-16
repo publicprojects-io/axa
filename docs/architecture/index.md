@@ -144,7 +144,7 @@ axa, with features
 ├── Authentication:    paseto, keycloak, session
 ├── Requests in:       upload, idempotency, ratelimit, versioning, cursor-pagination
 ├── Requests out:      http-client, webhooks
-├── Pages:             tera, maud
+├── Pages:             tera, maud, minijinja
 ├── Caching:           redis
 ├── Observability:     tracing, opentelemetry, prometheus
 └── API documents:     openapi
@@ -471,6 +471,7 @@ axa/
 │   ├── axa-web-session/       # Session management
 │   ├── axa-tera-templates/    # Tera template rendering
 │   ├── axa-maud-templates/    # Maud compile-time templates
+│   ├── axa-minijinja-templates/ # MiniJinja (Jinja2) templates
 │   ├── axa-webhooks/          # Standard Webhooks signing and verifying
 │   ├── axa-http-client/       # Outbound client refusing private addresses
 │   ├── axa-redis-cache/       # Redis caching

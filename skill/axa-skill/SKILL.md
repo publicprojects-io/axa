@@ -66,7 +66,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Keycloak bearer tokens and ABAC | `keycloak` |
 | PASETO bearer tokens and ABAC | `paseto` |
 | Browser sessions | `session` |
-| HTML templates | `maud`, checked by the compiler, with `maud = "0.27"` beside it, or `tera`, loaded from files |
+| HTML templates | `maud`, checked by the compiler, with `maud = "0.27"` beside it, or `minijinja` (Jinja2) or `tera`, loaded from files |
 | Redis cache with mandatory expiry | `redis` |
 | Signed cursor pages, no total, and `LIKE` escaping | `cursor-pagination` |
 | OpenAPI documents and Swagger UI | `openapi` |

@@ -72,6 +72,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 ### Templates
 
 - [`axa-maud-templates`](crates/axa-maud-templates): Maud compile-time HTML templates with safe escaping and generic errors, checked by the compiler
+- [`axa-minijinja-templates`](crates/axa-minijinja-templates): MiniJinja (Jinja2) templates with safe escaping, strict undefined values, and generic errors, loaded from files
 - [`axa-tera-templates`](crates/axa-tera-templates): Tera templates with safe escaping and generic errors, loaded from files
 
 ### Other optional features

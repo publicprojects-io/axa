@@ -35,6 +35,7 @@ Use it as a decision tree when starting a new project or adding functionality.
 | Web | Session | `axa-web-session` | Cookie-based sessions |
 | Web | Templates (Tera) | `axa-tera-templates` | HTML templates |
 | Web | Templates (Maud) | `axa-maud-templates` | Compile-time HTML templates |
+| Web | Templates (MiniJinja) | `axa-minijinja-templates` | Jinja2 HTML templates |
 | Web | Pagination | `axa-cursor-pagination` | Cursor-based pagination |
 | Web | Webhooks | `axa-webhooks` | Standard Webhooks signing and verifying |
 | Web | Outbound HTTP | `axa-http-client` | Requests that cannot reach private addresses |
@@ -118,6 +119,7 @@ Note: All queues use the same axa-queue interface via features
 ```
 Which template engine?
 ├── Tera (string-based) → axa-tera-templates
+├── MiniJinja (Jinja2, string-based) → axa-minijinja-templates
 └── Maud (compile-time) → axa-maud-templates
 ```
 
@@ -184,6 +186,7 @@ All database features provide:
 - **axa-web-session**: Session management
 - **axa-tera-templates**: Tera template rendering
 - **axa-maud-templates**: Maud template rendering
+- **axa-minijinja-templates**: MiniJinja (Jinja2) template rendering
 - **axa-cursor-pagination**: Cursor-based pagination
 - **axa-webhooks**: Standard Webhooks signing and verifying
 - **axa-http-client**: Outbound requests that cannot reach private addresses
