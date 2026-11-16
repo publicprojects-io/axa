@@ -160,6 +160,7 @@ fn config() -> Server {
         send_stall_timeout_seconds: 0,
         max_connections: 10,
         internal_port: None,
+        proxy_protocol_from: Vec::new(),
     }
 }
 

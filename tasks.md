@@ -168,6 +168,17 @@ T-25 is done, unreleased, as `axa_request_rate_limit::shared`, behind its `postg
 `redis` features (RAT-17 to RAT-19). It counts in a fixed window, as the in-process
 `Limiter` does, rather than a token bucket.
 
+On 2026-11-16 the maintainer approved the new dependencies for T-38, T-39, and T-40, and
+declined T-54's.
+
+T-38 is done, unreleased, as `axa_prometheus_metrics::runtime::TokioMetrics`, behind the
+crate's `tokio` feature and `axa`'s `prometheus-tokio` (PRM-3). It reads only the runtime
+metrics stable Tokio has, and counts tasks a service names rather than every request.
+
+T-39 is done, unreleased, as `PROXY_PROTOCOL_FROM` and `Server::proxy_protocol_from`,
+over `ppp` (SRV-17). It is a range list of its own, rather than `TRUSTED_PROXIES`, as a
+proxy that sends `X-Forwarded-For` does not send a PROXY header.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

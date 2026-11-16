@@ -380,6 +380,7 @@ place.
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
 | `INTERNAL_PORT` | A second port for the health routes and `/metrics.prom` alone, which the main port then answers `404`. Unset by default |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
+| `PROXY_PROTOCOL_FROM` | Comma-separated addresses or CIDR ranges of layer-4 load balancers whose connections start with a PROXY protocol header, version 1 or 2, naming the client. A connection from them without one is closed. Unset reads none |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take. For requests, it counts from the end of the drain |
 | `SHUTDOWN_DRAIN_SECONDS` | How long, once told to stop, to keep accepting while `/_health/ready` answers `503`, so the orchestrator takes the service out of rotation first. 0 by default. On Kubernetes, a little more than the cluster takes to remove a pod |
 | `HSTS_MAX_AGE_SECONDS` | How long browsers keep to HTTPS. One year by default |

@@ -88,6 +88,8 @@ paseto = ["dep:axa-paseto-auth"]
 # nothing, and stays so that a service naming it still builds.
 problem = []
 prometheus = ["dep:axa-prometheus-metrics"]
+# Tokio runtime and task metrics, as `axa::prometheus::runtime`.
+prometheus-tokio = ["prometheus", "axa-prometheus-metrics/tokio"]
 ratelimit = ["dep:axa-request-rate-limit"]
 # A request limit shared across replicas, counted in Postgres or in Redis.
 ratelimit-postgres = ["ratelimit", "axa-request-rate-limit/postgres"]
@@ -145,6 +147,8 @@ clap = { version = "4", features = ["derive"] }
 http-body-util = "0.1"
 hyper = { version = "1", features = ["http1", "server"] }
 hyper-util = { version = "0.1", features = ["http1", "service", "tokio"] }
+# PROXY protocol headers, read from the load balancers in `PROXY_PROTOCOL_FROM`.
+ppp = "2"
 serde ={ version = "1", features = ["derive"] }
 serde_json = "1"
 serde_path_to_error = "0.1"

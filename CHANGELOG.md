@@ -61,11 +61,23 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `INTERNAL_PORT` (T-31, HLT-14, HLT-15): a second listener for the health routes and
   `/metrics.prom` alone, which the main port then answers `404`. `service health` asks
   it. Unset, nothing changes.
+- Tokio runtime and task metrics (T-38, PRM-3): the `tokio` feature of
+  `axa-prometheus-metrics`, or `axa`'s `prometheus-tokio`, adds
+  `runtime::TokioMetrics`, read at each scrape, with `task(name)` for a `TaskMonitor`
+  whose polls, scheduling delay, and idle time are counted under that name. It adds the
+  `tokio-metrics` dependency.
+- `PROXY_PROTOCOL_FROM` (T-39, SRV-17): a connection from one of these ranges starts with
+  a PROXY protocol header, version 1 or 2, and the client it names is the address a
+  handler sees. A connection from them without one is closed, and one from anywhere else
+  is served as before. It adds the `ppp` dependency, which brings `thiserror` 1 beside
+  the workspace's `thiserror` 2.
 
 ### Changed
 
-- `config::Server` has `internal_port`, so a service that builds a `Server` field by
-  field adds `internal_port: None`.
+- `config::Server` has `internal_port` and `proxy_protocol_from`, so a service that
+  builds a `Server` field by field adds `internal_port: None` and
+  `proxy_protocol_from: Vec::new()`.
+- `config::Config::settings` lists `MAX_CONNECTIONS` once, where it listed it twice.
 - `cli::Command` has a `Health` variant, so a `match` on it adds an arm, answering it
   with `axa::cli::health` before connecting to anything.
 - `axa_web_session::layer` takes the `SessionOptions` too, `layer(store, &options)`, for

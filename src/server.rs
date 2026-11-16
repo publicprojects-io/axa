@@ -38,6 +38,7 @@ use tokio::{
 use crate::{Error, queue::Queue};
 use crate::{
     Result,
+    client::ProxyNet,
     config::{
         DEFAULT_HEADER_READ_TIMEOUT_SECONDS, DEFAULT_KEEP_ALIVE_TIMEOUT_SECONDS,
         DEFAULT_SEND_STALL_TIMEOUT_SECONDS, Server,
@@ -483,6 +484,18 @@ async fn accept_until(
     limits: Limits,
     shutdown: impl Future<Output = ()> + Send + 'static,
 ) -> Result<()> {
+    accept_with(router, listener, limits, Arc::from([]), shutdown).await
+}
+
+/// [`accept_until`], reading a PROXY protocol header first from each connection that
+/// comes from `proxy_from`.
+async fn accept_with(
+    router: Router,
+    listener: TcpListener,
+    limits: Limits,
+    proxy_from: Arc<[ProxyNet]>,
+    shutdown: impl Future<Output = ()> + Send + 'static,
+) -> Result<()> {
     let mut builder = http1::Builder::new();
     // `Tracker` does this, as it says.
     builder.header_read_timeout(None);
@@ -498,6 +511,7 @@ async fn accept_until(
             limits,
             Shutdown(announced.clone()),
             stopping.clone(),
+            &proxy_from,
             (stream, address, slot),
         );
     };
@@ -527,42 +541,68 @@ async fn accept_until(
 }
 
 /// Serve one connection in a task of its own, until it ends, goes quiet past its
-/// limits, or is told to stop and finishes what it is doing.
+/// limits, or is told to stop and finishes what it is doing. A connection from
+/// `proxy_from` first sends a PROXY header, within the header limit, and the client it
+/// names is the address a handler sees. Without one, the connection is closed.
 fn spawn_connection(
     builder: &http1::Builder,
     router: &Router,
     limits: Limits,
     shutdown: Shutdown,
     mut stopping: watch::Receiver<bool>,
-    (stream, address, slot): (TcpStream, SocketAddr, OwnedSemaphorePermit),
+    proxy_from: &[ProxyNet],
+    (mut stream, mut address, slot): (TcpStream, SocketAddr, OwnedSemaphorePermit),
 ) {
-    let tracker = Tracker::new(limits);
-    let phase = tracker.phase.subscribe();
+    let builder = builder.clone();
     let router = TowerToHyperService::new(router.clone());
-    let serving = tracker.clone();
-    let service = service_fn(move |mut request: Request<Incoming>| {
-        request
-            .extensions_mut()
-            .insert(ConnectInfo::<SocketAddr>(address));
-        request.extensions_mut().insert(shutdown.clone());
-        serving.serving();
-        let tracker = serving.clone();
-        let response = router.call(request);
-        async move {
-            let response = response.await?;
-            Ok::<_, Infallible>(response.map(|body| TrackedBody {
-                body,
-                _finished: Finished(tracker),
-            }))
-        }
-    });
-    let stream = TokioIo::new(Tracked {
-        stream,
-        tracker,
-        _slot: slot,
-    });
-    let connection = builder.serve_connection(stream, service).with_upgrades();
+    let proxied = proxy_from.iter().any(|net| net.contains(address.ip()));
     tokio::spawn(async move {
+        if proxied {
+            let read = crate::proxy_protocol::read_header(&mut stream, address);
+            let read = async {
+                match limits.header_read {
+                    Some(limit) => tokio::time::timeout(limit, read)
+                        .await
+                        .unwrap_or_else(|_| Err(io::ErrorKind::TimedOut.into())),
+                    None => read.await,
+                }
+            };
+            tokio::select! {
+                read = read => match read {
+                    Ok(client) => address = client,
+                    Err(error) => {
+                        tracing::debug!(%error, "closed a connection with no PROXY header");
+                        return;
+                    }
+                },
+                _ = stopping.wait_for(|stop| *stop) => return,
+            }
+        }
+        let tracker = Tracker::new(limits);
+        let phase = tracker.phase.subscribe();
+        let serving = tracker.clone();
+        let service = service_fn(move |mut request: Request<Incoming>| {
+            request
+                .extensions_mut()
+                .insert(ConnectInfo::<SocketAddr>(address));
+            request.extensions_mut().insert(shutdown.clone());
+            serving.serving();
+            let tracker = serving.clone();
+            let response = router.call(request);
+            async move {
+                let response = response.await?;
+                Ok::<_, Infallible>(response.map(|body| TrackedBody {
+                    body,
+                    _finished: Finished(tracker),
+                }))
+            }
+        });
+        let stream = TokioIo::new(Tracked {
+            stream,
+            tracker,
+            _slot: slot,
+        });
+        let connection = builder.serve_connection(stream, service).with_upgrades();
         let mut connection = pin!(connection);
         let stop = async {
             // A sender dropped is a server gone, and it is told first.
@@ -659,9 +699,10 @@ async fn bind_and_serve(
         let _ = told.wait_for(|told| *told).await;
     };
     let limits = Limits::from(config);
+    let proxy_from: Arc<[ProxyNet]> = Arc::from(config.proxy_protocol_from.as_slice());
     let served = async {
         match internal {
-            None => accept_until(router, listener, limits, told(stop_told)).await,
+            None => accept_with(router, listener, limits, proxy_from, told(stop_told)).await,
             Some(internal) => {
                 let main = router.clone().layer(middleware::from_fn(
                     |request: Request<Body>, next: Next| only(false, request, next),
@@ -671,8 +712,14 @@ async fn bind_and_serve(
                         only(true, request, next)
                     }));
                 tokio::try_join!(
-                    accept_until(main, listener, limits, told(stop_told.clone())),
-                    accept_until(health, internal, limits, told(stop_told)),
+                    accept_with(
+                        main,
+                        listener,
+                        limits,
+                        proxy_from.clone(),
+                        told(stop_told.clone())
+                    ),
+                    accept_with(health, internal, limits, proxy_from, told(stop_told)),
                 )
                 .map(|_| ())
             }
@@ -1561,6 +1608,80 @@ mod tests {
         assert!(response.ends_with("127.0.0.1"), "{response}");
     }
 
+    /// Send `bytes` to a server reading PROXY headers from `from`, and answer what it said,
+    /// or `None` when it closed the connection without a word.
+    async fn through_a_balancer(from: &str, bytes: &[u8]) -> Option<String> {
+        let app = Router::new().route(
+            "/",
+            get(|ConnectInfo(peer): ConnectInfo<SocketAddr>| async move { peer.to_string() }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let limits = Limits::new(1, 0, 0, 4);
+        let from: Arc<[ProxyNet]> = Arc::from([from.parse().unwrap()]);
+        tokio::spawn(accept_with(
+            app,
+            listener,
+            limits,
+            from,
+            std::future::pending(),
+        ));
+        let mut stream = TcpStream::connect(address).await.unwrap();
+        stream.write_all(bytes).await.unwrap();
+        let mut response = String::new();
+        let read =
+            tokio::time::timeout(Duration::from_secs(5), stream.read_to_string(&mut response));
+        let _ = read.await.expect("the server answers or closes");
+        (!response.is_empty()).then_some(response)
+    }
+
+    #[tokio::test]
+    async fn a_balancers_proxy_header_names_the_client() {
+        const GET: &[u8] = b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
+        let v1 = [
+            b"PROXY TCP4 192.0.2.7 10.0.0.1 51000 1241\r\n".as_slice(),
+            GET,
+        ]
+        .concat();
+        let answer = through_a_balancer("127.0.0.0/8", &v1).await.unwrap();
+        assert!(answer.ends_with("192.0.2.7:51000"), "{answer}");
+
+        let mut v2 = Vec::from(ppp::v2::PROTOCOL_PREFIX);
+        v2.extend([
+            0x21, 0x11, 0, 12, 192, 0, 2, 7, 10, 0, 0, 1, 0xc7, 0x38, 0x04, 0xd9,
+        ]);
+        v2.extend(GET);
+        let answer = through_a_balancer("127.0.0.1", &v2).await.unwrap();
+        assert!(answer.ends_with("192.0.2.7:51000"), "{answer}");
+
+        // The balancer's own health check names no client.
+        let local = [b"PROXY UNKNOWN\r\n".as_slice(), GET].concat();
+        let answer = through_a_balancer("127.0.0.1", &local).await.unwrap();
+        assert!(answer.contains("\r\n\r\n127.0.0.1:"), "{answer}");
+    }
+
+    #[tokio::test]
+    async fn a_balancer_connection_without_a_proxy_header_is_closed() {
+        const GET: &[u8] = b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
+        assert_eq!(through_a_balancer("127.0.0.1", GET).await, None);
+        // One that never sends its header is closed at the header limit.
+        assert_eq!(through_a_balancer("127.0.0.1", b"PROXY TCP4 ").await, None);
+    }
+
+    #[tokio::test]
+    async fn a_proxy_header_from_anyone_else_is_not_believed() {
+        const GET: &[u8] = b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n";
+        let answer = through_a_balancer("10.0.0.0/8", GET).await.unwrap();
+        assert!(answer.contains("\r\n\r\n127.0.0.1:"), "{answer}");
+        let forged = [
+            b"PROXY TCP4 192.0.2.7 10.0.0.1 51000 1241\r\n".as_slice(),
+            GET,
+        ]
+        .concat();
+        let answer = through_a_balancer("10.0.0.0/8", &forged).await.unwrap();
+        assert!(answer.starts_with("HTTP/1.1 400"), "{answer}");
+    }
+
     #[tokio::test]
     async fn serve_reports_an_address_it_cannot_bind() {
         let config = Server {
@@ -1574,6 +1695,7 @@ mod tests {
             send_stall_timeout_seconds: 0,
             max_connections: 1,
             internal_port: None,
+            proxy_protocol_from: Vec::new(),
         };
         assert!(serve(Router::new(), &config).await.is_err());
     }
@@ -1591,6 +1713,7 @@ mod tests {
             send_stall_timeout_seconds: 0,
             max_connections: 1,
             internal_port: None,
+            proxy_protocol_from: Vec::new(),
         }
     }
 
@@ -1608,6 +1731,7 @@ mod tests {
             send_stall_timeout_seconds: 0,
             max_connections: 1,
             internal_port: None,
+            proxy_protocol_from: Vec::new(),
         };
         let (reach, reached) = tokio::sync::oneshot::channel::<()>();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1665,6 +1789,7 @@ mod tests {
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
             max_connections: 4,
+            proxy_protocol_from: Vec::new(),
         };
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let served = tokio::spawn(async move {

@@ -88,6 +88,8 @@ dependency:
 - **T-36**: `extract::Form` and a form context for Tera pages (done, unreleased)
 - **T-30**: Background migrations for SQL that cannot run in a transaction (done, unreleased)
 - **T-25**: Rate limits shared across replicas in Postgres or Redis (done, unreleased)
+- **T-38**: Tokio runtime and task metrics, `prometheus-tokio` (done, unreleased)
+- **T-39**: PROXY protocol from `PROXY_PROTOCOL_FROM` (done, unreleased)
 
 ---
 
@@ -97,10 +99,8 @@ dependency:
 
 Each item waits until two services request it, or one has a compelling safety case:
 
-- **T-38**: Tokio runtime and task metrics
-- **T-39**: PROXY protocol support
 - **T-40**: OpenAPI conformance checks in tests
-- **T-54**: SQL Server, over `tiberius`, held for a service and its dependencies
+- **T-54**: SQL Server, over `tiberius`, held: its dependencies were declined on 2026-11-16
 
 ---
 

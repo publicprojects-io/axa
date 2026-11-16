@@ -69,6 +69,7 @@
 //! | `paseto` | PASETO bearer authentication and ABAC enforcement, as `axa::paseto` |
 //! | `problem` | Nothing: RFC 9457 problem details are always `axa::problem`, as [`Error`] answers with them |
 //! | `prometheus` | Prometheus text exposition, as `axa::prometheus` |
+//! | `prometheus-tokio` | `prometheus`, with `runtime::TokioMetrics`: Tokio runtime and task metrics |
 //! | `ratelimit` | In-process request limits and failed-login lockout, as `axa::ratelimit` |
 //! | `ratelimit-postgres`, `ratelimit-redis` | `ratelimit`, with `shared::SharedLimiter`, a limit shared across replicas, counted in Postgres or Redis |
 //! | `versioning` | `Accepts-version` negotiation, as `axa::versioning` |
@@ -117,6 +118,7 @@ pub mod middleware;
 pub mod model;
 pub mod operator;
 pub mod prelude;
+mod proxy_protocol;
 #[cfg(feature = "queue")]
 pub mod queue;
 pub mod routes;

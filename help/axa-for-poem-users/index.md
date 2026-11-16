@@ -51,7 +51,7 @@ you do, because every piece is a plain function, struct, or layer.
 | `Tracing` and a subscriber | `logger::init`, and the stack's trace layer | Log lines carry the request id, method, and route template, never the real path |
 | `OpenTelemetryMetrics` | `axa-opentelemetry`'s `http_metrics` | Off until an endpoint is set |
 | `PrometheusExporter` | `axa-prometheus-metrics`: `RequestMetrics` and `scrape` | Labels are method, route template, and status only |
-| `TokioMetrics` | None | `axa-tracing` has diagnostics that log a blocked or stalled runtime, but no task metrics |
+| `TokioMetrics` | `axa::prometheus::runtime::TokioMetrics`, with the `prometheus-tokio` feature | Prometheus counters rather than JSON, for the runtime and for tasks you name, not each request |
 | `poem-openapi` `#[OpenApi]` | `axa-openapi-docs`, with a `utoipa` or hand-written document | A different design. See [OpenAPI](#openapi) |
 | `MaybeUndefined<T>` | None | Use `serde_with`'s `double_option`, or your own enum |
 | `Multipart`, `Upload` | Axum's `Multipart`, in the prelude | No spooling helper. Raise the route's limit with `body_limit` |
@@ -296,7 +296,6 @@ And things Poem has that Axa does not have today:
 | Schema validators enforced and documented together | `validator` with `Validatable`, kept in step with the document by hand |
 | `MaybeUndefined<T>` for `PATCH` | `serde_with`'s `double_option` |
 | `Upload` and spooling a file to disk | Axum's `Multipart` and `tempfile`, with `body_limit` on the route |
-| `TokioMetrics` | `tokio-metrics` directly, and `axa-tracing`'s stall diagnostics |
 | `ForceHttps`, TLS listeners, ACME, certificate reload | The proxy or platform in front |
 | Static and embedded files | `tower-http`'s `ServeDir`, `rust-embed` |
 | `i18n` with `Accept-Language` | `fluent` directly |

@@ -117,6 +117,11 @@ pub struct Server {
     /// A second port, `INTERNAL_PORT`, for the health routes and metrics alone, which
     /// the main port then refuses. `None`, the default, serves them on the main port.
     pub internal_port: Option<u16>,
+    /// Load balancers, from `PROXY_PROTOCOL_FROM`, whose connections start with a PROXY
+    /// protocol header, version 1 or 2, naming the client. A connection from one of these
+    /// without a header is closed, and one from anywhere else is served without reading
+    /// one. Empty, the default, reads none.
+    pub proxy_protocol_from: Vec<ProxyNet>,
 }
 
 /// How long a client has to send a request's headers unless
@@ -784,17 +789,25 @@ fn connection_limit<F: Fn(&str) -> Option<String>>(vars: &Settings<F>) -> usize 
     max
 }
 
-/// `TRUSTED_PROXIES`, as a comma-separated list. A list with any bad entry is noted,
-/// and none are trusted, which is the side to fail on.
-fn trusted_proxies<F: Fn(&str) -> Option<String>>(vars: &Settings<F>) -> Vec<ProxyNet> {
-    let Some(list) = vars.optional("TRUSTED_PROXIES") else {
+/// Ranges as the comma-separated list they are read from.
+fn joined(nets: &[ProxyNet]) -> String {
+    nets.iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// `TRUSTED_PROXIES` or `PROXY_PROTOCOL_FROM`, as a comma-separated list. A list with
+/// any bad entry is noted, and none are trusted, which is the side to fail on.
+fn proxy_nets<F: Fn(&str) -> Option<String>>(vars: &Settings<F>, name: &str) -> Vec<ProxyNet> {
+    let Some(list) = vars.optional(name) else {
         return Vec::new();
     };
     list.split(',')
         .map(|net| net.trim().parse())
         .collect::<std::result::Result<_, _>>()
         .unwrap_or_else(|_| {
-            vars.invalid("TRUSTED_PROXIES", &list, "addresses or CIDR ranges");
+            vars.invalid(name, &list, "addresses or CIDR ranges");
             Vec::new()
         })
 }
@@ -971,6 +984,7 @@ impl Config {
                 ),
                 max_connections: connection_limit(&vars),
                 internal_port: None,
+                proxy_protocol_from: proxy_nets(&vars, "PROXY_PROTOCOL_FROM"),
             },
             logger: Logger {
                 enable: vars.flag("LOG_ENABLE", !test),
@@ -996,7 +1010,7 @@ impl Config {
                 timeout_overrides: Vec::new(),
                 cross_site_paths: Vec::new(),
                 cors_origins,
-                trusted_proxies: trusted_proxies(&vars),
+                trusted_proxies: proxy_nets(&vars, "TRUSTED_PROXIES"),
                 hsts: vars.flag("HTTP_HSTS", production),
                 hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
                 csp: content_security_policy(&vars, production),
@@ -1065,8 +1079,8 @@ impl Config {
                 "HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS",
                 self.server.header_read_timeout_seconds.to_string(),
             ),
-            ("MAX_CONNECTIONS", self.server.max_connections.to_string()),
             ("INTERNAL_PORT", internal_port),
+            ("PROXY_PROTOCOL_FROM", joined(&server.proxy_protocol_from)),
             (
                 "KEEP_ALIVE_TIMEOUT_SECONDS",
                 server.keep_alive_timeout_seconds.to_string(),
@@ -1124,14 +1138,7 @@ impl Config {
             ),
             ("cross_site_paths", http.cross_site_paths.join(",")),
             ("CORS_ALLOWED_ORIGINS", http.cors_origins.join(",")),
-            (
-                "TRUSTED_PROXIES",
-                http.trusted_proxies
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(","),
-            ),
+            ("TRUSTED_PROXIES", joined(&http.trusted_proxies)),
             ("HTTP_HSTS", http.hsts.to_string()),
             ("HSTS_MAX_AGE_SECONDS", http.hsts_max_age.to_string()),
             (
@@ -1263,6 +1270,30 @@ mod tests {
         assert!(with(&bad, &Environment::Production).is_err());
         let config = with(&bad, &Environment::Development).unwrap();
         assert_eq!(config.http.trusted_proxies.len(), 0);
+    }
+
+    #[test]
+    fn proxy_protocol_ranges_are_read_and_a_bad_list_reads_from_none() {
+        let url = ("DB_URL", "postgres://localhost/x");
+        let config = with(
+            &[url, ("PROXY_PROTOCOL_FROM", "10.0.0.0/8, fd00::/8")],
+            &Environment::Production,
+        )
+        .unwrap();
+        assert_eq!(config.server.proxy_protocol_from.len(), 2);
+        assert!(
+            config
+                .settings()
+                .contains(&("PROXY_PROTOCOL_FROM", "10.0.0.0/8,fd00::/8".to_string()))
+        );
+
+        let unset = with(&[url], &Environment::Production).unwrap();
+        assert!(unset.server.proxy_protocol_from.is_empty());
+
+        let bad = [url, ("PROXY_PROTOCOL_FROM", "10.0.0.0/33")];
+        assert!(with(&bad, &Environment::Production).is_err());
+        let config = with(&bad, &Environment::Development).unwrap();
+        assert!(config.server.proxy_protocol_from.is_empty());
     }
 
     #[test]

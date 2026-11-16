@@ -33,6 +33,12 @@
 //!
 //! Add the layer to the router before `axa::middleware::apply`, so that it sits inside
 //! routing and sees the route template.
+//!
+//! The `tokio` feature adds [`runtime::TokioMetrics`]: the Tokio runtime's workers, queue,
+//! and busy time, and the polls of each task a service names.
+
+#[cfg(feature = "tokio")]
+pub mod runtime;
 
 use axum::{
     extract::{MatchedPath, Request, State},
