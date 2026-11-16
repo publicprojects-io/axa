@@ -44,6 +44,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   expiry, and revocation, saying when to record its last use. It keeps no table of its
   own, and needs no new dependency: `sha2`, `uuid`, and `thiserror` are in the
   workspace.
+- `axa::extract::Form` and `FormContext` (T-36, ERR-17, ERR-18): a form body rejected
+  with a `415` or `422` problem quoting nothing, and the values and field errors of a
+  form sent back to be fixed, for a Tera page, with secret fields hidden.
 - `INTERNAL_PORT` (T-31, HLT-14, HLT-15): a second listener for the health routes and
   `/metrics.prom` alone, which the main port then answers `404`. `service health` asks
   it. Unset, nothing changes.

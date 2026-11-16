@@ -158,6 +158,9 @@ tokens does not build `sha2`.
 T-31 is done, unreleased, as `INTERNAL_PORT` and `Server::internal_port`, with the health
 spec's new section (HLT-14, HLT-15).
 
+T-36 is done, unreleased, as `axa::extract::Form` and `FormContext`, which a Tera page
+reads as `form` (ERR-17, ERR-18). `axa-tera-templates` needed no change.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

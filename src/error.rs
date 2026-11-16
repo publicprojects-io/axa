@@ -22,7 +22,7 @@
 
 use axa_problem::Problem;
 use axum::{
-    extract::rejection::{JsonRejection, PathRejection, QueryRejection},
+    extract::rejection::{FormRejection, JsonRejection, PathRejection, QueryRejection},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
@@ -262,6 +262,27 @@ impl From<QueryRejection> for Error {
         Self::CustomError(
             rejection.status(),
             ErrorDetail::new("bad_request", "A query parameter is not valid"),
+        )
+    }
+}
+
+/// A rejected form. The rejection's own text quotes the value, so it is not used.
+impl From<FormRejection> for Error {
+    fn from(rejection: FormRejection) -> Self {
+        let status = rejection.status();
+        let detail = match &rejection {
+            FormRejection::InvalidFormContentType(_) => {
+                "Send the form as application/x-www-form-urlencoded"
+            }
+            _ => "A field of the form is missing or not valid",
+        };
+        Self::CustomError(
+            status,
+            ErrorDetail {
+                code: reason_code(status),
+                detail: Some(detail.to_string()),
+                errors: None,
+            },
         )
     }
 }

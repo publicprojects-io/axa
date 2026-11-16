@@ -305,6 +305,9 @@ a `down` does not protect `db reset`.
 - Use `axa::extract::{Json, Path, Query}` in handlers where a caller should be told what
   was wrong. Axum's, which the prelude still exports, reject with a problem with no
   `detail`.
+- Take an HTML form with `axa::extract::Form<T>`. To show it again with errors, put
+  `FormContext::new(&form).hide("password").validation(&errors)` in the page's data as
+  `form`, and read `form.values.x` and `form.errors.x`. Hide every secret field.
 - Give a `PATCH` body `axa::extract::Patch<T>` fields marked `#[serde(default)]`, so a
   field left out (`Missing`) is not taken for one set to `null` (`Null`), and change the
   stored value with `apply`.

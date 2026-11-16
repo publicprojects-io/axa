@@ -85,6 +85,7 @@ dependency:
 - **T-26**: Wake the Postgres queue with `LISTEN` and `NOTIFY` (done, unreleased)
 - **T-33**: Opaque API tokens with scopes and expiry, `axa-api-tokens` (done, unreleased)
 - **T-31**: Internal listener for health and metrics, `INTERNAL_PORT` (done, unreleased)
+- **T-36**: `extract::Form` and a form context for Tera pages (done, unreleased)
 
 ---
 
@@ -96,7 +97,6 @@ Each item waits until two services request it, or one has a compelling safety ca
 
 - **T-25**: Rate limits shared across replicas via Postgres/Redis
 - **T-30**: Background migrations for SQL that cannot run in transactions
-- **T-36**: Form context for Tera pages
 - **T-38**: Tokio runtime and task metrics
 - **T-39**: PROXY protocol support
 - **T-40**: OpenAPI conformance checks in tests

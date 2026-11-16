@@ -68,10 +68,124 @@ impl<T: Serialize> IntoResponse for Json<T> {
 #[from_request(via(axum::extract::Path), rejection(Error))]
 pub struct Path<T>(pub T);
 
+/// A form body, `application/x-www-form-urlencoded`, or the query string of a `GET`.
+#[derive(Debug, Clone, Copy, Default, FromRequest)]
+#[from_request(via(axum::Form), rejection(Error))]
+pub struct Form<T>(pub T);
+
 /// Values from the URL's query string.
 #[derive(Debug, Clone, Copy, Default, FromRequestParts)]
 #[from_request(via(axum::extract::Query), rejection(Error))]
 pub struct Query<T>(pub T);
+
+/// What a page shows of a form sent back to be fixed: the values the person entered,
+/// and each field's errors, for a template such as Tera's:
+///
+/// ```
+/// use axa::extract::FormContext;
+/// use serde::Serialize;
+///
+/// #[derive(Serialize)]
+/// struct SignUp {
+///     email: String,
+///     password: String,
+/// }
+///
+/// let sent = SignUp { email: "ada@".into(), password: "secret".into() };
+/// let form = FormContext::new(&sent)
+///     .hide("password")
+///     .error("email", "Enter a whole email address");
+/// let shown = serde_json::to_value(&form).unwrap();
+/// assert_eq!(shown["values"]["email"], "ada@");
+/// assert!(shown["values"].get("password").is_none());
+/// assert_eq!(shown["errors"]["email"][0], "Enter a whole email address");
+/// ```
+///
+/// A template reads `form.values.email` and `form.errors.email`. Hide every field that
+/// holds a secret, so it is never sent back in the page.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct FormContext {
+    values: std::collections::BTreeMap<String, String>,
+    errors: std::collections::BTreeMap<String, Vec<String>>,
+}
+
+impl FormContext {
+    /// The top-level fields of `form` as text, a missing or `null` field left out, and
+    /// one that is a list or an object left out too, as a form field holds one value.
+    #[must_use]
+    pub fn new<T: Serialize>(form: &T) -> Self {
+        let values = match serde_json::to_value(form) {
+            Ok(serde_json::Value::Object(fields)) => fields
+                .into_iter()
+                .filter_map(|(name, value)| {
+                    let text = match value {
+                        serde_json::Value::String(text) => text,
+                        serde_json::Value::Number(number) => number.to_string(),
+                        serde_json::Value::Bool(flag) => flag.to_string(),
+                        _ => return None,
+                    };
+                    Some((name, text))
+                })
+                .collect(),
+            _ => std::collections::BTreeMap::new(),
+        };
+        Self {
+            values,
+            errors: std::collections::BTreeMap::new(),
+        }
+    }
+
+    /// Leave out `field`'s value, as for a password.
+    #[must_use]
+    pub fn hide(mut self, field: &str) -> Self {
+        self.values.remove(field);
+        self
+    }
+
+    /// Add `message` to `field`'s errors.
+    #[must_use]
+    pub fn error(mut self, field: &str, message: impl Into<String>) -> Self {
+        self.errors
+            .entry(field.to_string())
+            .or_default()
+            .push(message.into());
+        self
+    }
+
+    /// Add each failure in `errors`, its message, or its code when it has none.
+    #[cfg(feature = "model")]
+    #[must_use]
+    pub fn validation(mut self, errors: &validator::ValidationErrors) -> Self {
+        for (field, failures) in errors.field_errors() {
+            for failure in failures {
+                let message = failure
+                    .message
+                    .as_ref()
+                    .map_or_else(|| failure.code.to_string(), ToString::to_string);
+                self = self.error(&field, message);
+            }
+        }
+        self
+    }
+
+    /// Whether no field has an error.
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// The value entered in `field`, if it is shown.
+    #[must_use]
+    pub fn value(&self, field: &str) -> Option<&str> {
+        self.values.get(field).map(String::as_str)
+    }
+
+    /// The errors of `field`.
+    #[must_use]
+    pub fn errors(&self, field: &str) -> &[String] {
+        self.errors.get(field).map_or(&[], Vec::as_slice)
+    }
+}
 
 /// A field of a `PATCH` body: left out, set to `null`, or set to a value.
 ///
@@ -328,5 +442,146 @@ mod tests {
         let body = String::from_utf8(bytes.to_vec()).unwrap();
         assert!(!body.contains("secret"), "{body}");
         assert!(body.contains("#/size"), "{body}");
+    }
+
+    fn form_app() -> Router {
+        Router::new().route(
+            "/sign-up",
+            post(|Form(folder): Form<Folder>| async move { folder.name }),
+        )
+    }
+
+    async fn post_form(kind: Option<&str>, body: &str) -> (StatusCode, String) {
+        let mut request = Request::post("/sign-up");
+        if let Some(kind) = kind {
+            request = request.header(CONTENT_TYPE, kind);
+        }
+        let response = form_app()
+            .oneshot(request.body(Body::from(body.to_string())).unwrap())
+            .await
+            .unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        (status, String::from_utf8(bytes.to_vec()).unwrap())
+    }
+
+    #[tokio::test]
+    async fn a_form_passes_through_and_each_rejection_is_a_problem_quoting_nothing() {
+        let form = Some("application/x-www-form-urlencoded");
+        assert_eq!(
+            post_form(form, "name=ada").await,
+            (StatusCode::OK, "ada".to_string())
+        );
+        for (kind, body, expected) in [
+            (None, "name=secret", StatusCode::UNSUPPORTED_MEDIA_TYPE),
+            (
+                Some("text/plain"),
+                "name=secret",
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ),
+            (form, "other=secret", StatusCode::UNPROCESSABLE_ENTITY),
+        ] {
+            let (status, body) = post_form(kind, body).await;
+            assert_eq!(status, expected, "{body}");
+            assert!(body.contains("\"detail\""), "{body}");
+            assert!(!body.contains("secret"), "{body}");
+            let code = expected.canonical_reason().unwrap();
+            let code = code.to_ascii_lowercase().replace(' ', "_");
+            assert!(body.contains(&format!("\"code\":\"{code}\"")), "{body}");
+        }
+    }
+
+    #[derive(Serialize)]
+    struct SignUp {
+        email: String,
+        password: String,
+        age: u8,
+        newsletter: bool,
+        nickname: Option<String>,
+        tags: Vec<String>,
+    }
+
+    fn sign_up() -> SignUp {
+        SignUp {
+            email: "ada@".into(),
+            password: "hunter2".into(),
+            age: 36,
+            newsletter: true,
+            nickname: None,
+            tags: vec!["x".into()],
+        }
+    }
+
+    #[test]
+    fn a_form_context_keeps_the_values_and_errors_and_hides_a_secret() {
+        let form = FormContext::new(&sign_up())
+            .hide("password")
+            .error("email", "Enter a whole email address")
+            .error("email", "Use your work address");
+        assert_eq!(form.value("email"), Some("ada@"));
+        assert_eq!(form.value("age"), Some("36"));
+        assert_eq!(form.value("newsletter"), Some("true"));
+        assert_eq!(form.value("password"), None);
+        assert_eq!(form.value("nickname"), None, "null is left out");
+        assert_eq!(form.value("tags"), None, "a list is left out");
+        assert_eq!(form.errors("email").len(), 2);
+        assert!(form.errors("age").is_empty());
+        assert!(!form.is_valid());
+        assert!(FormContext::new(&sign_up()).is_valid());
+        let shown = serde_json::to_string(&form).unwrap();
+        assert!(!shown.contains("hunter2"), "{shown}");
+    }
+
+    #[cfg(feature = "model")]
+    #[test]
+    fn a_form_context_takes_validation_failures_by_field() {
+        use validator::Validate;
+
+        #[derive(Serialize, Validate)]
+        struct Contact {
+            #[validate(email(message = "Enter a whole email address"))]
+            email: String,
+            #[validate(length(min = 1))]
+            name: String,
+        }
+
+        let contact = Contact {
+            email: "ada@".into(),
+            name: String::new(),
+        };
+        let errors = contact.validate().unwrap_err();
+        let form = FormContext::new(&contact).validation(&errors);
+        assert_eq!(form.errors("email"), ["Enter a whole email address"]);
+        assert_eq!(form.errors("name"), ["length"]);
+        assert_eq!(form.value("email"), Some("ada@"));
+    }
+
+    #[cfg(feature = "tera")]
+    #[test]
+    fn a_tera_page_shows_the_form_escaped_with_its_errors() {
+        #[derive(Serialize)]
+        struct Sent {
+            email: String,
+        }
+        let templates = crate::tera::Templates::from_raw([(
+            "sign-up.html",
+            r#"<input name="email" value="{{ form.values.email }}">{% for e in form.errors.email %}<p>{{ e }}</p>{% endfor %}"#,
+        )])
+        .unwrap();
+        let form = FormContext::new(&Sent {
+            email: "\"><script>".into(),
+        })
+        .error("email", "Enter a whole email address");
+        let page = templates
+            .render("sign-up.html", &serde_json::json!({ "form": form }))
+            .unwrap();
+        assert!(
+            page.contains("value=\"&quot;&gt;&lt;script&gt;\""),
+            "{page}"
+        );
+        assert!(
+            page.contains("<p>Enter a whole email address</p>"),
+            "{page}"
+        );
     }
 }

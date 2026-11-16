@@ -341,6 +341,11 @@ the text, so a handler that has something to say returns an `Error`.
 A JSON body that parses but holds a value of the wrong type is a `422` whose `errors`
 says where, never what: `[{"pointer": "#/items/1/count"}]`.
 
+`extract::Form<T>` reads a form body the same way: a `415` problem for one not sent as
+a form, and a `422` for a field missing or of the wrong type, quoting nothing. To send a
+page back to be fixed, `FormContext::new(&form).hide("password").error("email", "...")`,
+or `.validation(&errors)`, gives a Tera template `form.values` and `form.errors`.
+
 `extract::Patch<T>` is a field of a `PATCH` body, marked `#[serde(default)]`, that tells
 a field left out from one set to `null`: `Missing`, `Null`, or `Value`. `apply` changes
 an `Option` to match.
