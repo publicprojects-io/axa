@@ -164,13 +164,17 @@ impl GuardConfig {
     /// Whether `path` needs no token.
     ///
     /// A prefix matches only on a whole path segment, so a public
-    /// `/swagger-ui` does not also open `/swagger-uiX`.
+    /// `/swagger-ui` does not also open `/swagger-uiX`. An empty prefix, as a
+    /// trailing comma in a list can leave, matches nothing, as it would otherwise
+    /// open every path.
     #[must_use]
     pub fn is_public(&self, path: &str) -> bool {
         self.public_paths.iter().any(|public| public == path)
             || self.public_prefixes.iter().any(|prefix| {
-                path.strip_prefix(prefix.as_str())
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                !prefix.is_empty()
+                    && path
+                        .strip_prefix(prefix.as_str())
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
             })
     }
 }
@@ -204,21 +208,22 @@ pub fn derive_action(method: &Method, path: &str, config: &GuardConfig) -> Actio
 /// Fails with `401` when the header is missing, is not text, or is not a
 /// bearer token.
 pub fn bearer_token(headers: &HeaderMap) -> Result<&str, Rejection> {
-    let header = headers
+    // The caller is told only `invalid token`, as for a bad token (KCK-4).
+    let Some(header) = headers
         .get(AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .ok_or(Rejection(
-            StatusCode::UNAUTHORIZED,
-            "missing authorization header".to_string(),
-        ))?;
+    else {
+        tracing::debug!("no authorization header, or one that is not text");
+        return Err(invalid_token());
+    };
     header
         .strip_prefix("Bearer ")
         .or_else(|| header.strip_prefix("bearer "))
         .map(str::trim)
-        .ok_or(Rejection(
-            StatusCode::UNAUTHORIZED,
-            "expected bearer token".to_string(),
-        ))
+        .ok_or_else(|| {
+            tracing::debug!("an authorization header that is not a bearer token");
+            invalid_token()
+        })
 }
 
 /// Verifies PASETO tokens for a [`Guard`], which holds no PASETO code of its own.
@@ -499,14 +504,10 @@ impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
         }
         // Fail closed: without the middleware there is nothing to verify against,
         // so this must never let the request through.
-        let guard = parts
-            .extensions
-            .get::<Arc<Guard>>()
-            .cloned()
-            .ok_or(Rejection(
-                StatusCode::UNAUTHORIZED,
-                "authentication is not configured".to_string(),
-            ))?;
+        let Some(guard) = parts.extensions.get::<Arc<Guard>>().cloned() else {
+            tracing::error!("AuthUser used on a route without the Keycloak middleware");
+            return Err(invalid_token());
+        };
         guard.claims(&parts.headers).await.map(Self)
     }
 }
@@ -570,6 +571,14 @@ mod tests {
         assert!(config.is_public("/swagger-ui/index.html"));
         assert!(!config.is_public("/swagger-uiX"));
         assert!(!config.is_public("/api/swagger-ui"));
+    }
+
+    #[test]
+    fn an_empty_prefix_opens_nothing() {
+        let config = config().public_prefix("");
+        assert!(!config.is_public("/api/anything"));
+        assert!(!config.is_public("/"));
+        assert!(config.is_public("/swagger-ui/index.html"));
     }
 
     #[test]

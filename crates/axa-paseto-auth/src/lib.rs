@@ -177,13 +177,17 @@ impl GuardConfig {
     /// Whether `path` needs no token.
     ///
     /// A prefix matches only on a whole path segment, so a public
-    /// `/swagger-ui` does not also open `/swagger-uiX`.
+    /// `/swagger-ui` does not also open `/swagger-uiX`. An empty prefix, as a
+    /// trailing comma in a list can leave, matches nothing, as it would otherwise
+    /// open every path.
     #[must_use]
     pub fn is_public(&self, path: &str) -> bool {
         self.public_paths.iter().any(|public| public == path)
             || self.public_prefixes.iter().any(|prefix| {
-                path.strip_prefix(prefix.as_str())
-                    .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+                !prefix.is_empty()
+                    && path
+                        .strip_prefix(prefix.as_str())
+                        .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
             })
     }
 }
@@ -714,6 +718,14 @@ mod tests {
         assert!(config.is_public("/swagger-ui/index.html"));
         assert!(!config.is_public("/swagger-uiX"));
         assert!(!config.is_public("/api/swagger-ui"));
+    }
+
+    #[test]
+    fn an_empty_prefix_opens_nothing() {
+        let config = config(true).public_prefix("");
+        assert!(!config.is_public("/api/anything"));
+        assert!(!config.is_public("/"));
+        assert!(config.is_public("/swagger-ui/index.html"));
     }
 
     #[test]

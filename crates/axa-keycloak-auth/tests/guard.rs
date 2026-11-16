@@ -262,6 +262,26 @@ async fn a_refusal_tells_the_caller_nothing_about_why() {
             r#"{"type":"about:blank","title":"Unauthorized","status":401,"detail":"invalid token","code":"unauthorized"}"#
         );
     }
+    for header in [None, Some("Basic dXNlcjpwYXNz"), Some("Bearer")] {
+        let mut request = Request::get("/api/places");
+        if let Some(header) = header {
+            request = request.header(AUTHORIZATION, header);
+        }
+        let response = app
+            .clone()
+            .oneshot(request.body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            std::str::from_utf8(&bytes).unwrap(),
+            r#"{"type":"about:blank","title":"Unauthorized","status":401,"detail":"invalid token","code":"unauthorized"}"#,
+            "{header:?}"
+        );
+    }
 }
 
 #[tokio::test]

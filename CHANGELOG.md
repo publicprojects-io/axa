@@ -12,6 +12,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   shares one sender (SRV-16).
 - `store::Store` no longer panics on every later call once something panicked while
   holding its lock. Its changes are whole, so it goes on with what it holds (STR-2).
+- **Security**: in `axa-paseto-auth` and `axa-keycloak-auth`, an empty public prefix, as
+  a trailing comma in a configured list leaves, made every path public, so every route
+  ran with no token. An empty prefix now matches nothing (PST-2).
+- **Security**: `axa-keycloak-auth` told a refused caller whether the header was
+  missing, was not a bearer token, or the route had no middleware. Each is now
+  `invalid token`, as a bad token is, with the reason in the log (KCK-4).
 
 ### Changed
 
