@@ -179,6 +179,9 @@ T-39 is done, unreleased, as `PROXY_PROTOCOL_FROM` and `Server::proxy_protocol_f
 over `ppp` (SRV-17). It is a range list of its own, rather than `TRUSTED_PROXIES`, as a
 proxy that sends `X-Forwarded-For` does not send a PROXY header.
 
+T-40 is done, unreleased, as `axa_test::openapi::Conformance`, behind `axa-test`'s
+`openapi` feature (TST-10). It checks responses, not requests, and OpenAPI 3.1 only.
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

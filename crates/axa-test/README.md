@@ -47,6 +47,20 @@ builds its `Mailer` as in production and keeps it in `ctx.shared_store`. Then
 the mailer would send real mail. `mail::sent_to(&outbox, address)` picks one
 recipient's messages.
 
+## OpenAPI conformance
+
+With the `openapi` feature, `axa_test::openapi::Conformance` checks a real response
+against an OpenAPI 3.1 document, such as one `utoipa` wrote: that its status is one the
+operation documents, its content type one that status documents, and its JSON body
+valid against the schema there, `$ref`s into `#/components` included. It fetches
+nothing, and refuses a 3.0 document rather than read its schemas wrongly.
+
+```rust,ignore
+let conformance = Conformance::new(serde_json::to_value(ApiDoc::openapi()).unwrap());
+conformance.assert(&server.get("/api/places/1").await);
+conformance.assert(&server.get("/api/places/missing").await);
+```
+
 ## Tenants
 
 `axa_test::isolation::assert_hidden` checks that one tenant cannot reach another's

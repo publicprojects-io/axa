@@ -71,6 +71,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   handler sees. A connection from them without one is closed, and one from anywhere else
   is served as before. It adds the `ppp` dependency, which brings `thiserror` 1 beside
   the workspace's `thiserror` 2.
+- OpenAPI conformance in `axa-test` (T-40, TST-10): with the `openapi` feature,
+  `openapi::Conformance::assert` fails a test unless a real response's status, content
+  type, and JSON body are what the OpenAPI 3.1 document says for its operation. It adds
+  the `jsonschema` dependency to `axa-test` alone, without its features that fetch
+  schemas.
 
 ### Changed
 

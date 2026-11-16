@@ -240,9 +240,14 @@ not mounted. `dangling_refs` reports a local `$ref` that points at nothing. That
 they check. They do not compare request or response schemas, status codes, or
 validation rules, so a field renamed in a struct but not in its schema still passes.
 Validation is separate too: `axa::validation::Validatable`, over the `validator` crate,
-answers `400` with field errors, and nothing ties those rules to the document. The
-[comparison page](../../spec/compare/poem/index.md#what-axa-could-add) proposes a
-schema-conformance check for tests to close most of that gap. It does not exist yet.
+answers `400` with field errors, and nothing ties those rules to the document.
+
+`axa-test`'s `openapi` feature closes most of that gap for responses.
+`axa_test::openapi::Conformance::new(document).assert(&response)` fails a test unless
+the response's status is one its operation documents, its content type one that status
+documents, and its JSON body valid against the schema there. Run it on the responses
+your request tests already make, error responses included. It checks no request
+bodies, and the document must be OpenAPI 3.1, as `utoipa` writes.
 
 To serve the document, merge `axa::openapi::router(spec, "Title")` into your router
 before `apply`. It serves the JSON at `/api-docs/openapi.json` and one Swagger UI page at
@@ -293,7 +298,7 @@ And things Poem has that Axa does not have today:
 | Poem | Use in the meantime |
 |---|---|
 | Routes and document from one macro | `utoipa` and the `drift` test above |
-| Schema validators enforced and documented together | `validator` with `Validatable`, kept in step with the document by hand |
+| Schema validators enforced and documented together | `validator` with `Validatable`, kept in step with the document by hand, and responses checked against it with `axa_test::openapi` |
 | `MaybeUndefined<T>` for `PATCH` | `serde_with`'s `double_option` |
 | `Upload` and spooling a file to disk | Axum's `Multipart` and `tempfile`, with `body_limit` on the route |
 | `ForceHttps`, TLS listeners, ACME, certificate reload | The proxy or platform in front |

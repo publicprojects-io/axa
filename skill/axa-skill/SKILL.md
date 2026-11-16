@@ -72,6 +72,7 @@ read. It needs Rust 1.97 or newer, on edition 2024.
 | Redaction, request tracking, async diagnostics | `tracing` |
 | OTLP traces and request metrics | `opentelemetry` |
 | Prometheus exposition | `prometheus` |
+| Tokio runtime and task metrics in Prometheus | `prometheus-tokio` |
 | RFC 9457 problem details | Always included, as `axa::problem` |
 | Request limits per client or per key, and failed-login lockout | `ratelimit` |
 | A request limit shared across replicas, in Postgres or Redis | `ratelimit-postgres`, `ratelimit-redis` |
@@ -282,6 +283,9 @@ Production fails closed, and these are the usual first-deploy surprises:
 - `MAX_CONNECTIONS` limits open connections, and defaults to `server::MAX_CONNECTIONS`.
 - `INTERNAL_PORT` serves the health routes and `/metrics.prom` on a port of their own,
   which the main port then answers `404`. Point the probes and the scraper at it.
+- `PROXY_PROTOCOL_FROM` lists a layer-4 load balancer's ranges. Their connections must
+  start with a PROXY header, version 1 or 2, and the client it names is the address a
+  handler sees. Anyone else's connection is served without reading one.
 - `DB_URL_FILE` may name a file holding the connection string, as a mounted secret.
   Setting it and `DB_URL` both stops the boot.
 
@@ -565,7 +569,10 @@ with `db.close().await`; a guard dropped without it is cleaned up, but later.
 Check logs with `let logs = axa_test::logs::capture();`, and that a secret was never
 logged with `logs.assert_absent(token)`. For mail, give the service `memory:` as its mail
 URL, keep the `Mailer` in `ctx.shared_store`, and read what it sent with `axa-test`'s
-`mail` feature: `axa_test::mail::outbox(&ctx.shared_store).take()`.
+`mail` feature: `axa_test::mail::outbox(&ctx.shared_store).take()`. With the `openapi`
+feature, `axa_test::openapi::Conformance::new(document).assert(&response)` fails a test
+whose response status, content type, or JSON body the OpenAPI 3.1 document does not
+allow.
 
 Use `AppRoutes::mounted` for a route census: it lists every route as `(method, full
 path)`, without booting anything.

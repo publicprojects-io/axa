@@ -480,6 +480,9 @@ ctx.health_checks = Checks::new().add("search", || async { search::ping().await 
 
 Set `INTERNAL_PORT` to serve the health routes and `/metrics.prom` on a port of their
 own, and point the probes and the scraper at it. The main port then answers them `404`.
+With the `prometheus-tokio` feature, `axa::prometheus::runtime::TokioMetrics` adds the
+Tokio runtime's workers, queue depth, and busy time to the scrape, and the polls and
+scheduling delay of each task you name.
 
 The route is public, so a caller must not be able to drive load at a dependency.
 One answer, passing or failing, is reused for 5 seconds, and callers during a round
@@ -701,6 +704,8 @@ resources, and `axa_test::paseto::TestKeys` mints tokens under a throwaway key.
 line was written, or with `assert_absent` that a token never was. With the `mail`
 feature, a service given `memory:` as its mail URL keeps its `Mailer` in
 `ctx.shared_store`, and `axa_test::mail::outbox(&ctx.shared_store)` reads what it sent.
+With the `openapi` feature, `axa_test::openapi::Conformance` fails a test whose response
+status, content type, or JSON body its OpenAPI 3.1 document does not allow.
 
 ### Uploads and downloads
 

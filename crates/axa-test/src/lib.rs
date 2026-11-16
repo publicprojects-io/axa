@@ -24,6 +24,8 @@ pub mod isolation;
 pub mod logs;
 #[cfg(feature = "mail")]
 pub mod mail;
+#[cfg(feature = "openapi")]
+pub mod openapi;
 #[cfg(feature = "paseto")]
 pub mod paseto;
 #[cfg(feature = "postgres-sqlx")]

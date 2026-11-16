@@ -20,6 +20,8 @@ paseto = [
 ]
 # The outbox of a service's memory mailer.
 mail = ["axa/mail"]
+# Responses checked against the OpenAPI document, status, content type, and schema.
+openapi = ["dep:jsonschema"]
 # A Postgres database of its own for each test, cloned from a template migrated once.
 postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:tokio"]
 
@@ -29,6 +31,8 @@ axum-test = "21"
 authentication-verifier = { version = "0.9", optional = true }
 base64 = { version = "0.23", optional = true }
 ed25519-dalek = { version = "3.0", optional = true }
+# Without its default features, so that it fetches no schema over HTTP or from disk.
+jsonschema = { version = "0.61", default-features = false, optional = true }
 rusty_paseto = { version = "0.10", default-features = false, features = ["v4_public", "serde_json"], optional = true }
 serde_json = "1"
 sha2 = { version = "0.11", optional = true }
