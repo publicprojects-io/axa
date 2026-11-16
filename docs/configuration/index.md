@@ -308,6 +308,7 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | Number | No | 75 | Idle connection timeout |
 | `SEND_STALL_TIMEOUT_SECONDS` | Number | No | 60 | Send stall timeout |
 | `MAX_CONNECTIONS` | Number | No | 10000 | Maximum connections |
+| `INTERNAL_PORT` | Number | No | unset | A port for the health routes and `/metrics.prom` alone, refused by the main port |
 
 ### HTTP Variables
 

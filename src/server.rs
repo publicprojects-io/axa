@@ -18,6 +18,8 @@ use axum::{
     body::Body,
     extract::{ConnectInfo, FromRequestParts},
     http::{Request, request::Parts},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
 };
 use hyper::{
     body::{Body as HttpBody, Bytes, Frame, Incoming, SizeHint},
@@ -601,6 +603,33 @@ async fn grace(config: &Server, told: Instant) {
     }
 }
 
+/// The metrics route the internal port serves, `axa-prometheus-metrics`' default.
+pub const METRICS_PATH: &str = "/metrics.prom";
+
+/// Whether `path` is one the internal port serves: a health route or the metrics.
+#[must_use]
+pub fn is_internal_path(path: &str) -> bool {
+    path == "/_health" || path.starts_with("/_health/") || path == METRICS_PATH
+}
+
+/// The `404` the main port gives an internal path, and the internal port any other.
+async fn only(internal: bool, request: Request<Body>, next: Next) -> Response {
+    if is_internal_path(request.uri().path()) == internal {
+        next.run(request).await
+    } else {
+        crate::Error::NotFound.into_response()
+    }
+}
+
+/// A task aborted when dropped, so a server that ends does not leave its stop waiting.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 async fn bind_and_serve(
     router: Router,
     config: &Server,
@@ -609,14 +638,49 @@ async fn bind_and_serve(
     let address = format!("{}:{}", config.binding, config.port);
     let listener = TcpListener::bind(&address).await?;
     tracing::info!(address, "listening");
+    let internal = match config.internal_port {
+        Some(port) => {
+            let address = format!("{}:{port}", config.binding);
+            let internal = TcpListener::bind(&address).await?;
+            tracing::info!(address, "listening for health and metrics");
+            Some(internal)
+        }
+        None => None,
+    };
     let stopping = Arc::new(Notify::new());
     let told = stopping.clone();
-    let signal = async move {
+    let (tell, stop_told) = watch::channel(false);
+    let signal = AbortOnDrop(tokio::spawn(async move {
         stop.await;
+        let _ = tell.send(true);
         told.notify_one();
+    }));
+    let told = |mut told: watch::Receiver<bool>| async move {
+        let _ = told.wait_for(|told| *told).await;
     };
+    let limits = Limits::from(config);
+    let served = async {
+        match internal {
+            None => accept_until(router, listener, limits, told(stop_told)).await,
+            Some(internal) => {
+                let main = router.clone().layer(middleware::from_fn(
+                    |request: Request<Body>, next: Next| only(false, request, next),
+                ));
+                let health =
+                    router.layer(middleware::from_fn(|request: Request<Body>, next: Next| {
+                        only(true, request, next)
+                    }));
+                tokio::try_join!(
+                    accept_until(main, listener, limits, told(stop_told.clone())),
+                    accept_until(health, internal, limits, told(stop_told)),
+                )
+                .map(|_| ())
+            }
+        }
+    };
+    let _signal = signal;
     tokio::select! {
-        served = accept_until(router, listener, config.into(), signal) => served,
+        served = served => served,
         () = async {
             stopping.notified().await;
             let drained = Instant::now() + Duration::from_secs(config.shutdown_drain_seconds);
@@ -1509,6 +1573,7 @@ mod tests {
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
             max_connections: 1,
+            internal_port: None,
         };
         assert!(serve(Router::new(), &config).await.is_err());
     }
@@ -1525,6 +1590,7 @@ mod tests {
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
             max_connections: 1,
+            internal_port: None,
         }
     }
 
@@ -1541,6 +1607,7 @@ mod tests {
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
             max_connections: 1,
+            internal_port: None,
         };
         let (reach, reached) = tokio::sync::oneshot::channel::<()>();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1573,6 +1640,85 @@ mod tests {
         let ended = tokio::time::timeout(Duration::from_secs(4), served).await;
         client.abort();
         ended.is_ok()
+    }
+
+    async fn free_port() -> u16 {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        listener.local_addr().unwrap().port()
+    }
+
+    #[tokio::test]
+    async fn an_internal_port_serves_health_and_metrics_and_the_main_port_refuses_them() {
+        let router = Router::new()
+            .route("/_health/live", get(|| async { "live" }))
+            .route(METRICS_PATH, get(|| async { "metrics" }))
+            .route("/api/things", get(|| async { "things" }));
+        let (main, internal) = (free_port().await, free_port().await);
+        let config = Server {
+            port: main,
+            internal_port: Some(internal),
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds: 1,
+            shutdown_drain_seconds: 0,
+            header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
+            send_stall_timeout_seconds: 0,
+            max_connections: 4,
+        };
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let served = tokio::spawn(async move {
+            bind_and_serve(router, &config, async move {
+                let _ = stopped.await;
+            })
+            .await
+        });
+        let ask = |port, path| crate::cli::probe("127.0.0.1", port, path, Duration::from_secs(2));
+        for _ in 0..100 {
+            if ask(main, "/api/things").await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(ask(main, "/api/things").await.is_ok());
+        assert!(ask(internal, "/_health/live").await.is_ok());
+        assert!(ask(internal, METRICS_PATH).await.is_ok());
+        for (port, path) in [
+            (main, "/_health/live"),
+            (main, METRICS_PATH),
+            (internal, "/api/things"),
+        ] {
+            let refused = ask(port, path).await.unwrap_err().to_string();
+            assert!(refused.contains("answered 404"), "{port} {path}: {refused}");
+        }
+        stop.send(()).unwrap();
+        served.await.unwrap().unwrap();
+        assert!(
+            ask(internal, "/_health/live").await.is_err(),
+            "both stop listening"
+        );
+    }
+
+    #[cfg(feature = "prometheus")]
+    #[test]
+    fn the_internal_metrics_path_is_the_prometheus_crates() {
+        assert_eq!(METRICS_PATH, crate::prometheus::DEFAULT_PATH);
+    }
+
+    #[test]
+    fn only_the_health_routes_and_metrics_are_internal() {
+        for path in ["/_health", "/_health/live", "/_health/ready", METRICS_PATH] {
+            assert!(is_internal_path(path), "{path}");
+        }
+        for path in [
+            "/",
+            "/_healthy",
+            "/api/_health/live",
+            "/metrics.prom/x",
+            "/metrics",
+        ] {
+            assert!(!is_internal_path(path), "{path}");
+        }
     }
 
     #[tokio::test]

@@ -44,9 +44,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   expiry, and revocation, saying when to record its last use. It keeps no table of its
   own, and needs no new dependency: `sha2`, `uuid`, and `thiserror` are in the
   workspace.
+- `INTERNAL_PORT` (T-31, HLT-14, HLT-15): a second listener for the health routes and
+  `/metrics.prom` alone, which the main port then answers `404`. `service health` asks
+  it. Unset, nothing changes.
 
 ### Changed
 
+- `config::Server` has `internal_port`, so a service that builds a `Server` field by
+  field adds `internal_port: None`.
 - `cli::Command` has a `Health` variant, so a `match` on it adds an arm, answering it
   with `axa::cli::health` before connecting to anything.
 - `axa_web_session::layer` takes the `SessionOptions` too, `layer(store, &options)`, for

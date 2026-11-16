@@ -855,6 +855,7 @@ mod tests {
             keep_alive_timeout_seconds: 0,
             send_stall_timeout_seconds: 0,
             max_connections: 1,
+            internal_port: None,
         }
     }
 

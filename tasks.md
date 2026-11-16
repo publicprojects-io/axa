@@ -155,6 +155,9 @@ T-33 is done, unreleased, as the new crate `axa-api-tokens` and the `api-tokens`
 (TOK-1 to TOK-4). It is a crate rather than a module so a service that does not issue
 tokens does not build `sha2`.
 
+T-31 is done, unreleased, as `INTERNAL_PORT` and `Server::internal_port`, with the health
+spec's new section (HLT-14, HLT-15).
+
 | Id | Task | Where | Effort | New dependency | Sources |
 |---|---|---|---|---|---|
 | T-23 | A mail crate with SMTP, file, and memory transports, production refusing insecure SMTP, and the memory transport reachable from `axa-test`. It does not queue mail itself | New crate `axa-mail` | M | `lettre` | Loco, Topcoat, crates.io |

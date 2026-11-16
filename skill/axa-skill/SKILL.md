@@ -274,6 +274,8 @@ Production fails closed, and these are the usual first-deploy surprises:
   takes `axa::client::ClientAddr` for the real address, which stays out of the request
   span because it is personal data.
 - `MAX_CONNECTIONS` limits open connections, and defaults to `server::MAX_CONNECTIONS`.
+- `INTERNAL_PORT` serves the health routes and `/metrics.prom` on a port of their own,
+  which the main port then answers `404`. Point the probes and the scraper at it.
 - `DB_URL_FILE` may name a file holding the connection string, as a mounted secret.
   Setting it and `DB_URL` both stops the boot.
 

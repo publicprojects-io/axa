@@ -251,7 +251,7 @@ pub fn check(environment: &Environment, defaults: &Defaults) -> Result<()> {
 pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The `health` command: ask the server on this machine, at the configured binding
-/// and port, for [`crate::health::LIVE`], or [`crate::health::READY`] with `ready`.
+/// and its internal port if it has one, or else its port, for [`crate::health::LIVE`], or [`crate::health::READY`] with `ready`.
 /// A binding to every address, such as `0.0.0.0`, is asked on loopback.
 ///
 /// # Errors
@@ -265,7 +265,9 @@ pub async fn health(
     port: Option<u16>,
 ) -> Result<()> {
     let config = Config::from_lookup(environment, defaults, |name| std::env::var(name).ok())?;
-    let port = port.unwrap_or(config.server.port);
+    let port = port
+        .or(config.server.internal_port)
+        .unwrap_or(config.server.port);
     let path = if ready {
         crate::health::READY
     } else {

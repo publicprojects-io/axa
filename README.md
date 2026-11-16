@@ -368,6 +368,7 @@ place.
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | How long an idle connection is kept for a next request. Keep it above any load balancer's idle timeout. 75 by default, and `0` keeps it for ever |
 | `SEND_STALL_TIMEOUT_SECONDS` | How long a client that has stopped reading may hold up a response before it is dropped. Any write that goes through starts this again. 60 by default, and `0` waits for ever |
 | `MAX_CONNECTIONS` | The most connections open at once. 10,000 by default, and more wait to be accepted |
+| `INTERNAL_PORT` | A second port for the health routes and `/metrics.prom` alone, which the main port then answers `404`. Unset by default |
 | `TRUSTED_PROXIES` | Comma-separated addresses or CIDR ranges of the proxies whose `X-Forwarded-For` entries are believed. Unset ignores the header |
 | `SHUTDOWN_TIMEOUT_SECONDS` | How long, once told to stop, to wait for requests and jobs. 25 by default, and `0` waits for as long as they take. For requests, it counts from the end of the drain |
 | `SHUTDOWN_DRAIN_SECONDS` | How long, once told to stop, to keep accepting while `/_health/ready` answers `503`, so the orchestrator takes the service out of rotation first. 0 by default. On Kubernetes, a little more than the cluster takes to remove a pod |
@@ -465,6 +466,9 @@ its Redis or search index. A named check is an ordinary async closure:
 ```rust,ignore
 ctx.health_checks = Checks::new().add("search", || async { search::ping().await });
 ```
+
+Set `INTERNAL_PORT` to serve the health routes and `/metrics.prom` on a port of their
+own, and point the probes and the scraper at it. The main port then answers them `404`.
 
 The route is public, so a caller must not be able to drive load at a dependency.
 One answer, passing or failing, is reused for 5 seconds, and callers during a round

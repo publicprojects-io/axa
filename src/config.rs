@@ -114,6 +114,9 @@ pub struct Server {
     pub send_stall_timeout_seconds: u64,
     /// The most connections open at once. More wait to be accepted.
     pub max_connections: usize,
+    /// A second port, `INTERNAL_PORT`, for the health routes and metrics alone, which
+    /// the main port then refuses. `None`, the default, serves them on the main port.
+    pub internal_port: Option<u16>,
 }
 
 /// How long a client has to send a request's headers unless
@@ -818,6 +821,17 @@ fn cors_origins<F: Fn(&str) -> Option<String>>(
     Ok(origins)
 }
 
+/// `INTERNAL_PORT`, unless unset or `0`. One that is the main port is a problem, and
+/// unset.
+fn internal_port<F: Fn(&str) -> Option<String>>(vars: &Settings<F>, port: u16) -> Option<u16> {
+    let internal = vars.parsed("INTERNAL_PORT", 0_u16);
+    if internal != 0 && internal == port {
+        vars.problem(format!("INTERNAL_PORT={internal} is the same as PORT"));
+        return None;
+    }
+    (internal != 0).then_some(internal)
+}
+
 /// The smallest and largest pool sizes. An unset smallest size follows a small
 /// largest one, so `DB_MAX_CONNECTIONS=1` works alone. A pool that cannot exist is
 /// noted, and the default applies.
@@ -956,6 +970,7 @@ impl Config {
                     DEFAULT_SEND_STALL_TIMEOUT_SECONDS,
                 ),
                 max_connections: connection_limit(&vars),
+                internal_port: None,
             },
             logger: Logger {
                 enable: vars.flag("LOG_ENABLE", !test),
@@ -992,6 +1007,7 @@ impl Config {
         };
 
         session_settings_need_postgres_or_mysql(&vars, &config.database);
+        config.server.internal_port = internal_port(&vars, config.server.port);
 
         // Fail closed: a production service that misread a setting would run
         // with something nobody chose, and a warning there is read too late.
@@ -1038,6 +1054,9 @@ impl Config {
             http,
             workers,
         } = self;
+        let internal_port = server
+            .internal_port
+            .map_or_else(String::new, |p| p.to_string());
         [
             ("PORT", server.port.to_string()),
             ("BINDING", server.binding.clone()),
@@ -1047,6 +1066,7 @@ impl Config {
                 self.server.header_read_timeout_seconds.to_string(),
             ),
             ("MAX_CONNECTIONS", self.server.max_connections.to_string()),
+            ("INTERNAL_PORT", internal_port),
             (
                 "KEEP_ALIVE_TIMEOUT_SECONDS",
                 server.keep_alive_timeout_seconds.to_string(),
@@ -1588,6 +1608,27 @@ mod tests {
         assert_eq!(dev.server.port, 5150);
         let prod = Config::from_lookup(&Environment::Production, &defaults, lookup).unwrap();
         assert_eq!(prod.server.port, 8080);
+    }
+
+    #[test]
+    fn an_internal_port_is_set_apart_from_the_main_one() {
+        let config = with(&[], &Environment::Development).unwrap();
+        assert_eq!(config.server.internal_port, None);
+        let config = with(&[("INTERNAL_PORT", "9090")], &Environment::Development).unwrap();
+        assert_eq!(config.server.internal_port, Some(9090));
+        let config = with(&[("INTERNAL_PORT", "0")], &Environment::Development).unwrap();
+        assert_eq!(config.server.internal_port, None);
+        let config = with(
+            &[("PORT", "8000"), ("INTERNAL_PORT", "8000")],
+            &Environment::Development,
+        )
+        .unwrap();
+        assert_eq!(config.server.internal_port, None);
+        assert!(
+            config.logger.warnings[0].contains("INTERNAL_PORT"),
+            "{:?}",
+            config.logger.warnings
+        );
     }
 
     #[test]

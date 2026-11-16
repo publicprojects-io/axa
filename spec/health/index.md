@@ -49,6 +49,16 @@ liveness while it waits. Workers wait too, under `server::run_once_migrated`, wh
 serves at once, so that the probes can answer, and starts the job loops only once
 nothing is pending.
 
+## An internal port
+
+With `INTERNAL_PORT` set, the server listens on it too, at the same binding, and serves
+there the health routes and `/metrics.prom` alone. The main port then answers those
+paths `404`, as it does any unknown path, so a load balancer or the internet in front
+of it cannot reach them, and the probes and the scraper point at the internal port.
+Both ports serve one router, so readiness refuses on both from the moment shutdown
+begins, and both drain and stop together. `INTERNAL_PORT` the same as `PORT` is a
+problem, refused in production and left unset elsewhere.
+
 ## Requirements
 
 | Id | Requirement | Test |
@@ -66,3 +76,5 @@ nothing is pending.
 | HLT-11 | From the moment shutdown begins, `/_health/ready` answers `503` with the `code` `shutting_down` and asks nothing, while `/_health/live` still passes. | `readiness_refuses_once_shutdown_begins_and_liveness_does_not` |
 | HLT-12 | With `Checks::migrations`, `/_health/ready` and `/_health/startup` answer `503` naming `migrations`, with codes `not_ready` and `not_started`, while any migration is pending or the asking fails, sending neither the names nor the error text, and pass once none is. Liveness asks nothing. | `readiness_and_startup_wait_while_a_migration_is_pending`, `with_no_migration_pending_both_probes_pass`, `an_error_asking_for_migrations_is_a_failure_whose_text_is_not_sent` |
 | HLT-13 | `Checks::migrated` resolves once no migration is pending, and at once with none named. `server::run_once_migrated` starts the job loops only then, and a shutdown before then ends the run with no job claimed. | `migrated_resolves_once_nothing_is_pending`, `jobs_held_back_for_migrations_are_never_claimed_and_shutdown_still_ends` |
+| HLT-14 | With `INTERNAL_PORT`, the internal port serves the health routes and `/metrics.prom` and answers anything else `404`, and the main port answers those paths `404` and serves the rest. Both stop when told. | `an_internal_port_serves_health_and_metrics_and_the_main_port_refuses_them`, `only_the_health_routes_and_metrics_are_internal` |
+| HLT-15 | `INTERNAL_PORT` unset or `0` is no internal port, and one equal to `PORT` is a problem and no internal port. `service health` asks the internal port when there is one. | `an_internal_port_is_set_apart_from_the_main_one` |
