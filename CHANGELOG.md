@@ -49,6 +49,10 @@ This covers `axa` 0.19.0, `axa-test` 0.10.0, `axa-postgres-job-queue` 0.6.0, and
   2026-11-15T21:48:44Z, under the 2-day minimum publish age. The user waived it for
   these two crates alone, and the lockfile gained only them and their `jiff-core` and
   `jiff-static`.
+- RUSTSEC-2026-0543 (chrono) and RUSTSEC-2026-0542 (humantime), both unmaintained and
+  neither a vulnerability, are ignored in `deny.toml`. With every feature on, chrono
+  still comes in through SeaORM, `object_store`, and `axum-test`'s `expect-json`, which
+  Axa does not control; the Postgres path above builds none.
 - `docs/quickstart/index.md` calls `chrono::Utc::now()` in a handler without listing
   `chrono` in the example's dependencies. That was already so, and is left alone.
 

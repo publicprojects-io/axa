@@ -9,6 +9,17 @@ ignore = [
     # toasty-driver-postgresql 0.11 brings it in, for Postgres TLS, through the
     # `postgres-toasty` feature. Remove this once Toasty no longer depends on it.
     { id = "RUSTSEC-2025-0134", reason = "unmaintained, not vulnerable; only via toasty-driver-postgresql" },
+    # chrono is unmaintained, not vulnerable, and no release fixes that. Since 0.19 Axa's
+    # own crates use jiff, and CI checks that a service on Postgres, with `queue`,
+    # `postgres-sqlx`, `outbox`, `idempotency`, `ratelimit`, `cursor-pagination`, and
+    # `openapi`, builds no chrono. With every feature on it still comes in through
+    # crates Axa does not control: SeaORM (`with-chrono`, which also turns on sqlx's
+    # `chrono`), `object_store` in the S3 storage crate, and `expect-json` through
+    # `axum-test` in `axa-test`. Remove this once none of them depends on chrono.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, not vulnerable; only via sea-orm, object_store, and axum-test's expect-json" },
+    # humantime is unmaintained because it wraps chrono. Only `object_store`, in the S3
+    # storage crate, brings it in. Remove this with the chrono entry.
+    { id = "RUSTSEC-2026-0542", reason = "unmaintained, not vulnerable; only via object_store" },
     # libsqlite3-sys 0.37 (C SQLite 3.53), CVE-2026-119375: a crafted database and `-wal`
     # file pair can make queries return uninitialized memory. It is local, and needs
     # files a less trusted party wrote. Only the `sqlite-*` features build it, through the
