@@ -153,8 +153,10 @@ reach a copy, so check both ways, including `axa-paseto-auth`, which shares its 
 
 ## Dependencies
 
-- `rust-version` is two releases behind stable, the same in every manifest, and
-  matched in `.github/workflows/ci.yml`. Change them together.
+- `rust-version` is two releases behind stable, N-2, the same in every manifest, and
+  matched by `RUSTUP_TOOLCHAIN` in `.github/workflows/ci.yml`. `rust-toolchain.toml`
+  pins N for local work, and `make ci-minimum-supported-rust-version` checks N-2 and
+  N-1. Change them together.
 - `jsonwebtoken` is a dev-dependency held at the major version `axum-keycloak-auth`
   uses, so that the tests mint with the library that verifies. Dependabot ignores its
   major versions. Lift the hold when the engine moves.

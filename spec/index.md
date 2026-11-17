@@ -1048,7 +1048,9 @@ answers every refusal with the same `401`.
 
 ## 5. Verification
 
-CI runs all of this on every push, in `.github/workflows/ci.yml`:
+CI runs all of this on every push, in `.github/workflows/ci.yml`, on the minimum supported
+Rust, 1.98, which it sets with `RUSTUP_TOOLCHAIN` over the 1.100.0 that `rust-toolchain.toml`
+pins. `make ci-minimum-supported-rust-version` checks every target on 1.98 and 1.99 locally.
 
 ```sh
 cargo fmt --all --check
