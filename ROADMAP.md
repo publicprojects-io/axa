@@ -5,11 +5,14 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.19.0
+## Current Version: 0.20.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.20.0
+- Zstd behind an opt-in `zstd` feature, so the default build compiles no C zstd library
 
 ### Version 0.19.0
 - The job queues on `jiff::Timestamp` rather than `chrono`, so a service on Postgres

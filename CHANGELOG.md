@@ -5,13 +5,18 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-17
+
+This covers `axa` 0.20.0 and `axa-test` 0.11.0. No other crate changes. To upgrade, read
+[Upgrading to Axa 0.20](help/upgrading-to-0.20/index.md).
+
 `axa-sqlite-job-queue` 0.2.0 is published, unchanged from the 0.19.0 commit. It builds
 `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459 until sqlx raises its cap, and its
 README says what that exposes. The other SQLite crates stay unpublished.
 
 ### Changed
 
-- **Zstd is an opt-in `zstd` feature** (MID-31). Compression and request decompression
+- **Breaking**: **Zstd is an opt-in `zstd` feature** (MID-31). Compression and request decompression
   keep gzip, Brotli, and deflate by default, and Zstd needs `features = ["zstd"]`, as it
   builds the C zstd library. Without it, a `zstd` request body is a `415` problem, and a
   caller asking only for `zstd` gets an uncompressed answer. A service that takes or sends
