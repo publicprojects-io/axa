@@ -39,6 +39,45 @@ include = [
     "llms.txt",
     "llms.json",
 ]
+autotests = false
+
+# Integration tests: `tests/main.rs` holds most, as modules, so they link once. Each
+# one below it needs a process of its own; see the top of `tests/main.rs`.
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+[[test]]
+name = "constraint_logging"
+path = "tests/constraint_logging.rs"
+
+[[test]]
+name = "error_logging"
+path = "tests/error_logging.rs"
+
+[[test]]
+name = "logger_init"
+path = "tests/logger_init.rs"
+
+[[test]]
+name = "opentelemetry_span"
+path = "tests/opentelemetry_span.rs"
+
+[[test]]
+name = "outbox_shutdown"
+path = "tests/outbox_shutdown.rs"
+
+[[test]]
+name = "request_logging"
+path = "tests/request_logging.rs"
+
+[[test]]
+name = "shutdown_signal"
+path = "tests/shutdown_signal.rs"
+
+[[test]]
+name = "tenant_logging"
+path = "tests/tenant_logging.rs"
 
 [features]
 default = []

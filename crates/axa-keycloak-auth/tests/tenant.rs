@@ -3,7 +3,7 @@
 //! map already refuses a value that is not a short lower-case token, so a malformed
 //! tenant cannot reach a token here, and the unit test covers the id rule.
 
-mod idp;
+use crate::idp;
 
 use std::sync::Arc;
 

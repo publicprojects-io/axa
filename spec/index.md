@@ -1083,9 +1083,9 @@ cargo tree -p axa-postgres-diesel --all-features -e normal   # must show no C da
 cargo tree -e normal -p axa --features queue,postgres-sqlx,outbox,idempotency,ratelimit,cursor-pagination,openapi   # must show no chrono
 cargo tree -e normal -p axa-postgres-job-queue   # must show no chrono
 AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
-AXA_TEST_DB_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
-AXA_TEST_DB_URL=postgres://... cargo test --features postgres-sqlx --test row_security -- --ignored
-AXA_TEST_DB_URL=postgres://... cargo test --all-features --test stale_plan -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --all-features --test main -- --ignored --test-threads=1 constraint_errors::
+AXA_TEST_DB_URL=postgres://... cargo test --features postgres-sqlx --test main -- --ignored row_security::
+AXA_TEST_DB_URL=postgres://... cargo test --all-features --test main -- --ignored --test-threads=1 stale_plan::
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-test --features postgres-sqlx -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --features outbox --test outbox_shutdown -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
@@ -1096,13 +1096,13 @@ AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-diesel -- --ignored --
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-postgres-toasty -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test -p axa-idempotency-key -- --ignored --test-threads=1
-AXA_TEST_DB_URL=postgres://... cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
+AXA_TEST_DB_URL=postgres://... cargo test --features idempotency --test main -- --ignored --test-threads=1 idempotency::
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-job-queue -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-sqlx -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-seaorm -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-diesel -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
-AXA_TEST_MYSQL_URL=mysql://... cargo test --all-features --test other_databases -- --ignored --test-threads=1
+AXA_TEST_MYSQL_URL=mysql://... cargo test --all-features --test main -- --ignored --test-threads=1 other_databases::
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored
 ```
 

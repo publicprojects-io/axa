@@ -1,7 +1,7 @@
 //! A real token through the real guard. A local OIDC provider stands in for
 //! Keycloak, so signature, issuer, and audience checks all run.
 
-mod idp;
+use crate::idp;
 
 use std::{
     collections::HashMap,

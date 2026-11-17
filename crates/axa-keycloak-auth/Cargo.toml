@@ -8,9 +8,24 @@ description = "Keycloak bearer authentication and ABAC enforcement for Axum serv
 readme = "README.md"
 repository = "https://github.com/publicprojects-io/axa/"
 license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+autotests = false
 # The tests ship. Their signing key, `tests/idp/test-key.der`, is a throwaway one that
 # `authentication-verifier` 0.9.1 already publishes in `src/test_idp.rs`, and signs
 # nothing real.
+
+# Integration tests: `tests/main.rs` holds most, as modules, so they link once. Each
+# one below it needs a process of its own; see the top of `tests/main.rs`.
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+[[test]]
+name = "audit_log"
+path = "tests/audit_log.rs"
+
+[[test]]
+name = "tenant_span"
+path = "tests/tenant_span.rs"
 
 [dependencies]
 axum = "0.8"

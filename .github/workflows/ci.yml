@@ -168,9 +168,9 @@ jobs:
           AXA_TEST_DB_URL: postgres://axa:axa@localhost:5432/axa_test
         run: |
           cargo test --features queue -- --ignored
-          cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
-          cargo test --features postgres-sqlx --test row_security -- --ignored
-          cargo test --all-features --test stale_plan -- --ignored --test-threads=1
+          cargo test --all-features --test main -- --ignored --test-threads=1 constraint_errors::
+          cargo test --features postgres-sqlx --test main -- --ignored row_security::
+          cargo test --all-features --test main -- --ignored --test-threads=1 stale_plan::
           cargo test -p axa-test --features postgres-sqlx -- --ignored
           cargo test --features outbox --test outbox_shutdown -- --ignored
           cargo test -p axa-transactional-outbox --all-features -- --ignored --test-threads=1
@@ -181,7 +181,7 @@ jobs:
           cargo test -p axa-postgres-toasty -- --ignored --test-threads=1
           cargo test -p axa-web-session --all-features -- --ignored --test-threads=1
           cargo test -p axa-idempotency-key -- --ignored --test-threads=1
-          cargo test --features idempotency --test idempotency -- --ignored --test-threads=1
+          cargo test --features idempotency --test main -- --ignored --test-threads=1 idempotency::
 
       - name: MySQL tests
         env:
@@ -195,7 +195,7 @@ jobs:
           cargo test -p axa-mysql-seaorm -- --ignored --test-threads=1
           cargo test -p axa-mysql-diesel -- --ignored --test-threads=1
           cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
-          cargo test --all-features --test other_databases -- --ignored --test-threads=1
+          cargo test --all-features --test main -- --ignored --test-threads=1 other_databases::
 
       - name: Redis tests
         env:

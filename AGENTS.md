@@ -43,6 +43,11 @@ when stable moves.
   control that a hazard log, a regulator, or a security review holds it to.
 - Raise any new dependency with the user first.
 - Update `llms.txt` and `llms.json` when a feature, crate, or module changes.
+- An integration test is a module of `tests/main.rs`, so a crate's tests link once. One
+  that needs a process of its own, because it starts its binary again as a child or
+  because `tracing` caches per process whether a log site is on, is a `[[test]]` of its
+  own in `Cargo.toml`, which sets `autotests = false`. CI picks a module with a filter:
+  `cargo test --test main -- --ignored stale_plan::`.
 
 ## Skills
 

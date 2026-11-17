@@ -8,6 +8,7 @@ description = "Request-level test helpers for Axa services, built on axum-test."
 readme = "README.md"
 repository = "https://github.com/publicprojects-io/axa/"
 license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
+autotests = false
 
 [features]
 # Mint PASETO tokens under a throwaway test key, for a service on axa-paseto-auth.
@@ -24,6 +25,20 @@ mail = ["axa/mail"]
 openapi = ["dep:jsonschema"]
 # A Postgres database of its own for each test, cloned from a template migrated once.
 postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:tokio"]
+
+# Integration tests: `tests/main.rs` holds most, as modules, so they link once. Each
+# one below it needs a process of its own; see the top of `tests/main.rs`.
+[[test]]
+name = "main"
+path = "tests/main.rs"
+
+[[test]]
+name = "logs_and_mail"
+path = "tests/logs_and_mail.rs"
+
+[[test]]
+name = "postgres_templates"
+path = "tests/postgres_templates.rs"
 
 [dependencies]
 axa = { version = "0.20.0", path = "../.." }
