@@ -108,7 +108,7 @@ async fn main() -> Result<(), std::io::Error> {
 }
 ```
 
-In Axa, with `axa = "0.18"`, `serde_json`, and `tokio` with `macros` and
+In Axa, with `axa = "0.19"`, `serde_json`, and `tokio` with `macros` and
 `rt-multi-thread`:
 
 ```rust,ignore

@@ -533,7 +533,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "axa"
-version = "0.18.0"
+version = "0.19.0"
 dependencies = [
  "async-trait",
  "axa-accepts-version-negotiation",
@@ -722,10 +722,10 @@ dependencies = [
 
 [[package]]
 name = "axa-mysql-job-queue"
-version = "0.3.3"
+version = "0.4.0"
 dependencies = [
- "chrono",
  "croner",
+ "jiff 1.0.0",
  "serde_json",
  "sqlx",
  "tokio",
@@ -829,10 +829,11 @@ dependencies = [
 
 [[package]]
 name = "axa-postgres-job-queue"
-version = "0.5.1"
+version = "0.6.0"
 dependencies = [
- "chrono",
  "croner",
+ "jiff 1.0.0",
+ "jiff-sqlx",
  "serde_json",
  "sqlx",
  "tokio",
@@ -934,10 +935,10 @@ dependencies = [
 
 [[package]]
 name = "axa-sqlite-job-queue"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
- "chrono",
  "croner",
+ "jiff 1.0.0",
  "serde_json",
  "sqlx",
  "tokio",
@@ -990,7 +991,7 @@ dependencies = [
 
 [[package]]
 name = "axa-test"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "authentication-verifier",
  "axa",
@@ -1772,7 +1773,6 @@ version = "4.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0097e28936e948e8f759478e1b5ec2e5ca70ab62cf38aaa9bd3aa660023e3fca"
 dependencies = [
- "chrono",
  "derive_builder",
  "strum 0.27.2",
 ]
@@ -3350,14 +3350,28 @@ version = "0.2.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac63a5a611e9d720726d6ab6ee2ee19e6f620503554ea5d303c7cb294ff40c12"
 dependencies = [
- "jiff-core",
- "jiff-static",
+ "jiff-core 0.1.6",
+ "jiff-static 0.2.44",
  "jiff-tzdb-platform",
  "log",
  "portable-atomic",
  "portable-atomic-util",
  "serde_core",
  "windows-link",
+]
+
+[[package]]
+name = "jiff"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cc767b5763de45e810109520123bb2829a653f3a7ed9be40b2bc4f81158f595"
+dependencies = [
+ "jiff-core 1.0.0",
+ "jiff-static 1.0.0",
+ "log",
+ "portable-atomic",
+ "portable-atomic-util",
+ "serde_core",
 ]
 
 [[package]]
@@ -3370,15 +3384,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "jiff-core"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "894f7ac42105f584100691b3bf6e6b92dd12fcfa225f6c397f95c8a94b47b68f"
+dependencies = [
+ "log",
+]
+
+[[package]]
+name = "jiff-sqlx"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4996ad290ff7f7081becdda47e28556fbebb81618c599eac5d09182b5a60e38"
+dependencies = [
+ "jiff 1.0.0",
+ "sqlx",
+]
+
+[[package]]
 name = "jiff-static"
 version = "0.2.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f9c27796c21cc8b33ce490f148d53fe41d679b887885bf0ef8f662cdb9b35c0"
 dependencies = [
- "jiff-core",
+ "jiff-core 0.1.6",
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "jiff-static"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "955491488dc99b572ea6d67b172dcd98787d00744b1fb44a5689b4e6413695a6"
+dependencies = [
+ "jiff-core 1.0.0",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.10",
 ]
 
 [[package]]
@@ -5684,7 +5729,7 @@ dependencies = [
  "hex",
  "indexmap 1.9.3",
  "indexmap 2.14.2",
- "jiff",
+ "jiff 0.2.44",
  "schemars 0.9.0",
  "schemars 1.2.3",
  "serde_core",

@@ -29,7 +29,7 @@ Read these rather than guessing at an API:
 | Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
-| Upgrading to 0.18 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.18/index.md) |
+| Upgrading to 0.19 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.19/index.md) |
 | Upgrading to 0.15 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.15/index.md) |
 | Upgrading to 0.14 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.14/index.md) |
 | Upgrading to 0.12 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.12/index.md) |
@@ -43,12 +43,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.18", features = ["postgres-sqlx", "queue"] }
+axa = { version = "0.19", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa-test = "0.9"
+axa-test = "0.10"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must
@@ -364,6 +364,10 @@ stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by de
   holds one job type below that, per process, not across replicas.
 - A job has **no time limit unless its worker sets `timeout`**. Delay with `perform_in`,
   or build a job with `queue::job::<W, _>(&args)?` and `run_at`, `priority`, `timeout`.
+  Every time the queue takes or gives, in `run_at`, `first_at`, `JobInfo`, `ScheduleInfo`,
+  and `Act`, is `queue::Timestamp`, re-exported `jiff::Timestamp`, in UTC. Axa brings in
+  no `chrono`: a service that reads sqlx columns as `chrono` types enables sqlx's
+  `chrono` feature itself.
 - Keep the id `perform_later` returns to call `queue.job`, `queue::cancel`, or
   `queue::retry`. Expose them only behind the service's own authorisation, and never
   send a job's error text to a client.

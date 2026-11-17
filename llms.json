@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -59,6 +59,7 @@
       "help/upgrading-to-0.16/index.md",
       "help/upgrading-to-0.17/index.md",
       "help/upgrading-to-0.18/index.md",
+      "help/upgrading-to-0.19/index.md",
       "help/upgrading-to-0.12/index.md"
     ],
     "comparisons": [
@@ -382,21 +383,21 @@
     },
     {
       "name": "axa-postgres-job-queue",
-      "version": "0.5.1",
+      "version": "0.6.0",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
       "name": "axa-mysql-job-queue",
-      "version": "0.3.3",
+      "version": "0.4.0",
       "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-mysql-job-queue/README.md"
     },
     {
       "name": "axa-sqlite-job-queue",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "description": "A SQLite job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-sqlite-job-queue/README.md"
@@ -494,7 +495,7 @@
     },
     {
       "name": "axa-test",
-      "version": "0.9.0",
+      "version": "0.10.0",
       "description": "Request-level test helpers for Axa services, built on axum-test, with captured logs, the memory mailer's outbox behind its `mail` feature, and a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"

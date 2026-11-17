@@ -46,7 +46,7 @@ Learn how to use axa effectively:
 
 ### Migration Guides
 
-- **[Upgrading to 0.18](../help/upgrading-to-0.18/index.md)** - Latest upgrade guide
+- **[Upgrading to 0.19](../help/upgrading-to-0.19/index.md)** - Latest upgrade guide
 - **[Upgrading to 0.15](../help/upgrading-to-0.15/index.md)**
 - **[Upgrading to 0.14](../help/upgrading-to-0.14/index.md)**
 - **[Upgrading to 0.12](../help/upgrading-to-0.12/index.md)**
@@ -70,7 +70,7 @@ This documentation follows these principles:
 1. **Task-oriented**: Each guide helps you accomplish a specific goal
 2. **Example-driven**: Code examples are working, tested snippets
 3. **Principle-based**: Explains the "why" behind the "how"
-4. **Up-to-date**: Matches the current version (0.18.0)
+4. **Up-to-date**: Matches the current version (0.19.0)
 
 ---
 

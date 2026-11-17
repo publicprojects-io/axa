@@ -5,6 +5,53 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-17
+
+This covers `axa` 0.19.0, `axa-test` 0.10.0, `axa-postgres-job-queue` 0.6.0, and
+`axa-mysql-job-queue` 0.4.0, whose public types change, and `axa-sqlite-job-queue`
+0.2.0, which stays unpublished. To upgrade, read
+[Upgrading to Axa 0.19](help/upgrading-to-0.19/index.md).
+
+### Changed
+
+- **Breaking**: the three job queues take and give times as `Timestamp`, re-exported
+  `jiff::Timestamp`, an instant in UTC, in place of `chrono`'s `DateTime<Utc>`:
+  `NewJob::run_at`, `Schedule::first_at`, the times of `JobInfo` and `ScheduleInfo`, and
+  `Act::at`. `axa::queue::{DateTime, Utc}` and the crates' own are gone, and
+  `axa::queue::Timestamp` is new. So a service on Postgres no longer builds `chrono`,
+  and can clear RUSTSEC-2026-0543 (chrono unmaintained).
+- `axa`'s own `sqlx` no longer enables sqlx's `chrono` feature, which no code in `axa`
+  used. A service that decodes sqlx columns as `chrono` types enables it on its own
+  `sqlx` dependency.
+- `croner` is built with no time-library feature. Its `jiff` feature is for `jiff` 0.2,
+  so each queue gives `croner` a wall clock in UTC of its own, through
+  `croner::CronDateTime`, and cron times stay UTC as before (WRK-35).
+- Postgres binds and reads times through `jiff-sqlx`. SQLite already kept microseconds
+  since the epoch, and needs only `jiff` (SQJ-7). `jiff-sqlx` has no MySQL support, so the
+  MySQL queue converts in SQL, with `TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00',
+  ...)` and `CAST('1970-01-01' AS DATETIME(6)) + INTERVAL ? MICROSECOND`, which keep
+  microseconds exactly whatever the session's `time_zone`; `UNIX_TIMESTAMP` and
+  `FROM_UNIXTIME` would apply it (MYQ-5). No queue depends on `chrono`.
+- CI checks that `axa` with `queue`, `postgres-sqlx`, `outbox`, `idempotency`,
+  `ratelimit`, `cursor-pagination`, and `openapi`, and `axa-postgres-job-queue`, build no
+  `chrono`.
+
+### Dependencies
+
+- New: `jiff` 1.0.0 (Unlicense OR MIT), in all three queues, with `default-features =
+  false` and `std`; and `jiff-sqlx` 1.0.0 (Unlicense OR MIT), with `postgres`, in
+  `axa-postgres-job-queue`. Both were approved by the user.
+- Removed: `chrono`, from the queues and their tests, and from `croner`'s features.
+
+### Not done or not verified
+
+- `jiff` 1.0.0 was published 2026-11-15T21:48:13Z and `jiff-sqlx` 1.0.0 at
+  2026-11-15T21:48:44Z, under the 2-day minimum publish age. The user waived it for
+  these two crates alone, and the lockfile gained only them and their `jiff-core` and
+  `jiff-static`.
+- `docs/quickstart/index.md` calls `chrono::Utc::now()` in a handler without listing
+  `chrono` in the example's dependencies. That was already so, and is left alone.
+
 
 ## [0.18.0] - 2026-11-17
 

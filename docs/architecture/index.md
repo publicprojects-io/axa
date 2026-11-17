@@ -508,7 +508,7 @@ axa/
 ├── templates/service-template/ # A service to start from
 │
 ├── help/
-│   ├── upgrading-to-0.18/     # Upgrade guides, one per release
+│   ├── upgrading-to-0.19/     # Upgrade guides, one per release
 │   ├── upgrading-to-0.3/      # Upgrade guide
 │   ├── from-loco-into-axa/     # Loco migration
 │   ├── from-loco-seaorm...    # SeaORM migration

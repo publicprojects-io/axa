@@ -188,7 +188,9 @@ use sqlx::{
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, watch};
 use uuid::Uuid;
 
-pub use sqlx::types::chrono::{DateTime, Utc};
+/// An instant, in UTC: every time the queue keeps or takes. Re-exported from `jiff`, so
+/// a service needs no dependency of its own to name one.
+pub use jiff::Timestamp;
 
 /// What this crate's functions return.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -388,19 +390,48 @@ const PRESENT_TRIGGERS: &str = "SELECT TRIGGER_NAME AS name, EVENT_MANIPULATION 
 const SETUP_LOCK: &str = "SELECT GET_LOCK('axa_queue_setup', 60)";
 const SETUP_UNLOCK: &str = "SELECT RELEASE_LOCK('axa_queue_setup')";
 
-const ENQUEUE: &str = "INSERT INTO axa_queue
+/// A `DATETIME(6)` column, which holds UTC, as microseconds since the Unix epoch.
+/// `DATETIME` has no time zone, so the difference is exact whatever the session's
+/// `time_zone`, which `UNIX_TIMESTAMP` would apply.
+macro_rules! epoch_micros {
+    ($column:literal) => {
+        concat!(
+            "TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', ",
+            $column,
+            ")"
+        )
+    };
+}
+
+/// A placeholder of microseconds since the Unix epoch, as a `DATETIME(6)` in UTC, and
+/// `NULL` for `NULL`. `FROM_UNIXTIME` would read it in the session's `time_zone`.
+macro_rules! from_epoch_micros {
+    () => {
+        "(CAST('1970-01-01' AS DATETIME(6)) + INTERVAL ? MICROSECOND)"
+    };
+}
+
+const ENQUEUE: &str = concat!(
+    "INSERT INTO axa_queue
     (id, name, args, max_attempts, priority, run_at, timeout_ms, tenant, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP(6) + INTERVAL ? MICROSECOND), ?, ?,
-        UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))";
+    VALUES (?, ?, ?, ?, ?, COALESCE(",
+    from_epoch_micros!(),
+    ", UTC_TIMESTAMP(6) + INTERVAL ? MICROSECOND), ?, ?,
+        UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))"
+);
 /// Queue a job with a key, unless one of its name, tenant, and key is queued or
 /// running. A duplicate changes nothing, and locks the job there until the
 /// transaction ends, so that [`UNIQUE_FIND`] reads it.
-const ENQUEUE_UNIQUE: &str = "INSERT INTO axa_queue
+const ENQUEUE_UNIQUE: &str = concat!(
+    "INSERT INTO axa_queue
     (id, name, args, max_attempts, priority, run_at, timeout_ms, tenant, unique_key,
         created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, COALESCE(?, UTC_TIMESTAMP(6) + INTERVAL ? MICROSECOND), ?, ?, ?,
+    VALUES (?, ?, ?, ?, ?, COALESCE(",
+    from_epoch_micros!(),
+    ", UTC_TIMESTAMP(6) + INTERVAL ? MICROSECOND), ?, ?, ?,
         UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
-    ON DUPLICATE KEY UPDATE unique_key = VALUES(unique_key)";
+    ON DUPLICATE KEY UPDATE unique_key = VALUES(unique_key)"
+);
 /// The job queued or running for a name, tenant, and key. A locking read, so it sees
 /// the latest committed row whatever the transaction's snapshot.
 const UNIQUE_FIND: &str = "SELECT id FROM axa_queue
@@ -439,8 +470,18 @@ const FAIL_STALE: &str = "UPDATE axa_queue
 const PURGE: &str = "DELETE FROM axa_queue
     WHERE status IN ('completed', 'failed', 'cancelled')
       AND updated_at < UTC_TIMESTAMP(6) - INTERVAL ? DAY";
-const STATUS: &str = "SELECT id, name, status, attempts, max_attempts, priority, error,
-    timeout_ms, tenant, unique_key, run_at, started_at, created_at, updated_at FROM axa_queue WHERE id = ?";
+const STATUS: &str = concat!(
+    "SELECT id, name, status, attempts, max_attempts, priority, error,
+    timeout_ms, tenant, unique_key, ",
+    epoch_micros!("run_at"),
+    " AS run_at, ",
+    epoch_micros!("started_at"),
+    " AS started_at, ",
+    epoch_micros!("created_at"),
+    " AS created_at, ",
+    epoch_micros!("updated_at"),
+    " AS updated_at FROM axa_queue WHERE id = ?"
+);
 /// A run that lost its claim stops, and its job waits for a person. Another run
 /// may hold the row by now, and this stops that one too, at its next report.
 /// A row already completed is left alone.
@@ -461,8 +502,12 @@ const RETRY_FAILED: &str = "UPDATE axa_queue
 const ACT_KEEP: &str = "INSERT INTO axa_job_acts
     (job_id, job_name, act, attempts, `by`, reason, `at`)
     VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(6))";
-const ACTS: &str = "SELECT id, job_id, job_name, act, attempts, `by`, reason, `at`
-    FROM axa_job_acts WHERE job_id = ? ORDER BY id";
+const ACTS: &str = concat!(
+    "SELECT id, job_id, job_name, act, attempts, `by`, reason, ",
+    epoch_micros!("`at`"),
+    " AS `at`
+    FROM axa_job_acts WHERE job_id = ? ORDER BY id"
+);
 const COUNTS: &str = "SELECT
     CAST(COALESCE(SUM(status = 'queued' AND run_at <= UTC_TIMESTAMP(6)), 0) AS SIGNED) AS ready,
     CAST(COALESCE(SUM(status = 'queued' AND run_at > UTC_TIMESTAMP(6)), 0) AS SIGNED) AS waiting,
@@ -476,27 +521,38 @@ const COUNTS: &str = "SELECT
         UTC_TIMESTAMP(6)) / 1e6 AS oldest
     FROM axa_queue";
 /// Make the row if there is none. The upsert changes nothing on a row that exists.
-const SCHEDULE_CREATE: &str = "INSERT INTO axa_schedule
+const SCHEDULE_CREATE: &str = concat!(
+    "INSERT INTO axa_schedule
     (name, due_at, interval_ms, cron, seen_at, created_at, updated_at)
-    VALUES (?, COALESCE(?, UTC_TIMESTAMP(6)), ?, ?, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6),
+    VALUES (?, COALESCE(",
+    from_epoch_micros!(),
+    ", UTC_TIMESTAMP(6)), ?, ?, UTC_TIMESTAMP(6), UTC_TIMESTAMP(6),
         UTC_TIMESTAMP(6))
-    ON DUPLICATE KEY UPDATE name = name";
+    ON DUPLICATE KEY UPDATE name = name"
+);
 /// Say this schedule is still in code: restore it if it was archived, and note the
 /// interval or pattern. A changed pattern takes its next time from the new pattern.
 /// MySQL sets columns left to right, so `due_at` reads the old `cron`. `seen_at`
 /// moves at most once a minute, so a tick does not write each poll. The values are
 /// the interval, the pattern twice, the next time, the pattern, the name, the
 /// interval, and the pattern.
-const SCHEDULE_SEEN: &str = "UPDATE axa_schedule
+const SCHEDULE_SEEN: &str = concat!(
+    "UPDATE axa_schedule
     SET seen_at = UTC_TIMESTAMP(6), archived_at = NULL, interval_ms = ?,
-        due_at = IF(? IS NOT NULL AND NOT (cron <=> ?), ?, due_at),
+        due_at = IF(? IS NOT NULL AND NOT (cron <=> ?), ",
+    from_epoch_micros!(),
+    ", due_at),
         cron = ?
     WHERE name = ? AND (archived_at IS NOT NULL OR NOT (interval_ms <=> ?)
-        OR NOT (cron <=> ?) OR seen_at < UTC_TIMESTAMP(6) - INTERVAL 1 MINUTE)";
-const SCHEDULE_LOCK: &str =
-    "SELECT last_job, due_at <= UTC_TIMESTAMP(6) AS due, UTC_TIMESTAMP(6) AS now
+        OR NOT (cron <=> ?) OR seen_at < UTC_TIMESTAMP(6) - INTERVAL 1 MINUTE)"
+);
+const SCHEDULE_LOCK: &str = concat!(
+    "SELECT last_job, due_at <= UTC_TIMESTAMP(6) AS due, ",
+    epoch_micros!("UTC_TIMESTAMP(6)"),
+    " AS now
     FROM axa_schedule
-    WHERE name = ? AND archived_at IS NULL FOR UPDATE SKIP LOCKED";
+    WHERE name = ? AND archived_at IS NULL FOR UPDATE SKIP LOCKED"
+);
 /// Archive schedules no live process has in code. A row any process still ticks
 /// is seen within a minute, so one unseen for `stale_minutes` is in none, and an
 /// old replica in a rolling deploy keeps its schedules until it stops. `{kept}`
@@ -504,9 +560,18 @@ const SCHEDULE_LOCK: &str =
 const SCHEDULE_ARCHIVE: &str = "UPDATE axa_schedule
     SET archived_at = UTC_TIMESTAMP(6), updated_at = UTC_TIMESTAMP(6)
     WHERE archived_at IS NULL AND seen_at < UTC_TIMESTAMP(6) - INTERVAL ? MINUTE{kept}";
-const SCHEDULES: &str = "SELECT s.name, s.interval_ms, s.cron, s.due_at, s.last_job, s.seen_at,
-    s.archived_at, s.created_at, q.status AS last_status, q.error AS last_error
-    FROM axa_schedule s LEFT JOIN axa_queue q ON q.id = s.last_job ORDER BY s.name";
+const SCHEDULES: &str = concat!(
+    "SELECT s.name, s.interval_ms, s.cron, ",
+    epoch_micros!("s.due_at"),
+    " AS due_at, s.last_job, ",
+    epoch_micros!("s.seen_at"),
+    " AS seen_at, ",
+    epoch_micros!("s.archived_at"),
+    " AS archived_at, ",
+    epoch_micros!("s.created_at"),
+    " AS created_at, q.status AS last_status, q.error AS last_error
+    FROM axa_schedule s LEFT JOIN axa_queue q ON q.id = s.last_job ORDER BY s.name"
+);
 const SCHEDULE_BUSY: &str = "SELECT EXISTS (SELECT 1 FROM axa_queue
     WHERE id = ? AND status IN ('queued', 'running')) AS busy";
 /// The next due time after now, a whole number of intervals from the last, on the
@@ -518,9 +583,13 @@ const SCHEDULE_ADVANCE: &str = "UPDATE axa_schedule
         last_job = COALESCE(?, last_job), updated_at = UTC_TIMESTAMP(6)
     WHERE name = ?";
 /// A cron schedule's next due time, the pattern's next after now.
-const SCHEDULE_ADVANCE_TO: &str = "UPDATE axa_schedule
-    SET due_at = ?, last_job = COALESCE(?, last_job), updated_at = UTC_TIMESTAMP(6)
-    WHERE name = ?";
+const SCHEDULE_ADVANCE_TO: &str = concat!(
+    "UPDATE axa_schedule
+    SET due_at = ",
+    from_epoch_micros!(),
+    ", last_job = COALESCE(?, last_job), updated_at = UTC_TIMESTAMP(6)
+    WHERE name = ?"
+);
 /// The isolation level for the queue's own transactions. Under the default,
 /// `REPEATABLE READ`, a claim would hold gap locks that make other loops and
 /// `INSERT`s wait.
@@ -687,6 +756,16 @@ fn placeholders(count: usize) -> String {
     vec!["?"; count].join(", ")
 }
 
+/// A time read as microseconds since the Unix epoch, as `epoch_micros!` gives it.
+fn at(micros: i64) -> Result<Timestamp> {
+    Timestamp::from_microsecond(micros).map_err(|_| Error::Job("a time out of range".to_string()))
+}
+
+/// A time that may be missing, read as microseconds since the Unix epoch.
+fn at_or_none(micros: Option<i64>) -> Result<Option<Timestamp>> {
+    micros.map(at).transpose()
+}
+
 fn from_millis(millis: i64) -> Duration {
     Duration::from_millis(u64::try_from(millis).unwrap_or(0))
 }
@@ -695,7 +774,7 @@ fn from_millis(millis: i64) -> Duration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum When {
     Now,
-    At(DateTime<Utc>),
+    At(Timestamp),
     In(Duration),
 }
 
@@ -797,7 +876,7 @@ impl NewJob {
 
     /// Run no sooner than `at`.
     #[must_use]
-    pub const fn run_at(mut self, at: DateTime<Utc>) -> Self {
+    pub const fn run_at(mut self, at: Timestamp) -> Self {
         self.when = When::At(at);
         self
     }
@@ -863,7 +942,7 @@ pub async fn enqueue_on(connection: &mut MySqlConnection, job: &NewJob) -> Resul
     let id = Uuid::new_v4();
     let (at, delay) = match job.when {
         When::Now => (None, 0),
-        When::At(at) => (Some(at), 0),
+        When::At(at) => (Some(at.as_microsecond()), 0),
         When::In(delay) => (None, micros(delay)),
     };
     let query = sqlx::query(if job.unique_key.is_some() {
@@ -1075,7 +1154,7 @@ pub struct Act {
     /// Why, as a short code.
     pub reason: String,
     /// When, on the database's clock.
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
 }
 
 /// Where a job is.
@@ -1137,13 +1216,13 @@ pub struct JobInfo {
     /// error said.
     pub error: Option<String>,
     /// When it may run next, or last could.
-    pub run_at: DateTime<Utc>,
+    pub run_at: Timestamp,
     /// When its latest run started.
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// When it was queued.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When its row last changed.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 /// How many jobs are in each state, for metrics.
@@ -1176,7 +1255,7 @@ pub struct Counts {
 pub struct Schedule {
     name: String,
     times: Times,
-    first: Option<DateTime<Utc>>,
+    first: Option<Timestamp>,
     job: NewJob,
 }
 
@@ -1204,10 +1283,76 @@ impl Times {
     }
 }
 
-/// The time after `now` a cron pattern names.
-fn next_after(cron: &croner::Cron, now: DateTime<Utc>) -> Result<DateTime<Utc>> {
-    cron.find_next_occurrence(&now, false)
+/// The time after `now` a cron pattern names, in UTC.
+fn next_after(cron: &croner::Cron, now: Timestamp) -> Result<Timestamp> {
+    cron.find_next_occurrence(&InUtc(now), false)
+        .map(|next| next.0)
         .map_err(|error| Error::Job(format!("the cron pattern has no next time: {error}")))
+}
+
+/// An instant as `croner` reads it, on a wall clock in UTC, which has no daylight
+/// saving, so every wall clock time is one instant. `croner`'s own `jiff` support is for
+/// an older `jiff`, so the crate gives it this one time zone itself.
+#[derive(Clone, Copy)]
+struct InUtc(Timestamp);
+
+impl croner::CronDateTime for InUtc {
+    fn to_civil(&self) -> croner::CivilDateTime {
+        let time = jiff::tz::TimeZone::UTC.to_datetime(self.0);
+        croner::CivilDateTime::new(
+            croner::CivilDate::from_parts_unchecked(
+                i32::from(time.year()),
+                time.month().unsigned_abs().into(),
+                time.day().unsigned_abs().into(),
+            ),
+            croner::CivilTime::from_parts_unchecked(
+                time.hour().unsigned_abs().into(),
+                time.minute().unsigned_abs().into(),
+                time.second().unsigned_abs().into(),
+            ),
+        )
+    }
+
+    fn civil_weekday(&self) -> croner::Weekday {
+        let day = jiff::tz::TimeZone::UTC
+            .to_datetime(self.0)
+            .weekday()
+            .to_sunday_zero_offset();
+        croner::Weekday::from_days_from_sunday(day.unsigned_abs().into())
+    }
+
+    fn resolve_civil(
+        &self,
+        civil: croner::CivilDateTime,
+    ) -> Result<croner::Resolution<Self>, croner::errors::CronError> {
+        let part =
+            |value: u32| i8::try_from(value).map_err(|_| croner::errors::CronError::InvalidDate);
+        let year =
+            i16::try_from(civil.year()).map_err(|_| croner::errors::CronError::InvalidDate)?;
+        let time = jiff::civil::DateTime::new(
+            year,
+            part(civil.month())?,
+            part(civil.day())?,
+            part(civil.hour())?,
+            part(civil.minute())?,
+            part(civil.second())?,
+            0,
+        )
+        .and_then(|time| jiff::tz::TimeZone::UTC.to_timestamp(time))
+        .map_err(|_| croner::errors::CronError::InvalidDate)?;
+        Ok(croner::Resolution::Single(Self(time)))
+    }
+
+    fn checked_add_seconds(&self, seconds: i64) -> Option<Self> {
+        self.0
+            .checked_add(jiff::SignedDuration::from_secs(seconds))
+            .ok()
+            .map(Self)
+    }
+
+    fn cmp_instant(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
 }
 
 impl fmt::Debug for Schedule {
@@ -1265,7 +1410,7 @@ impl Schedule {
             .parse()
             .unwrap_or_else(|error| panic!("the schedule {name} has a bad cron pattern: {error}"));
         assert!(
-            next_after(&cron, Utc::now()).is_ok(),
+            next_after(&cron, Timestamp::now()).is_ok(),
             "the cron pattern of the schedule {name} names no time to come"
         );
         Self {
@@ -1284,7 +1429,7 @@ impl Schedule {
     /// each day. Without one, the first is as soon as the row is made. A cron
     /// schedule's first time is its pattern's, and it ignores this.
     #[must_use]
-    pub const fn first_at(mut self, first: DateTime<Utc>) -> Self {
+    pub const fn first_at(mut self, first: Timestamp) -> Self {
         self.first = Some(first);
         self
     }
@@ -1328,7 +1473,7 @@ pub struct ScheduleInfo {
     /// Its cron pattern, as the code last had it, or `None` for one every interval.
     pub cron: Option<String>,
     /// When it is next due.
-    pub due_at: DateTime<Utc>,
+    pub due_at: Timestamp,
     /// The last job it queued.
     pub last_job: Option<Uuid>,
     /// That job's state, unless retention deleted it.
@@ -1336,12 +1481,12 @@ pub struct ScheduleInfo {
     /// That job's last failure text. For operators only.
     pub last_error: Option<String>,
     /// When a live process last had it in code, to within a minute.
-    pub seen_at: DateTime<Utc>,
+    pub seen_at: Timestamp,
     /// When it was archived, as no live process had it in code. An archived
     /// schedule queues nothing, and a schedule of that name in code restores it.
-    pub archived_at: Option<DateTime<Utc>>,
+    pub archived_at: Option<Timestamp>,
     /// When its row was made.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 /// Queue tuning.
@@ -1695,10 +1840,10 @@ impl Queue {
             tenant: row.try_get("tenant")?,
             unique_key: row.try_get("unique_key")?,
             error: row.try_get("error")?,
-            run_at: row.try_get("run_at")?,
-            started_at: row.try_get("started_at")?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
+            run_at: at(row.try_get("run_at")?)?,
+            started_at: at_or_none(row.try_get("started_at")?)?,
+            created_at: at(row.try_get("created_at")?)?,
+            updated_at: at(row.try_get("updated_at")?)?,
         }))
     }
 
@@ -1721,7 +1866,7 @@ impl Queue {
                     attempts: row.try_get("attempts")?,
                     by: row.try_get("by")?,
                     reason: row.try_get("reason")?,
-                    at: row.try_get("at")?,
+                    at: at(row.try_get("at")?)?,
                 })
             })
             .collect()
@@ -1816,15 +1961,16 @@ impl Queue {
         let first = match &schedule.times {
             Times::Every(_) => schedule.first,
             Times::Cron(cron, _) => {
-                let now: DateTime<Utc> = sqlx::query_scalar("SELECT UTC_TIMESTAMP(6)")
-                    .fetch_one(&self.pool)
-                    .await?;
-                Some(next_after(cron, now)?)
+                let now: i64 =
+                    sqlx::query_scalar(concat!("SELECT ", epoch_micros!("UTC_TIMESTAMP(6)")))
+                        .fetch_one(&self.pool)
+                        .await?;
+                Some(next_after(cron, at(now)?)?)
             }
         };
         sqlx::query(SCHEDULE_CREATE)
             .bind(&schedule.name)
-            .bind(first)
+            .bind(first.map(Timestamp::as_microsecond))
             .bind(interval)
             .bind(pattern)
             .execute(&self.pool)
@@ -1833,7 +1979,7 @@ impl Queue {
             .bind(interval)
             .bind(pattern)
             .bind(pattern)
-            .bind(first)
+            .bind(first.map(Timestamp::as_microsecond))
             .bind(pattern)
             .bind(&schedule.name)
             .bind(interval)
@@ -1882,7 +2028,7 @@ impl Queue {
             }
             Times::Cron(cron, _) => {
                 sqlx::query(SCHEDULE_ADVANCE_TO)
-                    .bind(next_after(cron, row.try_get("now")?)?)
+                    .bind(next_after(cron, at(row.try_get("now")?)?)?.as_microsecond())
                     .bind(job)
                     .bind(&schedule.name)
                     .execute(&mut *transaction)
@@ -1932,16 +2078,16 @@ impl Queue {
                         .try_get::<Option<i64>, _>("interval_ms")?
                         .map(from_millis),
                     cron: row.try_get("cron")?,
-                    due_at: row.try_get("due_at")?,
+                    due_at: at(row.try_get("due_at")?)?,
                     last_job: row.try_get("last_job")?,
                     last_state: row
                         .try_get::<Option<&str>, _>("last_status")?
                         .map(JobState::parse)
                         .transpose()?,
                     last_error: row.try_get("last_error")?,
-                    seen_at: row.try_get("seen_at")?,
-                    archived_at: row.try_get("archived_at")?,
-                    created_at: row.try_get("created_at")?,
+                    seen_at: at(row.try_get("seen_at")?)?,
+                    archived_at: at_or_none(row.try_get("archived_at")?)?,
+                    created_at: at(row.try_get("created_at")?)?,
                 })
             })
             .collect()
@@ -2431,12 +2577,8 @@ mod tests {
             panic!("a cron schedule")
         };
         // Friday 2026-11-13 09:00 UTC is due, so the next after it is Monday's.
-        let friday = DateTime::parse_from_rfc3339("2026-11-13T09:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let monday = DateTime::parse_from_rfc3339("2026-11-16T09:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let friday: Timestamp = "2026-11-13T09:00:00Z".parse().unwrap();
+        let monday: Timestamp = "2026-11-16T09:00:00Z".parse().unwrap();
         assert_eq!(next_after(cron, friday).unwrap(), monday);
         assert_eq!(
             Schedule::every(
@@ -2446,6 +2588,49 @@ mod tests {
             )
             .interval(),
             Some(Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn a_cron_schedule_counts_in_utc_across_a_month_end_and_a_clock_change() {
+        let next = |pattern: &str, after: &str| {
+            let cron: croner::Cron = pattern.parse().unwrap();
+            next_after(&cron, after.parse().unwrap())
+                .unwrap()
+                .to_string()
+        };
+        // The 31st skips a month of 30 days, and the year end is an ordinary midnight.
+        assert_eq!(
+            next("0 0 31 * *", "2026-11-15T00:00:00Z"),
+            "2026-12-31T00:00:00Z"
+        );
+        assert_eq!(
+            next("30 23 * * *", "2026-12-31T23:30:00Z"),
+            "2027-01-01T23:30:00Z"
+        );
+        assert_eq!(
+            next("0 12 29 2 *", "2026-03-01T00:00:00Z"),
+            "2028-02-29T12:00:00Z"
+        );
+        // Clocks in Europe go forward at 01:00 UTC on 2026-03-29 and back at 01:00 UTC
+        // on 2026-10-25, and in the US back on 2026-11-01. UTC has no such change, so
+        // 01:30 comes once each day, 24 hours apart.
+        assert_eq!(
+            next("30 1 * * *", "2026-03-28T01:30:00Z"),
+            "2026-03-29T01:30:00Z"
+        );
+        assert_eq!(
+            next("30 1 * * *", "2026-10-25T01:30:00Z"),
+            "2026-10-26T01:30:00Z"
+        );
+        assert_eq!(
+            next("0 6 * * *", "2026-11-01T06:00:00Z"),
+            "2026-11-02T06:00:00Z"
+        );
+        // A time part way through a second goes on to the next whole one.
+        assert_eq!(
+            next("* * * * * *", "2026-11-15T00:00:00.5Z"),
+            "2026-11-15T00:00:01Z"
         );
     }
 

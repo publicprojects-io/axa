@@ -155,6 +155,12 @@ jobs:
           cargo tree -p axa-mysql-diesel --all-features -e normal >> diesel-tree.txt
           if grep -E 'pq-sys|libpq|mysqlclient|openssl|native-tls' diesel-tree.txt; then exit 1; fi
 
+      - name: No chrono for a service on Postgres
+        run: |
+          cargo tree -e normal -p axa --features queue,postgres-sqlx,outbox,idempotency,ratelimit,cursor-pagination,openapi > chrono-tree.txt
+          cargo tree -e normal -p axa-postgres-job-queue >> chrono-tree.txt
+          if grep -E ' chrono v' chrono-tree.txt; then exit 1; fi
+
       - name: Postgres tests
         env:
           AXA_TEST_DB_URL: postgres://axa:axa@localhost:5432/axa_test

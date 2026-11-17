@@ -301,14 +301,15 @@ schedule's row is locked while its job is queued, in the same transaction.
 
 ```rust
 # use std::time::Duration;
-# use axa::queue::{DateTime, NewJob, Queue, Schedule, Utc};
-# fn example(queue: &mut Queue, job: NewJob, next_two_am_utc: DateTime<Utc>) {
+# use axa::queue::{NewJob, Queue, Schedule, Timestamp};
+# fn example(queue: &mut Queue, job: NewJob, next_two_am_utc: Timestamp) {
 let first = next_two_am_utc;
 queue.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_at(first));
 # }
 ```
 
-The first time is used only when the row is made, so a schedule every 24 hours first
+A time is a `queue::Timestamp`, which is `jiff::Timestamp`, an instant in UTC. The
+first time is used only when the row is made, so a schedule every 24 hours first
 due at 02:00 runs at 02:00 each day, on the database's clock in UTC.
 
 ## Cron schedules

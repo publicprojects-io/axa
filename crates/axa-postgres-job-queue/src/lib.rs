@@ -175,11 +175,16 @@ use std::{
     time::Duration,
 };
 
-use sqlx::{PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction, postgres::PgPoolOptions};
+use sqlx::{
+    PgConnection, PgExecutor, PgPool, Postgres, Row, Transaction,
+    postgres::{PgPoolOptions, PgRow},
+};
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, watch};
 use uuid::Uuid;
 
-pub use sqlx::types::chrono::{DateTime, Utc};
+/// An instant, in UTC: every time the queue keeps or takes. Re-exported from `jiff`, so
+/// a service needs no dependency of its own to name one.
+pub use jiff::Timestamp;
 
 /// What this crate's functions return.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -670,7 +675,7 @@ fn from_millis(millis: i64) -> Duration {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum When {
     Now,
-    At(DateTime<Utc>),
+    At(Timestamp),
     In(Duration),
 }
 
@@ -772,7 +777,7 @@ impl NewJob {
 
     /// Run no sooner than `at`.
     #[must_use]
-    pub const fn run_at(mut self, at: DateTime<Utc>) -> Self {
+    pub const fn run_at(mut self, at: Timestamp) -> Self {
         self.when = When::At(at);
         self
     }
@@ -849,7 +854,7 @@ pub async fn enqueue_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Res
     .bind(&job.args)
     .bind(job.max_attempts)
     .bind(job.priority)
-    .bind(at)
+    .bind(at.map(jiff_sqlx::Timestamp::from))
     .bind(delay)
     .bind(job.timeout.map(millis))
     .bind(job.tenant.as_deref());
@@ -993,7 +998,7 @@ pub struct Act {
     /// Why, as a short code.
     pub reason: String,
     /// When, on the database's clock.
-    pub at: DateTime<Utc>,
+    pub at: Timestamp,
 }
 
 /// Where a job is.
@@ -1055,13 +1060,13 @@ pub struct JobInfo {
     /// error said.
     pub error: Option<String>,
     /// When it may run next, or last could.
-    pub run_at: DateTime<Utc>,
+    pub run_at: Timestamp,
     /// When its latest run started.
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// When it was queued.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When its row last changed.
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 /// How many jobs are in each state, for metrics.
@@ -1094,7 +1099,7 @@ pub struct Counts {
 pub struct Schedule {
     name: String,
     times: Times,
-    first: Option<DateTime<Utc>>,
+    first: Option<Timestamp>,
     job: NewJob,
 }
 
@@ -1122,10 +1127,88 @@ impl Times {
     }
 }
 
-/// The time after `now` a cron pattern names.
-fn next_after(cron: &croner::Cron, now: DateTime<Utc>) -> Result<DateTime<Utc>> {
-    cron.find_next_occurrence(&now, false)
+/// The time after `now` a cron pattern names, in UTC.
+fn next_after(cron: &croner::Cron, now: Timestamp) -> Result<Timestamp> {
+    cron.find_next_occurrence(&InUtc(now), false)
+        .map(|next| next.0)
         .map_err(|error| Error::Job(format!("the cron pattern has no next time: {error}")))
+}
+
+/// An instant as `croner` reads it, on a wall clock in UTC, which has no daylight
+/// saving, so every wall clock time is one instant. `croner`'s own `jiff` support is for
+/// an older `jiff`, so the crate gives it this one time zone itself.
+#[derive(Clone, Copy)]
+struct InUtc(Timestamp);
+
+impl croner::CronDateTime for InUtc {
+    fn to_civil(&self) -> croner::CivilDateTime {
+        let time = jiff::tz::TimeZone::UTC.to_datetime(self.0);
+        croner::CivilDateTime::new(
+            croner::CivilDate::from_parts_unchecked(
+                i32::from(time.year()),
+                time.month().unsigned_abs().into(),
+                time.day().unsigned_abs().into(),
+            ),
+            croner::CivilTime::from_parts_unchecked(
+                time.hour().unsigned_abs().into(),
+                time.minute().unsigned_abs().into(),
+                time.second().unsigned_abs().into(),
+            ),
+        )
+    }
+
+    fn civil_weekday(&self) -> croner::Weekday {
+        let day = jiff::tz::TimeZone::UTC
+            .to_datetime(self.0)
+            .weekday()
+            .to_sunday_zero_offset();
+        croner::Weekday::from_days_from_sunday(day.unsigned_abs().into())
+    }
+
+    fn resolve_civil(
+        &self,
+        civil: croner::CivilDateTime,
+    ) -> Result<croner::Resolution<Self>, croner::errors::CronError> {
+        let part =
+            |value: u32| i8::try_from(value).map_err(|_| croner::errors::CronError::InvalidDate);
+        let year =
+            i16::try_from(civil.year()).map_err(|_| croner::errors::CronError::InvalidDate)?;
+        let time = jiff::civil::DateTime::new(
+            year,
+            part(civil.month())?,
+            part(civil.day())?,
+            part(civil.hour())?,
+            part(civil.minute())?,
+            part(civil.second())?,
+            0,
+        )
+        .and_then(|time| jiff::tz::TimeZone::UTC.to_timestamp(time))
+        .map_err(|_| croner::errors::CronError::InvalidDate)?;
+        Ok(croner::Resolution::Single(Self(time)))
+    }
+
+    fn checked_add_seconds(&self, seconds: i64) -> Option<Self> {
+        self.0
+            .checked_add(jiff::SignedDuration::from_secs(seconds))
+            .ok()
+            .map(Self)
+    }
+
+    fn cmp_instant(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+/// A time column of `row`.
+fn time(row: &PgRow, column: &str) -> Result<Timestamp> {
+    Ok(row.try_get::<jiff_sqlx::Timestamp, _>(column)?.to_jiff())
+}
+
+/// A time column of `row` that may be `NULL`.
+fn time_or_none(row: &PgRow, column: &str) -> Result<Option<Timestamp>> {
+    Ok(row
+        .try_get::<Option<jiff_sqlx::Timestamp>, _>(column)?
+        .map(jiff_sqlx::Timestamp::to_jiff))
 }
 
 impl fmt::Debug for Schedule {
@@ -1183,7 +1266,7 @@ impl Schedule {
             .parse()
             .unwrap_or_else(|error| panic!("the schedule {name} has a bad cron pattern: {error}"));
         assert!(
-            next_after(&cron, Utc::now()).is_ok(),
+            next_after(&cron, Timestamp::now()).is_ok(),
             "the cron pattern of the schedule {name} names no time to come"
         );
         Self {
@@ -1202,7 +1285,7 @@ impl Schedule {
     /// each day. Without one, the first is as soon as the row is made. A cron
     /// schedule's first time is its pattern's, and it ignores this.
     #[must_use]
-    pub const fn first_at(mut self, first: DateTime<Utc>) -> Self {
+    pub const fn first_at(mut self, first: Timestamp) -> Self {
         self.first = Some(first);
         self
     }
@@ -1246,7 +1329,7 @@ pub struct ScheduleInfo {
     /// Its cron pattern, as the code last had it, or `None` for one every interval.
     pub cron: Option<String>,
     /// When it is next due.
-    pub due_at: DateTime<Utc>,
+    pub due_at: Timestamp,
     /// The last job it queued.
     pub last_job: Option<Uuid>,
     /// That job's state, unless retention deleted it.
@@ -1254,12 +1337,12 @@ pub struct ScheduleInfo {
     /// That job's last failure text. For operators only.
     pub last_error: Option<String>,
     /// When a live process last had it in code, to within a minute.
-    pub seen_at: DateTime<Utc>,
+    pub seen_at: Timestamp,
     /// When it was archived, as no live process had it in code. An archived
     /// schedule queues nothing, and a schedule of that name in code restores it.
-    pub archived_at: Option<DateTime<Utc>>,
+    pub archived_at: Option<Timestamp>,
     /// When its row was made.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
 }
 
 /// Queue tuning.
@@ -1602,10 +1685,10 @@ impl Queue {
             tenant: row.try_get("tenant")?,
             unique_key: row.try_get("unique_key")?,
             error: row.try_get("error")?,
-            run_at: row.try_get("run_at")?,
-            started_at: row.try_get("started_at")?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
+            run_at: time(&row, "run_at")?,
+            started_at: time_or_none(&row, "started_at")?,
+            created_at: time(&row, "created_at")?,
+            updated_at: time(&row, "updated_at")?,
         }))
     }
 
@@ -1628,7 +1711,7 @@ impl Queue {
                     attempts: row.try_get("attempts")?,
                     by: row.try_get("by")?,
                     reason: row.try_get("reason")?,
-                    at: row.try_get("at")?,
+                    at: time(row, "at")?,
                 })
             })
             .collect()
@@ -1721,15 +1804,15 @@ impl Queue {
         let first = match &schedule.times {
             Times::Every(_) => schedule.first,
             Times::Cron(cron, _) => {
-                let now: DateTime<Utc> = sqlx::query_scalar("SELECT now()")
+                let now: jiff_sqlx::Timestamp = sqlx::query_scalar("SELECT now()")
                     .fetch_one(&self.pool)
                     .await?;
-                Some(next_after(cron, now)?)
+                Some(next_after(cron, now.to_jiff())?)
             }
         };
         sqlx::query(SCHEDULE_CREATE)
             .bind(&schedule.name)
-            .bind(first)
+            .bind(first.map(jiff_sqlx::Timestamp::from))
             .bind(schedule.times.interval().map(millis))
             .bind(schedule.times.pattern())
             .execute(&self.pool)
@@ -1774,7 +1857,10 @@ impl Queue {
             Times::Cron(cron, _) => {
                 sqlx::query(SCHEDULE_ADVANCE_TO)
                     .bind(&schedule.name)
-                    .bind(next_after(cron, row.try_get("now")?)?)
+                    .bind(jiff_sqlx::Timestamp::from(next_after(
+                        cron,
+                        time(&row, "now")?,
+                    )?))
                     .bind(job)
                     .execute(&mut *transaction)
                     .await?;
@@ -1818,16 +1904,16 @@ impl Queue {
                         .try_get::<Option<i64>, _>("interval_ms")?
                         .map(from_millis),
                     cron: row.try_get("cron")?,
-                    due_at: row.try_get("due_at")?,
+                    due_at: time(row, "due_at")?,
                     last_job: row.try_get("last_job")?,
                     last_state: row
                         .try_get::<Option<&str>, _>("last_status")?
                         .map(JobState::parse)
                         .transpose()?,
                     last_error: row.try_get("last_error")?,
-                    seen_at: row.try_get("seen_at")?,
-                    archived_at: row.try_get("archived_at")?,
-                    created_at: row.try_get("created_at")?,
+                    seen_at: time(row, "seen_at")?,
+                    archived_at: time_or_none(row, "archived_at")?,
+                    created_at: time(row, "created_at")?,
                 })
             })
             .collect()
@@ -2369,12 +2455,8 @@ mod tests {
             panic!("a cron schedule")
         };
         // Friday 2026-11-13 09:00 UTC is due, so the next after it is Monday's.
-        let friday = DateTime::parse_from_rfc3339("2026-11-13T09:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
-        let monday = DateTime::parse_from_rfc3339("2026-11-16T09:00:00Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let friday: Timestamp = "2026-11-13T09:00:00Z".parse().unwrap();
+        let monday: Timestamp = "2026-11-16T09:00:00Z".parse().unwrap();
         assert_eq!(next_after(cron, friday).unwrap(), monday);
         assert_eq!(
             Schedule::every(
@@ -2384,6 +2466,49 @@ mod tests {
             )
             .interval(),
             Some(Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn a_cron_schedule_counts_in_utc_across_a_month_end_and_a_clock_change() {
+        let next = |pattern: &str, after: &str| {
+            let cron: croner::Cron = pattern.parse().unwrap();
+            next_after(&cron, after.parse().unwrap())
+                .unwrap()
+                .to_string()
+        };
+        // The 31st skips a month of 30 days, and the year end is an ordinary midnight.
+        assert_eq!(
+            next("0 0 31 * *", "2026-11-15T00:00:00Z"),
+            "2026-12-31T00:00:00Z"
+        );
+        assert_eq!(
+            next("30 23 * * *", "2026-12-31T23:30:00Z"),
+            "2027-01-01T23:30:00Z"
+        );
+        assert_eq!(
+            next("0 12 29 2 *", "2026-03-01T00:00:00Z"),
+            "2028-02-29T12:00:00Z"
+        );
+        // Clocks in Europe go forward at 01:00 UTC on 2026-03-29 and back at 01:00 UTC
+        // on 2026-10-25, and in the US back on 2026-11-01. UTC has no such change, so
+        // 01:30 comes once each day, 24 hours apart.
+        assert_eq!(
+            next("30 1 * * *", "2026-03-28T01:30:00Z"),
+            "2026-03-29T01:30:00Z"
+        );
+        assert_eq!(
+            next("30 1 * * *", "2026-10-25T01:30:00Z"),
+            "2026-10-26T01:30:00Z"
+        );
+        assert_eq!(
+            next("0 6 * * *", "2026-11-01T06:00:00Z"),
+            "2026-11-02T06:00:00Z"
+        );
+        // A time part way through a second goes on to the next whole one.
+        assert_eq!(
+            next("* * * * * *", "2026-11-15T00:00:00.5Z"),
+            "2026-11-15T00:00:01Z"
         );
     }
 

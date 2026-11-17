@@ -14,7 +14,7 @@ pedantic = { level = "deny", priority = -1 }
 
 [package]
 name = "axa"
-version = "0.18.0"
+version = "0.19.0"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -143,7 +143,7 @@ axa-sqlite-diesel = { version = "0.1.0", path = "crates/axa-sqlite-diesel", opti
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
 axa-accepts-version-negotiation = { version = "0.2.1", path = "crates/axa-accepts-version-negotiation", optional = true }
-axa-postgres-job-queue = { version = "0.5.1", path = "crates/axa-postgres-job-queue", optional = true }
+axa-postgres-job-queue = { version = "0.6.0", path = "crates/axa-postgres-job-queue", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }
@@ -171,7 +171,7 @@ uuid = { version = "1", features = ["v4"] }
 validator = { version = "0.21", optional = true }
 
 sea-orm = { version = "2.0", default-features = false, features = ["runtime-tokio-rustls"], optional = true }
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid", "chrono"], optional = true }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid"], optional = true }
 
 [dev-dependencies]
 validator = { version = "0.21", features = ["derive"] }

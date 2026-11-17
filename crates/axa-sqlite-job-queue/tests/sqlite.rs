@@ -11,9 +11,10 @@ use std::{
 };
 
 use axa_sqlite_job_queue::{
-    ActKind, Error, JobState, NewJob, Queue, QueueOptions, SETUP_STATEMENTS, Schedule,
+    ActKind, Error, JobState, NewJob, Queue, QueueOptions, SETUP_STATEMENTS, Schedule, Timestamp,
     enqueue_all_on,
 };
+use jiff::{SignedDuration, tz::TimeZone};
 use sqlx::{Row, SqlitePool};
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -36,8 +37,8 @@ async fn now(queue: &Queue) -> i64 {
         .unwrap()
 }
 
-fn time(micros: i64) -> axa_sqlite_job_queue::DateTime<axa_sqlite_job_queue::Utc> {
-    axa_sqlite_job_queue::DateTime::from_timestamp_micros(micros).unwrap()
+fn time(micros: i64) -> Timestamp {
+    Timestamp::from_microsecond(micros).unwrap()
 }
 
 fn quick() -> QueueOptions {
@@ -289,7 +290,7 @@ async fn a_delayed_job_is_not_claimed_before_its_time() {
         )
         .await
         .unwrap();
-    let past = chrono_past(&queue).await;
+    let past = a_minute_ago(&queue).await;
     let due = queue
         .enqueue_job(&NewJob::new("Job", serde_json::Value::Null).run_at(past))
         .await
@@ -309,7 +310,7 @@ async fn a_delayed_job_is_not_claimed_before_its_time() {
     assert_eq!((counts.ready, counts.waiting, counts.completed), (0, 1, 2));
 }
 
-async fn chrono_past(queue: &Queue) -> axa_sqlite_job_queue::DateTime<axa_sqlite_job_queue::Utc> {
+async fn a_minute_ago(queue: &Queue) -> Timestamp {
     time(now(queue).await - 60_000_000)
 }
 
@@ -1538,9 +1539,6 @@ async fn a_key_that_is_not_a_code_is_refused() {
 
 // Cron schedules.
 
-type Time = axa_sqlite_job_queue::DateTime<axa_sqlite_job_queue::Utc>;
-use chrono::TimeDelta;
-
 fn cron(queue: &mut Queue, name: &str, pattern: &str) {
     queue.schedule(Schedule::cron(
         name,
@@ -1563,7 +1561,7 @@ async fn set_due(pool: &SqlitePool, name: &str, seconds_ago: u32) {
 }
 
 /// The schedule's due time, and the database's now.
-async fn due_and_now(pool: &SqlitePool, name: &str) -> (Time, Time) {
+async fn due_and_now(pool: &SqlitePool, name: &str) -> (Timestamp, Timestamp) {
     let row = sqlx::query(
         "SELECT due_at, CAST(unixepoch('subsec') * 1000000 AS INTEGER) AS now
          FROM axa_schedule WHERE name = ?1",
@@ -1577,12 +1575,12 @@ async fn due_and_now(pool: &SqlitePool, name: &str) -> (Time, Time) {
 
 #[tokio::test]
 async fn a_cron_schedule_first_runs_at_its_patterns_next_time() {
-    use chrono::Timelike;
     let mut queue = fresh(quick()).await;
     cron(&mut queue, "at-two", "0 2 * * *");
     assert_eq!(queue.tick_schedules().await.unwrap(), 0, "not due at boot");
     let (due, now) = due_and_now(queue.pool(), "at-two").await;
-    assert!(due > now && due - now <= TimeDelta::hours(24));
+    assert!(due > now && due.duration_since(now) <= SignedDuration::from_hours(24));
+    let due = TimeZone::UTC.to_datetime(due);
     assert_eq!(
         (due.hour(), due.minute(), due.second()),
         (2, 0, 0),
@@ -1613,20 +1611,16 @@ async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
     );
     let (due, now) = due_and_now(queue.pool(), "secondly").await;
     assert!(
-        due > now - TimeDelta::seconds(1),
+        due > now - SignedDuration::from_secs(1),
         "the next is the pattern's after now"
     );
-    assert_eq!(
-        due.timestamp_subsec_micros(),
-        0,
-        "on the pattern's whole second"
-    );
+    assert_eq!(due.subsec_microsecond(), 0, "on the pattern's whole second");
     // Due again while its job is still queued: skipped, and moved on.
     set_due(queue.pool(), "secondly", 1).await;
     assert_eq!(queue.tick_schedules().await.unwrap(), 0);
     assert_eq!(jobs_named(queue.pool(), "Tick").await, 1);
     let (due, now) = due_and_now(queue.pool(), "secondly").await;
-    assert!(due > now - TimeDelta::seconds(1));
+    assert!(due > now - SignedDuration::from_secs(1));
     // Once it finished, the next due time queues again.
     sqlx::query("UPDATE axa_queue SET status = 'completed'")
         .execute(queue.pool())
@@ -1638,7 +1632,7 @@ async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
 
 #[tokio::test]
 async fn a_changed_pattern_takes_its_next_time_from_the_new_one() {
-    use chrono::Timelike;
+    let hour = |due: Timestamp| TimeZone::UTC.to_datetime(due).hour();
     let mut queue = fresh(quick()).await;
     every(&mut queue, "nightly", Duration::from_hours(24));
     queue.tick_schedules().await.unwrap();
@@ -1646,12 +1640,12 @@ async fn a_changed_pattern_takes_its_next_time_from_the_new_one() {
     cron(&mut queue, "nightly", "0 2 * * *");
     queue.tick_schedules().await.unwrap();
     let (due, _) = due_and_now(queue.pool(), "nightly").await;
-    assert_eq!(due.hour(), 2, "from an interval to a pattern");
+    assert_eq!(hour(due), 2, "from an interval to a pattern");
     let mut queue = replica(quick()).await;
     cron(&mut queue, "nightly", "0 3 * * *");
     queue.tick_schedules().await.unwrap();
     let (due, _) = due_and_now(queue.pool(), "nightly").await;
-    assert_eq!(due.hour(), 3, "from one pattern to another");
+    assert_eq!(hour(due), 3, "from one pattern to another");
     let info = queue.schedules().await.unwrap();
     assert_eq!(info[0].cron.as_deref(), Some("0 3 * * *"));
 }
@@ -1710,7 +1704,7 @@ async fn a_job_that_asks_for_a_delay_is_tried_again_after_it() {
     let info = queue.job(id).await.unwrap().unwrap();
     assert_eq!(info.state, JobState::Queued);
     assert_eq!(info.error.as_deref(), Some("the receiver is busy"));
-    let wait = (info.run_at - info.updated_at).num_milliseconds();
+    let wait = info.run_at.duration_since(info.updated_at).as_millis();
     assert!((119_000..=121_000).contains(&wait), "{wait}");
     assert!(!queue.run_one().await.unwrap(), "not before its time");
 }

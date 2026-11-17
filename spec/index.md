@@ -750,6 +750,12 @@ below. It does not depend on `axa`, so its handlers are closures over JSON, its 
 its own, and `axa::queue` adapts both. These tests need `AXA_TEST_DB_URL`, except
 where the name is in `src/`.
 
+Every time in the API, in `run_at`, `first_at`, `JobInfo`, `ScheduleInfo`, and `Act`, is
+`Timestamp`, re-exported `jiff::Timestamp`, an instant in UTC, read and bound through
+`jiff-sqlx`. The crate depends on no `chrono`, and `croner` is built with no time-library
+feature: the crate gives it a wall clock in UTC of its own, as `croner`'s `jiff` support is
+for an older `jiff`.
+
 `axa_queue` and `axa_schedule` are working state, and change as jobs run. `axa_job_acts`
 is a record (P-7) of what a person did to a job, and is only ever inserted into.
 
@@ -789,7 +795,7 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-32 | The key holds against a job queued in a transaction not yet committed: a second enqueue of the key waits, then answers that job once it commits, or queues its own once it rolls back. A unique index holds it, so it holds across replicas. | `a_key_holds_against_a_job_in_a_transaction_not_yet_committed` |
 | WRK-33 | `retry` leaves a failed job alone, answering `false` and keeping no act, while another job of its key is queued or running. | `a_failed_job_is_not_retried_while_another_of_its_key_is_queued` |
 | WRK-34 | A key is a code, as WRK-26 has it. Any other is refused with `Error::NotACode`, `what` being `unique key`, before anything is written, and the table refuses it too. `check` fails without the `unique_key` column or the unique index. | `a_key_that_is_not_a_code_is_refused` |
-| WRK-35 | `Schedule::cron(name, pattern, job)` queues a job at each time the cron pattern names, as `croner` reads it, in UTC on the database's clock. Its first time is the pattern's next after the row is made, and `schedules` gives its pattern and no interval. | `a_cron_schedule_first_runs_at_its_patterns_next_time`, `a_cron_schedule_names_its_next_times_in_utc` |
+| WRK-35 | `Schedule::cron(name, pattern, job)` queues a job at each time the cron pattern names, as `croner` reads it, in UTC on the database's clock. Its first time is the pattern's next after the row is made, and `schedules` gives its pattern and no interval. | `a_cron_schedule_first_runs_at_its_patterns_next_time`, `a_cron_schedule_names_its_next_times_in_utc`, `a_cron_schedule_counts_in_utc_across_a_month_end_and_a_clock_change` |
 | WRK-36 | Times a cron schedule missed while every process was down queue one job, and its next time is the pattern's next after now. A due time is skipped while its last job is queued or running, and the schedule moves on to its next. | `a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy` |
 | WRK-37 | Across any number of processes ticking at once, each due time of a cron schedule is queued once. | `replicas_ticking_a_cron_schedule_queue_each_due_time_once` |
 | WRK-38 | A schedule whose pattern changed, or that changed from an interval to a pattern, takes its next time from the new pattern. | `a_changed_pattern_takes_its_next_time_from_the_new_one` |
@@ -811,7 +817,7 @@ names of the tests in section 4.18 except where a row below names its own.
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
-| MYQ-5 | Names are compared byte for byte, and every time is UTC on the database's clock, whatever the session's `time_zone`. The queue's own transactions run at `READ COMMITTED`, so a claim holds no gap locks. | `two_processes_run_each_job_once`, `a_delayed_job_is_not_claimed_before_its_time` |
+| MYQ-5 | Names are compared byte for byte, and every time is UTC on the database's clock, whatever the session's `time_zone`. A time crosses to and from Rust as microseconds since the Unix epoch, by `TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', ...)` and `CAST('1970-01-01' AS DATETIME(6)) + INTERVAL ? MICROSECOND`, which no `time_zone` changes, so the crate depends on no `chrono`; `jiff-sqlx` has no MySQL support. The queue's own transactions run at `READ COMMITTED`, so a claim holds no gap locks. | `two_processes_run_each_job_once`, `a_delayed_job_is_not_claimed_before_its_time` |
 | MYQ-7 | MySQL has no partial index and no `RETURNING`. A virtual `unique_slot`, the tenant and key while the job is queued or running and `NULL` otherwise, carries a unique index with the name, and setup adds the columns and the index each where `information_schema` shows none. So `enqueue_on` takes a connection, `&mut transaction` or a pool's, and runs a unique job's insert and its locking read of the id in a transaction of its own, or a savepoint in the caller's. | `a_key_holds_against_a_job_in_a_transaction_not_yet_committed`, `a_key_that_is_not_a_code_is_refused` |
 | MYQ-6 | MySQL has no `ADD COLUMN IF NOT EXISTS`, so setup adds the `tenant` column only where `information_schema` shows none, in one string run on one connection, and is safe to repeat on a table made by 0.1.0. | `a_job_carries_its_tenant_to_a_handler_that_takes_one`, on the table setup makes first and then adds the column to |
 
@@ -831,6 +837,7 @@ in section 4.18 except where a row below names its own.
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |
 | SQJ-5 | A claim is one statement, and a schedule's tick and setup run in `BEGIN IMMEDIATE` transactions, so processes on one file take turns and each job and due time goes out once. | `two_processes_run_each_job_once`, `replicas_ticking_together_queue_each_due_time_once` |
 | SQJ-6 | It is not published while the `libsqlite3-sys` sqlx builds has RUSTSEC-2026-0459. | The release checklist |
+| SQJ-7 | Times are kept as microseconds since the Unix epoch, and cross to Rust as `jiff::Timestamp` with no `jiff-sqlx` and no `chrono`. | `a_delayed_job_is_not_claimed_before_its_time` |
 
 ### 4.21 MySQL and SQLite database crates
 
@@ -1070,6 +1077,8 @@ cargo test --doc --features idempotency,paseto
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps --all-features
 cargo tree -p axa-postgres-diesel --all-features -e normal   # must show no C database library
+cargo tree -e normal -p axa --features queue,postgres-sqlx,outbox,idempotency,ratelimit,cursor-pagination,openapi   # must show no chrono
+cargo tree -e normal -p axa-postgres-job-queue   # must show no chrono
 AXA_TEST_DB_URL=postgres://... cargo test --features queue -- --ignored
 AXA_TEST_DB_URL=postgres://... cargo test --all-features --test constraint_errors -- --ignored --test-threads=1
 AXA_TEST_DB_URL=postgres://... cargo test --features postgres-sqlx --test row_security -- --ignored

@@ -16,9 +16,10 @@ use std::{
 };
 
 use axa_postgres_job_queue::{
-    ActKind, Error, JobState, NewJob, Queue, QueueOptions, SETUP_STATEMENTS, Schedule,
+    ActKind, Error, JobState, NewJob, Queue, QueueOptions, SETUP_STATEMENTS, Schedule, Timestamp,
     enqueue_all_on,
 };
+use jiff::{SignedDuration, tz::TimeZone};
 use sqlx::{PgPool, Row};
 use tokio::sync::watch;
 use uuid::Uuid;
@@ -289,7 +290,7 @@ async fn a_delayed_job_is_not_claimed_before_its_time() {
         )
         .await
         .unwrap();
-    let past = chrono_past(&queue).await;
+    let past = a_minute_ago(&queue).await;
     let due = queue
         .enqueue_job(&NewJob::new("Job", serde_json::Value::Null).run_at(past))
         .await
@@ -309,13 +310,17 @@ async fn a_delayed_job_is_not_claimed_before_its_time() {
     assert_eq!((counts.ready, counts.waiting, counts.completed), (0, 1, 2));
 }
 
-async fn chrono_past(
-    queue: &Queue,
-) -> axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> {
-    sqlx::query_scalar("SELECT now() - interval '1 minute'")
-        .fetch_one(queue.pool())
+async fn a_minute_ago(queue: &Queue) -> Timestamp {
+    time_of(queue.pool(), "SELECT now() - interval '1 minute'").await
+}
+
+/// The one time a query gives.
+async fn time_of(pool: &PgPool, sql: &'static str) -> Timestamp {
+    sqlx::query_scalar::<_, jiff_sqlx::Timestamp>(sql)
+        .fetch_one(pool)
         .await
         .unwrap()
+        .to_jiff()
 }
 
 #[tokio::test]
@@ -773,11 +778,11 @@ async fn due_times_count_from_the_first_and_do_not_drift() {
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_first_time_applies_only_when_the_row_is_made() {
     let mut queue = fresh(quick()).await;
-    let first: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
-        sqlx::query_scalar("SELECT date_trunc('second', now()) + interval '1 hour'")
-            .fetch_one(queue.pool())
-            .await
-            .unwrap();
+    let first = time_of(
+        queue.pool(),
+        "SELECT date_trunc('second', now()) + interval '1 hour'",
+    )
+    .await;
     let job = NewJob::new("Tick", serde_json::Value::Null);
     queue.schedule(
         Schedule::every("nightly", Duration::from_hours(24), job.clone()).first_at(first),
@@ -787,27 +792,23 @@ async fn a_first_time_applies_only_when_the_row_is_made() {
         0,
         "not due until its first time"
     );
-    let stored: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
-        sqlx::query_scalar("SELECT due_at FROM axa_schedule WHERE name = 'nightly'")
-            .fetch_one(queue.pool())
-            .await
-            .unwrap();
+    let stored = time_of(
+        queue.pool(),
+        "SELECT due_at FROM axa_schedule WHERE name = 'nightly'",
+    )
+    .await;
     assert_eq!(stored, first);
 
     // A later release with another first time leaves the row where it is.
-    let earlier: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
-        sqlx::query_scalar("SELECT now() - interval '5 hours'")
-            .fetch_one(queue.pool())
-            .await
-            .unwrap();
+    let earlier = time_of(queue.pool(), "SELECT now() - interval '5 hours'").await;
     let mut later = replica(quick()).await;
     later.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_at(earlier));
     later.tick_schedules().await.unwrap();
-    let stored: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
-        sqlx::query_scalar("SELECT due_at FROM axa_schedule WHERE name = 'nightly'")
-            .fetch_one(queue.pool())
-            .await
-            .unwrap();
+    let stored = time_of(
+        queue.pool(),
+        "SELECT due_at FROM axa_schedule WHERE name = 'nightly'",
+    )
+    .await;
     assert_eq!(stored, first);
 }
 
@@ -1087,11 +1088,11 @@ async fn a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns
     assert_eq!(retired.last_state, Some(JobState::Queued));
 
     // It returns to code: the same row is restored, keeping its due time.
-    let due_before: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
-        sqlx::query_scalar("SELECT due_at FROM axa_schedule WHERE name = 'retired'")
-            .fetch_one(new.pool())
-            .await
-            .unwrap();
+    let due_before = time_of(
+        new.pool(),
+        "SELECT due_at FROM axa_schedule WHERE name = 'retired'",
+    )
+    .await;
     let mut back = replica(quick()).await;
     every(&mut back, "retired", Duration::from_secs(1));
     back.tick_schedules().await.unwrap();
@@ -1104,11 +1105,11 @@ async fn a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns
         .await,
         1
     );
-    let due_after: axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc> =
-        sqlx::query_scalar("SELECT due_at FROM axa_schedule WHERE name = 'retired'")
-            .fetch_one(back.pool())
-            .await
-            .unwrap();
+    let due_after = time_of(
+        back.pool(),
+        "SELECT due_at FROM axa_schedule WHERE name = 'retired'",
+    )
+    .await;
     // Its first time does not reset: the row keeps its place, and the time missed
     // while archived is skipped, as its last job is still queued.
     assert!(due_after > due_before);
@@ -1639,9 +1640,6 @@ async fn a_key_that_is_not_a_code_is_refused() {
 
 // Cron schedules.
 
-type Time = axa_postgres_job_queue::DateTime<axa_postgres_job_queue::Utc>;
-use chrono::TimeDelta;
-
 fn cron(queue: &mut Queue, name: &str, pattern: &str) {
     queue.schedule(Schedule::cron(
         name,
@@ -1662,24 +1660,25 @@ async fn set_due(pool: &PgPool, name: &str, seconds_ago: f64) {
 }
 
 /// The schedule's due time, and the database's now.
-async fn due_and_now(pool: &PgPool, name: &str) -> (Time, Time) {
+async fn due_and_now(pool: &PgPool, name: &str) -> (Timestamp, Timestamp) {
     let row = sqlx::query("SELECT due_at, now() AS now FROM axa_schedule WHERE name = $1")
         .bind(name)
         .fetch_one(pool)
         .await
         .unwrap();
-    (row.get("due_at"), row.get("now"))
+    let time = |column| row.get::<jiff_sqlx::Timestamp, _>(column).to_jiff();
+    (time("due_at"), time("now"))
 }
 
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_cron_schedule_first_runs_at_its_patterns_next_time() {
-    use chrono::Timelike;
     let mut queue = fresh(quick()).await;
     cron(&mut queue, "at-two", "0 2 * * *");
     assert_eq!(queue.tick_schedules().await.unwrap(), 0, "not due at boot");
     let (due, now) = due_and_now(queue.pool(), "at-two").await;
-    assert!(due > now && due - now <= TimeDelta::hours(24));
+    assert!(due > now && due.duration_since(now) <= SignedDuration::from_hours(24));
+    let due = TimeZone::UTC.to_datetime(due);
     assert_eq!(
         (due.hour(), due.minute(), due.second()),
         (2, 0, 0),
@@ -1711,20 +1710,16 @@ async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
     );
     let (due, now) = due_and_now(queue.pool(), "secondly").await;
     assert!(
-        due > now - TimeDelta::seconds(1),
+        due > now - SignedDuration::from_secs(1),
         "the next is the pattern's after now"
     );
-    assert_eq!(
-        due.timestamp_subsec_micros(),
-        0,
-        "on the pattern's whole second"
-    );
+    assert_eq!(due.subsec_microsecond(), 0, "on the pattern's whole second");
     // Due again while its job is still queued: skipped, and moved on.
     set_due(queue.pool(), "secondly", 1.0).await;
     assert_eq!(queue.tick_schedules().await.unwrap(), 0);
     assert_eq!(jobs_named(queue.pool(), "Tick").await, 1);
     let (due, now) = due_and_now(queue.pool(), "secondly").await;
-    assert!(due > now - TimeDelta::seconds(1));
+    assert!(due > now - SignedDuration::from_secs(1));
     // Once it finished, the next due time queues again.
     sqlx::query("UPDATE axa_queue SET status = 'completed'")
         .execute(queue.pool())
@@ -1737,7 +1732,7 @@ async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_changed_pattern_takes_its_next_time_from_the_new_one() {
-    use chrono::Timelike;
+    let hour = |due: Timestamp| TimeZone::UTC.to_datetime(due).hour();
     let mut queue = fresh(quick()).await;
     every(&mut queue, "nightly", Duration::from_hours(24));
     queue.tick_schedules().await.unwrap();
@@ -1745,12 +1740,12 @@ async fn a_changed_pattern_takes_its_next_time_from_the_new_one() {
     cron(&mut queue, "nightly", "0 2 * * *");
     queue.tick_schedules().await.unwrap();
     let (due, _) = due_and_now(queue.pool(), "nightly").await;
-    assert_eq!(due.hour(), 2, "from an interval to a pattern");
+    assert_eq!(hour(due), 2, "from an interval to a pattern");
     let mut queue = replica(quick()).await;
     cron(&mut queue, "nightly", "0 3 * * *");
     queue.tick_schedules().await.unwrap();
     let (due, _) = due_and_now(queue.pool(), "nightly").await;
-    assert_eq!(due.hour(), 3, "from one pattern to another");
+    assert_eq!(hour(due), 3, "from one pattern to another");
     let info = queue.schedules().await.unwrap();
     assert_eq!(info[0].cron.as_deref(), Some("0 3 * * *"));
 }
@@ -1818,7 +1813,7 @@ async fn a_job_that_asks_for_a_delay_is_tried_again_after_it() {
     let info = queue.job(id).await.unwrap().unwrap();
     assert_eq!(info.state, JobState::Queued);
     assert_eq!(info.error.as_deref(), Some("the receiver is busy"));
-    let wait = (info.run_at - info.updated_at).num_milliseconds();
+    let wait = info.run_at.duration_since(info.updated_at).as_millis();
     assert!((119_000..=121_000).contains(&wait), "{wait}");
     assert!(!queue.run_one().await.unwrap(), "not before its time");
 }

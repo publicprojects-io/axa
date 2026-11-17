@@ -5,11 +5,15 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.18.0
+## Current Version: 0.19.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.19.0
+- The job queues on `jiff::Timestamp` rather than `chrono`, so a service on Postgres
+  builds no `chrono` (RUSTSEC-2026-0543)
 
 ### Version 0.18.0
 - `axa-http-client` on `reqwest` 0.13, with rustls on ring and the system's trust store

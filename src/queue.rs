@@ -21,8 +21,8 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 pub use axa_postgres_job_queue::{
-    Act, ActKind, Counts, DateTime, JobInfo, JobState, MAX_REASON_CHARS, NewJob, QueueOptions,
-    RetryAfter, SETUP_STATEMENTS, Schedule, ScheduleInfo, Utc,
+    Act, ActKind, Counts, JobInfo, JobState, MAX_REASON_CHARS, NewJob, QueueOptions, RetryAfter,
+    SETUP_STATEMENTS, Schedule, ScheduleInfo, Timestamp,
 };
 
 use crate::{AppContext, Error, Result, worker::BackgroundWorker};
@@ -672,7 +672,7 @@ mod tests {
         let info = queue.job(&id).await.unwrap().unwrap();
         assert_eq!(info.state, JobState::Queued);
         assert_eq!(info.error.as_deref(), Some("the receiver is busy"));
-        let wait = (info.run_at - info.updated_at).num_milliseconds();
+        let wait = info.run_at.duration_since(info.updated_at).as_millis();
         assert!((119_000..=121_000).contains(&wait), "{wait}");
     }
 
@@ -1566,7 +1566,7 @@ mod tests {
         let info = queue.job(&later).await.unwrap().unwrap();
         assert_eq!(info.state, JobState::Queued);
         assert_eq!(info.timeout, Some(Duration::from_secs(5)));
-        assert!((info.run_at - info.created_at).num_minutes() >= 59);
+        assert!(info.run_at.duration_since(info.created_at).as_mins() >= 59);
         assert!(!queue.run_one().await.unwrap(), "not before its time");
 
         // A worker that sets no limit gives its jobs none.
