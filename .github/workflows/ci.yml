@@ -18,6 +18,9 @@ jobs:
     env:
       CARGO_TERM_COLOR: always
       RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
     services:
       postgres:
         image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
@@ -61,7 +64,6 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
-      - run: rustup default 1.98
       # Clippy differs between versions, so check the minimum supported
       # version and current stable: a lint can pass on one and fail on the other.
       - run: rustup toolchain install stable --profile minimal --component clippy
@@ -208,6 +210,8 @@ jobs:
     timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
+      # The minimum supported version, over the pin in `rust-toolchain.toml`.
+      RUSTUP_TOOLCHAIN: "1.98"
       # One target directory for all of them, so they share the axa build.
       CARGO_TARGET_DIR: ${{ github.workspace }}/target-examples
     services:
@@ -229,7 +233,6 @@ jobs:
         with:
           persist-credentials: false
       - run: rustup toolchain install 1.98 --profile minimal --component clippy
-      - run: rustup default 1.98
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: ". -> target-examples"
@@ -265,6 +268,9 @@ jobs:
   supply-chain:
     name: supply chain (advisories, licences, sources)
     runs-on: ubuntu-latest
+    env:
+      # The runner's own stable, over the pin in `rust-toolchain.toml`.
+      RUSTUP_TOOLCHAIN: stable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

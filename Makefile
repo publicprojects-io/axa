@@ -1,7 +1,7 @@
 # Makefile for axa development
 # Provides common commands for building, testing, and development
 
-.PHONY: all build test lint doc clean fmt check
+.PHONY: all build test lint doc clean fmt check ci-minimum-supported-rust-version
 
 # Default target
 all: check
@@ -96,6 +96,10 @@ ci-doc:
 	cargo doc --workspace --no-deps --all-features --document-private-items
 
 ci: ci-fmt ci-clippy ci-test ci-doc
+
+# Check every target on the minimum supported Rust (N-2) and on N-1.
+ci-minimum-supported-rust-version:
+	bin/make-ci-minimum-supported-rust-version
 
 # Install hooks
 install-hooks:

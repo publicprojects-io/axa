@@ -186,5 +186,21 @@ tower = { version = "0.5", features = ["util"] }
 [package.metadata.docs.rs]
 all-features = true
 
+# Line tables only, kept apart from the binaries, and none for dependencies: backtraces
+# keep file and line, and builds and links are faster and the target directory smaller.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+
+[profile.dev.package."*"]
+debug = false
+
+# For `cargo mutants --profile mutants`: each mutant is a fresh build, so no debug info
+# and no incremental cache.
+[profile.mutants]
+inherits = "test"
+debug = "none"
+incremental = false
+
 [lints]
 workspace = true

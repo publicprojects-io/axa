@@ -21,10 +21,11 @@ set up your development environment, run tests, and submit changes.
    cd axa
    ```
 
-2. **Install Rust:**
+2. **Install Rust:** `rust-toolchain.toml` pins the current stable, 1.100.0, with
+   clippy, llvm-tools, and rustfmt, and rustup installs it on the first `cargo` in the
+   repository. To check the minimum supported version, 1.98, and 1.99 as well:
    ```sh
-   rustup install 1.98
-   rustup default 1.98
+   make ci-minimum-supported-rust-version
    ```
 
 3. **Install dependencies:**

@@ -1,0 +1,32 @@
+#!/bin/sh
+# Check every target on Rust N-2, the minimum supported version (`rust-version` in
+# Cargo.toml), and on N-1, where N is the version `rust-toolchain.toml` pins.
+# RUSTUP_TOOLCHAIN overrides that pin for each run.
+set -eu
+cd "$(dirname "$0")/.."
+
+n=$(sed -n 's/^channel = "\([0-9]*\.[0-9]*\)\.[0-9]*"$/\1/p' rust-toolchain.toml)
+msrv=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+test -n "$n" || { echo "no channel in rust-toolchain.toml"; exit 1; }
+minor=${n#*.}
+n2="1.$((minor - 2))"
+n1="1.$((minor - 1))"
+test "$msrv" = "$n2" || { echo "rust-version is $msrv, but N-2 is $n2"; exit 1; }
+
+# An installed toolchain for a minor version, such as 1.99.1 for 1.99, so that a patch
+# release already here is used rather than a second copy installed beside it.
+toolchain_for() {
+  installed=$(rustup toolchain list | sed 's/ .*//' | grep -E "^$1([.-]|$)" | sed "s/-.*//" | sort -V | tail -1)
+  if [ -n "$installed" ]; then
+    echo "$installed"
+  else
+    rustup toolchain install "$1" --profile minimal --no-self-update >&2
+    echo "$1"
+  fi
+}
+
+for minor_version in "$n2" "$n1"; do
+  version=$(toolchain_for "$minor_version")
+  echo "== Rust $version"
+  RUSTUP_TOOLCHAIN=$version cargo check --workspace --all-targets --all-features
+done

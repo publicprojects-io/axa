@@ -28,7 +28,10 @@ full list that CI runs, including the Postgres and Redis tests. `[lints]` in
 `Cargo.toml` denies pedantic clippy and missing docs, and forbids unsafe code.
 
 `rust-version` is two releases behind stable, and is the same in every manifest.
-`.github/workflows/ci.yml` pins that version too, so change them together.
+`rust-toolchain.toml` pins stable, N, for local work. `.github/workflows/ci.yml` sets
+`RUSTUP_TOOLCHAIN` to `rust-version`, N-2, over that pin, and
+`make ci-minimum-supported-rust-version` checks N-2 and N-1, so change all three together
+when stable moves.
 
 ## Conventions
 
