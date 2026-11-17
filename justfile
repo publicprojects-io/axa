@@ -31,7 +31,7 @@ test-all:
 # Run database tests (requires podman-compose)
 test-db:
     podman-compose -f podman-compose.yml up -d
-    AXA_TEST_DATABASE_URL=postgres://axa:axa@localhost:5432/axa_test \
+    AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
       AXA_TEST_MYSQL_URL=mysql://axa:axa@localhost:3307/axa_test \
       AXA_TEST_REDIS_URL=redis://localhost:6379 \
       cargo test --all-features -- --ignored

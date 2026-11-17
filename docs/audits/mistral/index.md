@@ -94,8 +94,8 @@
 
 **Action Items**:
 - [x] Split README into multiple pages (overview, installation, examples) - **Complete** (see docs/ directory)
-- [x] Add a "Choosing Features" guide - **Complete** (see [choosing-features](../choosing-features/index.md))
-- [x] Create a visual architecture diagram - **Complete** (see [architecture-diagram](../architecture-diagram/index.md))
+- [x] Add a "Choosing Features" guide - **Complete** (see [choosing-features](../../choosing-features/index.md))
+- [x] Create a visual architecture diagram - **Complete** (see [architecture-diagram](../../architecture-diagram/index.md))
 - [x] Add more real-world examples - **Complete** (see [examples](../../../examples/)):
   - basic-service: Minimal axa service
   - todo-api: RESTful API with database
@@ -234,7 +234,7 @@ services:
 
 **Action Items**:
 - [x] Create a ROADMAP.md with planned features - **Complete** (see ROADMAP.md)
-- [x] Add a "Request for Comments" (RFC) process - **Complete** (see [RFC Process](../rfc/index.md))
+- [x] Add a "Request for Comments" (RFC) process - **Complete** (see [RFC Process](../../rfc/index.md))
 - [x] Document the vision for axa 1.0 - **Complete** (see ROADMAP.md)
 
 ---
@@ -271,7 +271,7 @@ services:
 4. Add real-world examples - **✓ Complete** (see examples/ directory)
 5. Add metrics feature for observability - **✓ Complete** (see crates/axa-prometheus-metrics)
 6. Launch community Discord
-7. Add visual architecture diagram - **✓ Complete** (see [architecture-diagram](../architecture-diagram/index.md))
+7. Add visual architecture diagram - **✓ Complete** (see [architecture-diagram](../../architecture-diagram/index.md))
 
 ### Phase 3: Medium-term (Next 6 Months)
 

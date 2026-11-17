@@ -74,7 +74,7 @@ Use the provided Podman Compose configuration:
 podman-compose -f podman-compose.yml up -d
 
 # Run database tests
-AXA_TEST_DATABASE_URL=postgres://axa:axa@localhost:5432/axa_test \
+AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
   AXA_TEST_MYSQL_URL=mysql://axa:axa@localhost:3307/axa_test \
   AXA_TEST_REDIS_URL=redis://localhost:6379 \
   cargo test --all-features -- --ignored
@@ -97,9 +97,9 @@ cargo doc --workspace --no-deps --all-features
 
 The repository includes pre-commit hooks that run:
 - `cargo fmt --all --check`
-- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo clippy --workspace --all-targets --all-features -- -D warnings`
 - `cargo doc --workspace --no-deps --all-features`
-- `cargo test --workspace`
+- `cargo test --workspace --all-features --lib`
 
 To install:
 ```sh

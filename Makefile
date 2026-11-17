@@ -25,7 +25,7 @@ test-all:
 
 # Run ignored tests (requires running containers)
 test-ignored:
-	AXA_TEST_DATABASE_URL=postgres://axa:axa@localhost:5432/axa_test \
+	AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
 	AXA_TEST_MYSQL_URL=mysql://axa:axa@localhost:3307/axa_test \
 	AXA_TEST_REDIS_URL=redis://localhost:6379 \
 	cargo test --all-features -- --ignored
