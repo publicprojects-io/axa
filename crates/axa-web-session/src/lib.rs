@@ -132,6 +132,7 @@ pub struct SessionOptions {
     sign_in_lifetime: Duration,
     secure: bool,
     store_every_visitor: bool,
+    create_table: bool,
     signing_key: Option<Key>,
     database_key: Option<Key>,
 }
@@ -147,6 +148,7 @@ impl fmt::Debug for SessionOptions {
             .field("sign_in_lifetime", &self.sign_in_lifetime)
             .field("secure", &self.secure)
             .field("store_every_visitor", &self.store_every_visitor)
+            .field("create_table", &self.create_table)
             .field("signed", &self.signing_key.is_some())
             .field("encrypted", &self.database_key.is_some())
             .finish()
@@ -195,6 +197,7 @@ impl SessionOptions {
             sign_in_lifetime: DEFAULT_SIGN_IN_LIFETIME,
             secure: false,
             store_every_visitor: false,
+            create_table: true,
             signing_key: None,
             database_key: None,
         }
@@ -245,6 +248,16 @@ impl SessionOptions {
         self
     }
 
+    /// Whether starting a store creates its table, if it is not there. It does
+    /// unless this says otherwise. Say `false` when the database role may not create
+    /// tables, or when every change to the schema goes through the service's own
+    /// migrations: make the table there, as [`postgres_table_sql`] gives it.
+    #[must_use]
+    pub fn create_table(mut self, create: bool) -> Self {
+        self.create_table = create;
+        self
+    }
+
     /// The `axum_session` settings these options describe.
     ///
     /// # Errors
@@ -258,8 +271,8 @@ impl SessionOptions {
             .with_session_name(self.cookie_name.clone())
             .with_table_name(self.table_name.clone())
             // `axum_session` 0.23 no longer makes the table unless asked, and this
-            // crate's stores promise to.
-            .with_database_initiation(true)
+            // crate's stores do unless a service says otherwise.
+            .with_database_initiation(self.create_table)
             .with_lifetime(duration(self.lifetime)?)
             .with_max_lifetime(max_lifetime)
             .with_max_age(Some(max_lifetime))
@@ -372,7 +385,8 @@ pub async fn memory_store(
     store(None, options).await
 }
 
-/// A store in Postgres, creating its table if needed.
+/// A store in Postgres, creating its table if needed, unless
+/// [`SessionOptions::create_table`] says not to.
 ///
 /// # Errors
 ///
@@ -383,6 +397,18 @@ pub async fn postgres_store(
     options: &SessionOptions,
 ) -> Result<SessionPgSessionStore, Error> {
     store(Some(pool.into()), options).await
+}
+
+/// The statement that makes the Postgres table named `table_name`, as the store
+/// makes it, for a service's own migration when [`SessionOptions::create_table`] is
+/// `false`. It is the table of `axum_session_sqlx` 0.13. The name is written as
+/// given, unquoted, so it must be a plain identifier the service chose.
+#[cfg(feature = "postgres")]
+#[must_use]
+pub fn postgres_table_sql(table_name: &str) -> String {
+    format!(
+        "CREATE TABLE IF NOT EXISTS {table_name} (\n    \"id\" VARCHAR(128) NOT NULL PRIMARY KEY,\n    \"expires\" BIGINT NULL,\n    \"session\" TEXT NOT NULL\n)"
+    )
 }
 
 /// The layer that gives handlers a [`Session`], ending each at the options'

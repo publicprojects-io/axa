@@ -13,7 +13,12 @@ categories = ["web-programming::http-client"]
 
 [dependencies]
 bytes = "1"
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset"] }
+# reqwest's TLS with no provider of its own, and rustls with ring, which `build` installs
+# as the process default unless the service installed one first. So no aws-lc-rs, and
+# the same provider as the other crates. Certificates are checked against the system's
+# trust store (`rustls-platform-verifier`), so an image needs `ca-certificates`.
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "http2", "charset"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 tokio = { version = "1", features = ["net"] }
 
 [dev-dependencies]

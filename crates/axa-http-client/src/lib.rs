@@ -31,6 +31,10 @@
 //!
 //! [`Builder::allow_hosts`] limits where it may go at all, and [`Builder::allow_nets`]
 //! lets it reach private ranges a service does mean to reach.
+//!
+//! TLS is rustls on ring, which [`Builder::build`] installs as the process's provider
+//! unless the service installed one first. Certificates are checked against the
+//! system's trust store, so a container image needs its CA certificates.
 
 use std::{
     fmt,
@@ -420,6 +424,9 @@ impl Builder {
                 None => attempt.follow(),
             }
         });
+        // reqwest takes the process's rustls provider and has none of its own. Ring,
+        // unless the service installed another first, which `install_default` keeps.
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let mut inner = reqwest::Client::builder()
             .no_proxy()
             .dns_resolver(Arc::new(Resolver(policy.clone())))

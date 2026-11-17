@@ -5,6 +5,21 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `axa-http-client` 0.2.0 is on `reqwest` 0.13, which it re-exports. TLS is rustls on
+  ring, as in the other crates, installed as the process's provider unless the service
+  installed one first, and no `aws-lc-rs` (OUT-7). Certificates are now checked against
+  the system's trust store rather than a list built into the binary, so a container
+  image needs its CA certificates, as `ca-certificates`, and a private CA the host
+  trusts is trusted.
+
+### Added
+
+- `axa-web-session` 0.3.1: `SessionOptions::create_table(false)` starts a store without
+  making its table, for a role that may not create tables or a schema changed only by
+  migrations, and `postgres_table_sql` gives the table to make there (SES-12).
+
 ## [0.17.0] - 2026-11-17
 
 This covers `axa` 0.17.0, `axa-test` 0.8.0, `axa-postgres-diesel` 0.4.0,

@@ -64,3 +64,8 @@ someone else can answer with a body of any size, so read through it rather than
 It cannot stop a service that takes `reqwest`'s own client back out of a request, with
 `build_split`, and sends another URL with that. A response is whatever the server chose
 to send, so treat it as untrusted. Section 4.23 of the spec gives the full threat model.
+
+## TLS
+
+TLS is rustls on ring. Certificates are checked against the system's trust store, so a
+container image needs its CA certificates, such as the `ca-certificates` package.

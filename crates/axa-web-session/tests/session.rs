@@ -407,7 +407,7 @@ async fn sign_in_replaces_the_form_token() {
 
 #[cfg(feature = "postgres")]
 mod postgres {
-    use axa_web_session::{SessionPgSession, postgres_store};
+    use axa_web_session::{SessionPgSession, postgres_store, postgres_table_sql};
 
     use super::*;
 
@@ -486,6 +486,57 @@ mod postgres {
         let restarted = pg_app(&pool, &options).await;
         assert_eq!(browser.get(&restarted, "/read").await, "plainly readable");
         sqlx::query("DROP TABLE axa_test_sessions")
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn a_store_told_not_to_creates_no_table_and_works_in_one_made_from_the_sql() {
+        let url = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+        let pool = sqlx::PgPool::connect(&url).await.unwrap();
+        let table = "axa_test_sessions_premade";
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let exists = || async {
+            sqlx::query_scalar::<_, bool>("SELECT to_regclass($1) IS NOT NULL")
+                .bind(table)
+                .fetch_one(&pool)
+                .await
+                .unwrap()
+        };
+        let options = production().table_name(table).create_table(false);
+        postgres_store(pool.clone(), &options).await.unwrap();
+        assert!(
+            !exists().await,
+            "the store made the table it was told not to"
+        );
+
+        sqlx::query(sqlx::AssertSqlSafe(postgres_table_sql(table)))
+            .execute(&pool)
+            .await
+            .unwrap();
+        let app = pg_app(&pool, &options).await;
+        let mut browser = Browser::new();
+        let id = browser.get(&app, "/put").await;
+        let select = format!("SELECT count(*) FROM {table} WHERE id = $1");
+        for _ in 0..100 {
+            let rows: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(select.as_str()))
+                .bind(&id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+            if rows == 1 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let restarted = pg_app(&pool, &options).await;
+        assert_eq!(browser.get(&restarted, "/read").await, "plainly readable");
+        sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE {table}")))
             .execute(&pool)
             .await
             .unwrap();

@@ -478,6 +478,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | SES-9 | `axa-web-session` | `sign_in` makes an identifier from before it worthless, keeps the session stored, and replaces the form token. | `sign_in_makes_an_identifier_from_before_it_worthless`, `sign_in_replaces_the_form_token` |
 | SES-10 | `axa-web-session` | A form token is stable within a session, passes only for that session, and a session with none refuses every post. | `a_form_token_is_stable_and_only_it_passes`, `a_form_token_belongs_to_one_session`, `a_session_with_no_token_refuses_every_post`, `only_the_same_text_is_the_same` |
 | SES-11 | `axa-web-session` | `layer` ends a session at `sign_in_lifetime` after `sign_in`, a week by default, however busy it has been, and the next request is an anonymous visitor's. Signing in again starts afresh. | `a_busy_session_ends_at_its_sign_in_lifetime`, `the_sign_in_lifetime_is_a_week_by_default` |
+| SES-12 | `axa-web-session` | A store makes its Postgres table unless `create_table(false)`, and then makes none. A table made from `postgres_table_sql` holds sessions as the store's own does. | `a_store_told_not_to_creates_no_table_and_works_in_one_made_from_the_sql` |
 | PRB-1 | `axa-problem` | Responses follow RFC 9457 and use `application/problem+json`. | `defaults_follow_the_rfc`, `responses_use_the_problem_media_type` |
 | PRB-2 | `axa-problem` | An extension cannot overwrite a standard member. | `reserved_names_cannot_be_overwritten_by_extensions` |
 | PRM-1 | `axa-prometheus-metrics` | Metrics render in the text exposition format, with its media type. | `counters_render_in_the_exposition_format`, `the_response_uses_the_exposition_media_type` |
@@ -976,6 +977,7 @@ the connection for it.
 | OUT-4 | Only `https`, and `http` unless `https_only`, are sent. `allow_hosts` limits hosts to those listed, exactly or under a `*.` name, without case or a trailing dot. | `the_scheme_and_the_allow_list_are_checked` |
 | OUT-5 | Every redirect is checked as the first URL is, one from `https` to `http` is refused, and past `max_redirects`, 5 by default, it is `Refused::TooManyRedirects`. With 0 it follows none, and a redirect to a scheme other than `http` and `https` is not followed. | `every_redirect_is_checked`, `a_redirect_is_checked_and_never_downgrades_or_runs_on` |
 | OUT-6 | `bytes_limited` refuses a body past its limit as the bytes arrive, whether or not it has a `content-length`. | `a_body_is_refused_past_its_limit_with_or_without_a_length` |
+| OUT-7 | TLS runs on rustls with ring, which `build` installs as the process's provider unless one is installed already, and checks certificates against the system's trust store. No `aws-lc-rs` is built. | `a_client_builds_on_ring_with_no_provider_installed_and_again_after` |
 
 ### 4.24 Mail
 
