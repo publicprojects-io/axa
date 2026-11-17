@@ -114,9 +114,6 @@ This document outlines the planned development path for axa. See
 Stages 1 and 2 are done, and all of Stage 3 but T-54, held because its dependencies were
 declined on 2026-11-16.
 
-`reqwest` 0.13 for `axa-http-client` waits for a choice of its own trust roots and TLS
-provider.
-
 ---
 
 ## Future: Version 1.0.0
