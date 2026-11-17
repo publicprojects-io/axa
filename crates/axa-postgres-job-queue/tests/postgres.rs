@@ -848,6 +848,61 @@ async fn a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks() {
 
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_heartbeat_that_hangs_stops_the_job_before_another_worker_may_take_it() {
+    let mut queue = fresh(QueueOptions {
+        heartbeat_interval: Duration::from_millis(30),
+        // Another worker may take it at once, so this one must stop at its first silence.
+        stale_minutes: 0,
+        ..quick()
+    })
+    .await;
+    let finished = Arc::new(AtomicUsize::new(0));
+    {
+        let finished = finished.clone();
+        queue.handle("Long", move |_| {
+            let finished = finished.clone();
+            async move {
+                tokio::time::sleep(Duration::from_millis(800)).await;
+                finished.fetch_add(1, Ordering::SeqCst);
+                Ok::<(), String>(())
+            }
+        });
+    }
+    let id = queue
+        .enqueue("Long", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let queue = Arc::new(queue);
+    let run = {
+        let queue = queue.clone();
+        tokio::spawn(async move { queue.run_one().await.unwrap() })
+    };
+    until(async || state(&queue, id).await == JobState::Running).await;
+    // The row locked elsewhere, so each heartbeat waits, as on a database that hangs.
+    let mut holder = queue.pool().begin().await.unwrap();
+    sqlx::query("SELECT 1 FROM axa_queue WHERE id = $1 FOR UPDATE")
+        .bind(id)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    assert_eq!(
+        finished.load(Ordering::SeqCst),
+        0,
+        "the job ran on while its heartbeat hung"
+    );
+    holder.rollback().await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), run)
+        .await
+        .expect("the run stopped once it could mark the job")
+        .unwrap();
+    let info = queue.job(id).await.unwrap().unwrap();
+    assert_eq!(info.state, JobState::NeedsReview);
+    assert!(info.error.unwrap().contains("could not report in"));
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_run_that_loses_its_claim_is_stopped_and_waits_for_review() {
     let mut queue = fresh(QueueOptions {
         heartbeat_interval: Duration::from_millis(30),

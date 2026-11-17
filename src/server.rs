@@ -718,7 +718,9 @@ async fn bind_and_serve(
                         proxy_from.clone(),
                         told(stop_told.clone())
                     ),
-                    accept_with(health, internal, limits, proxy_from, told(stop_told)),
+                    // Probes and scrapes reach the internal port directly, never through
+                    // the balancer, so it takes no PROXY header from anyone.
+                    accept_with(health, internal, limits, Arc::from([]), told(stop_told)),
                 )
                 .map(|_| ())
             }
@@ -1866,6 +1868,100 @@ mod tests {
             ask(internal, "/_health/live").await.is_err(),
             "both stop listening"
         );
+    }
+
+    #[tokio::test]
+    async fn a_full_main_port_leaves_the_internal_port_its_own_connections() {
+        let router = Router::new()
+            .route("/_health/live", get(|| async { "live" }))
+            .route("/api/things", get(|| async { "things" }));
+        let (main, internal) = (free_port().await, free_port().await);
+        let config = Server {
+            port: main,
+            internal_port: Some(internal),
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds: 1,
+            shutdown_drain_seconds: 0,
+            header_read_timeout_seconds: 0,
+            keep_alive_timeout_seconds: 0,
+            send_stall_timeout_seconds: 0,
+            max_connections: 1,
+            proxy_protocol_from: Vec::new(),
+        };
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let served = tokio::spawn(async move {
+            bind_and_serve(router, &config, async move {
+                let _ = stopped.await;
+            })
+            .await
+        });
+        let ask = |port, path| crate::cli::probe("127.0.0.1", port, path, Duration::from_secs(2));
+        for _ in 0..100 {
+            if ask(main, "/api/things").await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        // The main port's one place, held by a client that says nothing.
+        let _held = TcpStream::connect(("127.0.0.1", main)).await.unwrap();
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(
+            ask(main, "/api/things").await.is_err(),
+            "the main port is full"
+        );
+        assert!(
+            ask(internal, "/_health/live").await.is_ok(),
+            "the probe is not starved"
+        );
+        stop.send(()).unwrap();
+        let _ = served.await;
+    }
+
+    #[tokio::test]
+    async fn the_internal_port_takes_no_proxy_header_where_the_main_port_needs_one() {
+        let router = Router::new()
+            .route("/_health/live", get(|| async { "live" }))
+            .route("/api/things", get(|| async { "things" }));
+        let (main, internal) = (free_port().await, free_port().await);
+        let config = Server {
+            port: main,
+            internal_port: Some(internal),
+            binding: "127.0.0.1".to_string(),
+            host: String::new(),
+            shutdown_timeout_seconds: 1,
+            shutdown_drain_seconds: 0,
+            header_read_timeout_seconds: 1,
+            keep_alive_timeout_seconds: 0,
+            send_stall_timeout_seconds: 0,
+            max_connections: 4,
+            // The probes' own address, as when a balancer's range covers the nodes.
+            proxy_protocol_from: vec!["127.0.0.0/8".parse().unwrap()],
+        };
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let served = tokio::spawn(async move {
+            bind_and_serve(router, &config, async move {
+                let _ = stopped.await;
+            })
+            .await
+        });
+        let ask = |port, path| crate::cli::probe("127.0.0.1", port, path, Duration::from_secs(2));
+        for _ in 0..100 {
+            if ask(internal, "/_health/live").await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            ask(internal, "/_health/live").await.is_ok(),
+            "a plain probe"
+        );
+        assert!(
+            ask(main, "/api/things").await.is_err(),
+            "the main port still needs a PROXY header from that range"
+        );
+        stop.send(()).unwrap();
+        served.await.unwrap().unwrap();
     }
 
     #[cfg(feature = "prometheus")]

@@ -907,8 +907,10 @@ version = "0.3.2"
 dependencies = [
  "axa-problem",
  "axum",
+ "hmac",
  "redis",
  "serde_json",
+ "sha2 0.11.1",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",

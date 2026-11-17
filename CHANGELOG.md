@@ -33,9 +33,24 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - A `SHUTDOWN_DRAIN_SECONDS` too large to add to the clock panicked at shutdown, cutting
   off requests in flight. It now drains for ever, as a shutdown limit that large waits
   (SRV-15).
+- `axa-request-rate-limit`: a shared limit counted a client under `DefaultHasher`, whose
+  algorithm may change between Rust releases, and with integers in the machine's width
+  and order, so replicas from other builds could count one client apart. It is now
+  HMAC-SHA256 under the secret, with integers fixed. Stored keys change, so counts
+  start again for one window after the upgrade (RAT-18).
+- In all three job queues, a heartbeat that hung held up the job's time limit and giving
+  up, and a worker gave up only at the moment another may take the job, so it could
+  run twice. A heartbeat now waits at most `heartbeat_interval`, runs beside the job,
+  and a worker stops two heartbeats before `stale_minutes`, or at half of it (WRK-12).
+- With `PROXY_PROTOCOL_FROM` covering the probes' addresses, the internal port refused
+  them for want of a PROXY header. It takes none, as nothing reaches it through the
+  balancer (SRV-17).
 
 ### Changed
 
+- `MAX_CONNECTIONS` is the limit on each listener, as it always was: with
+  `INTERNAL_PORT`, the internal port has its own, so a full main port never starves the
+  probes (SRV-8).
 - CI refuses `unwrap`, `dbg!`, `todo!`, `unimplemented!`, and `mem::forget` in library
   code, and `cargo machete` is told which dependencies are there only for their features.
 

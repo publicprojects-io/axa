@@ -307,7 +307,7 @@ TRUSTED_PROXIES=::1,2001:db8::/32
 | `HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS` | Number | No | 30 | Header read timeout |
 | `KEEP_ALIVE_TIMEOUT_SECONDS` | Number | No | 75 | Idle connection timeout |
 | `SEND_STALL_TIMEOUT_SECONDS` | Number | No | 60 | Send stall timeout |
-| `MAX_CONNECTIONS` | Number | No | 10000 | Maximum connections |
+| `MAX_CONNECTIONS` | Number | No | 10000 | Maximum connections open at once, on each listener |
 | `INTERNAL_PORT` | Number | No | unset | A port for the health routes and `/metrics.prom` alone, refused by the main port |
 
 ### HTTP Variables

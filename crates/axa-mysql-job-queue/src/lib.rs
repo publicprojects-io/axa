@@ -1972,7 +1972,24 @@ impl Queue {
         // Not heard from for this long, a run is taken for lost by any worker.
         let stale =
             Duration::from_secs(u64::try_from(self.options.stale_minutes).unwrap_or(0) * 60);
+        // This worker stops the job before then, two heartbeats early, and at half the
+        // time at the latest, so that it has stopped before another can take it.
+        let give_up = stale.saturating_sub(every * 2).max(stale / 2);
         let mut last_heard = tokio::time::Instant::now();
+        // A heartbeat is given at most `every` to answer, and runs beside the job, so
+        // a database that hangs holds up neither the job's time limit nor giving up.
+        let beat = || {
+            tokio::time::timeout(
+                every,
+                sqlx::query(HEARTBEAT)
+                    .bind(claim.id)
+                    .bind(claim.attempts)
+                    .execute(&self.pool),
+            )
+        };
+        let mut beating = None;
+        let mut next_beat = tokio::time::Instant::now() + every;
+        let mut failing = false;
         let limit = claim
             .timeout
             .map(|timeout| tokio::time::Instant::now() + timeout);
@@ -1996,23 +2013,37 @@ impl Queue {
                         Error::Job(format!("timed out after {}s", limit.as_secs_f64())).to_string().into(),
                     ));
                 }
-                () = tokio::time::sleep(every) => {
-                    let beat = sqlx::query(HEARTBEAT)
-                        .bind(claim.id)
-                        .bind(claim.attempts)
-                        .execute(&self.pool)
-                        .await;
-                    match beat {
-                        Ok(done) if done.rows_affected() == 1 => last_heard = tokio::time::Instant::now(),
-                        Ok(_) => return Outcome::Lost("another worker or recovery took its claim".to_string()),
-                        Err(error) => {
+                () = tokio::time::sleep_until(last_heard + give_up), if failing => {
+                    return Outcome::Lost(format!(
+                        "it could not report in for {}s, near the {} minutes after which another worker may take it",
+                        give_up.as_secs(),
+                        self.options.stale_minutes
+                    ));
+                }
+                () = tokio::time::sleep_until(next_beat), if beating.is_none() => {
+                    beating = Some(Box::pin(beat()));
+                }
+                answer = async {
+                    match beating.as_mut() {
+                        Some(beat) => beat.await,
+                        None => std::future::pending().await,
+                    }
+                }, if beating.is_some() => {
+                    beating = None;
+                    next_beat = tokio::time::Instant::now() + every;
+                    match answer {
+                        Ok(Ok(done)) if done.rows_affected() == 1 => {
+                            last_heard = tokio::time::Instant::now();
+                            failing = false;
+                        }
+                        Ok(Ok(_)) => return Outcome::Lost("another worker or recovery took its claim".to_string()),
+                        Ok(Err(error)) => {
                             tracing::warn!(id = %claim.id, %error, "job heartbeat failed");
-                            if last_heard.elapsed() >= stale {
-                                return Outcome::Lost(format!(
-                                    "it could not report in for {} minutes",
-                                    self.options.stale_minutes
-                                ));
-                            }
+                            failing = true;
+                        }
+                        Err(_) => {
+                            tracing::warn!(id = %claim.id, "job heartbeat did not answer in time");
+                            failing = true;
                         }
                     }
                 }

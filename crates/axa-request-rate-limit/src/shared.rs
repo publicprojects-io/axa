@@ -19,7 +19,8 @@
 //! by the service's secret, which every replica must share.
 
 use std::{
-    hash::{DefaultHasher, Hash, Hasher},
+    fmt::Write as _,
+    hash::{Hash, Hasher},
     net::IpAddr,
     num::NonZeroU32,
     sync::Arc,
@@ -32,6 +33,9 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
+
+use hmac::{Hmac, KeyInit, Mac};
+use sha2::Sha256;
 
 use crate::{EXEMPT, Verdict, client_key};
 
@@ -240,6 +244,73 @@ impl std::fmt::Debug for SharedLimiter {
     }
 }
 
+/// Feeds what a key's `Hash` writes into HMAC-SHA256, with every integer as fixed-width
+/// little-endian bytes, so replicas built by other Rust releases or for other machines
+/// count a client under the same key, as `DefaultHasher`, whose algorithm may change,
+/// and `usize`'s native width and order would not.
+struct KeyHasher(Hmac<Sha256>);
+
+impl Hasher for KeyHasher {
+    fn finish(&self) -> u64 {
+        let digest = self.0.clone().finalize().into_bytes();
+        let mut first = [0; 8];
+        first.copy_from_slice(&digest[..8]);
+        u64::from_le_bytes(first)
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.update(bytes);
+    }
+
+    fn write_u8(&mut self, i: u8) {
+        self.0.update(&[i]);
+    }
+
+    fn write_u16(&mut self, i: u16) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_u32(&mut self, i: u32) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_u64(&mut self, i: u64) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_u128(&mut self, i: u128) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_usize(&mut self, i: usize) {
+        self.write_u64(i as u64);
+    }
+
+    fn write_i8(&mut self, i: i8) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_i16(&mut self, i: i16) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_i32(&mut self, i: i32) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_i64(&mut self, i: i64) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_i128(&mut self, i: i128) {
+        self.0.update(&i.to_le_bytes());
+    }
+
+    fn write_isize(&mut self, i: isize) {
+        self.write_i64(i as i64);
+    }
+}
+
 /// The store could not be reached, and nothing was counted.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Down;
@@ -285,10 +356,18 @@ impl SharedLimiter {
     /// The hash `key` is counted under, keyed by the secret, so the store never holds
     /// the key itself.
     fn hashed(&self, key: impl Hash) -> String {
-        let mut hasher = DefaultHasher::new();
-        self.inner.secret.hash(&mut hasher);
+        let mut hasher = KeyHasher(
+            // HMAC takes a key of any length, so this cannot fail.
+            Hmac::<Sha256>::new_from_slice(&self.inner.secret)
+                .expect("HMAC takes a key of any length"),
+        );
         key.hash(&mut hasher);
-        format!("{}:{:016x}", self.inner.name, hasher.finish())
+        let digest = hasher.0.finalize().into_bytes();
+        let mut stored = format!("{}:", self.inner.name);
+        for byte in &digest[..16] {
+            let _ = write!(stored, "{byte:02x}");
+        }
+        stored
     }
 
     /// Count one request for `key`.
@@ -369,4 +448,36 @@ pub async fn by_client_shared(
     let client: Option<IpAddr> = client_key(request.extensions());
     let verdict = limiter.check(client).await;
     shared(verdict, &limiter, request, next).await
+}
+
+#[cfg(all(test, feature = "postgres"))]
+mod tests {
+    use super::*;
+
+    fn limiter() -> SharedLimiter {
+        let pool = sqlx::PgPool::connect_lazy("postgres://localhost/none").unwrap();
+        let one = NonZeroU32::new(1).unwrap();
+        SharedLimiter::new(
+            Store::Postgres(pool),
+            "api",
+            one,
+            one,
+            &[7; 32],
+            WhenDown::Refuse,
+        )
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_key_is_counted_under_one_hash_on_every_build() {
+        let limiter = limiter();
+        // HMAC-SHA256 under the secret of what `"k"`'s `Hash` writes, `k` then `0xff`,
+        // its first 16 bytes: computed apart from this crate, so a build whose hash
+        // differs, from another Rust release or machine, fails here.
+        assert_eq!(limiter.hashed("k"), "api:01754edd21ab0860ceee492554db4491");
+        let client: Option<IpAddr> = Some("203.0.113.7".parse().unwrap());
+        assert_eq!(limiter.hashed(client), limiter.hashed(client));
+        assert_ne!(limiter.hashed(client), limiter.hashed(None::<IpAddr>));
+        assert!(!limiter.hashed(client).contains("203"));
+    }
 }

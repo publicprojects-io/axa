@@ -112,7 +112,8 @@ pub struct Server {
     /// slow client is not cut off, and a handler with nothing to send is not affected.
     /// `0` waits for ever.
     pub send_stall_timeout_seconds: u64,
-    /// The most connections open at once. More wait to be accepted.
+    /// The most connections open at once on each listener, the internal port having
+    /// its own. More wait to be accepted.
     pub max_connections: usize,
     /// A second port, `INTERNAL_PORT`, for the health routes and metrics alone, which
     /// the main port then refuses. `None`, the default, serves them on the main port.
