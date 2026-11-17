@@ -12,7 +12,9 @@ jobs:
   check:
     runs-on: ubuntu-latest
     # A green run takes about 8 minutes. A hung test fails here, not after six hours.
-    timeout-minutes: 30
+    # A run with a cold cache, after a toolchain or dependency change, takes over 30
+    # minutes, and a cancelled run saves no cache, so every run after it stays cold.
+    timeout-minutes: 45
     env:
       CARGO_TERM_COLOR: always
       RUSTDOCFLAGS: -D warnings
