@@ -46,7 +46,7 @@ launch phases. Anything Axa gives you can be read, replaced, or left out on its 
 | `Flash` | None | Keep the message in the session |
 | Shield | The security headers in the standard stack | On every response, in every environment. See [below](#where-axa-is-safer-and-where-it-does-less) |
 | `rocket_db_pools`, `Connection<Db>` | One database feature: `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` | `axa::db::connect(&config.database)` opens the pool, and `ctx.db` holds it. Postgres only |
-| `rocket_dyn_templates` | `axa-tera-templates` (`tera` feature) | Tera only, loaded once, HTML escaped by default, and a `Page` sends its own CSP |
+| `rocket_dyn_templates` | `axa-tera-templates` (`tera` feature) or `axa-minijinja-templates` (`minijinja` feature) | Tera or MiniJinja, loaded once, HTML escaped by default, and a `Page` sends its own CSP |
 | `rocket_ws`, `EventStream` | Axum's `WebSocketUpgrade` and `Sse` with `KeepAlive` | Axa adds `server::Shutdown`, which a long-lived response waits on to end itself |
 | `rocket::local` client | `axa-test`, over `axum-test`, as a dev-dependency | Async only. `request::<App, _, _>` boots the full stack with no port |
 | Health checks | `/_health/live`, `/_health/ready`, `/_health/startup` | Built in. Rocket has none |
@@ -210,12 +210,13 @@ against Axa 0.11.
 | `X-Real-IP` believed from anyone | `X-Forwarded-For` only from `TRUSTED_PROXIES` |
 | A request id in log spans | `x-request-id` kept or minted, returned on every response, and on every log line |
 | Flash is an unsigned cookie a visitor can write | No flash. A message kept in an `axa-web-session` session is signed |
-| Templates in three engines, reloaded in debug | One engine, Tera, with escaping enforced, and a failed render shows the visitor nothing |
+| Templates in three engines, reloaded in debug | Tera or MiniJinja, and Maud checked by the compiler, each with escaping enforced, and a failed render shows the visitor nothing |
 | A keep-alive setting | Header-read, keep-alive, and send-stall timeouts, a connection cap, and a request timeout of 60 seconds in production |
 | No health routes | Three, one per Kubernetes probe, that never ask a third party |
 
 A service that serves pages must set `HTTP_CONTENT_SECURITY_POLICY`, or render through
-`axa-tera-templates`, whose `Page` sends a policy that lets a page load its own files.
+`axa-tera-templates` or `axa-minijinja-templates`, whose `Page` sends a policy that lets a page
+load its own files.
 Otherwise production's strict default blanks the page.
 
 ### Does less, today
@@ -230,9 +231,9 @@ Otherwise production's strict default blanks the page.
 | `FileServer` | None | `tower_http::services::ServeDir` |
 | Private cookies | None | `axum-extra`'s `PrivateCookieJar`, or `axa-web-session` |
 | Flash messages | None | A value in the session, cleared once read |
-| HTML error pages for browsers | Problems only, except a failed Tera render, which is HTML | Your own fallback for page routes |
+| HTML error pages for browsers | Problems only, except a failed template render, which is HTML | Your own fallback for page routes |
 | Template reloading in development | Templates load once | Restart, or `cargo watch` |
-| Handlebars and MiniJinja | Tera only | Call the engine yourself |
+| Handlebars | Tera, MiniJinja, and Maud | Call the engine yourself |
 | A pool closed at shutdown | The pool is dropped | Close it yourself after `serve` returns |
 | MySQL, SQLite, MongoDB, Redis pools | Postgres only for the context's database | Open the pool yourself and keep it in `shared_store` |
 | TLS and mTLS listeners | None | Terminate TLS at the proxy or load balancer |

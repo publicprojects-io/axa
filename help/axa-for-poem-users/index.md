@@ -43,7 +43,7 @@ you do, because every piece is a plain function, struct, or layer.
 | `CookieSession`, `ServerSession`, Redis sessions | `axa-web-session`, over `axum_session` | Signed and encrypted in production. Nothing stored until `sign_in` |
 | `Csrf`, `CsrfVerifier` | `axa_web_session::csrf_token` and `csrf_verify` | Bound to the session, not a stateless cookie pair |
 | `RealIp` | `axa::client::ClientAddr`, from `TRUSTED_PROXIES` | Forwarding headers count only from listed proxies |
-| Templates | `axa-tera-templates` | Poem's feature list has no template engine |
+| Templates | `axa-tera-templates`, `axa-minijinja-templates`, or `axa-maud-templates` | Poem's feature list has no template engine |
 | `TestClient` | `axa-test`, over `axum-test` | Boots your real router and stack in process |
 | `poem-grpc` `HealthReporter` | `/_health/live`, `/_health/ready`, `/_health/startup` | One HTTP route per Kubernetes probe, with named checks |
 | `run_with_graceful_shutdown` | `server::serve` or `server::run` | Stops on `SIGTERM` or Ctrl-C. `SHUTDOWN_DRAIN_SECONDS` and `SHUTDOWN_TIMEOUT_SECONDS` |

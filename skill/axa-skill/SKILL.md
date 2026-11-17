@@ -281,9 +281,11 @@ Production fails closed, and these are the usual first-deploy surprises:
 - `X-Forwarded-For` is believed only from proxies listed in `TRUSTED_PROXIES`. A handler
   takes `axa::client::ClientAddr` for the real address, which stays out of the request
   span because it is personal data.
-- `MAX_CONNECTIONS` limits open connections, and defaults to `server::MAX_CONNECTIONS`.
+- `MAX_CONNECTIONS` limits open connections on each listener, and defaults to
+  `server::MAX_CONNECTIONS`. The internal port has a limit of its own.
 - `INTERNAL_PORT` serves the health routes and `/metrics.prom` on a port of their own,
-  which the main port then answers `404`. Point the probes and the scraper at it.
+  which the main port then answers `404`. Point the probes and the scraper at it. It
+  takes no PROXY header, as nothing reaches it through the balancer.
 - `PROXY_PROTOCOL_FROM` lists a layer-4 load balancer's ranges. Their connections must
   start with a PROXY header, version 1 or 2, and the client it names is the address a
   handler sees. Anyone else's connection is served without reading one.
@@ -331,7 +333,8 @@ a `down` does not protect `db reset`.
 
 The server speaks HTTP/1 alone, and expects TLS to end in front of it. Keep
 `KEEP_ALIVE_TIMEOUT_SECONDS`, 75 by default, above any load balancer's idle timeout, and
-`MAX_CONNECTIONS`, 10,000 by default, under the process's open-file limit. A client that
+`MAX_CONNECTIONS`, 10,000 by default, twice over with `INTERNAL_PORT`, under the process's
+open-file limit. A client that
 stops reading a response is dropped after `SEND_STALL_TIMEOUT_SECONDS`, 60 by default.
 
 ## Jobs

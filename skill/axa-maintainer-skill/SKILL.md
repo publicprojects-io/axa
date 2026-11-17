@@ -78,6 +78,22 @@ not verification, so run all three test sets from section 5.
 **Clippy differs by version.** CI runs it on 1.98 and on stable, and a lint can pass on
 one and fail on the other.
 
+**Library code may not unwrap.** CI's library-only Clippy step denies `unwrap`, `dbg!`,
+`todo!`, `unimplemented!`, and `mem::forget` outside tests. Use `expect` with the reason
+it cannot fail, or return the error.
+
+**MySQL queue tests need trigger rights.** The queue's triggers fail to install unless
+the server has `SET GLOBAL log_bin_trust_function_creators = 1`, which CI sets; a fresh
+container fails every test at setup without it.
+
+**Gitleaks reads hex as a key.** A fixed digest in a test, such as an expected HMAC,
+trips `generic-api-key`. Allowlist that exact value in `.gitleaks.toml`, saying why it
+is public.
+
+**A major dependency can change a default.** `axum_session` 0.23 stopped making its
+table unless asked, which only the Postgres tests caught. After a major bump, run the
+crate's `#[ignore]` suite against a real service and read the dependency's changelog.
+
 **`#[ignore]` tests need real services.** `AXA_TEST_DB_URL` and
 `AXA_TEST_REDIS_URL` turn them on, and a plain `cargo test` skips them silently. Start
 a throwaway container on a random loopback port, or rely on CI, and say which you did.

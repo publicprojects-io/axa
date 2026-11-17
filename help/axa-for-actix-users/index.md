@@ -45,7 +45,7 @@ another extractor trait, another middleware model, and futures that must be `Sen
 | `actix-settings` | `axa::config::Config::from_env`, with `Defaults` in code | No configuration files |
 | Database | `postgres-sqlx`, `postgres-seaorm`, `postgres-diesel`, or `postgres-toasty` feature | Actix leaves this to you. With Axa, `AppContext::db` is the pool and readiness checks it |
 | Background jobs | `BackgroundWorker` and the `queue` feature | A Postgres queue with workers and schedules. MySQL and SQLite queues are crates of their own |
-| Templates | `axa-tera-templates` (`tera` feature) | Escapes by default, shows nothing of a failed render, and sends a page-friendly CSP |
+| Templates | `axa-tera-templates` (`tera` feature), `axa-minijinja-templates` (`minijinja`), or `axa-maud-templates` (`maud`) | Escapes by default, shows nothing of a failed render, and sends a page-friendly CSP |
 | `actix_web::test`, `actix-test` | `axa-test`, over `axum-test` | Real requests through the full stack, with no port |
 | `awc` | None | Use `reqwest` or another client |
 | Health | `/_health/live`, `/_health/ready`, `/_health/startup` | Actix has none. See [Health routes](../../spec/health/index.md) |

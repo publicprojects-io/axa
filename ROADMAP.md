@@ -95,7 +95,15 @@ This document outlines the planned development path for axa. See
 
 ## Next
 
-Stages 1 and 2 are done, and all of Stage 3 but T-54, which waits on its dependencies.
+Stages 1 and 2 are done, and all of Stage 3 but T-54, held because its dependencies were
+declined on 2026-11-16.
+
+On main and not yet released: the security and stability fixes in the CHANGELOG's
+Unreleased section, Rust 1.98 as the minimum, and the dependency updates. They need patch
+releases of `axa`, `axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`,
+`axa-idempotency-key`, `axa-web-session`, the Diesel crates, and the Postgres and MySQL
+job queues. `reqwest` 0.13 for `axa-http-client` waits for a choice of its own trust
+roots and TLS provider.
 A release with breaking changes needs the maintainer's go-ahead.
 
 ---
