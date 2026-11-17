@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+
+## [0.18.0] - 2026-11-17
+
+This covers `axa` 0.18.0, `axa-test` 0.9.0, and `axa-http-client` 0.2.0, which
+re-exports `reqwest` a major version on, and `axa-web-session` 0.3.1, which adds to it.
+To upgrade, read [Upgrading to Axa 0.18](help/upgrading-to-0.18/index.md).
+
 ### Changed
 
 - `axa-http-client` 0.2.0 is on `reqwest` 0.13, which it re-exports. TLS is rustls on

@@ -5,11 +5,15 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.17.0
+## Current Version: 0.18.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.18.0
+- `axa-http-client` on `reqwest` 0.13, with rustls on ring and the system's trust store
+- `SessionOptions::create_table(false)`, for a session table made by migrations
 
 ### Version 0.17.0
 - A review for security and stability, with the fixes in the CHANGELOG: an empty public
