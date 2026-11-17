@@ -5,6 +5,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Zstd is an opt-in `zstd` feature** (MID-31). Compression and request decompression
+  keep gzip, Brotli, and deflate by default, and Zstd needs `features = ["zstd"]`, as it
+  builds the C zstd library. Without it, a `zstd` request body is a `415` problem, and a
+  caller asking only for `zstd` gets an uncompressed answer. A service that takes or sends
+  Zstd turns the feature on.
+
 ## [0.19.0] - 2026-11-17
 
 This covers `axa` 0.19.0, `axa-test` 0.10.0, `axa-postgres-job-queue` 0.6.0, and

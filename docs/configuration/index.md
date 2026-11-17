@@ -123,7 +123,8 @@ through.
 Compression is enabled in production by default. Supported algorithms:
 - Gzip
 - Brotli
-- Zstd
+- Deflate
+- Zstd, with the `zstd` feature, which is off by default as it builds the C zstd library
 
 ```bash
 # Disable compression

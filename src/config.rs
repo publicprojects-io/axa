@@ -210,7 +210,7 @@ pub struct TimeoutOverride {
 pub struct Http {
     /// Largest accepted request body, in bytes.
     pub body_limit: usize,
-    /// Gzip, Brotli, and Zstd response compression.
+    /// Gzip, Brotli, and deflate response compression, and Zstd with the `zstd` feature.
     pub compression: bool,
     /// Per-request timeout, in seconds. `0` turns it off.
     pub timeout_seconds: u64,

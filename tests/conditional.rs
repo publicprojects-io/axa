@@ -569,7 +569,12 @@ async fn the_tag_is_the_same_whichever_encoding_is_asked_for() {
     let tag = etag_of(&plain);
     assert!(tag.starts_with("W/"), "encodings may share only a weak tag");
 
-    for encoding in ["gzip", "br", "zstd"] {
+    let encodings: &[&str] = if cfg!(feature = "zstd") {
+        &["gzip", "br", "deflate", "zstd"]
+    } else {
+        &["gzip", "br", "deflate"]
+    };
+    for &encoding in encodings {
         let accept = ("accept-encoding", encoding);
         let response = fetch(&app, "/", &[accept]).await;
         assert_eq!(response.headers()[header::CONTENT_ENCODING], encoding);
@@ -580,6 +585,15 @@ async fn the_tag_is_the_same_whichever_encoding_is_asked_for() {
         let response = fetch(&app, "/", &[accept, held]).await;
         assert_eq!(response.status(), StatusCode::NOT_MODIFIED, "{encoding}");
     }
+}
+
+#[cfg(not(feature = "zstd"))]
+#[tokio::test]
+async fn an_answer_is_not_zstd_without_the_zstd_feature() {
+    let app = middleware::apply(hashed(get(|| async { LONG })), &compressed()).unwrap();
+    let response = fetch(&app, "/", &[("accept-encoding", "zstd")]).await;
+    assert!(!response.headers().contains_key(header::CONTENT_ENCODING));
+    assert_eq!(body_of(response).await, LONG);
 }
 
 #[tokio::test]

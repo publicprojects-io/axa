@@ -1335,6 +1335,39 @@ mod tests {
         assert_eq!(&body[..], b"hi");
     }
 
+    /// "hi", as one zstd frame.
+    const ZSTD_HI: [u8; 15] = [
+        0x28, 0xb5, 0x2f, 0xfd, 0x04, 0x58, 0x11, 0x00, 0x00, 0x68, 0x69, 0xfa, 0x38, 0x26, 0xea,
+    ];
+
+    #[cfg(feature = "zstd")]
+    #[tokio::test]
+    async fn a_zstd_body_reaches_the_handler_decoded_with_the_zstd_feature() {
+        let response = decompressing_app()
+            .oneshot(encoded("/echo", "zstd", &ZSTD_HI))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(&body[..], b"hi");
+    }
+
+    #[cfg(not(feature = "zstd"))]
+    #[tokio::test]
+    async fn a_zstd_body_is_a_problem_without_the_zstd_feature() {
+        let response = decompressing_app()
+            .oneshot(encoded("/echo", "zstd", &ZSTD_HI))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/problem+json"
+        );
+    }
+
     #[tokio::test]
     async fn a_small_body_that_expands_past_the_limit_is_refused() {
         for path in ["/echo", "/raw"] {

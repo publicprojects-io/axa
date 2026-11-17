@@ -419,6 +419,7 @@ Perfect for: Financial services, healthcare, government
 | `idempotency` | ✅ | | | | | | | | | | | |
 | `cursor-pagination` | | | | | | | | | | | | |
 | `upload` | | | | | | | | | | | | |
+| `zstd` | | | | | | | | | | | | |
 | `webhooks` | | | ✅ | | | | | | | | | |
 | `http-client` | | | ✅ | | | | | | | | | |
 
@@ -450,6 +451,7 @@ Each feature adds dependencies. Here's the impact of each:
 | `ratelimit` | axa-request-rate-limit | |
 | `versioning` | axa-accepts-version-negotiation | |
 | `upload` | tempfile | Bounded multipart uploads, files in temporary files |
+| `zstd` | zstd, zstd-sys | Zstd compression and decompression; builds the C zstd library, so needs a C compiler |
 | `webhooks` | axa-webhooks, hmac, ed25519-dalek | Standard Webhooks signing and verifying |
 | `http-client` | axa-http-client, reqwest | Outbound requests that cannot reach private addresses |
 | `openapi` | axa-openapi-docs | |

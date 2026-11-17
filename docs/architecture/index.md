@@ -242,9 +242,11 @@ A request passes down this list, and its response back up it.
   Timeout               408 after REQUEST_TIMEOUT_SECONDS, or a route's own
   Not modified          304 for a GET or HEAD holding its answer's ETag
   No store              cache-control: no-store on a response that sets a cookie
-  Compression           gzip, Brotli, Zstd when on, never a no-store or cookie response
+  Compression           gzip, Brotli, deflate when on, Zstd with the zstd feature,
+                        never a no-store or cookie response
   Refusal shaping       plain-text and bare errors become problems, their text dropped
-  Request decompression gzip, deflate, br, zstd bodies decoded; 415 for another
+  Request decompression gzip, deflate, br bodies decoded, zstd with the zstd feature;
+                        415 for another
   Body limit            413 past HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT, 2 MB by default,
                         counted on decoded bytes
   Panic catching        a handler's panic is a generic 500

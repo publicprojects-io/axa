@@ -107,6 +107,9 @@ tracing = ["dep:axa-tracing"]
 versioning = ["dep:axa-accepts-version-negotiation"]
 # Bounded multipart uploads, files spooled to temporary files, as `axa::upload`.
 upload = ["dep:tempfile", "tokio/fs", "tokio/io-util"]
+# Zstd for response compression and request decompression, beside gzip, Brotli, and
+# deflate. Off by default, as it builds the C zstd library with a C compiler.
+zstd = ["tower-http/compression-zstd", "tower-http/decompression-zstd"]
 
 [dependencies]
 axa-postgres-diesel = { version = "0.4.0", path = "crates/axa-postgres-diesel", optional = true }
@@ -164,7 +167,7 @@ tokio = { version = "1", features = ["io-util", "macros", "net", "rt-multi-threa
 # Direct only to ask the route table whether a path is mounted, for the trailing-slash
 # redirect. Already in every build, through `axum` and `hyper`.
 tower-service = "0.3"
-tower-http = { version = "0.7", features = ["catch-panic", "compression-full", "cors", "decompression-full", "sensitive-headers", "set-header", "trace"] }
+tower-http = { version = "0.7", features = ["catch-panic", "compression-br", "compression-deflate", "compression-gzip", "cors", "decompression-br", "decompression-deflate", "decompression-gzip", "sensitive-headers", "set-header", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["v4"] }

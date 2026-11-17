@@ -85,6 +85,7 @@ sqlx, then SeaORM, Diesel, and Toasty.
 - [`axa-web-session`](crates/axa-web-session): web sessions over `axum_session`, signed and encrypted in production, with form tokens, and ended a week after sign-in however busy. Nothing is stored for a visitor until they sign in
 - [`axa-transactional-outbox`](crates/axa-transactional-outbox): a transactional outbox and relay on Postgres that keeps a record of what it delivered and refused, with the broker client left in the service. Brings in `axa-postgres-job-queue`
 - [`axa-cursor-pagination`](crates/axa-cursor-pagination): signed cursor pages with `Link: rel="next"` and no total, and `LIKE` escaping
+- `zstd`: Zstd response compression and request decompression, beside gzip, Brotli, and deflate. Off by default, as it builds the C zstd library
 - `upload`, as `axa::upload`: bounded multipart uploads, with limits on the total, each file, each field, and the number of parts, and files written to temporary files
 - [`axa-http-client`](crates/axa-http-client): an outbound HTTP client that refuses private, loopback, link-local, and metadata addresses, after DNS and on every redirect
 - [`axa-api-tokens`](crates/axa-api-tokens): opaque API tokens with a prefix, kept only as a SHA-256 hash, with scopes, expiry, and last use
@@ -244,8 +245,8 @@ From the outside in:
 | Timeout | Answers `408` after `REQUEST_TIMEOUT_SECONDS`. `Routes::timeout` and `Routes::add_with_timeout` set a route's own, and `Http::timeout_overrides` sets one by path suffix |
 | Not modified | Answers `304` to a `GET` or `HEAD` holding the `ETag` of its answer. See [Conditional requests](#conditional-requests) |
 | No store | `cache-control: no-store` on a response that sets a cookie, unless its handler said how to cache it |
-| Compression | Gzip, Brotli, and Zstd when enabled, but never a response that sets a cookie or is `no-store`, which compression can leak (BREACH) |
-| Request decompression | Decodes a `gzip`, `deflate`, `br`, or `zstd` request body, so the limit below counts decoded bytes. An encoding it cannot decode is `415` |
+| Compression | Gzip, Brotli, and deflate when enabled, and Zstd with the `zstd` feature, but never a response that sets a cookie or is `no-store`, which compression can leak (BREACH) |
+| Request decompression | Decodes a `gzip`, `deflate`, or `br` request body, and `zstd` with the `zstd` feature, so the limit below counts decoded bytes. An encoding it cannot decode is `415` |
 | Body limit | Answers `413` over `HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT`, for the extractors and for a handler that reads the body itself. `middleware::body_limit(route, bytes)` raises it on one route |
 | Panic catching | Turns a handler panic into a `500` |
 
