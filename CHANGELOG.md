@@ -51,6 +51,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `MAX_CONNECTIONS` is the limit on each listener, as it always was: with
   `INTERNAL_PORT`, the internal port has its own, so a full main port never starves the
   probes (SRV-8).
+- Publishing `axa` warns no more. Its integration tests are in the package, and the
+  `sqlite-*` features, left out of the published manifest, are declared expected
+  `cfg` values in the workspace lints, which publishing copies into it.
 - CI refuses `unwrap`, `dbg!`, `todo!`, `unimplemented!`, and `mem::forget` in library
   code, and `cargo machete` is told which dependencies are there only for their features.
 
