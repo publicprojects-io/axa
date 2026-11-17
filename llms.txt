@@ -12,6 +12,7 @@
 - [Changelog](CHANGELOG.md): changes by version
 - [llms.json](llms.json): this index, machine-readable
 - [CONTRIBUTING](CONTRIBUTING.md): development setup and contribution guidelines
+- [SECURITY](SECURITY.md): how to report a vulnerability privately, and which versions get fixes
 - [ROADMAP](ROADMAP.md): development roadmap and planned features
 - [Makefile](Makefile): common development commands
 - [justfile](justfile): alternative common development commands
