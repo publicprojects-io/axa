@@ -1659,6 +1659,12 @@ async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
     let mut queue = fresh(quick()).await;
     cron(&mut queue, "secondly", "* * * * * *");
     queue.tick_schedules().await.unwrap();
+    // That tick makes the row, and queues a job too if a second has passed since, which
+    // would leave the schedule busy below. Start with none.
+    sqlx::query("DELETE FROM axa_queue")
+        .execute(queue.pool())
+        .await
+        .unwrap();
     // Every process was down for a week.
     set_due(queue.pool(), "secondly", 7 * 86_400).await;
     assert_eq!(
