@@ -5,11 +5,19 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.16.1
+## Current Version: 0.17.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.17.0
+- A review for security and stability, with the fixes in the CHANGELOG: an empty public
+  prefix no longer opens every path, Keycloak refusals say only `invalid token`, shared
+  rate limits purge by their own windows and hash keys alike on every build, job
+  heartbeats are bounded and stop before another worker may take a run, and shutdown
+  stops hung jobs
+- Rust 1.98, Diesel 2.4 with `diesel-async` 0.10, and `axum_session` 0.23
 
 ### Version 0.16.1
 - **`axa-minijinja-templates`**: MiniJinja (Jinja2) templates, behind the `minijinja`
@@ -98,13 +106,8 @@ This document outlines the planned development path for axa. See
 Stages 1 and 2 are done, and all of Stage 3 but T-54, held because its dependencies were
 declined on 2026-11-16.
 
-On main and not yet released: the security and stability fixes in the CHANGELOG's
-Unreleased section, Rust 1.98 as the minimum, and the dependency updates. They need patch
-releases of `axa`, `axa-paseto-auth`, `axa-keycloak-auth`, `axa-request-rate-limit`,
-`axa-idempotency-key`, `axa-web-session`, the Diesel crates, and the Postgres and MySQL
-job queues. `reqwest` 0.13 for `axa-http-client` waits for a choice of its own trust
-roots and TLS provider.
-A release with breaking changes needs the maintainer's go-ahead.
+`reqwest` 0.13 for `axa-http-client` waits for a choice of its own trust roots and TLS
+provider.
 
 ---
 

@@ -5,6 +5,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-17
+
+This covers `axa` 0.17.0, `axa-test` 0.8.0, `axa-postgres-diesel` 0.4.0,
+`axa-mysql-diesel` 0.3.0, and `axa-web-session` 0.3.0, which re-export dependencies a
+major version on, and the patches `axa-paseto-auth` 0.7.2, `axa-keycloak-auth` 0.5.2,
+`axa-request-rate-limit` 0.3.3, `axa-idempotency-key` 0.2.3, `axa-postgres-job-queue`
+0.5.1, and `axa-mysql-job-queue` 0.3.3. Rust 1.98 is the minimum. `axa-sqlite-job-queue`
+has the queue fixes too, but stays unpublished with the other SQLite crates. To upgrade,
+read [Upgrading to Axa 0.17](help/upgrading-to-0.17/index.md).
+
 ### Fixed
 
 - `server::Shutdown::never`, which the extractor falls back to for a request served

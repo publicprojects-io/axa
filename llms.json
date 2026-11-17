@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.16.1",
+  "version": "0.17.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
@@ -57,6 +57,7 @@
       "help/upgrading-to-0.14/index.md",
       "help/upgrading-to-0.15/index.md",
       "help/upgrading-to-0.16/index.md",
+      "help/upgrading-to-0.17/index.md",
       "help/upgrading-to-0.12/index.md"
     ],
     "comparisons": [
@@ -331,7 +332,7 @@
   "crates": [
     {
       "name": "axa-postgres-diesel",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "description": "Diesel on PostgreSQL: pooling, migrations, and test resets for Axum services, in pure Rust.",
       "feature": "postgres-diesel",
       "readme": "crates/axa-postgres-diesel/README.md"
@@ -352,7 +353,7 @@
     },
     {
       "name": "axa-keycloak-auth",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "description": "Keycloak bearer authentication and ABAC enforcement for Axum services.",
       "feature": "keycloak",
       "readme": "crates/axa-keycloak-auth/README.md"
@@ -380,14 +381,14 @@
     },
     {
       "name": "axa-postgres-job-queue",
-      "version": "0.5.0",
+      "version": "0.5.1",
       "description": "A Postgres job queue, worker pool, and recurring schedules for Axum services.",
       "feature": "queue",
       "readme": "crates/axa-postgres-job-queue/README.md"
     },
     {
       "name": "axa-mysql-job-queue",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "description": "A MySQL job queue, worker pool, and recurring schedules for Axum services.",
       "feature": null,
       "readme": "crates/axa-mysql-job-queue/README.md"
@@ -443,7 +444,7 @@
     },
     {
       "name": "axa-paseto-auth",
-      "version": "0.7.1",
+      "version": "0.7.2",
       "description": "PASETO bearer authentication and ABAC enforcement for Axum services.",
       "feature": "paseto",
       "readme": "crates/axa-paseto-auth/README.md"
@@ -478,7 +479,7 @@
     },
     {
       "name": "axa-web-session",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "Web sessions for Axum services over axum_session, with safe defaults.",
       "feature": "session",
       "readme": "crates/axa-web-session/README.md"
@@ -492,7 +493,7 @@
     },
     {
       "name": "axa-test",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "description": "Request-level test helpers for Axa services, built on axum-test, with captured logs, the memory mailer's outbox behind its `mail` feature, and a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
@@ -520,14 +521,14 @@
     },
     {
       "name": "axa-idempotency-key",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "description": "Idempotency-Key handling over Postgres for Axum services.",
       "feature": "idempotency",
       "readme": "crates/axa-idempotency-key/README.md"
     },
     {
       "name": "axa-request-rate-limit",
-      "version": "0.3.2",
+      "version": "0.3.3",
       "description": "In-process request limits, per client or per key, and failed-login lockout for Axum services.",
       "feature": "ratelimit",
       "readme": "crates/axa-request-rate-limit/README.md"
@@ -555,7 +556,7 @@
     },
     {
       "name": "axa-mysql-diesel",
-      "version": "0.2.0",
+      "version": "0.3.0",
       "description": "Diesel pooling, migrations, and test resets for Axum services on MySQL, in pure Rust.",
       "feature": "mysql-diesel",
       "readme": "crates/axa-mysql-diesel/README.md"
