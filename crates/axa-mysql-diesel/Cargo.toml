@@ -2,7 +2,7 @@
 name = "axa-mysql-diesel"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Diesel pooling, migrations, and test resets for Axum services on MySQL, in pure Rust."
 readme = "README.md"
@@ -10,11 +10,11 @@ repository = "https://github.com/publicprojects-io/axa/"
 license = "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only"
 
 [dependencies]
-diesel = { version = "2.3", default-features = false, features = ["mysql_backend"] }
+diesel = { version = "2.4", default-features = false, features = ["mysql_backend"] }
 deadpool = { version = "0.13", default-features = false, features = ["managed", "rt_tokio_1"] }
-diesel-async = { version = "0.9", features = ["mysql", "deadpool", "migrations"] }
-diesel_migrations = "2.3"
-mysql_async = { version = "0.36", default-features = false, features = ["default-rustls-ring"] }
+diesel-async = { version = "0.10", features = ["mysql", "deadpool", "migrations"] }
+diesel_migrations = "2.4"
+mysql_async = { version = "0.37", default-features = false, features = ["default-rustls-ring"] }
 thiserror = "2"
 tokio = { version = "1", features = ["rt"] }
 

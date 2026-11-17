@@ -2,7 +2,7 @@
 name = "axa-storage-with-apache-arrow-and-aws"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Object storage for Axum services over Apache Arrow's object_store: local disk, memory, and S3, refusing keys that climb out, with presigned URLs."
 readme = "README.md"

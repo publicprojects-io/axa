@@ -2,7 +2,7 @@
 name = "axa-cursor-pagination"
 version = "0.1.2"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Signed cursor pagination with Link rel=next and no total, and LIKE escaping, for Axum services."
 readme = "README.md"

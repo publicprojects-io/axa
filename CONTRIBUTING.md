@@ -9,7 +9,7 @@ set up your development environment, run tests, and submit changes.
 
 ### Prerequisites
 
-- Rust 1.97 or newer (axa's `rust-version` in `Cargo.toml`)
+- Rust 1.98 or newer (axa's `rust-version` in `Cargo.toml`)
 - Podman (for local development with containers)
 - Git
 
@@ -23,8 +23,8 @@ set up your development environment, run tests, and submit changes.
 
 2. **Install Rust:**
    ```sh
-   rustup install 1.97
-   rustup default 1.97
+   rustup install 1.98
+   rustup default 1.98
    ```
 
 3. **Install dependencies:**

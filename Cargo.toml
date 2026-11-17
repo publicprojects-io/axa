@@ -16,7 +16,7 @@ pedantic = { level = "deny", priority = -1 }
 name = "axa"
 version = "0.16.1"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Accessories library for Axum websites, databases, microservices, and more."
 readme = "README.md"

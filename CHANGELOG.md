@@ -51,6 +51,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `MAX_CONNECTIONS` is the limit on each listener, as it always was: with
   `INTERNAL_PORT`, the internal port has its own, so a full main port never starves the
   probes (SRV-8).
+- The minimum Rust is 1.98, two releases behind stable 1.100, in every crate, example,
+  and the service template, and CI's minimum toolchain with it. `Option::map_or_default`,
+  new in 1.98, replaces `map(..).unwrap_or_default()`.
+- Diesel 2.4, `diesel-async` 0.10, and `diesel_migrations` 2.4 in the three Diesel
+  crates, and `mysql_async` 0.37 in `axa-mysql-diesel`, which `diesel-async` 0.10 also
+  builds, so one `mysql_async` is linked.
+- `axum_session` 0.23 and `axum_session_sqlx` 0.13 in `axa-web-session`. 0.23 no longer
+  makes its table by default; `axa-web-session` asks it to, as its stores promise.
+- Every other dependency at its newest compatible version. `reqwest` stays at 0.12 in
+  `axa-http-client`: 0.13 trusts the system's roots rather than its own and brings
+  `aws-lc-rs` with its default TLS, so it waits for a choice of its own.
 - Publishing `axa` warns no more. Its integration tests are in the package, and the
   `sqlite-*` features, left out of the published manifest, are declared expected
   `cfg` values in the workspace lints, which publishing copies into it.

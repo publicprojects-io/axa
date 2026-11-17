@@ -131,8 +131,7 @@ impl Conformance {
         };
         let essence = content_type
             .and_then(|value| value.split(';').next())
-            .map(|value| value.trim().to_ascii_lowercase())
-            .unwrap_or_default();
+            .map_or_default(|value| value.trim().to_ascii_lowercase());
         let Some(media) = media_key(content, &essence) else {
             let documented: Vec<&str> = content.keys().map(String::as_str).collect();
             return fail(format!(
@@ -233,8 +232,7 @@ impl Conformance {
 fn media_key<'a>(content: &'a serde_json::Map<String, Value>, essence: &str) -> Option<&'a str> {
     let wildcard = essence
         .split_once('/')
-        .map(|(kind, _)| format!("{kind}/*"))
-        .unwrap_or_default();
+        .map_or_default(|(kind, _)| format!("{kind}/*"));
     [essence, wildcard.as_str(), "*/*"]
         .into_iter()
         .find_map(|wanted| {

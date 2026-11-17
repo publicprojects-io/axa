@@ -52,7 +52,7 @@ axa-test = "0.7"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must
-read. It needs Rust 1.97 or newer, on edition 2024.
+read. It needs Rust 1.98 or newer, on edition 2024.
 
 | Need | Feature |
 |---|---|

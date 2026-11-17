@@ -302,8 +302,8 @@ fn parse_uri(uri: &str) -> Result<Target, Error> {
 
 /// `mysql_async`'s TLS settings for `mode`, trusting `ca` beside the web roots.
 fn ssl_opts(mode: SslMode, ca: Option<&PathBuf>) -> Option<SslOpts> {
-    let base = SslOpts::default()
-        .with_root_certs(ca.map(|path| vec![path.clone().into()]).unwrap_or_default());
+    let base =
+        SslOpts::default().with_root_certs(ca.map_or_default(|path| vec![path.clone().into()]));
     match mode {
         SslMode::Disabled => None,
         SslMode::Preferred | SslMode::Required => Some(base.with_danger_accept_invalid_certs(true)),

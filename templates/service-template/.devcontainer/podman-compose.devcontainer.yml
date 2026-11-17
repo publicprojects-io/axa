@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   app:
-    image: ghcr.io/devcontainers/rust:1.97
+    image: ghcr.io/devcontainers/rust:1.98
     user: vscode
     volumes:
       - ..:/workspace:cached
@@ -11,7 +11,7 @@ services:
     command: sleep infinity
     working_dir: /workspace
     environment:
-      - RUST_VERSION=1.97.0
+      - RUST_VERSION=1.98.0
       - CARGO_HOME=/home/vscode/.cargo
       - PATH=/home/vscode/.cargo/bin:${PATH}
     

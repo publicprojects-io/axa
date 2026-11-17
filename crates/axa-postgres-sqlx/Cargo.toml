@@ -2,7 +2,7 @@
 name = "axa-postgres-sqlx"
 version = "0.2.1"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "PostgreSQL pooling, migrations, and test resets over sqlx for Axum services."
 readme = "README.md"

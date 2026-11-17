@@ -8,7 +8,7 @@ This guide gets you from zero to a working Axa service in 5 minutes.
 
 ## Prerequisites
 
-- Rust 1.97 or newer (edition 2024)
+- Rust 1.98 or newer (edition 2024)
 - Basic familiarity with Axum
 
 Check your Rust version:

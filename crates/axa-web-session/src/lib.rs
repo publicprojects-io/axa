@@ -257,6 +257,9 @@ impl SessionOptions {
         let mut config = SessionConfig::default()
             .with_session_name(self.cookie_name.clone())
             .with_table_name(self.table_name.clone())
+            // `axum_session` 0.23 no longer makes the table unless asked, and this
+            // crate's stores promise to.
+            .with_database_initiation(true)
             .with_lifetime(duration(self.lifetime)?)
             .with_max_lifetime(max_lifetime)
             .with_max_age(Some(max_lifetime))

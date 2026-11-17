@@ -6,7 +6,7 @@
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only",
   "language": "Rust",
   "edition": "2024",
-  "rust_version": "1.97",
+  "rust_version": "1.98",
   "documentation": {
     "readme": "README.md",
     "agents": "AGENTS.md",

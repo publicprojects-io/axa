@@ -2,7 +2,7 @@
 name = "axa-mysql-job-queue"
 version = "0.3.2"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "A MySQL job queue, worker pool, and recurring schedules for Axum services."
 readme = "README.md"

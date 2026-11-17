@@ -2,7 +2,7 @@
 name = "axa-web-session"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Web sessions for Axum services over axum_session, with safe defaults."
 readme = "README.md"
@@ -15,8 +15,8 @@ default = []
 postgres = ["dep:axum_session_sqlx", "dep:sqlx"]
 
 [dependencies]
-axum_session = "0.22"
-axum_session_sqlx = { version = "0.12", default-features = false, features = ["postgres", "tls-rustls"], optional = true }
+axum_session = "0.23"
+axum_session_sqlx = { version = "0.13", default-features = false, features = ["postgres", "tls-rustls"], optional = true }
 sqlx = { version = "0.9", default-features = false, features = ["postgres"], optional = true }
 http = "1"
 thiserror = "2"

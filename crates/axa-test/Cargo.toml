@@ -2,7 +2,7 @@
 name = "axa-test"
 version = "0.7.0"
 edition = "2024"
-rust-version = "1.97"
+rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Request-level test helpers for Axa services, built on axum-test."
 readme = "README.md"

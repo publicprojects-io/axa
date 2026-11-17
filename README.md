@@ -772,7 +772,7 @@ boot, and `Operator::or` holds a second while one is rotated.
 
 ## Requirements
 
-- Rust 1.97 or newer, on edition 2024
+- Rust 1.98 or newer, on edition 2024
 - PostgreSQL for the `queue`, `outbox`, and `postgres-seaorm` features
 
 ## Development

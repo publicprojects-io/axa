@@ -75,7 +75,7 @@ These come from the principles in section 3 of the spec, and each is a reason to
 and the worker tests only without `queue` as well. A single `--all-features` run is
 not verification, so run all three test sets from section 5.
 
-**Clippy differs by version.** CI runs it on 1.97 and on stable, and a lint can pass on
+**Clippy differs by version.** CI runs it on 1.98 and on stable, and a lint can pass on
 one and fail on the other.
 
 **`#[ignore]` tests need real services.** `AXA_TEST_DB_URL` and
