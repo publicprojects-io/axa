@@ -5,6 +5,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+`axa-sqlite-job-queue` 0.2.0 is published, unchanged from the 0.19.0 commit. It builds
+`libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459 until sqlx raises its cap, and its
+README says what that exposes. The other SQLite crates stay unpublished.
+
 ### Changed
 
 - **Zstd is an opt-in `zstd` feature** (MID-31). Compression and request decompression

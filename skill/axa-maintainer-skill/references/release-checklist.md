@@ -52,10 +52,13 @@ one of them, as the `queue` feature needs it. `axa-problem` goes before `axa-ide
 depend on it. No other subcrate depends on another, so the rest can go in any order.
 `axa-test` is the one crate that depends on `axa`, so it publishes after `axa`.
 
-The SQLite crates are held: `axa-sqlite-job-queue`, `axa-sqlite-sqlx`, `axa-sqlite-seaorm`,
-and `axa-sqlite-diesel`. Do not publish them until sqlx releases the raised cap on
+The SQLite crates are held: `axa-sqlite-sqlx`, `axa-sqlite-seaorm`, and
+`axa-sqlite-diesel`. Do not publish them until sqlx releases the raised cap on
 `libsqlite3-sys` (sqlx PR #4502), `cargo update -p libsqlite3-sys` brings in 0.39 or
 later, and the RUSTSEC-2026-0459 ignore in `.cargo/audit.toml` is gone.
+`axa-sqlite-job-queue` 0.2.0 was published on 2026-11-17 with the advisory open, by the
+maintainer's choice, and its README says so. Its later releases may go out the same way,
+as long as that README section stays until the fix is in.
 
 crates.io refuses a crate whose dependencies, optional ones too, are not published, so
 `axa` cannot be published while its `sqlite-*` features name a held crate. Until the SQLite

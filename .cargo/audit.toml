@@ -10,11 +10,12 @@ ignore = [
     # `cargo deny`, which checks what `axa`'s features build, passes. Only the SQLite
     # crates build it: `axa-sqlite-job-queue`, `axa-sqlite-sqlx`, `axa-sqlite-seaorm`,
     # and `axa-sqlite-diesel`, and `axa`'s `sqlite-*` features through them. They open
-    # files the service names itself, and are not published until this is fixed. sqlx-sqlite 0.9.0 caps it
+    # files the service names itself. `axa-sqlite-job-queue` is published with a README note on
+    # this; the other three are not published until this is fixed. sqlx-sqlite 0.9.0 caps it
     # below 0.38, and the fix is in 0.39. One crate may link `sqlite3`, so nothing
     # else in the workspace can use a fixed copy. sqlx raised the cap in
     # https://github.com/transact-rs/sqlx/pull/4502, merged 2026-11-08 and not yet
-    # released. Once it is, run `cargo update -p libsqlite3-sys`, remove this, and
-    # `axa-sqlite-job-queue` may be published.
+    # released. Once it is, run `cargo update -p libsqlite3-sys`, remove this, and the
+    # other SQLite crates may be published.
     "RUSTSEC-2026-0459",
 ]

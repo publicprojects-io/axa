@@ -574,7 +574,9 @@ What each database cannot do in that shape is in its crate's documentation and s
 failed migration stays part applied, and SQLite has no network, so no TLS. A MySQL URL
 asks for TLS with sqlx's `ssl-mode`, which every MySQL crate reads, and a SQLite URL is
 `sqlite://path`, made only with `?mode=rwc`. The SQLite crates build `libsqlite3-sys`
-0.37, which has RUSTSEC-2026-0459, so they are not published until sqlx raises its cap.
+0.37, which has RUSTSEC-2026-0459, so `axa-sqlite-sqlx`, `axa-sqlite-seaorm`, and
+`axa-sqlite-diesel` are not published until sqlx raises its cap. `axa-sqlite-job-queue`
+is published, and its README says so (SQJ-6).
 
 | Id | Requirement | Test |
 |---|---|---|
@@ -837,7 +839,7 @@ in section 4.18 except where a row below names its own.
 | SQJ-3 | An act changes its job and keeps the act in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |
 | SQJ-5 | A claim is one statement, and a schedule's tick and setup run in `BEGIN IMMEDIATE` transactions, so processes on one file take turns and each job and due time goes out once. | `two_processes_run_each_job_once`, `replicas_ticking_together_queue_each_due_time_once` |
-| SQJ-6 | It is not published while the `libsqlite3-sys` sqlx builds has RUSTSEC-2026-0459. | The release checklist |
+| SQJ-6 | Its README says it builds the `libsqlite3-sys` sqlx allows, which has RUSTSEC-2026-0459 until sqlx raises its cap, and what that exposes. It was published as 0.2.0 on 2026-11-17 with the advisory open, by the maintainer's choice. | The release checklist |
 | SQJ-7 | Times are kept as microseconds since the Unix epoch, and cross to Rust as `jiff::Timestamp` with no `jiff-sqlx` and no `chrono`. | `a_delayed_job_is_not_claimed_before_its_time` |
 
 ### 4.21 MySQL and SQLite database crates

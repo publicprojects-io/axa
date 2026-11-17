@@ -59,7 +59,9 @@ library:
 
 MySQL takes TLS from the URL's `ssl-mode`, which production requires, in every MySQL
 crate alike. The SQLite crates build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459,
-so they are not published until sqlx raises its cap on it.
+so `axa-sqlite-sqlx`, `axa-sqlite-seaorm`, and `axa-sqlite-diesel` are not published until
+sqlx raises its cap on it. `axa-sqlite-job-queue` is published, and its README says what
+the advisory exposes.
 
 Turn on one. With more than one, Postgres wins, then MySQL, then SQLite, and for each,
 sqlx, then SeaORM, Diesel, and Toasty.
