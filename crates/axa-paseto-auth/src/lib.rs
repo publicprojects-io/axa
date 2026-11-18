@@ -1222,4 +1222,58 @@ mod tests {
         let response = tenant_call(app, "/api/tenant", Some(&tenant)).await;
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
+
+    /// The headers of a request bearing `token`.
+    fn bearing(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            format!("Bearer {token}").parse().unwrap(),
+        );
+        headers
+    }
+
+    #[test]
+    fn enforce_and_authorize_decide_as_the_middleware_does() {
+        let guard = guard(true);
+        let nobody = HeaderMap::new();
+        for refused in [
+            guard.enforce(&Method::GET, "/api/places", &nobody),
+            guard
+                .authorize(&Method::GET, "/api/places", &nobody)
+                .map(|_| ()),
+        ] {
+            assert_eq!(refused.unwrap_err().0, StatusCode::UNAUTHORIZED);
+        }
+
+        let writer = bearing(&token(&json!({ "access": ["write"] })));
+        assert_eq!(
+            guard
+                .enforce(&Method::DELETE, "/api/places/1", &writer)
+                .unwrap_err()
+                .0,
+            StatusCode::FORBIDDEN
+        );
+        assert!(guard.enforce(&Method::POST, "/api/places", &writer).is_ok());
+        let allowed = guard
+            .authorize(&Method::POST, "/api/places", &writer)
+            .unwrap()
+            .expect("a protected path that was allowed says what was allowed");
+        assert_eq!(allowed.claims.email, "alice@example.com");
+
+        assert!(
+            guard
+                .authorize(&Method::GET, "/metrics.prom", &nobody)
+                .unwrap()
+                .is_none(),
+            "a public path needs no decision"
+        );
+    }
+
+    #[test]
+    fn a_guard_shows_its_config_and_nothing_of_its_keys() {
+        let text = format!("{:?}", guard(true));
+        assert!(text.starts_with("Guard"), "{text}");
+        assert!(text.contains("place"), "{text}");
+    }
 }

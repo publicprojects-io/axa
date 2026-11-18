@@ -92,9 +92,10 @@ AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
   file names, `If-Match`, and webhook headers. A crash leaves its input in
   `fuzz/artifacts/`; turn it into a test before fixing it.
 - **Coverage**: `make coverage` runs `cargo tarpaulin`, with `cargo install
-  cargo-tarpaulin` first, set by [`tarpaulin.toml`](tarpaulin.toml), into
-  `target/coverage/` as HTML and LCOV. It covers the tests that need no server; add
-  `-- --ignored` with the database URLs set to include the rest.
+  cargo-tarpaulin` first, set by [`tarpaulin.toml`](tarpaulin.toml), which names the
+  reports and the directory they go to. It covers the tests that need no server; add
+  `-- --include-ignored --test-threads=1` with the database URLs set to include the
+  rest, as CI runs them.
 - **Benchmarks**: `make bench` runs [`benchmarks/`](benchmarks/), with criterion: the
   standard middleware's cost over bare Axum; checking a cursor, signing and verifying a
   webhook with HMAC and Ed25519, and escaping `LIKE` text; and a ping, insert, read by

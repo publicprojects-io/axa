@@ -182,5 +182,11 @@ async fn a_body_is_refused_past_its_limit_with_or_without_a_length() {
             10_000,
             "{path}"
         );
+        let response = client.get(&url).unwrap().send().await.unwrap();
+        assert_eq!(
+            bytes_limited(response, 20_000).await.unwrap().len(),
+            10_000,
+            "{path}: well under the limit"
+        );
     }
 }

@@ -765,4 +765,153 @@ mod tests {
             None
         );
     }
+
+    #[test]
+    fn a_wildcard_needs_a_name_before_its_suffix() {
+        let listed = policy(Some(&["*.hooks.example.com"]), &[], false);
+        assert!(listed.host_listed("a.hooks.example.com"));
+        assert!(!listed.host_listed(".hooks.example.com"));
+        assert!(!listed.host_listed("hooks.example.com"));
+    }
+
+    #[test]
+    fn a_range_without_a_prefix_is_one_address_of_either_kind() {
+        let one: Net = "10.0.0.1".parse().unwrap();
+        assert!(one.contains("10.0.0.1".parse().unwrap()));
+        assert!(!one.contains("10.0.0.2".parse().unwrap()));
+        let one: Net = "2001:db8::1".parse().unwrap();
+        assert!(one.contains("2001:db8::1".parse().unwrap()));
+        assert!(!one.contains("2001:db8::2".parse().unwrap()));
+    }
+
+    #[test]
+    fn an_ipv6_range_holds_its_prefix_and_nothing_past_it() {
+        let net: Net = "2001:db8::/32".parse().unwrap();
+        assert!(net.contains("2001:db8:ffff::1".parse().unwrap()));
+        assert!(!net.contains("2001:db9::".parse().unwrap()));
+        let net: Net = "fd00::/8".parse().unwrap();
+        assert!(net.contains("fdff::1".parse().unwrap()));
+        assert!(!net.contains("fe00::1".parse().unwrap()));
+    }
+
+    #[test]
+    fn every_error_says_what_was_wrong() {
+        let address: IpAddr = "10.0.0.1".parse().unwrap();
+        assert_eq!(
+            Refused::Address(address).to_string(),
+            "10.0.0.1 is not a public address"
+        );
+        let texts: std::collections::HashSet<String> = [
+            Refused::Url,
+            Refused::Scheme,
+            Refused::Host,
+            Refused::NoAddress,
+            Refused::Downgrade,
+            Refused::TooManyRedirects,
+        ]
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+        assert_eq!(texts.len(), 6);
+        assert!(texts.iter().all(|text| !text.is_empty()));
+        assert!(NetError.to_string().contains("prefix"));
+        assert_eq!(
+            BodyError::TooLarge.to_string(),
+            "the response body is longer than its limit"
+        );
+        assert!(std::error::Error::source(&BodyError::TooLarge).is_none());
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        let unreadable = reqwest::Client::new().get("not a url").build().unwrap_err();
+        let error = BodyError::Read(unreadable);
+        assert!(
+            error
+                .to_string()
+                .starts_with("the response body could not be read: ")
+        );
+        assert!(std::error::Error::source(&error).is_some());
+    }
+}
+
+/// `is_public` over generated addresses, against the IANA special-purpose ranges written
+/// out as ranges, in IPv4, IPv4-mapped IPv6, NAT64, and 6to4 alike.
+#[cfg(test)]
+mod properties {
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    use proptest::prelude::*;
+
+    use super::{Net, is_public};
+
+    const NOT_PUBLIC_V4: [&str; 14] = [
+        "0.0.0.0/8",
+        "10.0.0.0/8",
+        "100.64.0.0/10",
+        "127.0.0.0/8",
+        "169.254.0.0/16",
+        "172.16.0.0/12",
+        "192.0.0.0/24",
+        "192.0.2.0/24",
+        "192.88.99.0/24",
+        "192.168.0.0/16",
+        "198.18.0.0/15",
+        "198.51.100.0/24",
+        "203.0.113.0/24",
+        "224.0.0.0/3",
+    ];
+
+    fn expected(address: Ipv4Addr) -> bool {
+        !NOT_PUBLIC_V4
+            .iter()
+            .any(|net| net.parse::<Net>().unwrap().contains(IpAddr::V4(address)))
+    }
+
+    /// Addresses near the edges of the ranges, where a wrong comparison shows, and any.
+    fn v4() -> impl Strategy<Value = Ipv4Addr> {
+        let near_a_range = (
+            prop::sample::select(vec![
+                0_u8, 8, 9, 10, 11, 100, 126, 127, 128, 169, 172, 192, 198, 203, 223, 224,
+            ]),
+            any::<u8>(),
+            prop::sample::select(vec![0_u8, 1, 2, 3, 99, 100, 112, 113, 114, 255]),
+            any::<u8>(),
+        )
+            .prop_map(|(a, b, c, d)| Ipv4Addr::new(a, b, c, d));
+        prop_oneof![near_a_range, any::<u32>().prop_map(Ipv4Addr::from)]
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(2_000))]
+
+        #[test]
+        fn an_ipv4_address_is_public_unless_a_range_holds_it(address in v4()) {
+            prop_assert_eq!(is_public(IpAddr::V4(address)), expected(address));
+        }
+
+        #[test]
+        fn ipv4_inside_ipv6_is_judged_as_the_ipv4_address(address in v4()) {
+            let want = expected(address);
+            let [high, low] = [
+                u16::try_from(u32::from(address) >> 16).unwrap(),
+                u16::try_from(u32::from(address) & 0xffff).unwrap(),
+            ];
+            let mapped = IpAddr::V6(address.to_ipv6_mapped());
+            let nat64 = IpAddr::V6(Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, high, low));
+            let six_to_four = IpAddr::V6(Ipv6Addr::new(0x2002, high, low, 0, 0, 0, 0, 1));
+            prop_assert_eq!(is_public(mapped), want);
+            prop_assert_eq!(is_public(nat64), want);
+            prop_assert_eq!(is_public(six_to_four), want);
+        }
+
+        #[test]
+        fn only_global_unicast_ipv6_outside_its_special_ranges_is_public(segments in any::<[u16; 8]>()) {
+            let address = Ipv6Addr::from(segments);
+            let [first, second, ..] = segments;
+            let special = first & 0xe000 != 0x2000
+                || (first == 0x2001 && (second < 0x0200 || second == 0x0db8))
+                || first == 0x2002
+                || (first == 0x3fff && second < 0x1000);
+            prop_assume!(first != 0x2002 && address.to_ipv4_mapped().is_none());
+            prop_assert_eq!(is_public(IpAddr::V6(address)), !special);
+        }
+    }
 }

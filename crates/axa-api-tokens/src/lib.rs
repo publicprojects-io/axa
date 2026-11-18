@@ -373,6 +373,11 @@ mod tests {
         assert!(!issued.hash().contains(secret));
         let shown = format!("{issued:?}");
         assert!(!shown.contains(secret), "{shown}");
+        assert!(shown.contains(issued.id()) && shown.contains(issued.hash()), "{shown}");
+        let presented = parse(token, &prefix()).unwrap();
+        let shown = format!("{presented:?}");
+        assert!(!shown.contains(secret), "{shown}");
+        assert!(shown.contains(presented.id()), "{shown}");
         let other = issue(&prefix());
         assert_ne!(other.token(), issued.token());
         assert_ne!(other.id(), issued.id());

@@ -109,7 +109,7 @@ fuzz:
 bench:
 	cd benchmarks && cargo bench
 
-# Test coverage, with cargo-tarpaulin and tarpaulin.toml, into target/coverage/.
+# Test coverage, with cargo-tarpaulin, into the output-dir that tarpaulin.toml names.
 coverage:
 	cargo tarpaulin
 

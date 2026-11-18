@@ -239,3 +239,22 @@ pub async fn refuse_suspended(
     }
     next.run(request).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_tenant_reads_as_its_id_every_way() {
+        let tenant = Tenant("acme".to_string());
+        assert_eq!(tenant.as_ref(), "acme");
+        assert_eq!(tenant.as_str(), "acme");
+        assert_eq!(tenant.to_string(), "acme");
+    }
+
+    #[test]
+    fn a_suspended_check_shows_nothing_of_its_closure() {
+        let check = SuspendedCheck::new(|_| false);
+        assert_eq!(format!("{check:?}"), "SuspendedCheck { .. }");
+    }
+}
