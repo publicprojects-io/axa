@@ -40,7 +40,7 @@ Use it as a decision tree when starting a new project or adding functionality.
 | Web | Webhooks | `axa-webhooks` | Standard Webhooks signing and verifying |
 | Web | Outbound HTTP | `axa-http-client` | Requests that cannot reach private addresses |
 | Outbox | Transactional | `axa-transactional-outbox` | Reliable event publishing |
-| Outbox | Encryption | `axa-outbox-encryption` | Encrypt outbox payloads |
+| Outbox | Encryption | `axa-transactional-outbox`, with `outbox-encryption` | Encrypt outbox payloads |
 | Security | Idempotency | `axa-idempotency-key` | Prevent duplicate processing |
 | Security | Rate Limit | `axa-request-rate-limit` | Request throttling |
 | Versioning | Accepts-Version | `axa-accepts-version-negotiation` | API version negotiation |
@@ -52,33 +52,14 @@ Use it as a decision tree when starting a new project or adding functionality.
 
 ### Choosing a Database Approach
 
-```
-Do you need an ORM?
-├── No → Use SQLx (raw SQL)
-│   ├── Postgres → axa-postgres-sqlx
-│   ├── MySQL → axa-mysql-sqlx
-│   └── SQLite → axa-sqlite-sqlx
-│
-└── Yes
-    ├── Do you need migrations?
-    │   ├── No → Use Diesel (compile-time, no runtime deps)
-    │   │   ├── Postgres → axa-postgres-diesel
-    │   │   ├── MySQL → axa-mysql-diesel
-    │   │   └── SQLite → axa-sqlite-diesel
-    │   │
-    │   └── Yes
-    │       ├── Do you need down migrations?
-    │       │   ├── Yes → Use SeaORM
-    │       │   │   ├── Postgres → axa-postgres-seaorm
-    │       │   │   ├── MySQL → axa-mysql-seaorm
-    │       │   │   └── SQLite → axa-sqlite-seaorm
-    │       │   └── No → Use Toasty (forward-only)
-    │       │       ├── Postgres → axa-postgres-toasty
-    │       │       └── MySQL → axa-mysql-toasty
-    │       └── (SQLite Toasty not available)
-    │
-    └── Coming from Loco? → Use SeaORM (axa-postgres-seaorm)
-```
+Postgres with sqlx (`postgres-sqlx`) is the default, as the outbox, idempotency keys,
+shared rate limits, row-level security, and `axa-test`'s databases are Postgres only.
+SeaORM suits a move from Loco, Diesel a team that wants compile-time checked queries or
+no C client library, and Toasty, before 1.0 with forward-only migrations, a team that
+accepts its breaking releases. Every library has migrations; all but Toasty can revert.
+
+[Choosing a database and library](../../help/choosing-a-database/index.md) compares every
+pair, with a decision tree.
 
 ### Choosing Authentication
 

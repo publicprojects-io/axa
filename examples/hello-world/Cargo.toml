@@ -1,0 +1,17 @@
+[package]
+name = "hello-world"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[dependencies]
+axa = { path = "../.." }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[dev-dependencies]
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+
+# Standalone, not a member of the axa workspace.
+[workspace]

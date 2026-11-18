@@ -5,6 +5,7 @@ repository. Run one from its own directory.
 
 | Example | What it shows | Database |
 |---|---|---|
+| [hello-world](hello-world/) | The smallest service: one route, the health probes, and the standard middleware | None |
 | [basic-service](basic-service/) | Settings, routes, health probes, problems, and tests with `oneshot` | None |
 | [todo-api](todo-api/) | A Postgres pool in `AppContext::db`, migrations at boot, plain SQL, and a database test | Postgres, with `postgres-sqlx` |
 | [multi-tenant](multi-tenant/) | The tenant from a verified PASETO token, a tenant filter on every query, and Postgres row-level security | Postgres, with `postgres-sqlx` and `paseto` |
@@ -12,6 +13,14 @@ repository. Run one from its own directory.
 | [file-drop](file-drop/) | Bounded uploads with `upload::read`, a raised body limit on one route, and safe downloads | None, with `upload` |
 
 ## Start here
+
+```sh
+cd examples/hello-world
+cargo run
+curl localhost:1241/
+```
+
+Then [basic-service](basic-service/README.md), for JSON, path parameters, and errors:
 
 ```sh
 cd examples/basic-service

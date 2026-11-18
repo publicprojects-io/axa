@@ -18,6 +18,7 @@ Learn how to use axa effectively:
 
 - [Quick Start Guide](quickstart/index.md) - Get a working service in 5 minutes
 - [Choosing Features](choosing-features/index.md) - Decision tree for feature selection
+- [Choosing a database and library](../help/choosing-a-database/index.md) - Every database and library pair compared, with a decision tree
 - [Feature Selection Guide](features/index.md) - Choose the right features for your project
 - [Configuration Reference](configuration/index.md) - All configuration options explained
 - [Examples and Recipes](examples/index.md) - Real-world patterns and solutions

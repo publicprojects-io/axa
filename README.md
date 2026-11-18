@@ -57,6 +57,9 @@ library:
   `toasty::Db`. There is no SQLite Toasty crate, as its SQLite driver needs a newer
   SQLite library than sqlx allows in one build.
 
+[Choosing a database and library](help/choosing-a-database/index.md) compares every pair,
+with what each database supports and a decision tree.
+
 MySQL takes TLS from the URL's `ssl-mode`, which production requires, in every MySQL
 crate alike. The SQLite crates build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459,
 so `axa-sqlite-sqlx`, `axa-sqlite-seaorm`, and `axa-sqlite-diesel` are not published until
