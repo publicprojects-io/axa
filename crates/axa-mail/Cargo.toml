@@ -1,6 +1,6 @@
 [package]
 name = "axa-mail"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 rust-version = "1.98"
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
@@ -12,7 +12,7 @@ keywords = ["mail", "smtp", "email", "lettre", "axum"]
 categories = ["email"]
 
 [dependencies]
-lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "pool", "tokio1-rustls-tls", "file-transport"] }
+lettre = { version = "0.11.24", default-features = false, features = ["builder", "smtp-transport", "pool", "tokio1-rustls-tls", "file-transport"] }
 
 [dev-dependencies]
 tempfile = "3"

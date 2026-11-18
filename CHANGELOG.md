@@ -5,6 +5,16 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **`axa-mail` 0.1.2 requires lettre 0.11.24**, which fixes RUSTSEC-2026-0560 to 0565:
+  SMTP command injection through a bare LF or CR (0561), STARTTLS reply forgery by a
+  man in the middle (0560), mail for a quoted local part sent to another address
+  (0563), panics on an `EHLO` line of white space and on a display name holding CR or
+  LF (0562, 0564), and unbounded buffering (0565). A service on `axa-mail` 0.1.1 gets
+  the fix with `cargo update -p lettre`. lettre 0.11.24 is under the 2-day minimum
+  publish age, which the maintainer waived for it.
+
 ## [0.20.0] - 2026-11-17
 
 This covers `axa` 0.20.0 and `axa-test` 0.11.0. No other crate changes. To upgrade, read
