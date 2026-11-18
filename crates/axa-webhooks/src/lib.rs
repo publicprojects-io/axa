@@ -911,3 +911,159 @@ mod tests {
         assert!(verifier.verify(&headers, b"{}").is_ok());
     }
 }
+
+/// Properties over generated deliveries: what a key signs, that key verifies, inside the
+/// window and to its edge; any other body, id, or time is refused; and no header a
+/// sender makes up panics.
+#[cfg(test)]
+mod properties {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    const SECRET: &str = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+
+    /// An HMAC key, or an Ed25519 one from `seed`.
+    fn any_key() -> impl Strategy<Value = SigningKey> {
+        prop_oneof![
+            Just(SECRET.parse::<SigningKey>().unwrap()),
+            any::<[u8; 32]>().prop_map(|seed| {
+                format!("{SECRET_KEY_PREFIX}{}", STANDARD.encode(seed))
+                    .parse::<SigningKey>()
+                    .unwrap()
+            }),
+        ]
+    }
+
+    fn id() -> impl Strategy<Value = String> {
+        "[!-~]{1,64}"
+    }
+
+    proptest! {
+        #[test]
+        fn a_delivery_verifies_anywhere_inside_the_window_and_nowhere_past_it(
+            key in any_key(),
+            id in id(),
+            body in prop::collection::vec(any::<u8>(), 0..256),
+            timestamp in 1_000_000_u64..4_000_000_000,
+            drift in 0_u64..=600,
+            later in any::<bool>(),
+        ) {
+            let headers = Signer::new(key.clone()).headers(&id, timestamp, &body).unwrap();
+            let verifier = Verifier::new(key.verifying_key());
+            let now = if later { timestamp + drift } else { timestamp - drift };
+            let result = verifier.verify_at(&headers, &body, now);
+            if drift <= DEFAULT_TOLERANCE.as_secs() {
+                prop_assert_eq!(result, Ok(Delivery { id, timestamp }));
+            } else {
+                prop_assert_eq!(result, Err(Refusal::OutOfWindow));
+            }
+        }
+
+        #[test]
+        fn another_body_or_key_is_refused(
+            key in any_key(),
+            other in any_key(),
+            id in id(),
+            body in prop::collection::vec(any::<u8>(), 1..256),
+            flip in any::<prop::sample::Index>(),
+            bit in 0_u8..8,
+        ) {
+            let headers = Signer::new(key.clone()).headers(&id, 1_000_000, &body).unwrap();
+            let mut changed = body.clone();
+            let at = flip.index(changed.len());
+            changed[at] ^= 1 << bit;
+            let verifier = Verifier::new(key.verifying_key());
+            prop_assert_eq!(
+                verifier.verify_at(&headers, &changed, 1_000_000),
+                Err(Refusal::NoValidSignature)
+            );
+            // Two HMAC keys here are the one secret, so only keys that differ are tried.
+            if other.public_key() != key.public_key() {
+                prop_assert_eq!(
+                    Verifier::new(other.verifying_key()).verify_at(&headers, &body, 1_000_000),
+                    Err(Refusal::NoValidSignature)
+                );
+            }
+        }
+
+        #[test]
+        fn any_headers_a_sender_makes_up_are_a_delivery_or_a_refusal(
+            id in "[ -~]{0,300}",
+            timestamp in "[ -~]{0,24}",
+            signature in "[ -~]{0,400}",
+            body in prop::collection::vec(any::<u8>(), 0..64),
+        ) {
+            let mut headers = HeaderMap::new();
+            for (name, value) in [(ID_HEADER, &id), (TIMESTAMP_HEADER, &timestamp), (SIGNATURE_HEADER, &signature)] {
+                if let Ok(value) = HeaderValue::from_str(value) {
+                    headers.insert(name, value);
+                }
+            }
+            let verifier = Verifier::new(SECRET.parse::<SigningKey>().unwrap().verifying_key());
+            if let Err(refusal) = verifier.verify_at(&headers, &body, 1_000_000) {
+                prop_assert!(refusal.status().is_client_error());
+                prop_assert!(!refusal.to_string().is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn the_most_signatures_a_delivery_may_list_are_checked_and_one_more_is_refused() {
+        let key: SigningKey = SECRET.parse().unwrap();
+        let mut headers = Signer::new(key.clone())
+            .headers("msg_1", 1_000, b"body")
+            .unwrap();
+        let real = headers[SIGNATURE_HEADER].to_str().unwrap().to_string();
+        let listed = |count: usize| {
+            let mut entries = vec!["v1,AAAA"; count - 1];
+            entries.push(real.as_str());
+            HeaderValue::from_str(&entries.join(" ")).unwrap()
+        };
+        let verifier = Verifier::new(key.verifying_key());
+        headers.insert(SIGNATURE_HEADER, listed(MAX_SIGNATURES));
+        assert!(verifier.verify_at(&headers, b"body", 1_000).is_ok());
+        headers.insert(SIGNATURE_HEADER, listed(MAX_SIGNATURES + 1));
+        assert_eq!(
+            verifier.verify_at(&headers, b"body", 1_000),
+            Err(Refusal::MalformedHeader(SIGNATURE_HEADER))
+        );
+    }
+
+    #[test]
+    fn an_ed25519_key_has_a_public_half_that_verifies_and_hmac_has_none() {
+        let key: SigningKey = format!("{SECRET_KEY_PREFIX}{}", STANDARD.encode([7; 32]))
+            .parse()
+            .unwrap();
+        let public = key.public_key().expect("an Ed25519 key has a public half");
+        assert!(public.starts_with(PUBLIC_KEY_PREFIX));
+        let headers = Signer::new(key).headers("msg_1", 1_000, b"body").unwrap();
+        let verifier = Verifier::new(public.parse().unwrap());
+        assert!(verifier.verify_at(&headers, b"body", 1_000).is_ok());
+    }
+
+    #[test]
+    fn every_error_says_what_was_wrong_in_words_of_its_own() {
+        let texts = [
+            KeyError::Prefix.to_string(),
+            KeyError::Base64.to_string(),
+            KeyError::Length.to_string(),
+            KeyError::Ed25519.to_string(),
+            SignError::InvalidId.to_string(),
+            Refusal::MissingHeader(ID_HEADER).to_string(),
+            Refusal::MalformedHeader(SIGNATURE_HEADER).to_string(),
+            Refusal::OutOfWindow.to_string(),
+            Refusal::NoValidSignature.to_string(),
+            Refusal::NoKey.to_string(),
+        ];
+        let distinct: std::collections::HashSet<&String> = texts.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            texts.len(),
+            "each error says something of its own"
+        );
+        assert!(texts.iter().all(|text| !text.is_empty()));
+        assert!(texts[5].contains(ID_HEADER));
+        assert!(texts[6].contains(SIGNATURE_HEADER));
+    }
+}

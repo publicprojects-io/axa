@@ -81,6 +81,33 @@ AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
   cargo test --all-features -- --ignored
 ```
 
+### Property Tests, Fuzzing, Benchmarks, and Mutation Testing
+
+- **Property tests** are `proptest` tests in a `properties` module beside the unit
+  tests, in `axa-cursor-pagination`, `axa-webhooks`, `axa-postgres-sqlx`, and
+  `axa-mysql-sqlx`. They run with `cargo test`, as any other test.
+- **Fuzzing**: `make fuzz` runs each target in [`fuzz/`](fuzz/) for 60 seconds, on
+  nightly, with `cargo install cargo-fuzz` first. `FUZZ_SECONDS=600 make fuzz` runs
+  longer. Each target reads untrusted input: `X-Forwarded-For`, cursor queries, upload
+  file names, `If-Match`, and webhook headers. A crash leaves its input in
+  `fuzz/artifacts/`; turn it into a test before fixing it.
+- **Coverage**: `make coverage` runs `cargo tarpaulin`, with `cargo install
+  cargo-tarpaulin` first, set by [`tarpaulin.toml`](tarpaulin.toml), into
+  `target/coverage/` as HTML and LCOV. It covers the tests that need no server; add
+  `-- --ignored` with the database URLs set to include the rest.
+- **Benchmarks**: `make bench` runs [`benchmarks/`](benchmarks/), with criterion: the
+  standard middleware's cost over bare Axum; checking a cursor, signing and verifying a
+  webhook with HMAC and Ed25519, and escaping `LIKE` text; and a ping, insert, read by
+  key, and page of 50 on
+  SQLite, and on Postgres and MySQL when `AXA_BENCH_POSTGRES_URL` and
+  `AXA_BENCH_MYSQL_URL` name a database for them. Each makes and drops the table
+  `axa_bench_items`.
+- **Mutation testing**: `make mutants CRATE=axa-webhooks` runs `cargo mutants` on one
+  crate with the lean `mutants` profile. A missed mutant is a change no test notices.
+
+CI builds and lints `fuzz/` and `benchmarks/` on every push, so neither rots, but does
+not run them: fuzzing needs nightly, and the database benchmarks need servers.
+
 ### Code Quality Checks
 
 ```sh

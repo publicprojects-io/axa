@@ -1,0 +1,35 @@
+[package]
+name = "axa-benchmarks"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[dev-dependencies]
+axa = { path = ".." }
+axa-cursor-pagination = { path = "../crates/axa-cursor-pagination" }
+axa-mysql-sqlx = { path = "../crates/axa-mysql-sqlx" }
+axa-postgres-sqlx = { path = "../crates/axa-postgres-sqlx" }
+axa-sqlite-sqlx = { path = "../crates/axa-sqlite-sqlx" }
+axa-webhooks = { path = "../crates/axa-webhooks" }
+axum = "0.8"
+criterion = { version = "0.8.2", default-features = false, features = ["async_tokio", "cargo_bench_support"] }
+sqlx = { version = "0.9", default-features = false, features = ["mysql", "postgres", "runtime-tokio", "sqlite"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tower = { version = "0.5", features = ["util"] }
+
+# Standalone, not a member of the axa workspace, so criterion stays out of the
+# published crates' lockfile and supply-chain checks.
+[workspace]
+
+[[bench]]
+name = "middleware"
+harness = false
+
+[[bench]]
+name = "databases"
+harness = false
+
+[[bench]]
+name = "primitives"
+harness = false

@@ -1,0 +1,55 @@
+[package]
+name = "axa-fuzz"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+arbitrary = { version = "1.5", features = ["derive"] }
+axa = { path = ".." }
+axa-cursor-pagination = { path = "../crates/axa-cursor-pagination" }
+axa-webhooks = { path = "../crates/axa-webhooks" }
+axum = "0.8"
+libfuzzer-sys = "0.4.13"
+
+# Standalone, not a member of the axa workspace, as cargo fuzz builds it on nightly.
+[workspace]
+
+[[bin]]
+name = "client_address"
+path = "fuzz_targets/client_address.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cursor_page"
+path = "fuzz_targets/cursor_page.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "file_name"
+path = "fuzz_targets/file_name.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "if_match"
+path = "fuzz_targets/if_match.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webhook_verify"
+path = "fuzz_targets/webhook_verify.rs"
+test = false
+doc = false
+bench = false

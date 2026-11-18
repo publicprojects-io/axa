@@ -610,3 +610,161 @@ mod tests {
         assert_eq!(far.split(vec![1]), (vec![1], false));
     }
 }
+
+/// Properties over generated input: a cursor holds for its own query only, a walk
+/// through pages lands where the limits say, nothing a caller sends panics, and
+/// escaped text holds no live wildcard.
+#[cfg(test)]
+mod properties {
+    use proptest::prelude::*;
+
+    use super::*;
+
+    const LIMITS: CursorLimits = CursorLimits {
+        default_limit: 10,
+        max_limit: 100,
+    };
+
+    fn key(seed: u8) -> CursorKey {
+        CursorKey::new(&[seed; 32]).unwrap()
+    }
+
+    /// The URI in a page's `Link: rel="next"`.
+    fn next_uri(page: &CursorPage) -> Uri {
+        let link = page.next_link().unwrap();
+        let link = link.to_str().unwrap();
+        link.trim_start_matches('<')
+            .split('>')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+
+    fn filters() -> impl Strategy<Value = Vec<String>> {
+        prop::collection::vec("[a-z]{1,6}=[a-z0-9]{0,6}", 0..4).prop_filter(
+            "no limit or cursor filter",
+            |parts| {
+                parts
+                    .iter()
+                    .all(|part| !part.starts_with("limit=") && !part.starts_with("cursor="))
+            },
+        )
+    }
+
+    fn uri(path: &str, filters: &[String], limit: u64) -> Uri {
+        let mut parts = filters.to_vec();
+        parts.push(format!("limit={limit}"));
+        format!("{path}?{}", parts.join("&")).parse().unwrap()
+    }
+
+    proptest! {
+        #[test]
+        fn following_next_links_steps_by_the_limit(
+            filters in filters(),
+            limit in 1..=LIMITS.max_limit,
+            steps in 0..12_u64,
+        ) {
+            let key = key(7);
+            let mut page = CursorPage::new(&key, LIMITS, &uri("/things", &filters, limit)).unwrap();
+            for _ in 0..steps {
+                page = CursorPage::new(&key, LIMITS, &next_uri(&page)).unwrap();
+            }
+            prop_assert_eq!(page.limit(), limit);
+            prop_assert_eq!(page.offset(), steps * limit);
+        }
+
+        #[test]
+        fn a_cursor_is_refused_by_another_key_context_path_or_filter(
+            filters in filters(),
+            limit in 1..=LIMITS.max_limit,
+            context in "[a-z]{1,8}",
+            other in "[a-z]{1,8}",
+        ) {
+            prop_assume!(context != other);
+            let first = CursorPage::new_in(&key(7), LIMITS, &uri("/things", &filters, limit), &context).unwrap();
+            let next = next_uri(&first);
+            prop_assert!(CursorPage::new_in(&key(7), LIMITS, &next, &context).is_ok());
+            prop_assert_eq!(CursorPage::new_in(&key(8), LIMITS, &next, &context), Err(PageError::BadCursor));
+            prop_assert_eq!(CursorPage::new_in(&key(7), LIMITS, &next, &other), Err(PageError::BadCursor));
+
+            let query = next.query().unwrap();
+            let moved: Uri = format!("/other?{query}").parse().unwrap();
+            prop_assert_eq!(CursorPage::new_in(&key(7), LIMITS, &moved, &context), Err(PageError::BadCursor));
+            let filtered: Uri = format!("/things?{query}&zzz=1").parse().unwrap();
+            prop_assert_eq!(CursorPage::new_in(&key(7), LIMITS, &filtered, &context), Err(PageError::BadCursor));
+        }
+
+        #[test]
+        fn the_order_of_filters_does_not_change_a_cursor(
+            filters in filters(),
+            limit in 1..=LIMITS.max_limit,
+        ) {
+            let first = CursorPage::new(&key(7), LIMITS, &uri("/things", &filters, limit)).unwrap();
+            let next = next_uri(&first);
+            let mut parts: Vec<&str> = next.query().unwrap().split('&').collect();
+            parts.reverse();
+            let reordered: Uri = format!("/things?{}", parts.join("&")).parse().unwrap();
+            prop_assert_eq!(
+                CursorPage::new(&key(7), LIMITS, &reordered).map(|page| page.offset()),
+                Ok(limit)
+            );
+        }
+
+        #[test]
+        fn any_query_a_caller_sends_is_a_page_or_a_refusal(query in "[ -~]{0,80}") {
+            let Ok(uri) = format!("/things?{query}").parse::<Uri>() else {
+                return Ok(());
+            };
+            match CursorPage::new(&key(7), LIMITS, &uri) {
+                Ok(page) => {
+                    prop_assert!((1..=LIMITS.max_limit).contains(&page.limit()));
+                    prop_assert!(page.offset() == 0 || query.contains("cursor="));
+                }
+                Err(error) => prop_assert_eq!(error.status(), StatusCode::UNPROCESSABLE_ENTITY),
+            }
+        }
+
+        #[test]
+        fn split_keeps_at_most_the_limit_and_says_whether_more_follow(
+            limit in 1..=LIMITS.max_limit,
+            rows in 0..250_usize,
+        ) {
+            let page = CursorPage::new(&key(7), LIMITS, &uri("/things", &[], limit)).unwrap();
+            let (kept, more) = page.split((0..rows).collect::<Vec<_>>());
+            let limit = usize::try_from(limit).unwrap();
+            prop_assert_eq!(kept.len(), rows.min(limit));
+            prop_assert_eq!(more, rows > limit);
+        }
+
+        #[test]
+        fn escaped_text_has_no_live_wildcard_and_unescapes_to_itself(text in "\\PC{0,40}") {
+            let escaped = escape_like(&text);
+            let mut unescaped = String::new();
+            let mut chars = escaped.chars();
+            while let Some(c) = chars.next() {
+                match c {
+                    '\\' => {
+                        let escaped_char = chars.next();
+                        prop_assert!(matches!(escaped_char, Some('\\' | '%' | '_')));
+                        unescaped.extend(escaped_char);
+                    }
+                    '%' | '_' => prop_assert!(false, "a live wildcard in {escaped:?}"),
+                    c => unescaped.push(c),
+                }
+            }
+            prop_assert_eq!(unescaped, text);
+        }
+    }
+
+    #[test]
+    fn each_error_says_what_to_fix_without_quoting_the_request() {
+        assert_eq!(
+            PageError::BadLimit { max_limit: 100 }.to_string(),
+            "limit must be a whole number from 1 to 100"
+        );
+        assert_eq!(PageError::BadCursor.to_string(), "cursor is not valid");
+        let short = CursorKey::new(&[7; 8]).unwrap_err().to_string();
+        assert!(short.contains("32"), "{short}");
+    }
+}

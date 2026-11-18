@@ -48,6 +48,10 @@ when stable moves.
   because `tracing` caches per process whether a log site is on, is a `[[test]]` of its
   own in `Cargo.toml`, which sets `autotests = false`. CI picks a module with a filter:
   `cargo test --test main -- --ignored stale_plan::`.
+- Property tests are `proptest`, in a `#[cfg(test)] mod properties` beside a crate's
+  unit tests. [`fuzz/`](fuzz/) and [`benchmarks/`](benchmarks/) are standalone packages,
+  outside the workspace, so their dependencies stay out of the published lockfile: see
+  CONTRIBUTING.md for running them.
 
 ## Skills
 

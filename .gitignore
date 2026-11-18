@@ -2,3 +2,11 @@
 /.vibe
 /examples/*/Cargo.lock
 /templates/*/Cargo.lock
+/benchmarks/Cargo.lock
+/benchmarks/target
+/fuzz/Cargo.lock
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+/examples/*/target
+/templates/*/target

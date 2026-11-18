@@ -1,7 +1,7 @@
 # Makefile for axa development
 # Provides common commands for building, testing, and development
 
-.PHONY: all build test lint doc clean fmt check ci-minimum-supported-rust-version
+.PHONY: all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants
 
 # Default target
 all: check
@@ -96,6 +96,26 @@ ci-doc:
 	cargo doc --workspace --no-deps --all-features --document-private-items
 
 ci: ci-fmt ci-clippy ci-test ci-doc
+
+# Fuzz each target for FUZZ_SECONDS (60 by default), on nightly, with cargo-fuzz.
+FUZZ_SECONDS ?= 60
+fuzz:
+	cd fuzz && for target in $$(cargo +nightly fuzz list); do \
+		cargo +nightly fuzz run "$$target" -- -max_total_time=$(FUZZ_SECONDS) || exit 1; \
+	done
+
+# Benchmarks: the middleware's cost, and each database. Set AXA_BENCH_POSTGRES_URL and
+# AXA_BENCH_MYSQL_URL to include Postgres and MySQL; SQLite always runs.
+bench:
+	cd benchmarks && cargo bench
+
+# Test coverage, with cargo-tarpaulin and tarpaulin.toml, into target/coverage/.
+coverage:
+	cargo tarpaulin
+
+# Mutation testing of one crate, with cargo-mutants: make mutants CRATE=axa-webhooks
+mutants:
+	cargo mutants -p $(CRATE) --test-package $(CRATE) --profile mutants
 
 # Check every target on the minimum supported Rust (N-2) and on N-1.
 ci-minimum-supported-rust-version:

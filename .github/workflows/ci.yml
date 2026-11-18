@@ -232,7 +232,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: rustup toolchain install 1.98 --profile minimal --component clippy
+      - run: rustup toolchain install 1.98 --profile minimal --component clippy,rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: ". -> target-examples"
@@ -250,7 +250,7 @@ jobs:
 
       - name: Examples
         run: |
-          for example in basic-service todo-api multi-tenant webhooks file-drop; do
+          for example in hello-world basic-service todo-api multi-tenant webhooks file-drop; do
             (cd "examples/$example" && cargo clippy --all-targets -- -D warnings && cargo test)
           done
           (cd examples/todo-api && \
@@ -258,6 +258,13 @@ jobs:
           (cd examples/multi-tenant && \
             AXA_TEST_DB_URL=postgres://todo_app:todo_app@localhost:5432/multi_tenant_test \
             cargo test -- --ignored)
+
+      # Built and linted on every push, so they do not rot. Fuzzing runs on nightly, and
+      # the database benchmarks need servers, so both run by hand: see CONTRIBUTING.md.
+      - name: Fuzz targets and benchmarks build
+        run: |
+          (cd fuzz && cargo fmt --check && cargo clippy --bins -- -D warnings)
+          (cd benchmarks && cargo fmt --check && cargo clippy --benches -- -D warnings)
 
       - name: Service template, against this repository's axa
         working-directory: templates/service-template

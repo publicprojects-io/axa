@@ -31,6 +31,7 @@
     ],
     "examples": [
       "examples/README.md",
+      "examples/hello-world/README.md",
       "examples/basic-service/README.md",
       "examples/todo-api/README.md",
       "examples/multi-tenant/README.md",
@@ -50,6 +51,7 @@
       "help/from-loco-into-axa/index.md",
       "help/from-loco-seaorm-into-axa-seaorm/index.md",
       "help/idempotency-keys/index.md",
+      "help/choosing-a-database/index.md",
       "help/transactional-outbox/index.md",
       "help/background-jobs/index.md",
       "help/upgrading-to-0.3/index.md",

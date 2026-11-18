@@ -597,3 +597,30 @@ mod tests {
         );
     }
 }
+
+/// `quote_identifier` over generated names: it quotes exactly the names of lowercase
+/// letters, digits, and underscores that start with a letter or underscore, and nothing
+/// else, so no name it passes can end the identifier or start another statement.
+#[cfg(test)]
+mod properties {
+    use proptest::prelude::*;
+
+    use super::quote_identifier;
+
+    proptest! {
+        #[test]
+        fn a_safe_name_is_quoted_as_it_is(name in "[a-z_][a-z0-9_]{0,62}") {
+            prop_assert_eq!(quote_identifier(&name), Some(format!("`{name}`")));
+        }
+
+        #[test]
+        fn any_other_name_is_refused(name in "\\PC{0,40}") {
+            let safe = name.chars().next().is_some_and(|c| c.is_ascii_lowercase() || c == '_')
+                && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+            prop_assert_eq!(quote_identifier(&name).is_some(), safe);
+            if let Some(quoted) = quote_identifier(&name) {
+                prop_assert_eq!(quoted.matches('`').count(), 2);
+            }
+        }
+    }
+}

@@ -14,7 +14,7 @@
 - [CONTRIBUTING](CONTRIBUTING.md): development setup and contribution guidelines
 - [SECURITY](SECURITY.md): how to report a vulnerability privately, and which versions get fixes
 - [ROADMAP](ROADMAP.md): development roadmap and planned features
-- [Makefile](Makefile): common development commands
+- [Makefile](Makefile): common development commands, including `make fuzz`, `make bench`, `make coverage`, and `make mutants`
 - [justfile](justfile): alternative common development commands
 
 ### RFC Process
@@ -36,6 +36,7 @@
 ### Examples
 
 - [examples/README](examples/README.md): Examples index
+- [examples/hello-world/](examples/hello-world/README.md): The smallest Axa service, one route and the health probes
 - [examples/basic-service/](examples/basic-service/README.md): Minimal axa service
 - [examples/todo-api/](examples/todo-api/README.md): RESTful Todo API with database
 - [examples/multi-tenant/](examples/multi-tenant/README.md): Multi-tenant todo API: tenant from the verified PASETO token, a tenant filter on every query, and Postgres row-level security
@@ -79,6 +80,7 @@
 - [From Loco into Axa](help/from-loco-into-axa/index.md)
 - [From Loco SeaORM into axa-postgres-seaorm](help/from-loco-seaorm-into-axa-seaorm/index.md)
 - [Where the idempotency layer goes](help/idempotency-keys/index.md)
+- [Choosing a database and library](help/choosing-a-database/index.md)
 - [Upgrading to 0.13](help/upgrading-to-0.13/index.md)
 - [Upgrading to 0.14](help/upgrading-to-0.14/index.md)
 - [Upgrading to 0.20](help/upgrading-to-0.20/index.md)
