@@ -5,11 +5,14 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.20.0
+## Current Version: 0.20.1
 
 ---
 
 ## Recently Completed
+
+### Version 0.20.1
+- `axa-mail` 0.1.2 required, for lettre 0.11.24 and RUSTSEC-2026-0560 to 0565
 
 ### Version 0.20.0
 - Zstd behind an opt-in `zstd` feature, so the default build compiles no C zstd library

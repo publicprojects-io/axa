@@ -5,6 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-11-18
+
+This covers `axa` 0.20.1 and `axa-mail` 0.1.2. `axa`'s `mail` feature now requires
+`axa-mail` 0.1.2, so a service on it cannot resolve the vulnerable lettre. Nothing else
+changes, and no code changes for a service.
+
 ### Security
 
 - **`axa-mail` 0.1.2 requires lettre 0.11.24**, which fixes RUSTSEC-2026-0560 to 0565:
