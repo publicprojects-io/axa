@@ -13,7 +13,7 @@ no-fail-fast = true
 # The two shutdown tests start their own binary again as a server and wait for it to say
 # it is ready, which the instrumented binary does not in time. `cargo test` runs them.
 args = ["--skip", "lets_a_request_in_flight_finish_and_exits_cleanly"]
-out = ["Html", "Lcov", "Stdout"]
-output-dir = "target/coverage"
+out = ["Html", "Json", "Lcov", "Stdout"]
+output-dir = "docs/coverage" # Typically "target/coverage"
 # Test helpers and generated code, not the library under test.
 exclude-files = ["crates/*/tests/*", "tests/*", "examples/*", "templates/*"]
