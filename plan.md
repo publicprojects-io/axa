@@ -4,6 +4,35 @@ This plan comes from studying twelve open-source Rust web projects from their so
 services on Axum and four other frameworks. Each study is in [`spec/compare/`](spec/compare/index.md),
 and the work is in [`tasks.md`](tasks.md). It was written on 10 November 2026.
 
+## Production readiness review, 18 November 2026
+
+Stages 1 to 3 and the tenant work below describe the original plan. The releases through
+0.20.1 shipped T-1 to T-53. SQL Server (T-54) remains on hold.
+
+For services deployed across regions, the next priority is verifying contracts that already
+ship. The filename review found a missing Unicode directional control in a helper shared
+by uploads and downloads (FMT-6, T-55). The review also found that the CI job started
+Postgres and Redis but skipped the tests that prove replicas share a rate limit. T-56
+adds those tests to the job. T-57 exercises the MySQL queue with a producer at
+`+05:45` and a worker at `-03:30`, including the microseconds on a delayed job.
+
+One release decision and two verification gaps remain:
+
+1. **SQLite releases.** The 0.20.1 tree records an exception for the SQLite library in
+   the lockfile. Before publishing the held adapters, resolve a fixed version across the
+   workspace and verify the database crates with both advisory exceptions removed.
+   See the [audit configuration](.cargo/audit.toml).
+2. **S3 transfers.** A signed URL can look right even if the endpoint rejects it. Exercise
+   a prefixed store against a disposable S3-compatible endpoint, including a client
+   reading the object by its signed URL.
+3. **Performance evidence.** The benchmark report has headings but no measurements.
+   Run the standalone benchmark package and preserve the last successful report when a
+   run fails. A service choosing a request budget needs the middleware timings and the
+   machine and build that produced them.
+
+Acceptance criteria are in [tasks T-55 to T-60](tasks.md#worldwide-production-readiness).
+The [verification gaps](spec/index.md#verification-gaps) record what the present tests cover.
+
 ## What the studies found
 
 `axa` is already ahead of every project studied in several places: RFC 9457 problems that

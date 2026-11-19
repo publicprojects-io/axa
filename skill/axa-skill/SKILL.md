@@ -227,7 +227,8 @@ health check in an image with no `curl`.
   where the value was wrong and never what it was.
 - Send a file with `format::download(bytes, media_type, name)`, never by setting
   `content-disposition` by hand from a user's file name. It shows only images, audio,
-  video, and plain text in place, downloads HTML, SVG, and PDF, and cleans the name.
+  video, and plain text in place, downloads HTML, SVG, and PDF, and cleans the name. Uploads and downloads preserve international text and strip
+  Unicode bidirectional controls.
 
 ## Conditional requests
 

@@ -5,6 +5,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Upload and download filenames now strip U+061C ARABIC LETTER MARK along with the
+  other Unicode bidirectional controls. Arabic letters and digits are preserved (FMT-6).
+
 ## [0.20.1] - 2026-11-18
 
 This covers `axa` 0.20.1 and `axa-mail` 0.1.2. `axa`'s `mail` feature now requires

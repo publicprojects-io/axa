@@ -108,7 +108,7 @@
 - [operator](src/operator.rs): A guard for operator routes, with a static bearer token or Basic credential compared in constant time
 - [extract](src/extract.rs): Extractors that reject with a problem saying what was wrong, `Form` and `FormContext` for HTML forms, and `Patch<T>` for a field left out, `null`, or set
 - [upload](src/upload.rs) (feature `upload`): Bounded multipart uploads, files spooled to temporary files
-- [format](src/format.rs): Response helpers, and downloads with a safe `content-disposition`
+- [format](src/format.rs): Response helpers and downloads with cleaned UTF-8 filenames and an ASCII fallback
 - [health](src/health.rs): Health routes
 - [logger](src/logger.rs): Logging setup, `init` and `init_with`
 - [middleware](src/middleware.rs): The standard HTTP middleware stack, with security headers, CORS, and a cross-site write guard

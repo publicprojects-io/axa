@@ -323,6 +323,48 @@ async fn a_minute_ago(queue: &Queue) -> Timestamp {
     time_of(queue.pool(), "SELECT UTC_TIMESTAMP(6) - INTERVAL 1 MINUTE").await
 }
 
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn a_jobs_due_time_is_the_same_in_two_session_time_zones() {
+    async fn at_offset(offset: &str) -> Queue {
+        let options = uri()
+            .parse::<sqlx::mysql::MySqlConnectOptions>()
+            .unwrap()
+            .timezone(offset.to_owned());
+        let pool = MySqlPool::connect_with(options).await.unwrap();
+        let actual: String = sqlx::query_scalar("SELECT @@session.time_zone")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(actual, offset);
+        Queue::from_pool(pool, quick())
+    }
+
+    let setup = fresh(quick()).await;
+    setup.pool().close().await;
+    let producer = at_offset("+05:45").await;
+    let mut worker = at_offset("-03:30").await;
+    worker.handle("Job", |_| async { Ok::<(), String>(()) });
+    let future = time_of(
+        producer.pool(),
+        "SELECT UTC_TIMESTAMP() + INTERVAL 1 HOUR + INTERVAL 123456 MICROSECOND",
+    )
+    .await;
+    let due = a_minute_ago(&producer).await;
+    let job = NewJob::new("Job", serde_json::Value::Null);
+    let later = producer
+        .enqueue_job(&job.clone().run_at(future))
+        .await
+        .unwrap();
+    let now = producer.enqueue_job(&job.run_at(due)).await.unwrap();
+
+    assert_eq!(worker.job(later).await.unwrap().unwrap().run_at, future);
+    assert!(worker.run_one().await.unwrap());
+    assert_eq!(state(&worker, now).await, JobState::Completed);
+    assert!(!worker.run_one().await.unwrap());
+    assert_eq!(state(&worker, later).await, JobState::Queued);
+}
+
 /// The one time a query gives, a `DATETIME` in UTC.
 async fn time_of(pool: &MySqlPool, sql: &str) -> Timestamp {
     let micros: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(

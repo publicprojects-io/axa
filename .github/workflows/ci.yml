@@ -202,6 +202,12 @@ jobs:
           AXA_TEST_REDIS_URL: redis://localhost:6379
         run: cargo test -p axa-redis-cache -- --ignored
 
+      - name: Shared rate limits across replicas
+        env:
+          AXA_TEST_DB_URL: postgres://axa:axa@localhost:5432/axa_test
+          AXA_TEST_REDIS_URL: redis://localhost:6379
+        run: cargo test -p axa-request-rate-limit --all-features --test shared -- --ignored --test-threads=1
+
   examples:
     name: examples and the service template
     runs-on: ubuntu-latest

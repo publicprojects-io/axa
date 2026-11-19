@@ -284,7 +284,7 @@
     },
     {
       "name": "format",
-      "purpose": "Response helpers, and downloads with a safe content-disposition"
+      "purpose": "Response helpers and downloads with cleaned UTF-8 filenames and an ASCII fallback"
     },
     {
       "name": "health",

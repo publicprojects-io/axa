@@ -92,7 +92,7 @@ fixed once and an auditor reads it once.
 | CFG-2 | A service may set its own port, and a separate production port. | `production_port_applies_only_in_production` |
 | CFG-3 | Production with a database and no `DB_URL` refuses to boot. | `production_refuses_to_boot_without_a_database_url` |
 | CFG-4 | A service with an empty `database` default needs no `DB_URL`. | `a_service_with_no_database_boots_in_production_without_one` |
-| CFG-5 | Development and test get a local database named `<database>_<environment>`, as the user `postgres`. | `development_and_test_get_a_local_database_named_for_the_environment`, `the_local_database_user_names_no_framework` |
+| CFG-5 | Development and test default to a local database named `<database>_<environment>`. The Postgres user is `postgres`, the MySQL user is `root`, and SQLite uses a file with the suffix `.sqlite3`. | `development_and_test_get_a_local_database_named_for_the_environment`, `the_local_database_is_the_database_the_context_holds_and_names_no_framework` |
 | CFG-6 | Only the `test` environment sets `dangerously_truncate`. | `only_tests_ever_truncate` |
 | CFG-7 | Production does not migrate at boot by default. | `production_does_not_migrate_at_boot_by_default` |
 | CFG-8 | Production refuses `*` as a CORS origin. | `production_refuses_a_wildcard_cors_origin` |
@@ -206,6 +206,10 @@ The body of a failed request, with a `detail` and with none:
 {"type":"about:blank","title":"Internal Server Error","status":500,"code":"internal_server_error"}
 ```
 
+A client that presents translated messages can use `code` to select a message in its
+own catalogue and fall back to the HTTP status for an unfamiliar code. For example,
+`not_ready` and `shutting_down` both carry status `503` and can have different messages.
+
 Axum writes some refusals itself, as plain text or with no body, and the standard
 stack makes those problems too (ERR-13). A handler that takes
 `Result<Json<T>, JsonRejection>` and returns the rejection as an `Error` gets a
@@ -221,7 +225,7 @@ a browser (TRA-3).
 | FMT-3 | `text` and `html` set their content types. | `text_and_html_set_their_content_types` |
 | FMT-4 | `redirect` is a `303` to the target. | `redirect_points_at_the_target` |
 | FMT-5 | `content_disposition` is `inline` only for a raster image, audio, video, or plain-text media type, which cannot run script, and `attachment` for any other, such as HTML, SVG, XML, or PDF. | `only_media_types_that_cannot_run_script_are_inline` |
-| FMT-6 | `clean_file_name` keeps the last path component, drops control and bidirectional characters, quotes, and backslashes, trims leading dots and trailing dots and spaces, cuts to 255 bytes on a character boundary keeping the extension, and is `download` when nothing is left. | `a_file_name_loses_its_path_control_characters_and_quotes`, `a_long_file_name_is_cut_on_a_character_boundary_keeping_its_extension` |
+| FMT-6 | `clean_file_name` keeps the last path component, drops control characters and every character with the Unicode `Bidi_Control` property (including U+061C ARABIC LETTER MARK), quotes, and backslashes, trims leading dots and trailing dots and spaces, cuts to 255 bytes on a character boundary keeping the extension, and is `download` when nothing is left. | `a_file_name_loses_its_path_control_characters_and_quotes`, `a_file_name_keeps_arabic_text_and_removes_every_bidi_control`, `a_long_file_name_is_cut_on_a_character_boundary_keeping_its_extension` |
 | FMT-7 | A file name that is not all ASCII is sent as an RFC 6266 `filename*` in UTF-8, beside an ASCII `filename` with `_` for each other character and for `%`. | `a_name_that_is_not_ascii_is_sent_in_utf8_beside_an_ascii_fallback` |
 | FMT-8 | `download` sets the content type and disposition, and a media type that is not a header value is sent as `application/octet-stream`, an attachment. | `download_sets_the_type_and_disposition` |
 
@@ -820,7 +824,7 @@ names of the tests in section 4.18 except where a row below names its own.
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
-| MYQ-5 | Names are compared byte for byte, and every time is UTC on the database's clock, whatever the session's `time_zone`. A time crosses to and from Rust as microseconds since the Unix epoch, by `TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', ...)` and `CAST('1970-01-01' AS DATETIME(6)) + INTERVAL ? MICROSECOND`, which no `time_zone` changes, so the crate depends on no `chrono`; `jiff-sqlx` has no MySQL support. The queue's own transactions run at `READ COMMITTED`, so a claim holds no gap locks. | `two_processes_run_each_job_once`, `a_delayed_job_is_not_claimed_before_its_time` |
+| MYQ-5 | Names are compared byte for byte, and every time is UTC on the database's clock, whatever the session's `time_zone`. A time crosses to and from Rust as microseconds since the Unix epoch, by `TIMESTAMPDIFF(MICROSECOND, '1970-01-01 00:00:00', ...)` and `CAST('1970-01-01' AS DATETIME(6)) + INTERVAL ? MICROSECOND`, which no `time_zone` changes, so the crate depends on no `chrono`; `jiff-sqlx` has no MySQL support. The queue's own transactions run at `READ COMMITTED`, so a claim holds no gap locks. | `two_processes_run_each_job_once`, `a_delayed_job_is_not_claimed_before_its_time`, `a_jobs_due_time_is_the_same_in_two_session_time_zones` |
 | MYQ-7 | MySQL has no partial index and no `RETURNING`. A virtual `unique_slot`, the tenant and key while the job is queued or running and `NULL` otherwise, carries a unique index with the name, and setup adds the columns and the index each where `information_schema` shows none. So `enqueue_on` takes a connection, `&mut transaction` or a pool's, and runs a unique job's insert and its locking read of the id in a transaction of its own, or a savepoint in the caller's. | `a_key_holds_against_a_job_in_a_transaction_not_yet_committed`, `a_key_that_is_not_a_code_is_refused` |
 | MYQ-6 | MySQL has no `ADD COLUMN IF NOT EXISTS`, so setup adds the `tenant` column only where `information_schema` shows none, in one string run on one connection, and is safe to repeat on a table made by 0.1.0. | `a_job_carries_its_tenant_to_a_handler_that_takes_one`, on the table setup makes first and then adds the column to |
 
@@ -1106,6 +1110,7 @@ AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-diesel -- --ignored --tes
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test --all-features --test main -- --ignored --test-threads=1 other_databases::
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored
+AXA_TEST_DB_URL=postgres://... AXA_TEST_REDIS_URL=redis://... cargo test -p axa-request-rate-limit --all-features --test shared -- --ignored --test-threads=1
 ```
 
 A job of its own builds and tests the examples and the service template, which are
@@ -1141,6 +1146,17 @@ sets are not interchangeable. The health, task, and queue tests compile
 only without `sea-orm`, and the worker tests only without `sea-orm` and `queue`.
 The rest of the suite runs under every set.
 
+### Verification gaps
+
+- **STO-3 and STO-5.** Memory and local disk exercise the object operations. The S3
+  tests inspect signatures and exercise a failed TLS connection. A successful transfer
+  with the configured prefix and a signed URL still needs an endpoint test.
+- **Benchmarks.** CI compiles the standalone benchmarks. The checked-in report currently
+  has no timings from which to estimate the cost of the standard stack.
+
+The proposed checks and their acceptance criteria are in
+[tasks T-58 and T-59](../tasks.md#worldwide-production-readiness).
+
 ### Releasing
 
 A version breaks when a public struct gains a field, because services build these
@@ -1152,9 +1168,6 @@ None.
 
 ## 7. Open questions
 
-- **Multi-tenancy.** [Multi-tenancy](tenancy/index.md) proposes TN-1 to TN-11: a tenant
-  read only from the verified token, a transaction that sets it for Postgres row-level
-  security, a boot check that the policies can apply, isolation helpers for tests, and
-  tenants on caches, jobs, limits, cursors, spans, and events. None is decided. The page
-  ends with the questions each still has, and [`tasks.md`](../tasks.md) lists them as
-  T-43 to T-53.
+- **Multi-tenancy.** TN-1 to TN-11 shipped in 0.13 and 0.14 (T-43 to T-53).
+  Two questions remain about consuming Keycloak organization claims and detecting
+  statement-mode pooling. See the [tenancy study](tenancy/index.md#open-questions).

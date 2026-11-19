@@ -721,6 +721,7 @@ status, content type, or JSON body its OpenAPI 3.1 document does not allow.
 to temporary files, with names cleaned, and are deleted unless kept with `persist`.
 `format::download` sends a file with a `content-disposition` that shows only images,
 audio, video, and plain text in place, and downloads anything that could run script.
+Upload and download names retain international text and strip Unicode bidirectional controls.
 
 ### Tenants
 

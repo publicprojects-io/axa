@@ -198,10 +198,9 @@ pub fn clean_file_name(name: &str) -> String {
     }
 }
 
-/// A character that reorders the text around it, which can make `evil\u{202E}fdp.exe`
-/// show as `evilexe.pdf`.
+/// The Unicode `Bidi_Control` property in the Unicode Character Database's PropList.txt.
 fn is_bidi_control(c: char) -> bool {
-    matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+    matches!(c, '\u{061C}' | '\u{200E}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
 /// `name` in at most `max` bytes, cut on a character boundary, keeping a short
@@ -322,6 +321,23 @@ mod tests {
         assert_eq!(clean_file_name("../.."), "download");
         assert_eq!(clean_file_name("dir/"), "download");
         assert_eq!(clean_file_name("evil\u{202E}fdp.exe"), "evilfdp.exe");
+    }
+
+    #[test]
+    fn a_file_name_keeps_arabic_text_and_removes_every_bidi_control() {
+        let name = "تقرير-٢٠٢٦.pdf";
+        for control in [
+            '\u{061C}', '\u{200E}', '\u{200F}', '\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}',
+            '\u{202E}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}',
+        ] {
+            let marked = format!("تقرير-{control}٢٠٢٦.pdf");
+            assert_eq!(
+                clean_file_name(&marked),
+                name,
+                "U+{:04X}",
+                u32::from(control)
+            );
+        }
     }
 
     #[test]

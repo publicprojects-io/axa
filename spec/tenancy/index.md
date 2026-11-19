@@ -1,11 +1,10 @@
 # Multi-tenancy
 
-A study of what Axa could add for a service that many tenants share, written on
-13 November 2026. TN-1 to TN-4 and TN-6 are built, TN-2 and TN-3 for every Postgres crate. These are
-the ones with a safety case. The rest wait for two consumers. The rest is not yet. It proposes capabilities, each with an id
-(TN-1 and on) that [`tasks.md`](../../tasks.md) uses. The first consumer is
-[`examples/multi-tenant`](../../examples/multi-tenant/README.md), which does by hand what
-the first few would give.
+The 13 November 2026 study identified eleven capabilities for services that share
+infrastructure between tenants. TN-1 to TN-11 shipped in Axa 0.13 and 0.14.
+The entries below give the requirement IDs and the implementation chosen for each.
+See [tasks T-43 to T-53](../../tasks.md#multi-tenancy) and the
+[multi-tenant example](../../examples/multi-tenant/README.md).
 
 ## Why it has a safety case
 
@@ -15,7 +14,7 @@ authorization, and it is the kind of failure a hazard log or a security review n
 the parts that keep tenants apart pass P-2 on one consumer with that safety case. Parts
 that only make tenancy more convenient wait for two.
 
-## Where Axa stands
+## Axa at the time of the study
 
 From Axa's own code, at the commit this page was written on:
 
