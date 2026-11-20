@@ -1576,4 +1576,76 @@ mod tests {
         assert_eq!(queue.job(&plain).await.unwrap().unwrap().timeout, None);
         assert!(queue.job("not an id").await.unwrap().is_none());
     }
+
+    #[test]
+    fn each_engine_error_becomes_the_axa_error_that_answers_for_it() {
+        use axa_postgres_job_queue::Error as Engine;
+        assert!(matches!(
+            Error::from(Engine::Database(sqlx::Error::RowNotFound)),
+            Error::Sqlx(sqlx::Error::RowNotFound)
+        ));
+        let encode = serde_json::from_str::<u8>("x").unwrap_err();
+        assert!(matches!(
+            Error::from(Engine::Encode(encode)),
+            Error::JSON(_)
+        ));
+        assert!(matches!(
+            Error::from(Engine::Job("it broke".into())),
+            Error::Worker(text) if text == "it broke"
+        ));
+        for refused in [Engine::NotACode { what: "by" }, Engine::NotATenant] {
+            let text = refused.to_string();
+            assert!(
+                matches!(Error::from(refused), Error::BadRequest(said) if said == text),
+                "{text}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn schedules_limits_batches_and_counts_pass_through_to_the_engine() {
+        let _table = TABLE.lock().await;
+        let mut queue = queue().await;
+        sqlx::query("DELETE FROM axa_schedule")
+            .execute(queue.pool())
+            .await
+            .unwrap();
+        let args = Args { fail: false };
+        queue.limit::<Args, CountWorker>(1);
+        queue
+            .every::<Args, CountWorker>("count-hourly", Duration::from_hours(1), &args)
+            .unwrap();
+        queue
+            .cron::<Args, CountWorker>("count-nightly", "0 2 * * *", &args)
+            .unwrap();
+        queue.schedule(Schedule::every(
+            "count-daily",
+            Duration::from_hours(24),
+            NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+        ));
+        assert!(queue.engine().handled().contains("CountWorker"));
+
+        queue.tick_schedules().await.unwrap();
+        let mut schedules = queue.schedules().await.unwrap();
+        schedules.sort_by(|a, b| a.name.cmp(&b.name));
+        let names: Vec<_> = schedules.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(names, ["count-daily", "count-hourly", "count-nightly"]);
+        assert_eq!(schedules[1].interval, Some(Duration::from_hours(1)));
+        assert_eq!(schedules[2].cron.as_deref(), Some("0 2 * * *"));
+        assert_eq!(queue.archive_schedules().await.unwrap(), 0, "all in code");
+
+        let before = queue.counts().await.unwrap();
+        let ids = queue
+            .enqueue_all(&[
+                NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+                NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+            ])
+            .await
+            .unwrap();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.iter().all(|id| Uuid::parse_str(id).is_ok()), "{ids:?}");
+        let after = queue.counts().await.unwrap();
+        assert_eq!(after.ready, before.ready + 2);
+    }
 }

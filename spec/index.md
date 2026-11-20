@@ -293,6 +293,7 @@ repeat. These tests need `AXA_TEST_DB_URL`.
 | QUE-15 | A job queued on a transaction commits or rolls back with it. | `a_job_queued_in_a_transaction_rolls_back_with_it` |
 | QUE-16 | `Queue::connect_existing` changes no schema, and fails at connect when the table is missing or out of date. | `connecting_to_an_existing_table_changes_no_schema` |
 | QUE-17 | `queue::cancel` and `queue::retry` take the caller's transaction, a `by`, and a `reason`, and keep the act (WRK-24). An id that is not one matches no job. A `by` or `reason` that is not a code is `Error::BadRequest`. `Queue::acts` reads a job's acts. | `a_persons_act_through_axa_is_kept_with_who_and_why` |
+| QUE-18 | `axa::queue` hands each engine error on as the `axa::Error` that answers for it: a database error as `Sqlx`, an encoding error as `JSON`, a job's failure as `Worker`, and a `by`, `reason`, key, or tenant that is not one as `BadRequest`, with the engine's text. `limit`, `every`, `cron`, `schedule`, `tick_schedules`, `schedules`, `archive_schedules`, `enqueue_all`, and `counts` do what the engine's do. | `each_engine_error_becomes_the_axa_error_that_answers_for_it`, `schedules_limits_batches_and_counts_pass_through_to_the_engine` |
 
 ### 4.11 Store, logging, and server
 
