@@ -1604,7 +1604,23 @@ async fn a_missing_trigger_stops_the_relay() {
     setup().await;
     refused("DROP INDEX axa_outbox_owed_line", "axa_outbox_owed_line").await;
     setup().await;
-    assert!(Outbox::connect_existing(&uri(), quick()).await.is_ok());
+    // Either form of the fingerprint, with a tenant or without.
+    for function in [
+        "axa_outbox_fingerprint(uuid, text, text, text, jsonb, bytea)",
+        "axa_outbox_fingerprint(uuid, text, text, text, text, jsonb, bytea)",
+    ] {
+        refused(
+            &format!("DROP FUNCTION {function}"),
+            "axa_outbox_fingerprint",
+        )
+        .await;
+        setup().await;
+    }
+    let outbox = Outbox::connect_existing(&uri(), quick()).await.unwrap();
+    let shown = format!("{outbox:?}");
+    assert!(shown.starts_with("Outbox { relay: "), "{shown}");
+    assert!(shown.contains("options: OutboxOptions {"), "{shown}");
+    assert!(!shown.contains("pool"), "{shown}");
 }
 
 // OBX-23: the record is only ever added to.
