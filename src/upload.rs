@@ -447,6 +447,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_field_and_a_file_are_found_by_name_and_a_kept_file_outlives_its_upload() {
+        let dir = tempfile::tempdir().unwrap();
+        let kept = dir.path().join("kept.txt");
+        let target = kept.clone();
+        let app = Router::new().route(
+            "/",
+            post(move |multipart: Multipart| async move {
+                let mut upload = read(multipart, &Limits::default()).await.unwrap();
+                assert_eq!(
+                    upload.field("title"),
+                    Some("first"),
+                    "the first of its name"
+                );
+                assert_eq!(upload.field("missing"), None);
+                assert_eq!(upload.file("notes").unwrap().file_name, "notes.txt");
+                assert!(upload.file("missing").is_none());
+                let file = upload.files.remove(0);
+                file.persist(&target).unwrap();
+                "kept"
+            }),
+        );
+        let parts: [Part<'_>; 3] = [
+            ("title", None, None, b"first"),
+            ("title", None, None, b"second"),
+            ("notes", Some("notes.txt"), None, b"hello"),
+        ];
+        let request = Request::post("/")
+            .header(
+                CONTENT_TYPE,
+                format!("multipart/form-data; boundary={BOUNDARY}"),
+            )
+            .body(Body::from(body(&parts)))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(std::fs::read(&kept).unwrap(), b"hello");
+    }
+
+    #[test]
+    fn a_file_that_cannot_be_kept_there_is_an_io_error() {
+        let file = File {
+            name: "f".into(),
+            file_name: "f".into(),
+            content_type: "text/plain".into(),
+            size: 0,
+            temp: tempfile::NamedTempFile::new().unwrap(),
+        };
+        let left = file.path().to_path_buf();
+        let error = file.persist("/axa-no-such-folder/f").unwrap_err();
+        assert!(matches!(error, Error::IO(_)), "{error:?}");
+        assert!(!left.exists(), "the temporary file still goes");
+    }
+
+    #[tokio::test]
     async fn each_limit_is_a_413_that_names_the_limit_and_quotes_nothing() {
         let secret = b"secret".repeat(4);
         let cases: Vec<(Limits, Vec<Part<'_>>, &str)> = vec![

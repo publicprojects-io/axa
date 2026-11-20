@@ -730,6 +730,21 @@ mod tests {
             parse_uri("mysql://db/app?ssl-ca=%zz"),
             Err(Error::Url(_))
         ));
+        for (url, said) in [
+            (
+                "mysql://db/app?ssl-ca=%2Fa.pem&ssl-ca=%2Fb.pem",
+                "`ssl-ca' is given twice",
+            ),
+            (
+                "mysql://db/app?ssl-mode=REQUIRED&ssl-mode=DISABLED",
+                "`ssl-mode' is given twice",
+            ),
+        ] {
+            match parse_uri(url) {
+                Err(Error::Url(text)) => assert_eq!(text, said, "{url}"),
+                other => panic!("{url}: {other:?}"),
+            }
+        }
     }
 
     #[test]

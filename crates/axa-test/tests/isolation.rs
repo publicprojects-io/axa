@@ -23,6 +23,18 @@ fn tenant(headers: &HeaderMap) -> String {
     headers["x-tenant"].to_str().unwrap().to_string()
 }
 
+async fn edit(
+    headers: HeaderMap,
+    Path(id): Path<u32>,
+    axum::Json(change): axum::Json<serde_json::Value>,
+) -> StatusCode {
+    assert_eq!(change["completed"], true, "the probe's body arrives");
+    match owner(id) {
+        Some(owner) if owner == tenant(&headers) => StatusCode::OK,
+        _ => StatusCode::NOT_FOUND,
+    }
+}
+
 fn server() -> TestServer {
     let router = Router::new()
         // Kept apart: another tenant's id is a 404, like a missing one.
@@ -61,7 +73,17 @@ fn server() -> TestServer {
                 }
             }),
         )
-        .route("/leaky", get(|| async { "[1]" }));
+        .route("/leaky", get(|| async { "[1]" }))
+        // Writes that read a JSON body, so a probe that sent none, or not as JSON, is
+        // refused with something other than a 404.
+        .route(
+            "/kept/{id}/edit",
+            axum::routing::post(edit).put(edit).patch(edit),
+        )
+        .route(
+            "/broken",
+            get(|| async { StatusCode::INTERNAL_SERVER_ERROR }),
+        );
     TestServer::new(router)
 }
 
@@ -110,4 +132,34 @@ async fn the_owner_is_not_another_tenant() {
     // Probing as the owner is a mistake in the test, and it says so.
     let server = server();
     assert_hidden(&server, &[("x-tenant", "acme")], &[Probe::get("/kept/1")]).await;
+}
+
+#[tokio::test]
+async fn a_write_probe_sends_its_body_as_json() {
+    let server = server();
+    let body = r#"{"completed":true}"#;
+    assert_hidden(
+        &server,
+        &[("x-tenant", "globex")],
+        &[
+            Probe::post("/kept/1/edit", body),
+            Probe::put("/kept/1/edit", body),
+            Probe::patch("/kept/1/edit", body),
+        ],
+    )
+    .await;
+}
+
+#[tokio::test]
+#[should_panic(
+    expected = "GET /broken answered 500 Internal Server Error, where a list should succeed"
+)]
+async fn a_list_that_fails_is_a_fault_too() {
+    let server = server();
+    assert_hidden(
+        &server,
+        &[("x-tenant", "globex")],
+        &[Probe::list("/broken", "1")],
+    )
+    .await;
 }

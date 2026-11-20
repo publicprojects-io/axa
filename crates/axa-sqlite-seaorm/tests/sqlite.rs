@@ -408,3 +408,53 @@ mod shared {
         assert!(error.is_err());
     }
 }
+
+mod one_table {
+    use axa_sqlite_seaorm::{
+        sea_orm,
+        sea_orm::{ConnectionTrait, Set, entity::prelude::*},
+        truncate_table,
+    };
+
+    use super::{database, scalar};
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "seaorm_tags")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    #[tokio::test]
+    async fn truncate_table_empties_its_entitys_table_and_leaves_the_rest() {
+        let db = database("truncate-table").await;
+        for statement in [
+            "CREATE TABLE seaorm_tags (id INTEGER PRIMARY KEY, name TEXT NOT NULL)",
+            "CREATE TABLE seaorm_other (id INTEGER PRIMARY KEY)",
+            "INSERT INTO seaorm_other (id) VALUES (1)",
+        ] {
+            db.execute_unprepared(statement).await.unwrap();
+        }
+        ActiveModel {
+            name: Set("urgent".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        assert_eq!(Entity::find().all(&db).await.unwrap().len(), 1);
+        truncate_table(&db, Entity).await.unwrap();
+        assert_eq!(Entity::find().all(&db).await.unwrap(), Vec::<Model>::new());
+        assert_eq!(
+            scalar::<i64>(&db, "SELECT COUNT(*) FROM seaorm_other").await,
+            1,
+            "another table keeps its rows"
+        );
+    }
+}

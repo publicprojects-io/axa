@@ -126,7 +126,10 @@ pub async fn assert_hidden(server: &TestServer, headers: &[(&str, &str)], probes
             request = request.add_header(*name, *value);
         }
         if let Some(body) = &probe.body {
-            request = request.content_type("application/json").text(body.clone());
+            // As bytes, since `text` would set `text/plain` over the JSON type.
+            request = request
+                .bytes(body.clone().into_bytes().into())
+                .content_type("application/json");
         }
         let response = request.await;
         if let Some(fault) = probe.fault(response.status_code(), &response.text()) {

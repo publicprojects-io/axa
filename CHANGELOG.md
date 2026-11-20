@@ -11,6 +11,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   other Unicode bidirectional controls. Arabic letters and digits are preserved (FMT-6).
 - `axa-redis-cache`: the `Debug` text of `CacheConfig` no longer shows the Redis
   password. Whatever the URL names before `@` is shown as `REDACTED` (RDS-10).
+- `axa-test`: `isolation::Probe::post`, `put`, and `patch` send their body as
+  `application/json`. They sent `text/plain`, so a handler reading JSON answered `415`
+  and `assert_hidden` failed on routes that keep tenants apart (TST-3).
 
 ## [0.20.1] - 2026-11-18
 
