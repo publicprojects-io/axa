@@ -813,11 +813,12 @@ is a record (P-7) of what a person did to a job, and is only ever inserted into.
 | WRK-36 | Times a cron schedule missed while every process was down queue one job, and its next time is the pattern's next after now. A due time is skipped while its last job is queued or running, and the schedule moves on to its next. | `a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy` |
 | WRK-37 | Across any number of processes ticking at once, each due time of a cron schedule is queued once. | `replicas_ticking_a_cron_schedule_queue_each_due_time_once` |
 | WRK-38 | A schedule whose pattern changed, or that changed from an interval to a pattern, takes its next time from the new pattern. | `a_changed_pattern_takes_its_next_time_from_the_new_one` |
-| WRK-39 | A cron pattern that does not parse, or names no time to come, panics at boot. | `a_bad_cron_pattern_is_refused_at_boot` |
+| WRK-39 | A cron pattern that does not parse, or names no time to come, panics at boot. | `a_bad_cron_pattern_is_refused_at_boot`, `a_cron_pattern_that_names_no_time_to_come_is_refused_at_boot` |
 | WRK-40 | A job retried after a failure waits its doubling backoff, capped at an hour, spread at random over the upper half of it, so the waits of jobs that failed together differ. | `a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose` |
 | WRK-41 | A handler whose error is `RetryAfter`, or a `BackgroundWorker` whose error is `axa::Error::RetryAfter`, is tried again after the delay it chose, held between a second and an hour, in place of the backoff, keeping its reason as the error. It still counts as an attempt. | `a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose`, `a_retry_after_error_carries_its_delay_and_others_none`, `a_job_that_asks_for_a_delay_is_tried_again_after_it`, `a_worker_that_asks_for_a_delay_is_tried_again_after_it` |
 | WRK-42 | In the Postgres queue, a job queued is announced on `NOTIFY axa_queue` when its transaction commits, once per statement, and `run` listens on one connection, so an idle loop starts it at once rather than at its next poll, a notice that comes while a loop is finding nothing included. Polling stays, for a job whose time comes, and while the listener is down, which it opens again after a poll interval. | `a_queued_job_wakes_an_idle_loop_before_its_next_poll`, `a_wake_during_a_round_that_found_nothing_is_not_lost` |
 | WRK-43 | A job whose handler panics fails, keeping `the job panicked` and none of the panic's own text, and its loop goes on to the next job, as QUE-12 says of `axa::queue`. `enqueue_limited` keeps its limit on the job, `handled` names the handlers, and `ping` asks the database. | `a_job_that_panics_fails_and_its_loop_carries_on` |
+| WRK-44 | An `Error` keeps what caused it: a database or encoding error is its `source`, with the same text, and no other has one. A `Queue`'s `Debug` text counts its handlers, limits, and schedules, and shows its options, never its pool. A `NewJob` and a `Schedule` say their names. | `an_error_keeps_what_caused_it_and_only_a_database_or_encoding_error_has_a_source`, `a_queue_shows_how_much_it_holds_and_its_options_and_never_its_pool`, `a_job_and_a_schedule_say_their_names_and_a_failure_its_text` |
 
 ### 4.19 MySQL job queue
 
@@ -828,7 +829,7 @@ names of the tests in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, WRK-28 to WRK-41, and WRK-43, each by the tests named there. | As named in section 4.18 |
+| MYQ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, WRK-28 to WRK-41, WRK-43, and WRK-44, each by the tests named there. | As named in section 4.18 |
 | MYQ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, one process at a time under a named lock. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | MYQ-3 | An act locks its job, changes it, and keeps the act, all in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | MYQ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. MySQL has no trigger for `TRUNCATE`, which needs the `DROP` privilege, so a service's role is given no `DROP` on it. | `the_acts_table_refuses_every_change` |
@@ -846,7 +847,7 @@ in section 4.18 except where a row below names its own.
 
 | Id | Requirement | Test |
 |---|---|---|
-| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, WRK-28 to WRK-41, and WRK-43, each by the tests named there. | As named in section 4.18 |
+| SQJ-1 | It meets WRK-1 to WRK-13, WRK-15 to WRK-24, WRK-26, WRK-28 to WRK-41, WRK-43, and WRK-44, each by the tests named there. | As named in section 4.18 |
 | SQJ-2 | `connect_existing` fails on a missing or out-of-date `axa_queue` or `axa_schedule`, or a missing `axa_job_acts` or one of its two triggers, and changes no schema. `connect` makes them all, in one `BEGIN IMMEDIATE` transaction. | `connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing`, `a_missing_acts_trigger_stops_the_queue` |
 | SQJ-3 | An act changes its job and keeps the act in the caller's transaction, so they and the service's own audit row commit or roll back together (P-9). There is no form that takes a pool. | `an_act_commits_with_its_change_and_the_callers_audit` |
 | SQJ-4 | `UPDATE` and `DELETE` on `axa_job_acts` are refused by the database, whoever sends them. | `the_acts_table_refuses_every_change` |

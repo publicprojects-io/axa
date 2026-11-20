@@ -2663,4 +2663,73 @@ mod tests {
         let schedule = Schedule::every("s", Duration::from_secs(5), job);
         assert_eq!(schedule.job.when, When::Now);
     }
+
+    #[test]
+    fn an_error_keeps_what_caused_it_and_only_a_database_or_encoding_error_has_a_source() {
+        use std::error::Error as _;
+        let encoding = serde_json::from_str::<u8>("x").unwrap_err();
+        let text = encoding.to_string();
+        let error = Error::from(encoding);
+        assert!(matches!(error, Error::Encode(_)));
+        assert_eq!(error.to_string(), text);
+        assert_eq!(error.source().map(ToString::to_string), Some(text));
+        let database = Error::Database(sqlx::Error::RowNotFound);
+        assert!(database.source().is_some());
+        for none in [
+            Error::Job("it broke".into()),
+            Error::NotACode { what: "by" },
+            Error::NotATenant,
+        ] {
+            assert!(none.source().is_none(), "{none}");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "names no time to come")]
+    fn a_cron_pattern_that_names_no_time_to_come_is_refused_at_boot() {
+        // The 30th of February.
+        let _ = Schedule::cron(
+            "never",
+            "0 0 30 2 *",
+            NewJob::new("J", serde_json::Value::Null),
+        );
+    }
+
+    #[test]
+    fn a_job_and_a_schedule_say_their_names_and_a_failure_its_text() {
+        let job = NewJob::new("SendMail", serde_json::Value::Null);
+        assert_eq!(job.name(), "SendMail");
+        let schedule = Schedule::every("hourly", Duration::from_hours(1), job);
+        assert_eq!(schedule.name(), "hourly");
+        assert_eq!(
+            Failure::from("the receiver is busy".to_string()).to_string(),
+            "the receiver is busy"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_queue_shows_how_much_it_holds_and_its_options_and_never_its_pool() {
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .connect_lazy("mysql://axa:secret-password@127.0.0.1:1/axa")
+            .unwrap();
+        let options = QueueOptions {
+            workers: 3,
+            ..QueueOptions::default()
+        };
+        let mut queue = Queue::from_pool(pool, options);
+        queue.handle("A", |_: serde_json::Value| async { Ok::<(), String>(()) });
+        queue.limit("A", 1);
+        queue.schedule(Schedule::every(
+            "hourly",
+            Duration::from_hours(1),
+            NewJob::new("A", serde_json::Value::Null),
+        ));
+        assert_eq!(queue.options().workers, 3);
+        let shown = format!("{queue:?}");
+        assert!(
+            shown.starts_with("Queue { handlers: 1, limits: 1, schedules: 1, options: "),
+            "{shown}"
+        );
+        assert!(!shown.contains("secret-password"), "{shown}");
+    }
 }
