@@ -496,6 +496,22 @@ mod tests {
     }
 
     #[test]
+    fn each_standard_method_is_its_own_attribute() {
+        for name in [
+            "GET", "HEAD", "POST", "PUT", "DELETE", "CONNECT", "OPTIONS", "TRACE", "PATCH",
+        ] {
+            assert_eq!(
+                method_label(&Method::from_bytes(name.as_bytes()).unwrap()),
+                name
+            );
+        }
+        assert_eq!(
+            method_label(&Method::from_bytes(b"BREW").unwrap()),
+            "_OTHER"
+        );
+    }
+
+    #[test]
     fn export_is_off_until_an_endpoint_is_set() {
         assert_eq!(Config::new("a", "1").endpoint, None);
         assert_eq!(Config::from_lookup("a", "1", &lookup(&[])).endpoint, None);

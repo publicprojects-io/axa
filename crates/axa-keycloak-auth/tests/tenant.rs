@@ -51,6 +51,10 @@ fn checked_app(idp: &TestIdp, config: GuardConfig, check: Option<SuspendedCheck>
             get(|tenant: Tenant| async move { tenant.to_string() }),
         )
         .route(
+            "/api/as-ref",
+            get(|tenant: Tenant| async move { AsRef::<str>::as_ref(&tenant).to_string() }),
+        )
+        .route(
             "/api/from-extensions",
             get(|request: axum::extract::Request| async move {
                 match Tenant::from_extensions(request.extensions()) {
@@ -180,4 +184,30 @@ fn a_tenant_id_is_a_dns_label_in_lower_case() {
     for id in ["", "Acme", "-acme", "acme-", "acme.corp", &"a".repeat(64)] {
         assert!(!is_tenant_id(id), "{id}");
     }
+}
+
+#[tokio::test]
+async fn a_tenant_with_no_caller_is_a_401_and_one_with_a_caller_reads_as_text() {
+    let bare = Router::new().route(
+        "/api/whoami",
+        get(|tenant: Tenant| async move { tenant.to_string() }),
+    );
+    let response = bare
+        .oneshot(Request::get("/api/whoami").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.headers()["www-authenticate"], "Bearer");
+
+    let idp = TestIdp::start().await;
+    let app = app(&idp, GuardConfig::new("place").tenant_attribute("org"));
+    let token = with_roles(&idp, &["acme-org"]);
+    assert_eq!(
+        send_to(&app, "/api/as-ref", Some(&token)).await,
+        (StatusCode::OK, "acme".to_string())
+    );
+    assert_eq!(
+        format!("{:?}", SuspendedCheck::new(|_| false)),
+        "SuspendedCheck { .. }"
+    );
 }

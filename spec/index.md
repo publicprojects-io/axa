@@ -447,6 +447,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | KCK-17 | The guard records the tenant as PST-17 says. | `the_guard_records_the_tenant_only_where_the_span_asks` |
 | KCK-18 | `refuse_suspended` follows PST-18. | `a_suspended_tenant_is_refused_from_its_next_request` |
 | KCK-19 | `axa-keycloak-auth` | `Guard::authorize` and `Guard::enforce` decide one request outside the middleware as the middleware does, `401` and `403` alike, and `authorize` gives back what was allowed, or `None` for a public path or with enforcement off. A guard's `Debug` text holds none of its keys. | `authorize_and_enforce_decide_as_the_middleware_does`, `a_guard_shows_its_config_and_nothing_of_its_keys` |
+| KCK-20 | `axa-keycloak-auth` | A `Tenant` taken with no guard before it, so with no verified caller, is a `401` with `WWW-Authenticate: Bearer`. A `Tenant` reads as its id through `AsRef<str>`, and a `SuspendedCheck` shows nothing of its closure. | `a_tenant_with_no_caller_is_a_401_and_one_with_a_caller_reads_as_text` |
 | RDS-7 | `axa-redis-cache` | A log line holds neither a key, which can name a person, nor a stored value. | `an_unreadable_entry_is_logged_without_its_key_or_value`, `a_failed_cache_write_is_logged_without_its_key_or_value`, `a_failed_read_is_logged_without_its_key` (Redis tests, the connection cut and Redis stalled) |
 | RDS-1 | `axa-redis-cache` | Every entry expires. A TTL below one millisecond is refused. | `a_zero_ttl_is_refused`, `a_zero_ttl_stores_nothing`, `entries_expire`, `the_default_ttl_applies` |
 | RDS-2 | `axa-redis-cache` | Prefixes keep services apart. | `prefixes_keep_services_apart` |
@@ -524,7 +525,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | OTL-3 | `axa-opentelemetry` | Plain `http` is for loopback, unless a clear yes allows it. An invalid endpoint is refused, and an error never quotes the endpoint. | `plain_http_is_for_loopback`, `plain_http_to_another_host_is_refused`, `plain_http_to_another_host_can_be_allowed`, `anything_but_a_clear_yes_keeps_insecure_refused`, `a_bad_endpoint_is_refused`, `an_error_never_quotes_the_endpoint`, `start_refuses_cleartext_to_another_host` |
 | OTL-4 | `axa-opentelemetry` | An `https` endpoint trusts the system's roots. | `an_https_endpoint_builds_with_roots_to_trust`, `an_https_endpoint_completes_a_handshake_with_a_root_the_system_trusts` |
 | OTL-5 | `axa-opentelemetry` | A collector that is down never holds up a request. | `a_collector_that_is_down_stops_nothing` |
-| OTL-6 | `axa-opentelemetry` | A metric's attributes are the method, status, and route template. An unknown method is `_OTHER`, and a path's value never appears. | `an_unknown_method_cannot_create_a_series`, `a_request_reaches_the_collector_as_a_span_and_a_metric` |
+| OTL-6 | `axa-opentelemetry` | A metric's attributes are the method, status, and route template. Each of the nine standard methods is its own value, an unknown method is `_OTHER`, and a path's value never appears. | `an_unknown_method_cannot_create_a_series`, `each_standard_method_is_its_own_attribute`, `a_request_reaches_the_collector_as_a_span_and_a_metric` |
 | OTL-7 | `axa-opentelemetry` | The middleware adds to the request span `axa` opens, and puts its `traceparent` on the response. A server error marks the span. | `the_middleware_joins_the_request_span_axa_opens`, `a_server_error_marks_the_span` |
 | OTL-9 | `axa-opentelemetry` | A panic and a cancelled request are counted, with `error.type` saying which. | `a_panic_and_a_cancelled_request_are_still_counted` |
 | OTL-8 | `axa-opentelemetry` | `DIAGNOSTIC_DIRECTIVES` are valid filter directives. | `the_diagnostic_directives_are_valid` |
@@ -1020,6 +1021,7 @@ Its tests are in `cargo test`, the SMTP one against a small server on a local po
 | MAIL-5 | The SMTP transport sends the envelope and the message to the server. | `the_smtp_transport_sends_to_the_server` |
 | MAIL-6 | `Mailer::outbox` gives a memory mailer's `Outbox`, made by `Mailer::memory` or from `memory:`, and `None` for any other. | `a_memory_mailer_from_a_url_hands_its_outbox_to_a_test` |
 | MAIL-7 | `Mailer::ping`, for a readiness check, connects to the SMTP server and sends `NOOP`, failing with `Error::Smtp`, whose source is the cause, when it cannot. The file and memory transports always answer. | `ping_says_whether_the_transport_can_be_reached` |
+| MAIL-8 | `axa-mail` | A file transport that cannot write is `Error::File`, whose source is the cause and whose text quotes it. An address or message that cannot be built is `Error::Message`, and a URL that is no transport is `Error::Url`, neither with a source. A mailer's `Debug` text names only its kind of transport. | `a_file_that_cannot_be_written_says_so_and_keeps_its_cause`, `an_address_or_message_that_cannot_be_built_is_a_message_error_with_no_source` |
 
 ### 4.25 Object storage
 

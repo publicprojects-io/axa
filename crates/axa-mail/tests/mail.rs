@@ -151,3 +151,50 @@ async fn ping_says_whether_the_transport_can_be_reached() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn a_file_that_cannot_be_written_says_so_and_keeps_its_cause() {
+    use std::error::Error as _;
+    let mailer = Mailer::file("/axa-no-such-folder/mail");
+    assert_eq!(format!("{mailer:?}"), "Mailer { transport: \"file\", .. }");
+    let error = mailer.send(&message("Lost")).await.unwrap_err();
+    assert!(matches!(error, axa_mail::Error::File(_)), "{error:?}");
+    let cause = error.source().expect("the file error").to_string();
+    assert_eq!(error.to_string(), format!("the mail file: {cause}"));
+}
+
+#[test]
+fn an_address_or_message_that_cannot_be_built_is_a_message_error_with_no_source() {
+    use std::error::Error as _;
+    let address = "not an address"
+        .parse::<axa_mail::lettre::Address>()
+        .unwrap_err();
+    let error = axa_mail::Error::from(address);
+    assert!(
+        error
+            .to_string()
+            .starts_with("the message could not be built: "),
+        "{error}"
+    );
+    assert!(error.source().is_none());
+    // A message with no recipient cannot be built.
+    let built = Message::builder()
+        .from("accounts@example.com".parse().unwrap())
+        .body(String::new())
+        .unwrap_err();
+    assert!(matches!(
+        axa_mail::Error::from(built),
+        axa_mail::Error::Message(_)
+    ));
+    let url = Mailer::from_url("http://example.com", false).unwrap_err();
+    assert_eq!(
+        url.to_string(),
+        "the mail URL must be smtp://, smtps://, file://, or memory:, and parse"
+    );
+    assert!(url.source().is_none());
+    let (memory, _) = Mailer::memory();
+    assert_eq!(
+        format!("{memory:?}"),
+        "Mailer { transport: \"memory\", .. }"
+    );
+}
