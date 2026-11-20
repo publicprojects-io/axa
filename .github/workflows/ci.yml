@@ -151,6 +151,17 @@ jobs:
         run: cargo test --features queue
       - name: Test, sqlx
         run: cargo test --features postgres-sqlx
+      # Each other database alone, as `AppContext::db`: tests built for one database,
+      # such as SQLite refusing a statement timeout, run in no other build.
+      - name: Test, each other database alone
+        run: |
+          for feature in postgres-seaorm postgres-diesel postgres-toasty \
+            mysql-sqlx mysql-seaorm mysql-diesel mysql-toasty \
+            sqlite-sqlx sqlite-seaorm sqlite-diesel; do
+            echo "::group::$feature"
+            cargo test --features "$feature"
+            echo "::endgroup::"
+          done
       - name: Doctests, idempotency and paseto
         run: cargo test --doc --features idempotency,paseto
       - name: Test, all features

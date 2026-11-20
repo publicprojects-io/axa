@@ -1037,8 +1037,8 @@ impl Config {
         Ok(config)
     }
 
-    /// Apply the command line's overrides. Only `start` has any: `--binding`
-    /// and `--port`.
+    /// Apply the command line's overrides: `start`'s `--binding` and `--port`, and
+    /// `health`'s `--port`.
     pub fn apply_cli(&mut self, cli: &Cli) {
         match &cli.command {
             Command::Start { binding, port, .. } => {
@@ -1960,7 +1960,7 @@ mod tests {
     }
 
     #[test]
-    fn the_command_line_overrides_only_what_start_gives() {
+    fn the_command_line_overrides_only_what_start_and_health_give() {
         use clap::Parser;
         let parse = |args: &[&str]| Cli::try_parse_from(args).unwrap();
         let mut config = with(&[], &Environment::Development).unwrap();
@@ -1972,6 +1972,11 @@ mod tests {
         config.apply_cli(&parse(&["svc", "start", "--binding", "0.0.0.0"]));
         assert_eq!(config.server.binding, "0.0.0.0");
         assert_eq!(config.server.port, 9000);
+        config.apply_cli(&parse(&["svc", "health"]));
+        assert_eq!(config.server.port, 9000, "no port, no change");
+        config.apply_cli(&parse(&["svc", "health", "--port", "9100"]));
+        assert_eq!(config.server.port, 9100);
+        assert_eq!(config.server.binding, "0.0.0.0");
     }
 
     #[test]

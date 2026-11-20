@@ -544,3 +544,78 @@ async fn a_half_configuration_is_an_error_rather_than_off() {
         );
     }
 }
+
+// Deciding outside the middleware.
+
+#[tokio::test]
+async fn authorize_and_enforce_decide_as_the_middleware_does() {
+    use axum::http::{HeaderMap, Method};
+    let idp = TestIdp::start().await;
+    let guard = guard(settings(&idp), true);
+    let bearing = |token: &str| {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, format!("Bearer {token}").parse().unwrap());
+        headers
+    };
+    let nobody = HeaderMap::new();
+    for refused in [
+        guard.enforce(&Method::GET, "/api/places", &nobody).await,
+        guard
+            .authorize(&Method::GET, "/api/places", &nobody)
+            .await
+            .map(|_| ()),
+    ] {
+        assert_eq!(refused.unwrap_err().0, StatusCode::UNAUTHORIZED);
+    }
+
+    let editor = bearing(&with_roles(&idp, &["editor"]));
+    assert_eq!(
+        guard
+            .enforce(&Method::DELETE, "/api/places/1", &editor)
+            .await
+            .unwrap_err()
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert!(
+        guard
+            .enforce(&Method::POST, "/api/places", &editor)
+            .await
+            .is_ok()
+    );
+    let allowed = guard
+        .authorize(&Method::POST, "/api/places", &editor)
+        .await
+        .unwrap()
+        .expect("a protected path that was allowed says what was allowed");
+    assert_eq!(allowed.claims.email, "ada@example.com");
+    assert!(allowed.decision.allowed);
+
+    assert!(
+        guard
+            .authorize(&Method::GET, "/_health/live", &nobody)
+            .await
+            .unwrap()
+            .is_none(),
+        "a public path needs no decision"
+    );
+    let off = self::guard(settings(&idp), false);
+    assert!(
+        off.authorize(&Method::DELETE, "/api/places/1", &nobody)
+            .await
+            .unwrap()
+            .is_none(),
+        "nor does anything with enforcement off"
+    );
+}
+
+#[tokio::test]
+async fn a_guard_shows_its_config_and_nothing_of_its_keys() {
+    let idp = TestIdp::start().await;
+    let text = format!("{:?}", guard(settings(&idp), true));
+    assert!(
+        text.contains("Guard") && text.contains("accepts_paseto: false"),
+        "{text}"
+    );
+    assert!(!text.contains("BEGIN") && !text.contains("\"n\""), "{text}");
+}

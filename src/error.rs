@@ -1116,6 +1116,43 @@ mod tests {
         assert!(!body.to_string().contains("secret"), "{body}");
     }
 
+    #[tokio::test]
+    async fn a_json_body_of_the_wrong_type_or_too_large_says_so_in_fixed_text() {
+        let wrong_type = Request::builder()
+            .header(CONTENT_TYPE, "text/plain")
+            .body(axum::body::Body::from("{\"secret\": 1}"))
+            .unwrap();
+        // Past axum's default limit of 2 MiB.
+        let too_large = Request::builder()
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(format!(
+                "{{\"secret\": \"{}\"}}",
+                "x".repeat(3 * 1024 * 1024)
+            )))
+            .unwrap();
+        for (request, status, detail) in [
+            (
+                wrong_type,
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "Send the request body as application/json",
+            ),
+            (
+                too_large,
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "The request body is too large",
+            ),
+        ] {
+            let rejection = Json::<Value>::from_request(request, &())
+                .await
+                .map(|_| ())
+                .unwrap_err();
+            let (got, body) = problem_of(rejection.into()).await;
+            assert_eq!(got, status);
+            assert_eq!(body["detail"], detail);
+            assert!(!body.to_string().contains("secret"), "{body}");
+        }
+    }
+
     /// The problem for a JSON `body` rejected on its way into `T`.
     async fn json_problem<T: serde::de::DeserializeOwned>(body: &str) -> (StatusCode, Value) {
         let request = Request::builder()

@@ -119,3 +119,35 @@ async fn the_smtp_transport_sends_to_the_server() {
     assert!(seen.contains("RCPT TO:<someone@example.org>"), "{seen}");
     assert!(seen.contains("Subject: Over SMTP"), "{seen}");
 }
+
+#[tokio::test]
+async fn ping_says_whether_the_transport_can_be_reached() {
+    use std::error::Error as _;
+    let (port, server) = smtp_server().await;
+    let mailer = Mailer::from_url(&format!("smtp://127.0.0.1:{port}"), false).unwrap();
+    mailer.ping().await.unwrap();
+    drop(mailer);
+    let seen = tokio::time::timeout(std::time::Duration::from_secs(5), server)
+        .await
+        .expect("the server finished")
+        .unwrap();
+    assert!(seen.to_ascii_uppercase().contains("NOOP"), "{seen}");
+
+    // Nothing listens on the discard port.
+    let down = Mailer::from_url("smtp://127.0.0.1:9", false).unwrap();
+    let error = down.ping().await.unwrap_err();
+    assert!(
+        error.to_string().starts_with("the mail server: "),
+        "{error}"
+    );
+    assert!(error.source().is_some());
+
+    let (memory, _) = Mailer::memory();
+    memory.ping().await.unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    Mailer::from_url(&format!("file://{}", dir.path().display()), false)
+        .unwrap()
+        .ping()
+        .await
+        .unwrap();
+}

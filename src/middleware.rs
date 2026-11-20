@@ -840,6 +840,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_policy_that_is_no_header_value_is_refused_by_name() {
+        for (set, name) in [
+            (
+                (|http: &mut Http| http.permissions_policy = Some("camera=()\n".to_string()))
+                    as fn(&mut Http),
+                "HTTP_PERMISSIONS_POLICY",
+            ),
+            (
+                |http: &mut Http| http.csp = Some("default-src\r'none'".to_string()),
+                "HTTP_CONTENT_SECURITY_POLICY",
+            ),
+        ] {
+            let mut http = config();
+            set(&mut http);
+            let error = apply_to(&http).unwrap_err().to_string();
+            assert!(error.contains(name), "{error}");
+        }
+    }
+
     #[tokio::test]
     async fn no_policy_means_no_csp_header() {
         let mut http = config();

@@ -31,6 +31,22 @@ async fn server() -> u16 {
         .route("/loop", get(to("/loop".to_string())))
         .route("/big", get(|| async { "x".repeat(10_000) }))
         .route(
+            "/agent",
+            get(|headers: axum::http::HeaderMap| async move {
+                headers
+                    .get(axum::http::header::USER_AGENT)
+                    .map_or_else(String::new, |agent| agent.to_str().unwrap().to_string())
+            })
+            .post(|body: String| async move { format!("posted {body}") }),
+        )
+        .route(
+            "/slow",
+            get(|| async {
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                "late"
+            }),
+        )
+        .route(
             "/stream",
             get(|| async {
                 let chunks = (0..10).map(|_| Ok::<_, std::io::Error>(vec![b'x'; 1_000]));
@@ -189,4 +205,47 @@ async fn a_body_is_refused_past_its_limit_with_or_without_a_length() {
             "{path}: well under the limit"
         );
     }
+}
+
+#[tokio::test]
+async fn the_builders_settings_reach_the_client_it_builds() {
+    let port = server().await;
+    let net: Net = "127.0.0.1/32".parse().unwrap();
+    let base = format!("http://127.0.0.1:{port}");
+
+    let strict = Client::builder()
+        .allow_nets([net])
+        .https_only(true)
+        .build()
+        .unwrap();
+    assert_eq!(
+        strict.get(&format!("{base}/")).unwrap_err(),
+        Refused::Scheme
+    );
+
+    let client = Client::builder()
+        .allow_nets([net])
+        .https_only(false)
+        .user_agent("axa-test/1")
+        .connect_timeout(std::time::Duration::from_secs(1))
+        .timeout(std::time::Duration::from_millis(300))
+        .build()
+        .unwrap();
+    let agent = client.get(&format!("{base}/agent")).unwrap().send().await;
+    assert_eq!(agent.unwrap().text().await.unwrap(), "axa-test/1");
+    let posted = client
+        .post(&format!("{base}/agent"))
+        .unwrap()
+        .body("this")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(posted.text().await.unwrap(), "posted this");
+    let late = client
+        .get(&format!("{base}/slow"))
+        .unwrap()
+        .send()
+        .await
+        .unwrap_err();
+    assert!(late.is_timeout(), "{late:?}");
 }
