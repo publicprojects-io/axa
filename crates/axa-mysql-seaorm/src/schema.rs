@@ -235,4 +235,49 @@ mod tests {
     fn reference_columns_are_singular() {
         assert_eq!(reference_id("users"), "user_id");
     }
+
+    #[test]
+    fn each_column_type_makes_the_column_it_names() {
+        use ColType::{
+            BigInteger, BigIntegerNull, Boolean, BooleanNull, BooleanWithDefault, Date, DateNull,
+            Double, DoubleNull, Integer, IntegerNull, JsonBinary, JsonBinaryNull, PkAuto, PkUuid,
+            String, StringNull, StringUniq, Text, TextNull, TimestampWithTimeZone,
+            TimestampWithTimeZoneNull, Uuid, UuidNull, UuidUniq,
+        };
+        for (col, made) in [
+            (PkAuto, "bigint NOT NULL PRIMARY KEY AUTO_INCREMENT"),
+            (PkUuid, "binary(16) NOT NULL PRIMARY KEY"),
+            (String, "varchar(255) NOT NULL"),
+            (StringNull, "varchar(255) NULL"),
+            (StringUniq, "varchar(255) NOT NULL UNIQUE"),
+            (Text, "text NOT NULL"),
+            (TextNull, "text NULL"),
+            (Integer, "int NOT NULL"),
+            (IntegerNull, "int NULL"),
+            (BigInteger, "bigint NOT NULL"),
+            (BigIntegerNull, "bigint NULL"),
+            (Double, "double NOT NULL"),
+            (DoubleNull, "double NULL"),
+            (Boolean, "bool NOT NULL"),
+            (BooleanNull, "bool NULL"),
+            (BooleanWithDefault(true), "bool NOT NULL DEFAULT TRUE"),
+            (Date, "date NOT NULL"),
+            (DateNull, "date NULL"),
+            (TimestampWithTimeZone, "datetime NOT NULL"),
+            (TimestampWithTimeZoneNull, "datetime NULL"),
+            (Uuid, "binary(16) NOT NULL"),
+            (UuidNull, "binary(16) NULL"),
+            (UuidUniq, "binary(16) NOT NULL UNIQUE"),
+            (JsonBinary, "json NOT NULL"),
+            (JsonBinaryNull, "json NULL"),
+        ] {
+            let sql = Table::create()
+                .table(Alias::new("t"))
+                .col(col.to_def(Alias::new("c")))
+                .to_string(MysqlQueryBuilder);
+            let quote = if sql.contains('`') { '`' } else { '"' };
+            let expected = format!("CREATE TABLE {quote}t{quote} ( {quote}c{quote} {made} )");
+            assert_eq!(sql, expected, "{col:?}");
+        }
+    }
 }

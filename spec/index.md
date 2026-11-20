@@ -341,6 +341,7 @@ move.
 | SEA-1 | Table names are pluralised snake case. | `table_names_are_pluralised_snake_case` |
 | SEA-2 | `create_table` adds `created_at` and `updated_at`. | `schema_helpers_against_postgres` |
 | SEA-3 | Foreign keys are named `fk-<table>-<column>-to-<parent>`, and a `?` suffix makes one optional. | `schema_helpers_against_postgres` |
+| SEA-4 | Each `ColType` makes the column it names: its Postgres type, `NOT NULL` or `NULL`, and `UNIQUE`, a primary key, or a default where it says so. `JsonBinary` is `jsonb`, and `TimestampWithTimeZone` is `timestamp with time zone`. | `each_column_type_makes_the_column_it_names` |
 
 ### 4.13 Subcrates
 
@@ -889,6 +890,7 @@ so they run in `cargo test`.
 | MYO-11 | `axa-mysql-seaorm` | `schema::create_table` pluralises the table name, adds `created_at` and `updated_at` as `DATETIME` defaulting to the time of the insert in UTC, and keeps a timestamp after 2038, makes JSON `JSON` and a UUID `BINARY(16)`, and gives each reference a `BIGINT` column and a foreign key named `fk-<table>-<column>-to-<parent>`, optional with a `?`. `add_column`, `remove_column`, and `drop_table` change the schema as named. | `schema_helpers_against_mysql`, `table_names_are_pluralised_snake_case`, `reference_columns_are_singular` |
 | MYO-12 | `axa-mysql-seaorm` | `query::condition` builds the same conditions as Loco's, rendered for MySQL. | `eq_and_ne_compare_values`, `ordering_comparisons_use_their_operators`, `null_checks_use_is_null`, `membership_lists_every_value`, `contains_wraps_the_text_in_wildcards`, `several_conditions_must_all_hold`, `an_empty_condition_filters_nothing`, `with_accepts_a_seaorm_condition` |
 | MYO-13 | `axa-mysql-seaorm` | The session settings, as MYX-15 says, set by sqlx on each connection rather than once by `SeaORM`. | `session_settings_become_one_set_statement`, `every_connection_starts_with_the_session_settings` |
+| MYO-14 | `axa-mysql-seaorm` | Each `ColType` makes the column it names in MySQL: a UUID is `binary(16)`, a string `varchar(255)`, `JsonBinary` is `json`, and `TimestampWithTimeZone` is `datetime`, as MySQL keeps no time zone. | `each_column_type_makes_the_column_it_names` |
 | MYD-1 | `axa-mysql-diesel` | No C database library or other TLS stack is linked. | `cargo tree -p axa-mysql-diesel -e normal` shows no `mysqlclient-sys`, `openssl`, or `native-tls` |
 | MYD-2 | `axa-mysql-diesel` | The `Debug` text of `PoolConfig` leaves the connection string out, and an unreadable URL's error does not quote its password. | `debug_text_leaves_out_the_connection_string`, `url_errors_leave_out_the_password` |
 | MYD-3 | `axa-mysql-diesel` | A name reaches SQL only through `quote_identifier`, which quotes with backticks and refuses anything but a plain lower-case identifier. | `identifiers_are_quoted_with_backticks`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
@@ -938,6 +940,7 @@ so they run in `cargo test`.
 | SLO-13 | `axa-sqlite-seaorm` | `add_column` and `remove_column` add and remove a nullable column. SQLite refuses, with an error, a unique column, and a required column without a default once the table has rows. | `schema_helpers_against_sqlite` |
 | SLO-14 | `axa-sqlite-seaorm` | `query::condition` builds the same conditions on SQLite as on Postgres. | `eq_and_ne_compare_values`, `ordering_comparisons_use_their_operators`, `null_checks_use_is_null`, `membership_lists_every_value`, `contains_wraps_the_text_in_wildcards`, `several_conditions_must_all_hold`, `an_empty_condition_filters_nothing`, `with_accepts_a_seaorm_condition` |
 | SLO-15 | `axa-sqlite-seaorm` | It is not published while the `libsqlite3-sys` sqlx builds has RUSTSEC-2026-0459. | The release checklist |
+| SLO-16 | `axa-sqlite-seaorm` | Each `ColType` makes the column it names in SQLite: `PkAuto` is an `integer` primary key with `AUTOINCREMENT`, and a date, time, UUID, or JSON column is text, under a type name that says which. | `each_column_type_makes_the_column_it_names` |
 | SLD-1 | `axa-sqlite-diesel` | `PoolConfig`'s `Debug` text leaves out the URL. | `debug_text_leaves_out_the_url` |
 | SLD-2 | `axa-sqlite-diesel` | `quote_identifier` wraps a plain lower-case identifier in double quotes and refuses anything else, and a list with any refused name is refused whole. | `identifiers_are_quoted`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
 | SLD-3 | `axa-sqlite-diesel` | An error that is not from the database is not a unique violation, and a violated check constraint is not one either. | `errors_that_are_not_from_the_database_are_not_unique_violations`, `a_duplicate_is_a_unique_violation` |

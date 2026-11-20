@@ -270,4 +270,55 @@ mod tests {
     fn reference_columns_are_singular() {
         assert_eq!(reference_id("users"), "user_id");
     }
+
+    #[test]
+    fn each_column_type_makes_the_column_it_names() {
+        use ColType::{
+            BigInteger, BigIntegerNull, Boolean, BooleanNull, BooleanWithDefault, Date, DateNull,
+            Double, DoubleNull, Integer, IntegerNull, JsonBinary, JsonBinaryNull, PkAuto, PkUuid,
+            String, StringNull, StringUniq, Text, TextNull, TimestampWithTimeZone,
+            TimestampWithTimeZoneNull, Uuid, UuidNull, UuidUniq,
+        };
+        for (col, made) in [
+            (PkAuto, "integer NOT NULL PRIMARY KEY AUTOINCREMENT"),
+            (PkUuid, "uuid_text NOT NULL PRIMARY KEY"),
+            (String, "varchar NOT NULL"),
+            (StringNull, "varchar NULL"),
+            (StringUniq, "varchar NOT NULL UNIQUE"),
+            (Text, "text NOT NULL"),
+            (TextNull, "text NULL"),
+            (Integer, "integer NOT NULL"),
+            (IntegerNull, "integer NULL"),
+            (BigInteger, "integer NOT NULL"),
+            (BigIntegerNull, "integer NULL"),
+            (Double, "double NOT NULL"),
+            (DoubleNull, "double NULL"),
+            (Boolean, "boolean NOT NULL"),
+            (BooleanNull, "boolean NULL"),
+            (BooleanWithDefault(true), "boolean NOT NULL DEFAULT TRUE"),
+            (Date, "date_text NOT NULL"),
+            (DateNull, "date_text NULL"),
+            (
+                TimestampWithTimeZone,
+                "timestamp_with_timezone_text NOT NULL",
+            ),
+            (
+                TimestampWithTimeZoneNull,
+                "timestamp_with_timezone_text NULL",
+            ),
+            (Uuid, "uuid_text NOT NULL"),
+            (UuidNull, "uuid_text NULL"),
+            (UuidUniq, "uuid_text NOT NULL UNIQUE"),
+            (JsonBinary, "jsonb_text NOT NULL"),
+            (JsonBinaryNull, "jsonb_text NULL"),
+        ] {
+            let sql = Table::create()
+                .table(Alias::new("t"))
+                .col(col.to_def(Alias::new("c")))
+                .to_string(SqliteQueryBuilder);
+            let quote = if sql.contains('`') { '`' } else { '"' };
+            let expected = format!("CREATE TABLE {quote}t{quote} ( {quote}c{quote} {made} )");
+            assert_eq!(sql, expected, "{col:?}");
+        }
+    }
 }
