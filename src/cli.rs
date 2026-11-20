@@ -144,19 +144,57 @@ fn refusal(cli: &Cli, process: &Environment, confirmed: Option<&str>) -> Option<
     })
 }
 
-/// [`refusal`] for this process.
-fn refused(cli: &Cli) -> Option<String> {
-    let confirmed = std::env::var(DESTROY_DATA_VAR).ok();
-    refusal(cli, &Environment::from_env(), confirmed.as_deref())
+/// Why reading the command line stopped.
+#[derive(Debug)]
+enum Stop {
+    /// A bad argument, `--help`, or `--version`, for `clap` to answer.
+    Clap(clap::Error),
+    /// A command [`refusal`] keeps from running here.
+    Refused(String),
 }
 
-/// `cli`, unless it must not run here, which exits.
-fn allowed(cli: Cli) -> Cli {
-    if let Some(message) = refused(&cli) {
-        eprintln!("{message}");
-        std::process::exit(1);
+/// Read `args` with `command`, then refuse what must not run in `process`, given the
+/// value of [`DESTROY_DATA_VAR`]. Every reader of the process's own command line goes
+/// through this, so none can leave the refusal out.
+fn read_from<I, T>(
+    command: clap::Command,
+    args: I,
+    process: &Environment,
+    confirmed: Option<&str>,
+) -> std::result::Result<Cli, Stop>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<std::ffi::OsString> + Clone,
+{
+    let matches = command.try_get_matches_from(args).map_err(Stop::Clap)?;
+    let cli = Cli::from_arg_matches(&matches).map_err(Stop::Clap)?;
+    match refusal(&cli, process, confirmed) {
+        Some(message) => Err(Stop::Refused(message)),
+        None => Ok(cli),
     }
-    cli
+}
+
+/// [`read_from`] on this process's arguments and environment.
+fn read(command: clap::Command) -> std::result::Result<Cli, Stop> {
+    let confirmed = std::env::var(DESTROY_DATA_VAR).ok();
+    read_from(
+        command,
+        std::env::args_os(),
+        &Environment::from_env(),
+        confirmed.as_deref(),
+    )
+}
+
+/// [`read`], exiting as `clap` does on a bad argument, and with `1` on a refusal.
+fn read_or_exit(command: clap::Command) -> Cli {
+    match read(command) {
+        Ok(cli) => cli,
+        Err(Stop::Clap(error)) => error.exit(),
+        Err(Stop::Refused(message)) => {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    }
 }
 
 // Written out rather than derived, so that `Cli::parse()` cannot leave the guard out:
@@ -173,16 +211,14 @@ impl CommandFactory for Cli {
 
 impl Parser for Cli {
     fn parse() -> Self {
-        let matches = Self::command().get_matches();
-        allowed(Self::from_arg_matches(&matches).unwrap_or_else(|error| error.exit()))
+        read_or_exit(Self::command())
     }
 
     fn try_parse() -> std::result::Result<Self, clap::Error> {
-        let cli = Self::from_arg_matches(&Self::command().try_get_matches()?)?;
-        match refused(&cli) {
-            Some(message) => Err(Self::command().error(ErrorKind::InvalidValue, message)),
-            None => Ok(cli),
-        }
+        read(Self::command()).map_err(|stop| match stop {
+            Stop::Clap(error) => error,
+            Stop::Refused(message) => Self::command().error(ErrorKind::InvalidValue, message),
+        })
     }
 }
 
@@ -210,8 +246,7 @@ fn command(name: &'static str, version: &'static str, about: &'static str) -> cl
 /// parser of its own has neither, and must call `Environment::may_destroy_data` itself.
 #[must_use]
 pub fn parse(name: &'static str, version: &'static str, about: &'static str) -> Cli {
-    let matches = command(name, version, about).get_matches();
-    allowed(Cli::from_arg_matches(&matches).unwrap_or_else(|error| error.exit()))
+    read_or_exit(command(name, version, about))
 }
 
 /// Parse `key:value` task arguments.
@@ -688,5 +723,77 @@ mod tests {
         ));
         assert!(Cli::try_parse_from(["svc"]).is_err());
         assert!(Cli::command().get_about().is_none());
+    }
+
+    #[test]
+    fn reading_the_command_line_refuses_as_the_guard_says_and_lets_the_rest_through() {
+        let read = |args: &[&str], process: Environment, confirmed: Option<&str>| {
+            read_from(
+                command("svc", "1.0.0", "A service."),
+                args,
+                &process,
+                confirmed,
+            )
+        };
+        let refused = read(
+            &["svc", "db", "reset"],
+            Environment::Production,
+            Some("true"),
+        );
+        let Err(Stop::Refused(message)) = refused else {
+            panic!("{refused:?}");
+        };
+        assert!(message.contains(DESTROY_DATA_VAR), "{message}");
+        assert!(matches!(
+            read(&["svc", "db", "truncate"], Environment::Test, None),
+            Err(Stop::Refused(_))
+        ));
+        assert!(matches!(
+            read(
+                &["svc", "--environment", "production", "db", "down"],
+                Environment::Development,
+                Some("true")
+            ),
+            Err(Stop::Refused(_))
+        ));
+        let cli = read(&["svc", "db", "reset"], Environment::Test, Some("true")).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Db {
+                command: DbCommand::Reset
+            }
+        ));
+        let cli = read(&["svc", "start"], Environment::Production, None).unwrap();
+        assert!(matches!(cli.command, Command::Start { .. }));
+
+        let Err(Stop::Clap(error)) = read(&["svc", "nope"], Environment::Test, None) else {
+            panic!("a bad argument is clap's to answer");
+        };
+        assert_eq!(error.kind(), ErrorKind::InvalidSubcommand);
+        let Err(Stop::Clap(version)) = read(&["svc", "--version"], Environment::Test, None) else {
+            panic!("--version is clap's to answer");
+        };
+        assert_eq!(version.kind(), ErrorKind::DisplayVersion);
+        assert_eq!(version.to_string(), "svc 1.0.0\n");
+    }
+
+    #[tokio::test]
+    async fn the_health_command_asks_the_port_it_is_given() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let (port, server) = answering("HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n").await;
+        health(&Environment::Test, &defaults, true, Some(port))
+            .await
+            .unwrap();
+        let asked = server.await.unwrap();
+        assert!(asked.starts_with("GET /_health/ready "), "{asked}");
+        let (port, server) = answering("HTTP/1.1 204 No Content\r\n\r\n").await;
+        health(&Environment::Test, &defaults, false, Some(port))
+            .await
+            .unwrap();
+        let asked = server.await.unwrap();
+        assert!(asked.starts_with("GET /_health/live "), "{asked}");
     }
 }
