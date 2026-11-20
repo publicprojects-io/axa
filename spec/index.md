@@ -848,6 +848,7 @@ in section 4.18 except where a row below names its own.
 | SQJ-5 | A claim is one statement, and a schedule's tick and setup run in `BEGIN IMMEDIATE` transactions, so processes on one file take turns and each job and due time goes out once. | `two_processes_run_each_job_once`, `replicas_ticking_together_queue_each_due_time_once` |
 | SQJ-6 | Its README says it builds the `libsqlite3-sys` sqlx allows, which has RUSTSEC-2026-0459 until sqlx raises its cap, and what that exposes. It was published as 0.2.0 on 2026-11-17 with the advisory open, by the maintainer's choice. | The release checklist |
 | SQJ-7 | Times are kept as microseconds since the Unix epoch, and cross to Rust as `jiff::Timestamp` with no `jiff-sqlx` and no `chrono`. | `a_delayed_job_is_not_claimed_before_its_time` |
+| SQJ-8 | A job whose handler panics fails, keeping `the job panicked` and none of the panic's own text, and its loop goes on to the next job, as QUE-12 says of `axa::queue`. `enqueue_limited` keeps its limit on the job, `handled` names the handlers, and `ping` asks the database. | `a_job_that_panics_fails_and_its_loop_carries_on` |
 
 ### 4.21 MySQL and SQLite database crates
 
