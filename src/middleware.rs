@@ -620,6 +620,34 @@ mod tests {
     };
     use tower::ServiceExt;
 
+    #[tokio::test]
+    async fn a_bound_body_says_its_size_and_end_as_the_body_inside_would() {
+        use http_body_util::BodyExt;
+        let limit = || BodyLimit(Arc::new(AtomicUsize::new(16)));
+        let waiting = LimitedLater::Waiting(Some(Body::from("hello")), limit());
+        assert_eq!(waiting.size_hint().exact(), Some(5), "before it is read");
+        assert!(!waiting.is_end_stream());
+        let taken = LimitedLater::Waiting(None, limit());
+        assert_eq!(taken.size_hint().exact(), Some(0));
+        assert!(taken.is_end_stream());
+
+        let mut reading = LimitedLater::Waiting(Some(Body::from("hello")), limit());
+        let frame = reading.frame().await.unwrap().unwrap();
+        assert_eq!(frame.into_data().unwrap(), "hello");
+        assert!(matches!(reading, LimitedLater::Reading(_)));
+        assert!(reading.is_end_stream(), "all of it read");
+        assert_eq!(reading.size_hint().exact(), Some(0));
+    }
+
+    #[test]
+    fn a_path_loses_its_trailing_slashes_and_the_root_stays_itself() {
+        assert_eq!(trimmed_path("/hooks/"), "/hooks");
+        assert_eq!(trimmed_path("/hooks//"), "/hooks");
+        assert_eq!(trimmed_path("/hooks"), "/hooks");
+        assert_eq!(trimmed_path("/"), "/");
+        assert_eq!(trimmed_path("//"), "/");
+    }
+
     fn config() -> Http {
         Http {
             body_limit: 16,
