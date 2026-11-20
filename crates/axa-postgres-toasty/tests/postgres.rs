@@ -336,3 +336,18 @@ async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn the_pool_hands_its_drivers_schema_and_url_on() {
+    let mut db = fresh().await;
+    assert_eq!(db.driver().url(), uri(), "the URL it was given");
+    db.push_schema().await.unwrap();
+    toasty::create!(Person {
+        email: "a@example.org"
+    })
+    .exec(&mut db)
+    .await
+    .unwrap();
+    assert_eq!(Person::all().exec(&mut db).await.unwrap().len(), 1);
+}
