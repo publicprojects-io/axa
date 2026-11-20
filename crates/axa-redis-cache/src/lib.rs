@@ -71,8 +71,9 @@ pub enum Error {
     TenantScope(&'static str),
 }
 
-/// Cache settings.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Cache settings. Its `Debug` text hides whatever the URL names before `@`, as a
+/// Redis URL carries its password there.
+#[derive(Clone, PartialEq, Eq)]
 pub struct CacheConfig {
     /// Connection string. Use `rediss://` for TLS.
     pub url: String,
@@ -82,6 +83,29 @@ pub struct CacheConfig {
     pub default_ttl: Duration,
     /// How long one call may wait for Redis.
     pub timeout: Duration,
+}
+
+impl std::fmt::Debug for CacheConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheConfig")
+            .field("url", &without_credentials(&self.url))
+            .field("prefix", &self.prefix)
+            .field("default_ttl", &self.default_ttl)
+            .field("timeout", &self.timeout)
+            .finish()
+    }
+}
+
+/// `url` with its user and password, if it names any, replaced by `REDACTED`.
+fn without_credentials(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    match authority.rfind('@') {
+        Some(at) => format!("{scheme}://REDACTED{}", &rest[at..]),
+        None => url.to_string(),
+    }
 }
 
 /// How long one call waits for Redis unless [`CacheConfig::timeout`] says
@@ -794,5 +818,38 @@ mod tests {
             bare.for_tenant("acme"),
             Err(Error::TenantScope(_))
         ));
+    }
+
+    #[test]
+    fn settings_never_show_the_password_in_their_url() {
+        for (url, shown) in [
+            (
+                "redis://:hunter2@cache:6379/0",
+                "redis://REDACTED@cache:6379/0",
+            ),
+            (
+                "rediss://app:hunter2@cache.example.org",
+                "rediss://REDACTED@cache.example.org",
+            ),
+            ("redis://cache:6379", "redis://cache:6379"),
+            ("redis://cache/0?name=a@b", "redis://cache/0?name=a@b"),
+            ("not a url", "not a url"),
+        ] {
+            let config = CacheConfig::new(url, "svc", LIVE);
+            let text = format!("{config:?}");
+            assert!(text.contains(&format!("url: {shown:?}")), "{text}");
+            assert!(!text.contains("hunter2"), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_cache_shows_its_prefix_tenant_and_ttl_and_nothing_of_its_connection() {
+        let cache = memory().for_tenant("acme").unwrap();
+        let text = format!("{cache:?}");
+        assert!(
+            text.starts_with(r#"Cache { prefix: "svc", tenant: Some("acme"), default_ttl: 60s"#),
+            "{text}"
+        );
+        assert!(!text.contains("Memory"), "{text}");
     }
 }

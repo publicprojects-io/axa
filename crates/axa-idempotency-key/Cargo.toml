@@ -20,6 +20,8 @@ tracing = "0.1"
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
+# A test body that says its length and then fails, which axum has no type for.
+http-body = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tower = { version = "0.5", features = ["util"] }
 tracing-subscriber = "0.3"

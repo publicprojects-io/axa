@@ -9,6 +9,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Upload and download filenames now strip U+061C ARABIC LETTER MARK along with the
   other Unicode bidirectional controls. Arabic letters and digits are preserved (FMT-6).
+- `axa-redis-cache`: the `Debug` text of `CacheConfig` no longer shows the Redis
+  password. Whatever the URL names before `@` is shown as `REDACTED` (RDS-10).
 
 ## [0.20.1] - 2026-11-18
 

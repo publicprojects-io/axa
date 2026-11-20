@@ -583,6 +583,49 @@ mod tests {
         assert!(!s.require_verified_email);
     }
 
+    #[tokio::test]
+    async fn a_role_map_file_is_read_in_place_of_the_variable_and_one_missing_fails_closed() {
+        let path = std::env::temp_dir().join(format!("axa-role-map-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"auditor":{"access":["read"]}}"#).unwrap();
+        let file = path.display().to_string();
+        let base = [
+            // Nowhere: the verifier starts looking for its keys, and must reach no one.
+            ("ORG_KEYCLOAK_URL", "http://127.0.0.1:1"),
+            ("ORG_KEYCLOAK_REALM", "mxi"),
+            ("ORG_KEYCLOAK_AUDIENCES", "mxi-api"),
+            (
+                "ORG_KEYCLOAK_ROLE_MAP",
+                r#"{"editor":{"access":["write"]}}"#,
+            ),
+        ];
+        let mut with_file = base.to_vec();
+        with_file.push(("ORG_KEYCLOAK_ROLE_MAP_FILE", &file));
+        let settings = settings_from_lookup("ORG", &env(&with_file));
+        std::fs::remove_file(&path).unwrap();
+        let settings = settings.unwrap().unwrap();
+        assert_eq!(settings.role_map["auditor"]["access"], vec!["read"]);
+        assert!(!settings.role_map.contains_key("editor"), "the file wins");
+
+        let verifier = KeycloakVerifier::new(settings).unwrap();
+        let shown = format!("{verifier:?}");
+        assert!(
+            shown.starts_with(r#"KeycloakVerifier { issuer: "http://127.0.0.1:1/realms/mxi", audiences: ["mxi-api"]"#),
+            "{shown}"
+        );
+        assert!(!shown.contains("auditor"), "{shown}");
+
+        let mut missing = base.to_vec();
+        missing.push((
+            "ORG_KEYCLOAK_ROLE_MAP_FILE",
+            "/axa-no-such-folder/roles.json",
+        ));
+        let error = settings_from_lookup("ORG", &env(&missing))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("ORG_KEYCLOAK_ROLE_MAP_FILE"), "{error}");
+        assert!(error.contains("/axa-no-such-folder/roles.json"), "{error}");
+    }
+
     #[test]
     fn from_env_fails_closed_on_a_half_configured_realm() {
         let base = [("ORG_KEYCLOAK_URL", "https://kc.example.com")];

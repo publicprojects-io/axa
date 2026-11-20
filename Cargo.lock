@@ -650,6 +650,7 @@ version = "0.2.3"
 dependencies = [
  "axa-problem",
  "axum",
+ "http-body",
  "serde_json",
  "sha2 0.11.1",
  "sqlx",

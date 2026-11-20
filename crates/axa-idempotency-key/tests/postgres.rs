@@ -80,7 +80,7 @@ impl Runs {
 fn routes(runs: &Runs) -> Router {
     let (created, other, failed, teapot) = (runs.clone(), runs.clone(), runs.clone(), runs.clone());
     let (read, huge) = (runs.clone(), runs.clone());
-    let stream = runs.clone();
+    let (stream, breaks) = (runs.clone(), runs.clone());
     Router::new()
         .route(
             "/things",
@@ -130,12 +130,39 @@ fn routes(runs: &Runs) -> Router {
             }),
         )
         .route(
+            "/breaks",
+            post(move || async move {
+                breaks.add();
+                Body::new(Breaks)
+            }),
+        )
+        .route(
             "/encoded",
             post(move || async move {
                 teapot.add();
                 ([(header::CONTENT_ENCODING, "gzip")], "not really gzip")
             }),
         )
+}
+
+/// A body that says it is five bytes, and fails when read, as a handler's own body
+/// can after its work is done.
+struct Breaks;
+
+impl http_body::Body for Breaks {
+    type Data = axum::body::Bytes;
+    type Error = std::io::Error;
+
+    fn poll_frame(
+        self: std::pin::Pin<&mut Self>,
+        _: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Result<http_body::Frame<Self::Data>, Self::Error>>> {
+        std::task::Poll::Ready(Some(Err(std::io::Error::other("the disk went away"))))
+    }
+
+    fn size_hint(&self) -> http_body::SizeHint {
+        http_body::SizeHint::with_exact(5)
+    }
 }
 
 fn app(keys: Idempotency, runs: &Runs) -> Router {
@@ -890,6 +917,29 @@ async fn an_answer_over_the_limit_is_sent_and_not_kept() {
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_stream_is_passed_on_and_not_kept() {
     assert_ran_once_and_is_not_repeated("/stream", b"streamed").await;
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn an_answer_that_breaks_while_kept_is_a_500_and_is_not_repeated() {
+    let pool = pool().await;
+    let runs = Runs::default();
+    let app = app(keys(&pool), &runs);
+    let first = send(&app, write("/breaks", "ana", Some("k"), "x")).await;
+    assert_problem(
+        first,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "internal_server_error",
+    )
+    .await;
+    let body: Option<Vec<u8>> = sqlx::query_scalar("SELECT body FROM axa_idempotency")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(body, None, "nothing kept");
+    let retry = send(&app, write("/breaks", "ana", Some("k"), "x")).await;
+    assert_problem(retry, StatusCode::CONFLICT, "idempotency_answer_not_kept").await;
+    assert_eq!(runs.count(), 1, "the handler's work is not done twice");
 }
 
 #[tokio::test]
