@@ -211,6 +211,32 @@ mod tests {
         assert!(Templates::from_raw([("bad.html", "{{ unclosed")]).is_err());
     }
 
+    #[test]
+    fn a_glob_loads_each_file_by_its_path_and_finds_a_syntax_error_too() {
+        let dir = std::env::temp_dir().join(format!("axa-tera-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("pages")).unwrap();
+        std::fs::write(dir.join("pages/hello.html"), "<p>{{ name }}</p>").unwrap();
+        let glob = format!("{}/**/*.html", dir.display());
+        let templates = Templates::from_glob(&glob).unwrap();
+        assert!(templates.contains("pages/hello.html"));
+        let page = templates.render("pages/hello.html", &json!({ "name": "<b>" }));
+        assert_eq!(page.unwrap(), "<p>&lt;b&gt;</p>");
+
+        std::fs::write(dir.join("pages/bad.html"), "{{ unclosed").unwrap();
+        let loaded = Templates::from_glob(&glob);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(loaded.is_err());
+    }
+
+    #[test]
+    fn an_error_says_what_tera_said_and_keeps_it_as_its_source() {
+        use std::error::Error as _;
+        let error = templates().render("nope.html", &json!({})).unwrap_err();
+        assert!(error.to_string().contains("nope.html"), "{error}");
+        let source = error.source().expect("tera's error");
+        assert_eq!(source.to_string(), error.to_string());
+    }
+
     #[tokio::test]
     async fn the_html_response_has_the_html_media_type() {
         let response = templates()

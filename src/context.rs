@@ -287,3 +287,38 @@ mod webhook_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{AppContext, Db};
+    use crate::{
+        Environment,
+        config::{Config, Defaults},
+    };
+
+    #[test]
+    fn its_debug_text_names_the_database_by_type_and_shows_the_rest() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let ctx = AppContext::for_test(Environment::Test, config);
+        let text = format!("{ctx:?}");
+        assert!(text.starts_with("AppContext {"), "{text}");
+        assert!(
+            text.contains(&format!("db: {:?}", std::any::type_name::<Db>())),
+            "{text}"
+        );
+        for field in [
+            "environment: Test",
+            "config: ",
+            "shared_store: ",
+            "health_checks: ",
+        ] {
+            assert!(text.contains(field), "{field} in {text}");
+        }
+        #[cfg(feature = "queue")]
+        assert!(text.contains("queue_provider: None"), "{text}");
+    }
+}

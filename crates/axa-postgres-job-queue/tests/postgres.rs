@@ -1860,3 +1860,43 @@ async fn a_queued_job_wakes_an_idle_loop_before_its_next_poll() {
     stop.send(true).unwrap();
     run.await.unwrap();
 }
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_job_that_panics_fails_and_its_loop_carries_on() {
+    let mut queue = fresh(QueueOptions {
+        workers: 1,
+        ..quick()
+    })
+    .await;
+    // Its job's arguments are null, so it panics.
+    queue.handle("Panics", |args: serde_json::Value| async move {
+        assert!(!args.is_null(), "the panic's own text");
+        Ok::<(), String>(())
+    });
+    let gauge = Gauge::default();
+    queue.handle("Fine", gauge.handler(0));
+    assert_eq!(queue.handled(), HashSet::from(["Panics", "Fine"]));
+    queue.ping().await.unwrap();
+    let panics = queue
+        .enqueue_limited("Panics", serde_json::Value::Null, Some(1))
+        .await
+        .unwrap();
+    assert_eq!(
+        queue.job(panics).await.unwrap().unwrap().max_attempts,
+        Some(1)
+    );
+    queue
+        .enqueue("Fine", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let (queue, stop, run) = start(queue);
+    until(async || gauge.done() == 1 && state(&queue, panics).await == JobState::Failed).await;
+    let failed = queue.job(panics).await.unwrap().unwrap();
+    assert_eq!(failed.attempts, 1, "its own limit of one try");
+    let error = failed.error.unwrap();
+    assert!(error.contains("the job panicked"), "{error}");
+    assert!(!error.contains("own text"), "{error}");
+    stop.send(true).unwrap();
+    run.await.unwrap();
+}

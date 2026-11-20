@@ -89,3 +89,45 @@ impl ModelError {
         Self::Message(message.to_string())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ModelError;
+
+    #[test]
+    fn each_constructor_keeps_the_text_it_was_given() {
+        let wrapped = ModelError::wrap(std::io::Error::other("disk full"));
+        assert!(matches!(wrapped, ModelError::Any(_)));
+        assert_eq!(wrapped.to_string(), "disk full");
+        let kept = ModelError::to_msg(std::io::Error::other("disk full"));
+        assert!(matches!(&kept, ModelError::Message(text) if text == "disk full"));
+        assert_eq!(ModelError::msg("no stock").to_string(), "no stock");
+        assert_eq!(ModelError::EntityNotFound.to_string(), "Entity not found");
+        assert_eq!(
+            ModelError::EntityAlreadyExists.to_string(),
+            "Entity already exists"
+        );
+    }
+
+    #[cfg(has_diesel)]
+    #[test]
+    fn a_diesel_query_error_is_the_diesel_variant() {
+        use crate::error::diesel_crates::diesel::result::Error as Query;
+        let error: ModelError = Query::NotFound.into();
+        assert!(
+            matches!(
+                error,
+                ModelError::Diesel(crate::error::DieselError::Query(Query::NotFound))
+            ),
+            "{error:?}"
+        );
+    }
+
+    #[cfg(feature = "postgres-diesel")]
+    #[test]
+    fn a_diesel_crates_own_error_is_the_diesel_variant_with_its_text() {
+        let error: ModelError = axa_postgres_diesel::Error::Migration("0001 failed".into()).into();
+        assert!(matches!(error, ModelError::Diesel(_)), "{error:?}");
+        assert!(error.to_string().contains("0001 failed"), "{error}");
+    }
+}
