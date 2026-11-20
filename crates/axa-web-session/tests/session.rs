@@ -542,3 +542,33 @@ mod postgres {
             .unwrap();
     }
 }
+
+#[tokio::test]
+async fn the_cookie_and_table_take_their_names_from_the_options() {
+    let options = SessionOptions::development()
+        .cookie_name("crm_session")
+        .table_name("crm_sessions")
+        .lifetime(std::time::Duration::from_secs(600))
+        .max_lifetime(std::time::Duration::from_secs(3600));
+    let shown = format!("{options:?}");
+    assert!(shown.contains("table_name: \"crm_sessions\""), "{shown}");
+    assert!(shown.contains("lifetime: 600s"), "{shown}");
+    assert!(shown.contains("max_lifetime: 3600s"), "{shown}");
+    let cookies = set_cookies(&app(&options).await).await;
+    let cookie = cookies
+        .iter()
+        .find(|cookie| cookie.starts_with("crm_session="))
+        .unwrap_or_else(|| panic!("{cookies:?}"));
+    // A session that is not long-term ends with the browser, or at its lifetime.
+    assert!(cookie.contains("Expires="), "{cookie}");
+}
+
+#[test]
+fn a_lifetime_too_long_to_keep_is_refused_not_a_panic() {
+    for options in [
+        SessionOptions::development().lifetime(std::time::Duration::MAX),
+        SessionOptions::development().max_lifetime(std::time::Duration::MAX),
+    ] {
+        assert!(matches!(options.config(), Err(Error::LifetimeTooLong)));
+    }
+}

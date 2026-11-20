@@ -522,4 +522,22 @@ mod tests {
         assert!(!same_text("abc", "ab"));
         assert!(!same_text("", "a"));
     }
+
+    #[test]
+    fn the_deadline_and_its_service_show_the_lifetime_and_nothing_else() {
+        use tower::Layer as _;
+        let deadline = super::SignInDeadline::<super::SessionNullPool> {
+            lifetime_ms: 90_000,
+            pool: std::marker::PhantomData,
+        };
+        assert_eq!(
+            format!("{deadline:?}"),
+            "SignInDeadline { lifetime_ms: 90000 }"
+        );
+        let service = deadline.layer("the inner service");
+        assert_eq!(
+            format!("{:?}", service.clone()),
+            "SignInDeadlineService { deadline: SignInDeadline { lifetime_ms: 90000 }, .. }"
+        );
+    }
 }

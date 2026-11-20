@@ -1079,6 +1079,21 @@ mod tests {
         assert!(limiter.count(2, true, now + secs(61)).allowed, "room again");
     }
 
+    #[test]
+    fn a_full_table_that_refuses_reports_its_first_refusal_again_each_window() {
+        let limiter = full(WhenFull::Refuse);
+        let now = Instant::now();
+        limiter.count(1, true, now);
+        assert!(limiter.count(2, true, now).first_refusal);
+        assert!(!limiter.count(2, true, now + secs(30)).first_refusal);
+        // A window on, the table is full again, with key 1 back in it.
+        let later = now + secs(61);
+        assert!(limiter.count(1, true, later).allowed);
+        let refused = limiter.count(2, true, later);
+        assert!(!refused.allowed && refused.overflowed);
+        assert!(refused.first_refusal, "a new window, so said again");
+    }
+
     // The first refusal.
 
     #[test]
@@ -1228,6 +1243,22 @@ mod tests {
         );
         assert_eq!(limiter.check("a").limit, 9);
         assert_eq!(limiter.check("b").limit, 5);
+    }
+
+    #[test]
+    fn a_keyed_limiter_sets_and_clears_own_limits_on_the_limiter_beneath() {
+        let keyed = limiter(1, 60).key(|_: &Request| Some("tenant-a"));
+        keyed
+            .set_limit_for(&"tenant-a", 4.try_into().unwrap())
+            .unwrap();
+        assert_eq!(keyed.limiter().check("tenant-a").limit, 4);
+        assert!(keyed.clear_limit_for(&"tenant-a"));
+        assert!(!keyed.clear_limit_for(&"tenant-a"), "already cleared");
+        assert_eq!(keyed.limiter().check("tenant-a").limit, 1);
+        assert_eq!(
+            TooManyOverrides.to_string(),
+            "too many keys with a limit of their own"
+        );
     }
 
     #[test]

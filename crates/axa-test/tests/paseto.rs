@@ -115,3 +115,49 @@ async fn tokens_the_guard_must_refuse_are_refused() {
         assert_eq!(response.status_code(), StatusCode::UNAUTHORIZED);
     }
 }
+
+#[tokio::test]
+async fn a_test_token_carries_the_subject_and_email_it_is_given() {
+    let keys = TestKeys::new();
+    let guard = Guard::new(
+        GuardConfig::new("todo"),
+        Arc::new(authentication_verifier::ReloadableVerifier::new(
+            keys.verifier(ISSUER, AUDIENCE),
+        )),
+        Arc::new(authentication_verifier::ReloadablePolicy::new(
+            authentication_verifier::Policy::default_policy(),
+        )),
+    );
+    let router = Router::new()
+        .route(
+            "/me",
+            get(
+                |axa_paseto_auth::AuthUser(claims): axa_paseto_auth::AuthUser| async move {
+                    format!("{} {}", claims.sub, claims.email)
+                },
+            ),
+        )
+        .layer(from_fn_with_state(Arc::new(guard), middleware));
+    let server = TestServer::new(router);
+    let bearer = keys
+        .token(ISSUER, AUDIENCE)
+        .attr("tenant", ["acme"])
+        .subject("22222222-2222-2222-2222-222222222222")
+        .email("ada@example.org")
+        .bearer();
+    let response = server.get("/me").add_header("authorization", bearer).await;
+    assert_eq!(response.status_code(), StatusCode::OK);
+    assert_eq!(
+        response.text(),
+        "22222222-2222-2222-2222-222222222222 ada@example.org"
+    );
+}
+
+#[test]
+fn test_keys_show_their_id_and_nothing_of_the_seed() {
+    let keys = TestKeys::default();
+    assert_eq!(keys.kid(), TestKeys::new().kid());
+    assert_ne!(keys.kid(), TestKeys::from_seed([7; 32]).kid());
+    let shown = format!("{keys:?}");
+    assert_eq!(shown, format!("TestKeys {{ kid: {:?}, .. }}", keys.kid()));
+}

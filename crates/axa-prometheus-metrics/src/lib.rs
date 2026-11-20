@@ -219,6 +219,27 @@ mod tests {
         assert!(!text.contains("/places/1"), "{text}");
     }
 
+    #[tokio::test]
+    async fn each_standard_method_is_its_own_label() {
+        let registry = Registry::new();
+        let metrics = RequestMetrics::register(&registry).unwrap();
+        let router = Router::new()
+            .route("/", axum::routing::any(|| async { "ok" }))
+            .layer(axum::middleware::from_fn_with_state(metrics, record));
+        let methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
+        for method in methods {
+            call(&router, method, "/").await;
+        }
+        call(&router, "TRACE", "/").await;
+        let text = render(&registry);
+        for method in methods.into_iter().chain(["other"]) {
+            let line = format!(
+                "http_server_request_duration_seconds_count{{method=\"{method}\",route=\"/\",status=\"200\"}} 1"
+            );
+            assert!(text.contains(&line), "no {line} in\n{text}");
+        }
+    }
+
     #[test]
     fn registering_twice_in_one_registry_fails() {
         let registry = Registry::new();
