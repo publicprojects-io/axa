@@ -346,6 +346,19 @@ mod tests {
         assert!(Templates::from_dir(&dir).is_err(), "a missing directory");
     }
 
+    #[test]
+    fn an_error_says_what_minijinja_said_and_keeps_its_cause() {
+        use std::error::Error as _;
+        let dir = scratch_dir("missing");
+        std::fs::remove_dir_all(&dir).unwrap();
+        let error = Templates::from_dir(&dir).unwrap_err();
+        assert!(error.to_string().contains("cannot read"), "{error}");
+        let source = error.source().expect("minijinja's error");
+        assert_eq!(source.to_string(), error.to_string());
+        let io = source.source().expect("the directory's own error");
+        assert!(io.downcast_ref::<std::io::Error>().is_some(), "{io}");
+    }
+
     #[tokio::test]
     async fn the_html_response_has_the_html_media_type_and_page_policy() {
         let response = templates()

@@ -1232,6 +1232,34 @@ mod tests {
 
     #[cfg(feature = "model")]
     #[tokio::test]
+    async fn any_other_model_error_is_a_plain_500_that_quotes_nothing() {
+        use crate::model::ModelError;
+        for error in [
+            ModelError::msg("row 42 of secret_table"),
+            ModelError::wrap(std::io::Error::other("row 42 of secret_table")),
+        ] {
+            let (status, body) = problem_of(error.into()).await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["code"], "internal_server_error");
+            assert!(!body.to_string().contains("secret_table"), "{body}");
+        }
+    }
+
+    #[cfg(feature = "queue")]
+    #[tokio::test]
+    async fn a_jobs_retry_after_returned_by_a_handler_is_a_plain_500() {
+        let error = Error::RetryAfter(axa_postgres_job_queue::RetryAfter::new(
+            std::time::Duration::from_secs(30),
+            "the receiver is busy",
+        ));
+        let (status, body) = problem_of(error).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["code"], "internal_server_error");
+        assert!(!body.to_string().contains("receiver"), "{body}");
+    }
+
+    #[cfg(feature = "model")]
+    #[tokio::test]
     async fn model_errors_answer_as_problems() {
         use crate::model::ModelError;
 

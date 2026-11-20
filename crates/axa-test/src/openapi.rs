@@ -421,6 +421,53 @@ mod tests {
         assert!(mismatch(broken).contains("not JSON"));
     }
 
+    #[test]
+    fn a_ref_is_decoded_and_one_that_leads_nowhere_or_in_a_loop_cannot_be_read() {
+        let response = |reference: &str| json!({ "$ref": reference });
+        let document = json!({
+            "openapi": "3.1.0",
+            "info": { "title": "Refs", "version": "1" },
+            "paths": {
+                "/encoded": { "get": { "responses": {
+                    "200": response("#/components/responses/A%20Place")
+                } } },
+                "/dangling": { "get": { "responses": {
+                    "200": response("#/components/responses/Gone")
+                } } },
+                "/looping": { "get": { "responses": {
+                    "200": response("#/components/responses/Ping")
+                } } },
+                "/escaped": { "get": { "responses": {
+                    "200": response("#/components/responses/%zz")
+                } } }
+            },
+            "components": { "responses": {
+                "A Place": {
+                    "description": "One",
+                    "content": { "application/json": { "schema": { "type": "object" } } }
+                },
+                "Ping": response("#/components/responses/Pong"),
+                "Pong": response("#/components/responses/Ping")
+            } }
+        });
+        let conformance = Conformance::new(document);
+        let kind = Some("application/json");
+        assert_eq!(
+            conformance.check("GET", "/encoded", 200, kind, b"{}"),
+            Ok(())
+        );
+        for path in ["/dangling", "/looping", "/escaped"] {
+            let errors = conformance
+                .check("GET", path, 200, kind, b"{}")
+                .unwrap_err()
+                .join("\n");
+            assert!(
+                errors.contains("get /") && errors.contains("200 cannot be read"),
+                "{path}: {errors}"
+            );
+        }
+    }
+
     fn server() -> axum_test::TestServer {
         use axum::{Json, Router, routing::get};
         let app = Router::new()

@@ -207,6 +207,11 @@ mod tests {
     #[test]
     fn a_short_secret_is_refused() {
         assert_eq!(Key::new(1, &[7; 31]).unwrap_err(), KeyTooShort { len: 31 });
+        assert_eq!(
+            KeyTooShort { len: 31 }.to_string(),
+            format!("an outbox key needs at least {MIN_KEY_LEN} bytes, and this has 31")
+        );
+        assert_eq!(key(9, 1).id(), 9);
         assert!(Key::new(1, &[7; 32]).is_ok());
         assert!(Key::new(1, &[7; 64]).is_ok());
     }

@@ -140,6 +140,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_v2_header_names_an_ipv6_client_too() {
+        let source: std::net::Ipv6Addr = "2001:db8::7".parse().unwrap();
+        let destination: std::net::Ipv6Addr = "2001:db8::1".parse().unwrap();
+        let mut rest = Vec::new();
+        rest.extend(source.octets());
+        rest.extend(destination.octets());
+        rest.extend(51000_u16.to_be_bytes());
+        rest.extend(1241_u16.to_be_bytes());
+        let mut bytes = v2(1, 0x21, &rest);
+        bytes.extend(b"GET / HTTP/1.1\r\n");
+        let (client, left) = read(&bytes).await;
+        assert_eq!(client.unwrap(), "[2001:db8::7]:51000".parse().unwrap());
+        assert_eq!(left, b"GET / HTTP/1.1\r\n");
+    }
+
+    #[tokio::test]
     async fn a_header_that_names_no_client_keeps_the_peer() {
         let peer: SocketAddr = PEER.parse().unwrap();
         assert_eq!(read(b"PROXY UNKNOWN\r\n").await.0.unwrap(), peer);
@@ -164,5 +180,12 @@ mod tests {
         long.extend(u16::try_from(V2_MAX_REST + 1).unwrap().to_be_bytes());
         long.extend(vec![0; V2_MAX_REST + 1]);
         assert!(read(&long).await.0.is_err());
+        // An IPv4 header with too few bytes for its two addresses and ports.
+        let short = read(&v2(1, 0x11, &[192, 0, 2, 7])).await.0.unwrap_err();
+        assert_eq!(short.kind(), io::ErrorKind::InvalidData);
+        assert!(
+            short.to_string().starts_with("a bad PROXY v2 header"),
+            "{short}"
+        );
     }
 }
