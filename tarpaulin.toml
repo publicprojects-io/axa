@@ -1,6 +1,7 @@
 # Test coverage with cargo-tarpaulin: `make coverage`, or `cargo tarpaulin`.
 #
-# The llvm engine works on macOS and Linux alike. The report covers the tests that need
+# Tarpaulin runs each section and merges what they cover into one report. The llvm
+# engine works on macOS and Linux alike. The report covers the tests that need
 # no server; with AXA_TEST_DB_URL and the others set, `cargo tarpaulin -- --ignored`
 # adds the database tests, as CI runs them.
 [coverage]
@@ -16,4 +17,16 @@ args = ["--skip", "lets_a_request_in_flight_finish_and_exits_cleanly"]
 out = ["Html", "Json", "Lcov", "Stdout"]
 output-dir = "docs/coverage" # Typically "target/coverage"
 # Test helpers and generated code, not the library under test.
+exclude-files = ["crates/*/tests/*", "tests/*", "examples/*", "templates/*"]
+# `axa` with no database feature, for the tests that need `AppContext::db` to be `()`,
+# such as the health routes', which every all-features build leaves out.
+[no-database]
+engine = "Llvm"
+packages = ["axa"]
+skip-clean = true
+timeout = "300s"
+no-fail-fast = true
+args = ["--skip", "lets_a_request_in_flight_finish_and_exits_cleanly"]
+out = ["Html", "Json", "Lcov", "Stdout"]
+output-dir = "docs/coverage"
 exclude-files = ["crates/*/tests/*", "tests/*", "examples/*", "templates/*"]

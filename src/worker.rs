@@ -226,8 +226,7 @@ fn no_queue() -> Result<String> {
         axa_db = "sqlite_seaorm",
         axa_db = "postgres_toasty",
         axa_db = "mysql_toasty"
-    )),
-    not(feature = "queue")
+    ))
 ))]
 mod tests {
     use super::*;
@@ -364,5 +363,101 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.to_string().contains("no job queue"));
+        let error = TenantWorker::perform_later_for(&ctx, "acme", ())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("no job queue"), "{error}");
+    }
+
+    static LATER: AtomicUsize = AtomicUsize::new(0);
+    static LATER_TENANTS: std::sync::Mutex<Vec<Option<String>>> = std::sync::Mutex::new(Vec::new());
+
+    struct LaterWorker;
+
+    #[async_trait]
+    impl BackgroundWorker<Args> for LaterWorker {
+        fn build(_ctx: &AppContext) -> Self {
+            Self
+        }
+
+        async fn perform(&self, args: Args) -> Result<()> {
+            if args.fail {
+                return Err(Error::Worker("told to fail".to_string()));
+            }
+            LATER.fetch_add(args.amount, Ordering::SeqCst);
+            Ok(())
+        }
+
+        async fn perform_for(&self, tenant: Option<String>, args: Args) -> Result<()> {
+            LATER_TENANTS.lock().unwrap().push(tenant);
+            self.perform(args).await
+        }
+    }
+
+    /// Wait up to two seconds for `done` to hold.
+    async fn eventually(done: impl Fn() -> bool) -> bool {
+        for _ in 0..200 {
+            if done() {
+                return true;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        false
+    }
+
+    #[tokio::test]
+    async fn async_jobs_return_at_once_and_run_after_their_delay() {
+        let ctx = context("BackgroundAsync");
+        let delayed = LaterWorker::perform_in(
+            &ctx,
+            Args {
+                amount: 5,
+                fail: false,
+            },
+            Duration::from_millis(200),
+        )
+        .await
+        .unwrap();
+        assert!(Uuid::parse_str(&delayed).is_ok(), "{delayed}");
+        assert_eq!(LATER.load(Ordering::SeqCst), 0, "not before its delay");
+        assert!(eventually(|| LATER.load(Ordering::SeqCst) == 5).await);
+
+        // A failure is logged, not returned: the caller has already moved on.
+        LaterWorker::perform_later(
+            &ctx,
+            Args {
+                amount: 0,
+                fail: true,
+            },
+        )
+        .await
+        .unwrap();
+
+        LaterWorker::perform_later_for(
+            &ctx,
+            "acme",
+            Args {
+                amount: 7,
+                fail: false,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(eventually(|| LATER.load(Ordering::SeqCst) == 12).await);
+        assert_eq!(
+            *LATER_TENANTS.lock().unwrap(),
+            vec![Some("acme".to_string())]
+        );
+        LaterWorker::perform_later_for(
+            &ctx,
+            "acme",
+            Args {
+                amount: 0,
+                fail: true,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(eventually(|| LATER_TENANTS.lock().unwrap().len() == 2).await);
     }
 }

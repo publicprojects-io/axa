@@ -7,7 +7,7 @@ dependency** names a crate to raise first (P-6). **Sources** are the studies in
 
 ## Worldwide production readiness
 
-Review of 0.20.1 on 18 November 2026. T-58 to T-60 are open.
+Review of 0.20.1 on 18 November 2026. T-60 is open.
 Each uses an existing Axa interface or maintainer tool.
 
 | Id | Status | Effort | Work and acceptance criteria |
@@ -15,8 +15,8 @@ Each uses an existing Axa interface or maintainer tool.
 | T-55 | Fixed, unreleased | S | Complete the Unicode `Bidi_Control` set in the filename cleaner shared by uploads and downloads. The FMT-6 regression checks every member in an Arabic filename and retains its letters, digits and extension. |
 | T-56 | Implemented in CI | S | Run the three service-backed tests for shared rate limits (RAT-17 and RAT-18) against disposable Postgres and Redis. The dedicated step enables both features and runs the tests serially because they reset shared state. |
 | T-57 | Implemented | S | The MYQ-5 integration test checks the actual session offsets on two pools, enqueues at `+05:45`, and reads and claims at `-03:30`. The worker sees the exact UTC due time including microseconds, completes the due job and leaves the future job queued. |
-| T-58 | Proposed | M | Against a disposable S3-compatible endpoint, run the STO-3 round trip with a unique prefix. PUT through a presigned URL, read the bytes through Axa, then GET through a presigned URL and compare bytes. Clean up the objects and run in a CI job with an isolated bucket and test credentials. |
-| T-59 | Proposed | S | Run `bin/benchmarks` against `benchmarks/Cargo.toml`. Accept a report only if middleware, primitives and SQLite produced measurements. Record the revision, Rust version, host and optional database backends. An empty stream or failed runner must exit nonzero and preserve the previous report. |
+| T-58 | Implemented in CI | M | Against a disposable S3-compatible endpoint, run the STO-3 round trip with a unique prefix. PUT through a presigned URL, read the bytes through Axa, then GET through a presigned URL and compare bytes. Clean up the objects and run in a CI job with an isolated bucket and test credentials. |
+| T-59 | Implemented | S | Run `bin/benchmarks` against `benchmarks/Cargo.toml`. Accept a report only if middleware, primitives and SQLite produced measurements. Record the revision, Rust version, host and optional database backends. An empty stream or failed runner must exit nonzero and preserve the previous report. |
 | T-60 | Open, gated on the driver | M | Retire the tracked SQLite advisory exception before releasing the held adapters. Confirm the resolved SQLite bindings include the fix, remove the exception from both audit configurations, and pass the SQLite queue and adapter suites plus `cargo audit` and `cargo deny --all-features check advisories`. See the [existing exception](.cargo/audit.toml). |
 
 ## Stage 1: close the holes, with no new dependency

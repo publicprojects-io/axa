@@ -265,6 +265,7 @@ the requirements HLT-1 to HLT-15, are in [Health routes](health/index.md).
 | JOB-3 | `BackgroundQueue` with a queue enqueues the job. | `perform_later_enqueues_in_queue_mode` |
 | JOB-4 | `perform_in` keeps its delay on the queued job, and a worker's `timeout` goes on its jobs. There is no default limit. | `perform_in_delays_a_queued_job_and_carries_its_workers_timeout` |
 | JOB-5 | `perform_later_for` runs or queues a job for a tenant in every `WorkerMode`, refusing a tenant that is not a tenant id, and the job runs in `perform_for`, which by default refuses a job with a tenant and runs `perform` for one without, so a worker that takes no tenant never runs a tenant's job. Through `axa::queue`, a registered worker gets its job's tenant the same way. | `a_job_for_a_tenant_reaches_perform_for_and_a_worker_that_takes_none_refuses_it`, `a_worker_gets_its_jobs_tenant_and_one_that_takes_none_refuses_it` |
+| JOB-6 | `BackgroundAsync` returns a job id at once and runs the job on the current runtime, after `perform_in`'s delay, in this process alone, so a restart loses it. A failure is logged, not returned, as the caller has moved on. `perform_later_for` reaches `perform_for` with the tenant the same way. | `async_jobs_return_at_once_and_run_after_their_delay` |
 
 ### 4.10 Queue
 
@@ -510,7 +511,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | RAT-15 | `axa-request-rate-limit` | Once per limiter, `by_client` warns when the first `SHARED_ALLOWANCE_SAMPLE` (100) requests it counts all came from one private or loopback address, saying `TRUSTED_PROXIES` must list a proxy. It does not warn for mixed or public clients, and the warning never holds the address. | `one_private_client_is_warned_about_once_and_never_named`, `a_loopback_client_is_warned_about_too`, `mixed_clients_are_not_warned_about`, `a_public_client_is_not_warned_about` |
 | RAT-16 | `axa-request-rate-limit` | A limit keyed by `(tenant, class)` with `by_key` counts each tenant and class apart, from the same client: one tenant's burst leaves another tenant, and its own other class, their limits (TN-7). | `a_limit_per_tenant_and_class_keeps_tenants_and_classes_apart` |
 | RAT-17 | `axa-request-rate-limit` | With `postgres` or `redis`, a `SharedLimiter` counts each request in one statement in a store every replica shares, so replicas on one store give a key one limit: an upsert on an `UNLOGGED` table on Postgres, on the database's clock, and an atomic `INCR` with `EXPIRE NX` on Redis. The first request past the limit in a window is its first refusal, and a new window counts afresh. | `postgres_replicas_share_one_limit_and_store_no_address`, `redis_replicas_share_one_limit_and_a_window_ends` |
-| RAT-18 | `axa-request-rate-limit` | The store holds a key only as an HMAC-SHA256 keyed by a secret of at least 32 bytes, never a client's address, with integers fed in fixed width and order, so every replica, from any Rust release or machine, counts a key under one hash. `Store::purge` deletes the counts of windows that have ended, each by its own limit's window, so a purge never resets a longer limit sharing the store. | `postgres_replicas_share_one_limit_and_store_no_address`, `a_purge_keeps_a_longer_limit_s_open_window`, `a_short_secret_or_a_bad_name_is_refused`, `a_key_is_counted_under_one_hash_on_every_build` |
+| RAT-18 | `axa-request-rate-limit` | The store holds a key only as an HMAC-SHA256 keyed by a secret of at least 32 bytes, never a client's address, with integers fed in fixed width and order, so every replica, from any Rust release or machine, counts a key under one hash. `Store::purge` deletes the counts of windows that have ended, each by its own limit's window, so a purge never resets a longer limit sharing the store. | `postgres_replicas_share_one_limit_and_store_no_address`, `a_purge_keeps_a_longer_limit_s_open_window`, `a_short_secret_or_a_bad_name_is_refused`, `a_key_is_counted_under_one_hash_on_every_build`, `every_integer_is_fed_in_fixed_width_little_endian_order` |
 | RAT-19 | `axa-request-rate-limit` | The service chooses what a store outage does: `WhenDown::Allow` lets a request through uncounted and logs a warning, and `WhenDown::Refuse` answers `503`, code `rate_limit_unavailable`, with `Retry-After`. | `the_service_chooses_what_a_store_outage_does` |
 | OTL-1 | `axa-opentelemetry` | Export is off until an endpoint is set, and off leaves requests working with no header. | `export_is_off_until_an_endpoint_is_set`, `off_means_no_layers_no_header_and_the_request_still_works` |
 | OTL-2 | `axa-opentelemetry` | A span and the request metric reach a real collector, with the service's name and version. | `a_request_reaches_the_collector_as_a_span_and_a_metric` |
@@ -1020,10 +1021,10 @@ network. S3's own reads and writes are `object_store`'s, and are not tested here
 | Id | Requirement | Test |
 |---|---|---|
 | STO-1 | `Key::new` refuses an empty key or segment, a `.` or `..` segment, a leading or trailing `/`, a `\`, a control character, and more than 1024 bytes, and every operation takes a `Key`. | `a_key_cannot_climb_out_or_mean_two_things` |
-| STO-2 | `Storage::from_url` reads `s3://bucket` with an optional prefix, `file:///directory`, and `memory:`, and anything else is `Error::Url`. With `production`, memory, and S3 with an `http://` endpoint or `allow_http`, are `Error::Refused`. | `production_refuses_memory_and_s3_over_plain_http` |
-| STO-3 | `put` writes an object whole, replacing what was there. `get_limited` reads one, `None` when it is missing and `Error::TooLarge` past its limit before reading it. `head` gives its size, and `delete` removes it, a missing object being no error. | `the_memory_store_reads_and_writes`, `the_local_store_reads_and_writes_inside_its_directory` |
+| STO-2 | `Storage::from_url` reads `s3://bucket` with an optional prefix, `file:///directory`, and `memory:`, and anything else is `Error::Url`. With `production`, memory, and S3 with an `http://` endpoint or `allow_http`, are `Error::Refused`. | `production_refuses_memory_and_s3_over_plain_http`, `an_s3_url_names_its_bucket_and_a_prefix_that_cannot_climb_out` |
+| STO-3 | `put` writes an object whole, replacing what was there. `get_limited` reads one, `None` when it is missing and `Error::TooLarge` past its limit before reading it. `head` gives its size, and `delete` removes it, a missing object being no error. | `the_memory_store_reads_and_writes`, `the_local_store_reads_and_writes_inside_its_directory`, `s3_round_trip_under_a_prefix_and_through_signed_urls` |
 | STO-4 | The local store keeps every object under its directory, and nowhere beside it. | `the_local_store_reads_and_writes_inside_its_directory` |
-| STO-5 | On S3, `presigned_get` and `presigned_put` sign an `https` URL for one object, under the store's prefix, that expires after the time given and holds no secret. The local and memory stores answer `Error::NotSupported`. | `s3_signs_a_url_for_one_object_for_a_time`, `the_memory_store_reads_and_writes` |
+| STO-5 | On S3, `presigned_get` and `presigned_put` sign an `https` URL for one object, under the store's prefix, that expires after the time given and holds no secret. The local and memory stores answer `Error::NotSupported`. | `s3_signs_a_url_for_one_object_for_a_time`, `s3_round_trip_under_a_prefix_and_through_signed_urls`, `the_memory_store_reads_and_writes` |
 | STO-6 | S3 is reached over rustls with ring alone, as the other crates build it, never with `aws-lc-rs` as well, which leaves rustls no provider of its own. `from_url` installs ring's process-wide provider when none is installed, and `install_ring_provider` does for a store a service builds itself, so a failed TLS connection is an error and never a panic. | `s3_over_tls_with_no_server_is_an_error_and_not_a_panic` |
 
 ### 4.26 Operator routes
@@ -1143,18 +1144,21 @@ Subcrates publish before `axa`, because it depends on them by version.
 
 All must pass before a commit is pushed or a version is published. The feature
 sets are not interchangeable. The health, task, and queue tests compile
-only without `sea-orm`, and the worker tests only without `sea-orm` and `queue`.
+only without `sea-orm`, and the worker tests only without `sea-orm` or Toasty.
 The rest of the suite runs under every set.
 
 ### Verification gaps
 
-- **STO-3 and STO-5.** Memory and local disk exercise the object operations. The S3
-  tests inspect signatures and exercise a failed TLS connection. A successful transfer
-  with the configured prefix and a signed URL still needs an endpoint test.
-- **Benchmarks.** CI compiles the standalone benchmarks. The checked-in report currently
-  has no timings from which to estimate the cost of the standard stack.
+- **STO-3 and STO-5.** CI runs the object operations and both signed URLs against one
+  S3-compatible server, RustFS, over plain `http`. Amazon S3 itself, and `https` to a
+  real endpoint, are not exercised.
+- **Benchmarks.** CI compiles the standalone benchmarks but does not run them.
+  `bin/benchmarks` writes the [report](../docs/benchmarks/index.md) only from a run in
+  which the middleware, primitives, and SQLite benchmarks all measured, and records the
+  revision, Rust version, host, and databases. Its timings are from one machine, and
+  Postgres and MySQL appear only when a run had them.
 
-The proposed checks and their acceptance criteria are in
+The checks and their acceptance criteria are in
 [tasks T-58 and T-59](../tasks.md#worldwide-production-readiness).
 
 ### Releasing

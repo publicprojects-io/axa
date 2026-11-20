@@ -1,4 +1,5 @@
 //! Each store, reading and writing real objects, and S3 signing, which needs no network.
+//! The S3 round trip needs an endpoint: it runs with `--ignored` and `AXA_TEST_S3_URL`.
 
 use std::time::Duration;
 
@@ -131,4 +132,106 @@ fn object_store_no_retries() -> axa_storage_with_apache_arrow_and_aws::object_st
         max_retries: 0,
         ..Default::default()
     }
+}
+
+/// The S3-compatible endpoint, `http://KEY:SECRET@host:port/bucket`, whose bucket exists.
+fn s3_endpoint() -> (String, String, String, String) {
+    let url = std::env::var("AXA_TEST_S3_URL").expect("AXA_TEST_S3_URL");
+    let (scheme, rest) = url.split_once("://").expect("a scheme");
+    let (credentials, rest) = rest.split_once('@').expect("credentials");
+    let (key_id, secret) = credentials.split_once(':').expect("key id and secret");
+    let (host, bucket) = rest.split_once('/').expect("a bucket");
+    (
+        format!("{scheme}://{host}"),
+        bucket.trim_end_matches('/').to_string(),
+        key_id.to_string(),
+        secret.to_string(),
+    )
+}
+
+fn s3_store(prefix: Option<&Key>) -> Storage {
+    install_ring_provider();
+    let (endpoint, bucket, key_id, secret) = s3_endpoint();
+    let s3 = AmazonS3Builder::new()
+        .with_endpoint(endpoint)
+        .with_allow_http(true)
+        .with_bucket_name(bucket)
+        .with_region("us-east-1")
+        .with_access_key_id(key_id)
+        .with_secret_access_key(secret)
+        .with_retry(object_store_no_retries())
+        .build()
+        .unwrap();
+    Storage::s3(s3, prefix)
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_S3_URL, an S3-compatible endpoint and bucket"]
+async fn s3_round_trip_under_a_prefix_and_through_signed_urls() {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let prefix = Key::new(format!("sto-{}-{nanos}", std::process::id())).unwrap();
+    let storage = s3_store(Some(&prefix));
+    let bucket = s3_store(None);
+    let key = Key::new("avatars/42.png").unwrap();
+    let full = Key::new(format!("{}/avatars/42.png", prefix.as_str())).unwrap();
+    let client = reqwest::Client::new();
+
+    // STO-5: a client writes through a signed URL, and the store reads it back.
+    let put = storage
+        .presigned_put(&key, Duration::from_mins(5))
+        .await
+        .unwrap();
+    assert!(
+        put.contains(&format!("/{}/avatars/42.png?", prefix.as_str())),
+        "{put}"
+    );
+    let sent = client
+        .put(&put)
+        .body(&b"sent through a signed url"[..])
+        .send()
+        .await
+        .unwrap();
+    assert!(sent.status().is_success(), "{}", sent.status());
+    assert_eq!(
+        storage.get_limited(&key, 100).await.unwrap().as_deref(),
+        Some(&b"sent through a signed url"[..])
+    );
+    assert_eq!(
+        bucket.head(&full).await.unwrap().map(|meta| meta.size),
+        Some(25),
+        "under the prefix in the bucket"
+    );
+
+    // STO-3 on S3: replace, read with a limit, and the signed GET sees the new bytes.
+    storage
+        .put(&key, Bytes::from_static(b"twelve bytes"))
+        .await
+        .unwrap();
+    assert!(matches!(
+        storage.get_limited(&key, 11).await,
+        Err(Error::TooLarge { size: 12 })
+    ));
+    let get = storage
+        .presigned_get(&key, Duration::from_mins(5))
+        .await
+        .unwrap();
+    let read = client.get(&get).send().await.unwrap();
+    assert!(read.status().is_success(), "{}", read.status());
+    assert_eq!(&read.bytes().await.unwrap()[..], b"twelve bytes");
+
+    // A signed URL is for one object: another key under it is refused.
+    let other = get.replace("/avatars/42.png?", "/avatars/43.png?");
+    let refused = client.get(&other).send().await.unwrap();
+    assert!(refused.status().is_client_error(), "{}", refused.status());
+
+    // Clean up, and a missing object is no error.
+    storage.delete(&key).await.unwrap();
+    assert_eq!(storage.head(&key).await.unwrap(), None);
+    assert_eq!(bucket.head(&full).await.unwrap(), None);
+    storage.delete(&key).await.unwrap();
+    let gone = client.get(&get).send().await.unwrap();
+    assert_eq!(gone.status(), reqwest::StatusCode::NOT_FOUND);
 }

@@ -69,9 +69,11 @@ fn webhooks(c: &mut Criterion) {
 
 fn like(c: &mut Criterion) {
     let text = "50% off_everything \\ today ".repeat(8);
-    c.bench_function("escape_like, 216 bytes", |b| {
+    let mut group = c.benchmark_group("escape_like");
+    group.bench_function("216 bytes", |b| {
         b.iter(|| escape_like(black_box(&text)));
     });
+    group.finish();
 }
 
 criterion_group!(benches, cursors, webhooks, like);

@@ -365,3 +365,185 @@ mod debug_tests {
         assert!(text.contains("todos, notes"), "{text}");
     }
 }
+
+/// Each driver's pool reads every setting it has from the configuration, and no setting
+/// lands in another's place: each value below differs from the rest.
+#[cfg(all(
+    test,
+    any(
+        feature = "postgres-sqlx",
+        feature = "postgres-seaorm",
+        feature = "postgres-diesel",
+        feature = "postgres-toasty",
+        feature = "mysql-sqlx",
+        feature = "mysql-seaorm",
+        feature = "mysql-diesel",
+        feature = "mysql-toasty",
+        feature = "sqlite-sqlx",
+        feature = "sqlite-seaorm",
+        feature = "sqlite-diesel"
+    )
+))]
+mod pool_config_tests {
+    fn config() -> crate::config::Database {
+        crate::config::Database {
+            uri: "db://configured".to_string(),
+            min_connections: 3,
+            max_connections: 17,
+            connect_timeout: 1_101,
+            idle_timeout: 2_202,
+            enable_logging: true,
+            auto_migrate: false,
+            dangerously_truncate: false,
+            statement_timeout_ms: 3_303,
+            application_name: "configured-app".to_string(),
+            read_only: true,
+        }
+    }
+
+    #[cfg(feature = "postgres-sqlx")]
+    #[test]
+    fn postgres_sqlx() {
+        let pool = axa_postgres_sqlx::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!((pool.min_connections, pool.max_connections), (3, 17));
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert_eq!(pool.application_name, "configured-app");
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "postgres-seaorm")]
+    #[test]
+    fn postgres_seaorm() {
+        let pool = axa_postgres_seaorm::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!((pool.min_connections, pool.max_connections), (3, 17));
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert!(pool.enable_logging);
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert_eq!(pool.application_name, "configured-app");
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "postgres-diesel")]
+    #[test]
+    fn postgres_diesel() {
+        let pool = axa_postgres_diesel::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!(pool.max_connections, 17);
+        assert_eq!(pool.wait_timeout, std::time::Duration::from_millis(1_101));
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert_eq!(pool.application_name, "configured-app");
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "postgres-toasty")]
+    #[test]
+    fn postgres_toasty() {
+        let pool = axa_postgres_toasty::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!(pool.max_connections, 17);
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert_eq!(pool.application_name, "configured-app");
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "mysql-sqlx")]
+    #[test]
+    fn mysql_sqlx() {
+        let pool = axa_mysql_sqlx::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!((pool.min_connections, pool.max_connections), (3, 17));
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "mysql-seaorm")]
+    #[test]
+    fn mysql_seaorm() {
+        let pool = axa_mysql_seaorm::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!((pool.min_connections, pool.max_connections), (3, 17));
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert!(pool.enable_logging);
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "mysql-diesel")]
+    #[test]
+    fn mysql_diesel() {
+        let pool = axa_mysql_diesel::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!(pool.max_connections, 17);
+        assert_eq!(pool.wait_timeout, std::time::Duration::from_millis(1_101));
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "mysql-toasty")]
+    #[test]
+    fn mysql_toasty() {
+        let pool = axa_mysql_toasty::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!(pool.max_connections, 17);
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert_eq!(pool.statement_timeout_ms, 3_303);
+        assert!(pool.read_only);
+    }
+
+    #[cfg(feature = "sqlite-sqlx")]
+    #[test]
+    fn sqlite_sqlx() {
+        let pool = axa_sqlite_sqlx::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!((pool.min_connections, pool.max_connections), (3, 17));
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+    }
+
+    #[cfg(feature = "sqlite-seaorm")]
+    #[test]
+    fn sqlite_seaorm() {
+        let pool = axa_sqlite_seaorm::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!((pool.min_connections, pool.max_connections), (3, 17));
+        assert_eq!(
+            (pool.connect_timeout_ms, pool.idle_timeout_ms),
+            (1_101, 2_202)
+        );
+        assert!(pool.enable_logging);
+    }
+
+    #[cfg(feature = "sqlite-diesel")]
+    #[test]
+    fn sqlite_diesel() {
+        let pool = axa_sqlite_diesel::PoolConfig::from(&config());
+        assert_eq!(pool.uri, "db://configured");
+        assert_eq!(pool.max_connections, 17);
+        assert_eq!(pool.wait_timeout, std::time::Duration::from_millis(1_101));
+    }
+}

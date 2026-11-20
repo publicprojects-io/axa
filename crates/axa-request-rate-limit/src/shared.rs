@@ -480,4 +480,46 @@ mod tests {
         assert_ne!(limiter.hashed(client), limiter.hashed(None::<IpAddr>));
         assert!(!limiter.hashed(client).contains("203"));
     }
+
+    fn fed(feed: impl FnOnce(&mut KeyHasher)) -> u64 {
+        let mut hasher = KeyHasher(Hmac::<Sha256>::new_from_slice(&[7; 32]).unwrap());
+        feed(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn every_integer_is_fed_in_fixed_width_little_endian_order() {
+        let bytes = |b: &[u8]| {
+            let b = b.to_vec();
+            fed(move |h| h.write(&b))
+        };
+        assert_eq!(fed(|h| h.write_u8(0x12)), bytes(&[0x12]));
+        assert_eq!(fed(|h| h.write_u16(0x1234)), bytes(&[0x34, 0x12]));
+        assert_eq!(
+            fed(|h| h.write_u32(0x1234_5678)),
+            bytes(&0x1234_5678_u32.to_le_bytes())
+        );
+        assert_eq!(fed(|h| h.write_u64(7)), bytes(&7_u64.to_le_bytes()));
+        assert_eq!(fed(|h| h.write_u128(7)), bytes(&7_u128.to_le_bytes()));
+        assert_eq!(fed(|h| h.write_i8(-2)), bytes(&[0xfe]));
+        assert_eq!(fed(|h| h.write_i16(-2)), bytes(&(-2_i16).to_le_bytes()));
+        assert_eq!(fed(|h| h.write_i32(-2)), bytes(&(-2_i32).to_le_bytes()));
+        assert_eq!(fed(|h| h.write_i64(-2)), bytes(&(-2_i64).to_le_bytes()));
+        assert_eq!(fed(|h| h.write_i128(-2)), bytes(&(-2_i128).to_le_bytes()));
+        // A `usize` or `isize` is fed as 64 bits, so a 32-bit replica agrees.
+        assert_eq!(fed(|h| h.write_usize(7)), fed(|h| h.write_u64(7)));
+        assert_eq!(fed(|h| h.write_isize(-2)), fed(|h| h.write_i64(-2)));
+        // Widths differ, so one value at two widths is two keys.
+        assert_ne!(fed(|h| h.write_u8(1)), fed(|h| h.write_u16(1)));
+    }
+
+    #[tokio::test]
+    async fn the_store_is_named_and_the_secret_kept_out_of_debug_text() {
+        let printed = format!("{:?}", limiter());
+        assert!(printed.contains("store: Postgres"), "{printed}");
+        assert!(
+            !printed.contains("secret") && !printed.contains("7, 7"),
+            "{printed}"
+        );
+    }
 }

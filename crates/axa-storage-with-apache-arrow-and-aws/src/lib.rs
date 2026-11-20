@@ -498,4 +498,43 @@ mod tests {
             .with_endpoint("https://minio.internal:9000");
         assert!(refuse_plain_http(&tls).is_ok());
     }
+
+    #[test]
+    fn an_s3_url_names_its_bucket_and_a_prefix_that_cannot_climb_out() {
+        for url in ["s3://files", "s3://files/", "s3://files/tenant-a/avatars/"] {
+            let storage = Storage::from_url(url, false).unwrap();
+            assert!(format!("{storage:?}").contains("s3"), "{url}");
+        }
+        let prefixed = Storage::from_url("s3://files/tenant-a/", false).unwrap();
+        let signer = prefixed.signer.as_ref().unwrap();
+        assert_eq!(signer.prefix.as_ref(), "tenant-a", "trailing `/` dropped");
+        for url in ["s3://files/../other", "s3://files/a//b", "s3://files/./a"] {
+            assert!(
+                matches!(Storage::from_url(url, false), Err(Error::Url)),
+                "{url}"
+            );
+        }
+    }
+
+    #[test]
+    fn each_error_says_what_went_wrong_and_only_a_store_error_has_a_source() {
+        use std::error::Error as _;
+        let store = Error::from(object_store::Error::NotFound {
+            path: "a".to_string(),
+            source: "gone".into(),
+        });
+        for (error, says) in [
+            (Error::Url, "s3://bucket"),
+            (Error::Refused("why"), "production refuses this store: why"),
+            (Error::BadKey, "1 to 1024 bytes"),
+            (Error::TooLarge { size: 12 }, "12 bytes, over the limit"),
+            (Error::NotSupported, "cannot sign"),
+        ] {
+            assert!(error.to_string().contains(says), "{error}");
+            assert!(error.source().is_none(), "{error}");
+        }
+        assert!(store.to_string().starts_with("the store: "), "{store}");
+        assert!(store.source().is_some());
+        assert_eq!(Key::new("a/b").unwrap().to_string(), "a/b");
+    }
 }

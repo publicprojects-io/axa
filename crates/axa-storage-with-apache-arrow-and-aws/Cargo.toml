@@ -27,6 +27,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 [lints]
 workspace = true
 
-# `reqwest` is named only to choose its TLS features for `object_store`, never in code.
+# `reqwest` is named to choose its TLS features for `object_store`, and only the S3
+# endpoint test calls it, as the client holding a presigned URL.
 [package.metadata.cargo-machete]
 ignored = ["reqwest"]

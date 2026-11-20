@@ -59,6 +59,14 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # An S3-compatible endpoint, RustFS 1.0.6, with test credentials and nothing else.
+      s3:
+        image: rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+        env:
+          RUSTFS_ACCESS_KEY: axatest
+          RUSTFS_SECRET_KEY: axatestsecret
+        ports:
+          - 9000:9000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -201,6 +209,16 @@ jobs:
         env:
           AXA_TEST_REDIS_URL: redis://localhost:6379
         run: cargo test -p axa-redis-cache -- --ignored
+
+      # STO-3 and STO-5 against a real endpoint, in a bucket of its own, each run under a
+      # unique prefix. The service has no health command, so wait for it to answer.
+      - name: S3 tests
+        env:
+          AXA_TEST_S3_URL: http://axatest:axatestsecret@localhost:9000/axa-test
+        run: |
+          for _ in $(seq 30); do curl -s -o /dev/null http://localhost:9000/ && break; sleep 2; done
+          curl -sf --aws-sigv4 "aws:amz:us-east-1:s3" --user axatest:axatestsecret -X PUT http://localhost:9000/axa-test
+          cargo test -p axa-storage-with-apache-arrow-and-aws --test storage -- --ignored
 
       - name: Shared rate limits across replicas
         env:

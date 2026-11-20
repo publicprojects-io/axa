@@ -8,6 +8,7 @@ version: '3.8'
 # - PostgreSQL: localhost:5432, user=axa, password=axa, database=axa_development
 # - MySQL: localhost:3307, user=axa, password=axa, database=axa_development
 # - Redis: localhost:6379
+# - S3 (RustFS): localhost:9000, access key=axatest, secret key=axatestsecret
 # - SQLite: files created locally in ./data.sqlite
 
 services:
@@ -63,7 +64,20 @@ services:
       retries: 10
     restart: unless-stopped
 
+  s3:
+    image: rustfs/rustfs:1.0.6
+    container_name: axa-s3
+    environment:
+      RUSTFS_ACCESS_KEY: axatest
+      RUSTFS_SECRET_KEY: axatestsecret
+    ports:
+      - "9000:9000"
+    volumes:
+      - s3_data:/data
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   mysql_data:
   redis_data:
+  s3_data:

@@ -90,6 +90,16 @@ async fn a_window_ends(store: Store) {
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn postgres_replicas_share_one_limit_and_store_no_address() {
     let store = postgres().await;
+    // Windows are fixed, from the epoch, so a minute that ends during the test would
+    // rightly be purged too. Start with time enough left in this minute.
+    let into_minute = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
+        % 60;
+    if into_minute > 40 {
+        tokio::time::sleep(Duration::from_secs(61 - into_minute)).await;
+    }
     replicas_share_one_limit(store.clone()).await;
     let Store::Postgres(pool) = &store else {
         unreachable!()

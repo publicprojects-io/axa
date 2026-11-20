@@ -16,19 +16,21 @@ Postgres and Redis but skipped the tests that prove replicas share a rate limit.
 adds those tests to the job. T-57 exercises the MySQL queue with a producer at
 `+05:45` and a worker at `-03:30`, including the microseconds on a delayed job.
 
-One release decision and two verification gaps remain:
+One release decision remains, and the other two items are done:
 
 1. **SQLite releases.** The 0.20.1 tree records an exception for the SQLite library in
    the lockfile. Before publishing the held adapters, resolve a fixed version across the
    workspace and verify the database crates with both advisory exceptions removed.
    See the [audit configuration](.cargo/audit.toml).
-2. **S3 transfers.** A signed URL can look right even if the endpoint rejects it. Exercise
-   a prefixed store against a disposable S3-compatible endpoint, including a client
-   reading the object by its signed URL.
-3. **Performance evidence.** The benchmark report has headings but no measurements.
-   Run the standalone benchmark package and preserve the last successful report when a
-   run fails. A service choosing a request budget needs the middleware timings and the
-   machine and build that produced them.
+2. **S3 transfers.** Done as T-58. A signed URL can look right even if the endpoint
+   rejects it, so CI starts a disposable RustFS endpoint. A client writes through a
+   signed `PUT`, Axa reads the object under its prefix, and a signed `GET` returns the
+   replaced bytes, before the test removes the objects.
+3. **Performance evidence.** Done as T-59. `bin/benchmarks` runs the standalone package
+   and keeps the last successful report when a run fails or is incomplete. The
+   [report](docs/benchmarks/index.md) gives the middleware timings and the machine and
+   build that produced them. The first run had found that criterion-table rejects an
+   ungrouped benchmark id, which was why the earlier report was empty.
 
 Acceptance criteria are in [tasks T-55 to T-60](tasks.md#worldwide-production-readiness).
 The [verification gaps](spec/index.md#verification-gaps) record what the present tests cover.

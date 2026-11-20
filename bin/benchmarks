@@ -1,9 +1,91 @@
 #!/bin/sh
-# Measure benchmarks using cargo-criterion crate.
+# Measure benchmarks with cargo-criterion and criterion-table, into docs/benchmarks.
+#
+# Runs the standalone package in benchmarks/. A report replaces the previous one only
+# when the middleware, primitives, and SQLite benchmarks all produced measurements, so
+# a failed runner or an empty stream exits nonzero and leaves the last report in place.
+# Postgres and MySQL run when AXA_BENCH_POSTGRES_URL and AXA_BENCH_MYSQL_URL are set.
+#
+# Usage: bin/benchmarks [--no-commit]
 set -euf
 BASE=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) && cd "$BASE"
-dst="$BASE/docs/benchmarks" && mkdir -p "$dst" && cd "$dst"
-cargo criterion --message-format=json | criterion-table > "$dst/index.md"
-ln -sfn index.md README.md
-git add .
-git commit --no-verify -m "Update $dst" "$dst"
+dst="docs/benchmarks"
+commit=1
+case "${1-}" in
+    "") ;;
+    --no-commit) commit=0 ;;
+    *) echo "usage: bin/benchmarks [--no-commit]" >&2; exit 2 ;;
+esac
+
+tmp=$(mktemp -d) && trap 'rm -rf "$tmp"' EXIT
+
+if ! cargo criterion --manifest-path benchmarks/Cargo.toml --message-format=json >"$tmp/index.json"; then
+    echo "bin/benchmarks: cargo criterion failed; $dst is unchanged" >&2
+    exit 1
+fi
+
+# Each benchmark the report must contain, by its criterion id.
+required='a GET/bare axum
+a GET/axa, test settings
+a GET/axa, development settings
+a GET/axa, an unknown path as a problem
+cursor page/first page
+cursor page/next page, cursor verified
+webhook, 4 KiB body/hmac: sign
+webhook, 4 KiB body/hmac: verify
+webhook, 4 KiB body/ed25519: sign
+webhook, 4 KiB body/ed25519: verify
+escape_like/216 bytes
+databases/sqlite: ping
+databases/sqlite: insert
+databases/sqlite: read by key
+databases/sqlite: page of 50'
+
+measured() {
+    grep -Fq "{\"reason\":\"benchmark-complete\",\"id\":\"$1\"," "$tmp/index.json"
+}
+
+missing=0
+printf '%s\n' "$required" >"$tmp/required"
+while IFS= read -r id; do
+    if ! measured "$id"; then
+        echo "bin/benchmarks: no measurement for \"$id\"" >&2
+        missing=1
+    fi
+done <"$tmp/required"
+if [ "$missing" -ne 0 ]; then
+    echo "bin/benchmarks: incomplete run; $dst is unchanged" >&2
+    exit 1
+fi
+
+backends="sqlite"
+measured "databases/postgres: ping" && backends="$backends, postgres"
+measured "databases/mysql: ping" && backends="$backends, mysql"
+
+if ! criterion-table <"$tmp/index.json" >"$tmp/index.md" || ! grep -q '^| ' "$tmp/index.md"; then
+    echo "bin/benchmarks: criterion-table produced no table; $dst is unchanged" >&2
+    exit 1
+fi
+
+revision=$(git rev-parse HEAD)
+git diff --quiet HEAD -- || revision="$revision, with uncommitted changes"
+cat >>"$tmp/index.md" <<EOF
+
+## Environment
+
+- Revision: $revision
+- Rust: $(rustc --version)
+- Host: $(uname -srm), $(rustc -vV | sed -n 's/^host: //p')
+- Databases: $backends
+- Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+EOF
+
+mkdir -p "$dst"
+mv "$tmp/index.json" "$dst/index.json"
+mv "$tmp/index.md" "$dst/index.md"
+ln -sfn index.md "$dst/README.md"
+
+if [ "$commit" -eq 1 ]; then
+    git add -- "$dst"
+    git commit --no-verify -m "Update $dst" -- "$dst"
+fi

@@ -2449,10 +2449,11 @@ mod tests {
 
     #[test]
     fn a_long_error_is_cut_on_a_character_boundary() {
-        let text = "é".repeat(MAX_ERROR);
+        // One byte first, so byte MAX_ERROR falls inside an `é`, and the cut steps back.
+        let text = format!("a{}", "é".repeat(MAX_ERROR));
         let kept = cut(text);
-        assert!(kept.len() <= MAX_ERROR);
-        assert!(kept.chars().all(|c| c == 'é'));
+        assert_eq!(kept.len(), MAX_ERROR - 1);
+        assert!(kept[1..].chars().all(|c| c == 'é'));
         assert_eq!(cut("short".to_string()), "short");
     }
 

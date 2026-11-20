@@ -67,7 +67,8 @@ cargo test --features postgres-sqlx
 
 ### Running Database Tests
 
-Database tests require a running PostgreSQL, MySQL, and Redis instance.
+Database tests require a running PostgreSQL, MySQL, and Redis instance, and the S3
+tests an S3-compatible endpoint with a bucket.
 Use the provided Podman Compose configuration:
 
 ```sh
@@ -79,6 +80,12 @@ AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
   AXA_TEST_MYSQL_URL=mysql://axa:axa@localhost:3307/axa_test \
   AXA_TEST_REDIS_URL=redis://localhost:6379 \
   cargo test --all-features -- --ignored
+
+# Make the S3 test bucket once, then run the S3 tests
+curl --aws-sigv4 "aws:amz:us-east-1:s3" --user axatest:axatestsecret \
+  -X PUT http://localhost:9000/axa-test
+AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
+  cargo test -p axa-storage-with-apache-arrow-and-aws --test storage -- --ignored
 ```
 
 ### Property Tests, Fuzzing, Benchmarks, and Mutation Testing
@@ -93,16 +100,22 @@ AXA_TEST_DB_URL=postgres://axa:axa@localhost:5432/axa_test \
   `fuzz/artifacts/`; turn it into a test before fixing it.
 - **Coverage**: `make coverage` runs `cargo tarpaulin`, with `cargo install
   cargo-tarpaulin` first, set by [`tarpaulin.toml`](tarpaulin.toml), which names the
-  reports and the directory they go to. It covers the tests that need no server; add
-  `-- --include-ignored --test-threads=1` with the database URLs set to include the
-  rest, as CI runs them.
+  reports and the directory they go to. Its two sections, every feature and then `axa`
+  with no database, are merged into one report. It covers the tests that need no
+  server; add `-- --include-ignored --test-threads=1` with the database and S3 URLs set
+  to include the rest, as CI runs them. `bin/coverage` does the same and commits the
+  report in [`docs/coverage/`](docs/coverage/).
 - **Benchmarks**: `make bench` runs [`benchmarks/`](benchmarks/), with criterion: the
   standard middleware's cost over bare Axum; checking a cursor, signing and verifying a
   webhook with HMAC and Ed25519, and escaping `LIKE` text; and a ping, insert, read by
   key, and page of 50 on
   SQLite, and on Postgres and MySQL when `AXA_BENCH_POSTGRES_URL` and
   `AXA_BENCH_MYSQL_URL` name a database for them. Each makes and drops the table
-  `axa_bench_items`.
+  `axa_bench_items`. `bin/benchmarks` runs the same package with `cargo criterion` and
+  writes the report in [`docs/benchmarks/`](docs/benchmarks/), with the revision, Rust
+  version, host, and databases that produced it, then commits it (`--no-commit` skips
+  that). It replaces the report only when the middleware, primitives, and SQLite
+  benchmarks all measured, so a failed or empty run exits nonzero and keeps the last one.
 - **Mutation testing**: `make mutants CRATE=axa-webhooks` runs `cargo mutants` on one
   crate with the lean `mutants` profile. A missed mutant is a change no test notices.
 
