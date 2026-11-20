@@ -165,6 +165,17 @@ async fn truncating_empties_referenced_tables_and_restores_foreign_key_checks() 
 
     // No tables is not an error.
     truncate::<&str>(&pool, &[]).await.unwrap();
+
+    // A table that is not there fails part way, and the checks are on again all the
+    // same on the one connection.
+    assert!(truncate(&pool, &["items", "missing"]).await.is_err());
+    assert_eq!(count(&pool, "items").await, 0, "emptied before the failure");
+    let checks: i64 = sqlx::query("SELECT @@SESSION.foreign_key_checks AS n")
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+        .get("n");
+    assert_eq!(checks, 1, "back on after a failure");
 }
 
 #[tokio::test]

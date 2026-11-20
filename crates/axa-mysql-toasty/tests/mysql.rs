@@ -146,6 +146,30 @@ async fn truncate_empties_tables_and_refuses_unsafe_names() {
         1,
         "foreign key checks are back on"
     );
+
+    // A table that is not there fails the truncate part way, and the one connection
+    // goes back to the pool with foreign key checks on all the same.
+    toasty::create!(Person {
+        email: "b@example.org"
+    })
+    .exec(&mut db)
+    .await
+    .unwrap();
+    assert!(
+        truncate(&db, &["toasty_people", "toasty_missing", "toasty_notes"])
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        scalar(&db, "SELECT CAST(@@FOREIGN_KEY_CHECKS AS SIGNED)").await,
+        1,
+        "back on after a failure"
+    );
+    assert!(
+        Person::all().exec(&mut db).await.unwrap().is_empty(),
+        "what came before the failure was emptied"
+    );
+    truncate::<&str>(&db, &[]).await.unwrap();
 }
 
 #[tokio::test]

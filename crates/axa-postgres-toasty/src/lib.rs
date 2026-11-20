@@ -739,6 +739,66 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
 mod tests {
     use super::*;
 
+    /// This connection's backend process id.
+    async fn backend(db: &mut Db) -> i32 {
+        let rows = toasty::sql::query("SELECT pg_backend_pid()")
+            .exec(db)
+            .await
+            .unwrap();
+        match rows.first() {
+            Some(toasty::stmt::Value::Record(record)) => match record.fields.first() {
+                Some(toasty::stmt::Value::I32(pid)) => *pid,
+                other => panic!("{other:?}"),
+            },
+            other => panic!("{other:?}"),
+        }
+    }
+
+    /// A one-connection pool, as `connect` builds it, swept every `sweep`.
+    async fn one_connection(sweep: Option<Duration>) -> Db {
+        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
+        let mut config = PoolConfig::new(uri);
+        config.max_connections = 1;
+        let driver = Retiring(
+            toasty::db::Connect::new(&config.connection_uri().unwrap())
+                .await
+                .unwrap(),
+        );
+        let mut builder = config.builder(toasty::models!());
+        builder.pool_health_check_interval(sweep);
+        builder.build(driver).await.unwrap()
+    }
+
+    /// As if another connection had just met a stale plan.
+    fn a_stale_plan_now() {
+        let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap();
+        LAST_STALE_PLAN.fetch_max(since + 1, Ordering::SeqCst);
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn an_idle_connection_from_before_a_stale_plan_is_retired_when_pinged() {
+        // Without a sweep, the pool hands the old connection out again, and only its
+        // next operation retires it.
+        let mut unswept = one_connection(None).await;
+        let old = backend(&mut unswept).await;
+        a_stale_plan_now();
+        assert_eq!(backend(&mut unswept).await, old, "its next operation");
+        assert_ne!(backend(&mut unswept).await, old, "then it is gone");
+
+        // A sweep pings the idle connection, which answers that it is lost, so the
+        // next operation already runs on a new one.
+        let mut swept = one_connection(Some(Duration::from_millis(50))).await;
+        let old = backend(&mut swept).await;
+        a_stale_plan_now();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        assert_ne!(
+            backend(&mut swept).await,
+            old,
+            "retired by the sweep's ping"
+        );
+    }
+
     #[test]
     fn a_connection_is_retired_only_if_opened_by_the_last_stale_plan() {
         let second = Duration::from_secs(1);

@@ -440,6 +440,16 @@ mod shared {
             .unwrap();
         assert_eq!(row.try_get::<i64>("", "id").unwrap(), 1);
         truncate::<&str>(&db, &[]).await.unwrap();
+
+        // A table that is not there fails part way, and the checks are on again all the
+        // same.
+        assert!(
+            truncate(&db, &["seaorm_people", "seaorm_missing"])
+                .await
+                .is_err()
+        );
+        assert_eq!(count(&db, "seaorm_people").await, 0, "emptied before it");
+        assert_eq!(foreign_key_checks(&db).await, 1, "back on after a failure");
     }
 
     #[tokio::test]

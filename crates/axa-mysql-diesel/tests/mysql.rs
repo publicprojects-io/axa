@@ -223,6 +223,24 @@ async fn truncating_restarts_counters_and_turns_foreign_key_checks_back_on() {
         error,
         QueryError::DatabaseError(DatabaseErrorKind::ForeignKeyViolation, _)
     ));
+
+    // A table that is not there fails part way, and the one connection has its checks
+    // on again all the same.
+    assert!(truncate(&pool, &["items", "missing"]).await.is_err());
+    assert_eq!(count(&pool, "SELECT count(*) AS n FROM items").await, 0);
+    let error = execute(
+        &pool,
+        "INSERT INTO notes (item_id, body) VALUES (999, 'no')",
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            QueryError::DatabaseError(DatabaseErrorKind::ForeignKeyViolation, _)
+        ),
+        "back on after a failure"
+    );
 }
 
 #[tokio::test]
