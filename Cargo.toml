@@ -52,6 +52,11 @@ name = "main"
 path = "tests/main.rs"
 
 [[test]]
+name = "cli_exit"
+path = "tests/cli_exit.rs"
+harness = false
+
+[[test]]
 name = "constraint_logging"
 path = "tests/constraint_logging.rs"
 
