@@ -78,6 +78,8 @@ def main(arguments):
     total = missed = 0
     rows = []
     for path, counts in hits.items():
+        if "/target/" in path:
+            continue  # packaged copies of earlier releases, not this source
         skipped = set() if keep_tracing else tracing_lines(path)
         lines = {n: c for n, c in counts.items() if n not in skipped}
         gaps = sorted(n for n, c in lines.items() if c == 0)
