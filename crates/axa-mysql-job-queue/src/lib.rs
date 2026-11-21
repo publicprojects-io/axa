@@ -2299,15 +2299,10 @@ impl Queue {
         // Keep only the place this job takes.
         let _place = places.remove(&job.name);
         drop(places);
-        let outcome = match self.handlers.get(&job.name) {
-            Some(handler) => {
-                let run = handler(job.tenant.clone(), job.args.clone());
-                self.supervise(run, &job).await
-            }
-            None => Outcome::Done(Err(Error::Job(format!("no handler for job {}", job.name))
-                .to_string()
-                .into())),
-        };
+        // `claimable` offers `claim` only the names that have a handler, so this finds one.
+        let handler = &self.handlers[&job.name];
+        let run = handler(job.tenant.clone(), job.args.clone());
+        let outcome = self.supervise(run, &job).await;
         let (id, name, attempts) = (job.id, job.name.as_str(), job.attempts);
         let finished = match outcome {
             Outcome::Lost(reason) => {
