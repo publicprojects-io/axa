@@ -1,4 +1,4 @@
-/target
+target/
 /.vibe
 /examples/*/Cargo.lock
 /templates/*/Cargo.lock
