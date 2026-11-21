@@ -423,6 +423,13 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_name_that_is_not_safe_is_refused_rather_than_quoted() {
+        assert!(quoted("axa_test_1").is_ok());
+        let error = quoted("x\"; DROP DATABASE y; --").unwrap_err().to_string();
+        assert!(error.contains("not a safe name"), "{error}");
+    }
+
+    #[test]
     fn a_clone_name_is_safe_and_new_each_time() {
         let (first, second) = (clone_name(), clone_name());
         assert_ne!(first, second);

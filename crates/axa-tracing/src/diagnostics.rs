@@ -188,6 +188,13 @@ mod tests {
     use super::*;
     use crate::test_support::Lines;
 
+    #[test]
+    fn the_runtime_monitor_checks_each_second_and_allows_a_hundred_milliseconds() {
+        let monitor = RuntimeMonitor::default();
+        assert_eq!(monitor.interval, Duration::from_secs(1));
+        assert_eq!(monitor.max_lag, Duration::from_millis(100));
+    }
+
     fn capture() -> (Lines, tracing::subscriber::DefaultGuard) {
         let lines = Lines::default();
         let subscriber = tracing_subscriber::registry().with(lines.layer());

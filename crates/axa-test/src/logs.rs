@@ -133,3 +133,17 @@ impl Logs {
             .clear();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn captured_logs_count_in_their_debug_and_flush_as_a_no_op() {
+        let logs = capture();
+        tracing::info!("one");
+        assert_eq!(format!("{logs:?}"), "Logs { lines: 1 }");
+        let mut buffer = Buffer(Arc::new(Mutex::new(Vec::new())));
+        buffer.flush().unwrap();
+    }
+}
