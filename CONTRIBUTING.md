@@ -106,6 +106,11 @@ AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
   to include the rest, as CI runs them. `bin/coverage` does the same and commits the
   report in [`docs/coverage/`](docs/coverage/). CI's coverage job runs the tests that
   need no server and fails when a section of `tarpaulin.toml` measures under 52% of lines.
+  No one run shows the real figure, as the server tests, the no-database section, and
+  the rest each cover what the others cannot. Run each into its own `--output-dir`, and
+  give every `lcov.info` to `bin/coverage-union`, which counts a line covered when any
+  run covered it and leaves out lines inside `tracing::` macro calls, which read as
+  uncovered in a process where no subscriber was on. `--files N` lists the worst files.
 - **Benchmarks**: `make bench` runs [`benchmarks/`](benchmarks/), with criterion: the
   standard middleware's cost over bare Axum; checking a cursor, signing and verifying a
   webhook with HMAC and Ed25519, and escaping `LIKE` text; and a ping, insert, read by

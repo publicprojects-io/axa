@@ -2317,6 +2317,18 @@ impl<T> Drop for AbortOnDrop<T> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_stored_word_that_is_not_a_known_state_or_act_is_refused() {
+        assert!(JobState::parse("cancelled").is_ok());
+        assert!(ActKind::parse("released").is_ok());
+        let error = JobState::parse("lost").unwrap_err().to_string();
+        assert!(error.contains("unknown status"), "{error}");
+        let error = ActKind::parse("lost").unwrap_err().to_string();
+        assert!(error.contains("unknown kind"), "{error}");
+        let error = Error::NotATenant.to_string();
+        assert!(error.contains("lower-case letters"), "{error}");
+    }
+
     #[tokio::test]
     async fn a_wake_during_a_round_that_found_nothing_is_not_lost() {
         let wake = Notify::new();

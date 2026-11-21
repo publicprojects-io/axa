@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Merge tarpaulin lcov reports into one line-coverage figure.
+
+    bin/coverage-union [--files N] [--keep-tracing] REPORT.info [REPORT.info ...]
+
+One run never shows the real number: the database tests, the no-database section and
+the default section each cover what the others cannot. A line counts as covered when
+any report covered it, so run each as the spec's section 5 lists, with its own
+`--output-dir`, and give every `lcov.info` here.
+
+A line inside a `tracing::info!(...)` call (or `warn`, `error`, `debug`, `trace`, and
+`event`) is left out of the count. Such a macro evaluates its arguments only when a
+subscriber is on for that call site, and `tracing` caches that per process, so the
+lines read as uncovered in a run where the call did run. `--keep-tracing` counts them.
+`--files N` lists the N files with the most uncovered lines, with their line numbers.
+"""
+
+import collections
+import re
+import sys
+
+TRACING = re.compile(r"\btracing::(?:info|warn|error|debug|trace|event)!\s*\(")
+
+
+def tracing_lines(path):
+    """The line numbers of `path` that are part of a tracing macro call."""
+    try:
+        source = open(path, encoding="utf-8").read().split("\n")
+    except OSError:
+        return set()
+    lines = set()
+    depth = 0
+    for number, text in enumerate(source, 1):
+        if depth == 0:
+            found = TRACING.search(text)
+            if not found:
+                continue
+            text = text[found.start():]
+        lines.add(number)
+        # Strings and comments could hold a parenthesis; the macro's own are balanced
+        # in all but pathological code, which only costs a few lines of accuracy.
+        for char in re.sub(r'"(?:\\.|[^"\\])*"', '""', text):
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+    return lines
+
+
+def main(arguments):
+    keep_tracing = "--keep-tracing" in arguments
+    top = 0
+    reports = []
+    skip = False
+    for index, argument in enumerate(arguments):
+        if skip:
+            skip = False
+        elif argument == "--files":
+            top = int(arguments[index + 1])
+            skip = True
+        elif not argument.startswith("--"):
+            reports.append(argument)
+    if not reports:
+        sys.exit(__doc__)
+    hits = collections.defaultdict(lambda: collections.defaultdict(int))
+    for report in reports:
+        current = None
+        for line in open(report, encoding="utf-8"):
+            line = line.strip()
+            if line.startswith("SF:"):
+                current = line[3:]
+            elif line.startswith("DA:") and current:
+                number, count = line[3:].split(",")[:2]
+                number = int(number)
+                hits[current][number] = max(hits[current][number], int(count))
+    total = missed = 0
+    rows = []
+    for path, counts in hits.items():
+        skipped = set() if keep_tracing else tracing_lines(path)
+        lines = {n: c for n, c in counts.items() if n not in skipped}
+        gaps = sorted(n for n, c in lines.items() if c == 0)
+        total += len(lines)
+        missed += len(gaps)
+        if gaps:
+            rows.append((len(gaps), len(lines), path, gaps))
+    percent = 100 * (total - missed) / total if total else 100.0
+    print(f"{percent:.2f}% of {total} lines covered, {missed} not")
+    for count, lines, path, gaps in sorted(rows, reverse=True)[:top]:
+        print(f"{count:4} of {lines:4}  {path}: {' '.join(map(str, gaps[:30]))}")
+
+
+main(sys.argv[1:])

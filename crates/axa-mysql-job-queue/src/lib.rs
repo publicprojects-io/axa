@@ -2460,6 +2460,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_stored_word_that_is_not_a_known_state_or_act_is_refused() {
+        assert!(JobState::parse("cancelled").is_ok());
+        assert!(ActKind::parse("released").is_ok());
+        let error = JobState::parse("lost").unwrap_err().to_string();
+        assert!(error.contains("unknown status"), "{error}");
+        let error = ActKind::parse("lost").unwrap_err().to_string();
+        assert!(error.contains("unknown kind"), "{error}");
+        let error = Error::NotATenant.to_string();
+        assert!(error.contains("lower-case letters"), "{error}");
+    }
+
+    #[test]
     fn each_retry_waits_twice_as_long_up_to_a_limit() {
         let base = Duration::from_secs(30);
         assert_eq!(backoff(base, 1), base);
