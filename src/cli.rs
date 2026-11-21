@@ -313,7 +313,25 @@ pub async fn health(
     ready: bool,
     port: Option<u16>,
 ) -> Result<()> {
-    let config = Config::from_lookup(environment, defaults, |name| std::env::var(name).ok())?;
+    health_from(environment, defaults, ready, port, |name| {
+        std::env::var(name).ok()
+    })
+    .await
+}
+
+/// [`health`], reading settings through `lookup` rather than the process environment.
+///
+/// # Errors
+///
+/// As [`health`].
+pub async fn health_from(
+    environment: &Environment,
+    defaults: &Defaults,
+    ready: bool,
+    port: Option<u16>,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Result<()> {
+    let config = Config::from_lookup(environment, defaults, lookup)?;
     health_with(&config, ready, port).await
 }
 
@@ -414,6 +432,41 @@ pub fn check_report(
 mod tests {
     use super::*;
     use crate::config::REDACTED;
+
+    #[test]
+    fn reading_the_process_arguments_agrees_between_parse_paths() {
+        // The test harness's own arguments decide the outcome; both paths must agree.
+        let read = read(Cli::command()).is_ok();
+        assert_eq!(Cli::try_parse().is_ok(), read);
+    }
+
+    #[tokio::test]
+    async fn health_from_refuses_a_closed_port_and_a_refused_configuration() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        drop(listener);
+        let error = health_from(
+            &Environment::Test,
+            &Defaults::default(),
+            true,
+            Some(port),
+            |name| (name == "SERVER_BINDING").then(|| "127.0.0.1".to_string()),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains(&port.to_string()), "{error}");
+        assert!(
+            health_from(
+                &Environment::Test,
+                &Defaults::default(),
+                false,
+                None,
+                |name| { (name == "SERVER_PORT").then(|| "not a port".to_string()) }
+            )
+            .await
+            .is_err()
+        );
+    }
 
     #[test]
     fn task_arguments_keep_colons_in_values() {

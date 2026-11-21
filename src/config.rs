@@ -1220,6 +1220,24 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    #[test]
+    fn the_process_environment_readers_agree_with_the_lookup_form() {
+        let settings = Settings::from_env(&Environment::Test);
+        assert_eq!(settings.problems(), Vec::<String>::new());
+        // An unset name reads as unset, whatever else the process has set.
+        assert_eq!(settings.optional("AXA_SURELY_UNSET_SETTING_7F3A"), None);
+        let defaults = Defaults {
+            database: "svc",
+            ..Defaults::default()
+        };
+        let from_env = Config::from_env(&Environment::Test, &defaults).is_ok();
+        let from_lookup = Config::from_lookup(&Environment::Test, &defaults, |name| {
+            std::env::var(name).ok()
+        })
+        .is_ok();
+        assert_eq!(from_env, from_lookup);
+    }
+
     fn with(pairs: &[(&str, &str)], environment: &Environment) -> Result<Config> {
         let vars: HashMap<String, String> = pairs
             .iter()

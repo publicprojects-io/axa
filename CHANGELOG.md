@@ -35,6 +35,7 @@ lacks the `sqlite-*` features, as the SQLite crates stay unpublished.
 - `axa-keycloak-auth`: `ReloadablePolicy::watch_file` reloads the ABAC policy when its
   file changes, and `reload_from` reloads it once. A file that does not parse keeps the
   last good policy (KCK-22). The crate now depends on `tokio`, for the watch's timer.
+- `cli::health_from` is `health` reading its settings through a lookup.
 - `cli::check_with` and `cli::health_with` take their inputs rather than reading the
   process environment (CLI-14).
 
