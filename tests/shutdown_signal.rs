@@ -319,3 +319,63 @@ async fn sigterm_lets_a_job_in_progress_finish_beside_a_server() {
     }
     job_outlives_sigterm(TEST, "server and worker").await;
 }
+
+/// A server whose migrations are pending until `pending` says otherwise.
+fn migrations(pending: bool) -> axa::health::Checks {
+    axa::health::Checks::new().migrations(move || async move {
+        Ok::<_, std::convert::Infallible>(if pending {
+            vec!["0001_create".to_string()]
+        } else {
+            Vec::new()
+        })
+    })
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn sigterm_lets_a_job_finish_once_the_migrations_are_done() {
+    const TEST: &str = "sigterm_lets_a_job_finish_once_the_migrations_are_done";
+    if std::env::var_os(ROLE).is_some() {
+        let queue = Arc::new(queue().await);
+        server::run_once_migrated(Some(router()), Some(queue), &config(), &migrations(false))
+            .await
+            .unwrap();
+        return;
+    }
+    job_outlives_sigterm(TEST, "server and worker").await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn sigterm_while_migrations_are_pending_stops_the_wait_and_runs_no_job() {
+    const TEST: &str = "sigterm_while_migrations_are_pending_stops_the_wait_and_runs_no_job";
+    if std::env::var_os(ROLE).is_some() {
+        let queue = Arc::new(queue().await);
+        server::run_once_migrated(Some(router()), Some(queue), &config(), &migrations(true))
+            .await
+            .unwrap();
+        return;
+    }
+    let _table = TABLE.lock().await;
+    let pool = sqlx::PgPool::connect(&database()).await.unwrap();
+    let queue = queue().await;
+    sqlx::query("DELETE FROM axa_queue")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let id = queue
+        .enqueue("SlowWorker", serde_json::json!(10))
+        .await
+        .unwrap();
+    let port = free_port();
+    let mut child = Child::start(TEST, "server and worker", port);
+    // Listening means the server is up, and the jobs are being held back.
+    drop(connect(port));
+    tokio::time::sleep(SETTLE).await;
+    assert_eq!(status_of(&pool, &id).await, "queued");
+
+    child.terminate();
+
+    child.assert_exits_cleanly();
+    assert_eq!(status_of(&pool, &id).await, "queued");
+}
