@@ -2,7 +2,7 @@
 name = "axa-opentelemetry"
 version = "0.1.1"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "OTLP export of traces and request metrics for Axum services."
 readme = "README.md"

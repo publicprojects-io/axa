@@ -119,6 +119,7 @@
 - [server](src/server.rs): Serving, connection limits, and graceful shutdown
 - [store](src/store.rs): Shared in-process store
 - [task](src/task.rs): Command-line tasks
+- [tls](src/tls.rs): The one rustls crypto provider, ring, installed before a connection
 - [validation](src/validation.rs): Validation helpers
 - [worker](src/worker.rs): Background jobs
 
@@ -176,4 +177,4 @@ Each of these gives the same things for its library:
 - [axa-redis-cache](crates/axa-redis-cache/README.md) (feature `redis`): A Redis cache with mandatory expiry for Axum services
 - [axa-openapi-docs](crates/axa-openapi-docs/README.md) (feature `openapi`): OpenAPI documents, a pinned Swagger UI, route listing, and drift checks for Axum services
 - [axa-web-session](crates/axa-web-session/README.md) (feature `session`): Web sessions for Axum services over axum_session, with safe defaults
-- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test, with a check that one tenant cannot reach another's resources, and a Postgres database per test (feature `postgres-sqlx`)
+- [axa-test](crates/axa-test/README.md) (a dev-dependency, not a feature): Request-level test helpers for Axa services, built on axum-test, with a check that one tenant cannot reach another's resources, boots from given settings, one test in a process of its own, and a Postgres database per test (feature `postgres-sqlx`)

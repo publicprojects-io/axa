@@ -57,6 +57,13 @@ allow = [
 
 [bans]
 multiple-versions = "warn"
+# One TLS crypto provider, ring, which `axa::tls` installs. A second would arrive only
+# through a dependency that picked aws-lc-rs, and leave which one serves a connection
+# to whichever installed first.
+deny = [
+    { name = "aws-lc-rs", reason = "Axa uses ring as its one rustls provider" },
+    { name = "aws-lc-sys", reason = "Axa uses ring as its one rustls provider" },
+]
 # The subcrates are path dependencies of a published crate, which cargo-deny
 # reports as wildcards.
 wildcards = "warn"

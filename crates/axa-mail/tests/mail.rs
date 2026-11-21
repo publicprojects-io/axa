@@ -198,3 +198,95 @@ fn an_address_or_message_that_cannot_be_built_is_a_message_error_with_no_source(
         "Mailer { transport: \"memory\", .. }"
     );
 }
+
+/// A server that answers `RCPT` with `refusal`, and everything before it with `250`.
+async fn refusing_server(refusal: &'static str) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        let (read, mut write) = stream.into_split();
+        let mut lines = BufReader::new(read).lines();
+        write.write_all(b"220 test ESMTP\r\n").await.unwrap();
+        while let Ok(Some(line)) = lines.next_line().await {
+            let verb = line.get(..4).unwrap_or("").to_ascii_uppercase();
+            let reply = match verb.as_str() {
+                "EHLO" => "250-test\r\n250 8BITMIME\r\n",
+                "RCPT" => refusal,
+                "QUIT" => "221 bye\r\n",
+                _ => "250 ok\r\n",
+            };
+            if write.write_all(reply.as_bytes()).await.is_err() || verb == "QUIT" {
+                break;
+            }
+        }
+    });
+    port
+}
+
+#[tokio::test]
+async fn a_failure_says_whether_sending_again_later_may_work() {
+    let send = async |url: String| {
+        Mailer::from_url(&url, false)
+            .unwrap()
+            .send(&message("Retry?"))
+            .await
+            .unwrap_err()
+    };
+    let later = send(format!(
+        "smtp://127.0.0.1:{}",
+        refusing_server("451 4.3.0 busy\r\n").await
+    ))
+    .await;
+    assert!(later.is_transient(), "a 4xx: {later}");
+    let never = send(format!(
+        "smtp://127.0.0.1:{}",
+        refusing_server("550 5.1.1 no such user\r\n").await
+    ))
+    .await;
+    assert!(!never.is_transient(), "a 5xx: {never}");
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = closed.local_addr().unwrap().port();
+    drop(closed);
+    let down = send(format!("smtp://127.0.0.1:{port}")).await;
+    assert!(down.is_transient(), "a relay that is down: {down}");
+    let file = Mailer::file("/axa-no-such-folder/mail")
+        .send(&message("Lost"))
+        .await
+        .unwrap_err();
+    assert!(!file.is_transient(), "{file}");
+    assert!(
+        !Mailer::from_url("http://example.com", false)
+            .unwrap_err()
+            .is_transient()
+    );
+}
+
+#[test]
+fn only_one_plain_address_is_safe() {
+    for safe in [
+        "someone@example.org",
+        "a.b+tag@sub.example.org",
+        "üser@example.org",
+    ] {
+        assert!(axa_mail::address_is_safe(safe), "{safe}");
+    }
+    let long = format!("{}@example.org", "a".repeat(250));
+    for unsafe_ in [
+        "",
+        "someone",
+        "@example.org",
+        "someone@",
+        "a@b@example.org",
+        "someone@example.org\r\nBcc: x@evil.example",
+        "a@example.org, b@example.org",
+        "a@example.org;b@example.org",
+        "Name <a@example.org>",
+        "a b@example.org",
+        "\"a\"@example.org",
+        "a@example.org\0",
+        long.as_str(),
+    ] {
+        assert!(!axa_mail::address_is_safe(unsafe_), "{unsafe_:?}");
+    }
+}

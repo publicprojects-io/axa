@@ -12,6 +12,11 @@ minor=${n#*.}
 n2="1.$((minor - 2))"
 n1="1.$((minor - 1))"
 test "$msrv" = "$n2" || { echo "rust-version is $msrv, but N-2 is $n2"; exit 1; }
+# Every crate inherits it, so none can drift, and CI runs that version.
+own=$(grep -L '^rust-version.workspace = true$' crates/*/Cargo.toml || true)
+test -z "$own" || { echo "these do not inherit rust-version: $own"; exit 1; }
+other=$(grep -n 'RUSTUP_TOOLCHAIN: "\|toolchain install [0-9]' .github/workflows/ci.yml | grep -v "\"$msrv\"\| $msrv " || true)
+test -z "$other" || { echo "CI names a version other than $msrv: $other"; exit 1; }
 
 # An installed toolchain for a minor version, such as 1.99.1 for 1.99, so that a patch
 # release already here is used rather than a second copy installed beside it.

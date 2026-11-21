@@ -2,7 +2,7 @@
 name = "axa-web-session"
 version = "0.3.1"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Web sessions for Axum services over axum_session, with safe defaults."
 readme = "README.md"

@@ -307,9 +307,46 @@ jobs:
           cargo clippy --all-targets --config 'patch.crates-io.axa.path="../.."' -- -D warnings
           cargo test --config 'patch.crates-io.axa.path="../.."'
 
+  coverage:
+    name: coverage floor (cargo-tarpaulin, no database servers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-tarpaulin
+      # The tests that need no server measure 68% of lines on 21 November 2026, and with
+      # the database and S3 suites, 95%. The floor stops coverage falling; raise it as
+      # coverage rises.
+      - run: cargo tarpaulin --config tarpaulin.toml --fail-under 66
+
+  mutants:
+    name: mutation test of the changed lines (cargo-mutants)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-mutants
+      # The branch's own lines only, and none that need a database server.
+      - run: bin/mutants-diff "origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
   supply-chain:
     name: supply chain (advisories, licences, sources)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       # The runner's own stable, over the pin in `rust-toolchain.toml`.
       RUSTUP_TOOLCHAIN: stable
@@ -327,6 +364,7 @@ jobs:
   workflows:
     name: workflow audit (zizmor)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -339,6 +377,7 @@ jobs:
   secrets:
     name: secret scan (gitleaks, whole history)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

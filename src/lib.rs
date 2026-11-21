@@ -126,6 +126,7 @@ pub mod routes;
 pub mod server;
 pub mod store;
 pub mod task;
+pub mod tls;
 #[cfg(feature = "upload")]
 pub mod upload;
 #[cfg(feature = "model")]

@@ -2,7 +2,7 @@
 name = "axa-mysql-toasty"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Toasty connections, migrations, and test resets for Axum services, on MySQL."
 readme = "README.md"

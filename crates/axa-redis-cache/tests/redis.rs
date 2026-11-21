@@ -373,3 +373,27 @@ async fn tenants_keep_their_keys_apart_in_redis() {
     assert_eq!(acme.get::<Item>("a").await.unwrap(), Some(item()));
     assert!(acme.delete("a").await.unwrap());
 }
+
+#[tokio::test]
+async fn a_redis_that_is_down_at_boot_does_not_stop_the_service() {
+    let config = CacheConfig {
+        timeout: std::time::Duration::from_millis(300),
+        ..CacheConfig::new("redis://127.0.0.1:1", "boot", MINUTE)
+    };
+    let started = std::time::Instant::now();
+    let cache = Cache::connect(&config)
+        .await
+        .expect("it builds without Redis");
+    assert!(cache.ping().await.is_err(), "readiness says so");
+    assert!(cache.get::<u32>("a").await.is_err());
+    assert!(cache.set("a", &1_u32).await.is_err());
+    let loaded = cache
+        .get_or_load("a", || async { Ok::<_, String>(7_u32) })
+        .await;
+    assert_eq!(loaded.unwrap(), 7, "a load still answers");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        started.elapsed()
+    );
+}

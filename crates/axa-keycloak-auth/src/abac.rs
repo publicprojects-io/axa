@@ -533,8 +533,9 @@ impl Decision {
 /// panic elsewhere never makes `current`/`store` panic (verifier rule:
 /// no panics in the API).
 ///
-/// The **trigger** (a file-mtime watch, a signal, an admin endpoint) is
-/// the service's concern — this type only holds and swaps the value.
+/// [`watch_file`](Self::watch_file) reloads it when its file changes;
+/// another trigger, such as a signal or an operator route, calls
+/// [`reload_from`](Self::reload_from) or [`store`](Self::store).
 #[derive(Debug)]
 pub struct ReloadablePolicy {
     inner: std::sync::RwLock<std::sync::Arc<Policy>>,
@@ -569,6 +570,72 @@ impl ReloadablePolicy {
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = std::sync::Arc::new(policy);
     }
+
+    /// Read the policy at `path` and make it the active one. A file that cannot be
+    /// read, or does not parse, changes nothing, so the last good policy stays.
+    ///
+    /// # Errors
+    ///
+    /// When the file cannot be read or is not a policy.
+    pub fn reload_from(&self, path: &std::path::Path) -> Result<(), ReloadError> {
+        let text = std::fs::read_to_string(path).map_err(ReloadError::Read)?;
+        self.store(Policy::from_json(&text).map_err(ReloadError::Parse)?);
+        Ok(())
+    }
+
+    /// Poll the file at `path` every `every`, and [`reload_from`](Self::reload_from)
+    /// it each time its contents change. The first poll only notes what is there,
+    /// as the policy loaded at boot came from it. A change that cannot be read or does
+    /// not parse is logged as a warning and keeps the last good policy, as a half
+    /// written file must not open or close every route. Abort the handle to stop it.
+    ///
+    /// # Panics
+    ///
+    /// Outside a Tokio runtime.
+    #[must_use = "keep the handle to be able to stop the watch"]
+    pub fn watch_file(
+        self: &std::sync::Arc<Self>,
+        path: impl Into<std::path::PathBuf>,
+        every: std::time::Duration,
+    ) -> tokio::task::JoinHandle<()> {
+        let path = path.into();
+        let policy = std::sync::Arc::clone(self);
+        tokio::spawn(async move {
+            let mut seen = std::fs::read(&path).ok();
+            loop {
+                tokio::time::sleep(every).await;
+                let now = std::fs::read(&path).ok();
+                if now == seen {
+                    continue;
+                }
+                seen = now;
+                // Where it failed, never the parser's text, which can quote the file,
+                // and a policy can name people.
+                match policy.reload_from(&path) {
+                    Ok(()) => tracing::info!("abac_policy_reloaded"),
+                    Err(ReloadError::Read(error)) => {
+                        tracing::warn!(kind = %error.kind(), "abac_policy_kept");
+                    }
+                    Err(ReloadError::Parse(error)) => tracing::warn!(
+                        line = error.line(),
+                        column = error.column(),
+                        "abac_policy_kept"
+                    ),
+                }
+            }
+        })
+    }
+}
+
+/// Why [`ReloadablePolicy::reload_from`] kept the policy it had.
+#[derive(Debug, thiserror::Error)]
+pub enum ReloadError {
+    /// The file could not be read.
+    #[error("the policy file cannot be read: {0}")]
+    Read(#[source] std::io::Error),
+    /// The file is not a policy.
+    #[error("the policy file is not a policy: {0}")]
+    Parse(#[source] serde_json::Error),
 }
 
 /// Engine unit tests — pure, offline, per
@@ -856,6 +923,85 @@ mod tests {
         let plain = policy.evaluate(&claims_with_attrs(&[]), Action::Read, "case");
         assert!(plain.allowed); // default allow-read
         assert!(plain.obligations.is_empty());
+    }
+
+    const ALLOW_ALL: &str =
+        r#"{"rules":[{"effect":"allow","actions":["write","destructive"],"when":{}}]}"#;
+    const DENY_ALL: &str =
+        r#"{"rules":[{"effect":"deny","actions":["read","write","destructive"],"when":{}}]}"#;
+
+    fn policy_file(name: &str, text: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "axa-abac-{name}-{}-{:?}.json",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        std::fs::write(&path, text).unwrap();
+        path
+    }
+
+    #[test]
+    fn a_policy_reloads_from_its_file_and_a_bad_one_keeps_the_last() {
+        let reloadable = ReloadablePolicy::new(Policy::default_policy());
+        let path = policy_file("reload", ALLOW_ALL);
+        reloadable.reload_from(&path).unwrap();
+        assert_eq!(*reloadable.current(), Policy::from_json(ALLOW_ALL).unwrap());
+        std::fs::write(&path, "{\"rules\": [").unwrap();
+        assert!(matches!(
+            reloadable.reload_from(&path),
+            Err(ReloadError::Parse(_))
+        ));
+        std::fs::remove_file(&path).unwrap();
+        assert!(matches!(
+            reloadable.reload_from(&path),
+            Err(ReloadError::Read(_))
+        ));
+        assert_eq!(
+            *reloadable.current(),
+            Policy::from_json(ALLOW_ALL).unwrap(),
+            "the last good policy stays"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_watched_file_reloads_when_it_changes_and_not_before() {
+        let path = policy_file("watch", ALLOW_ALL);
+        let reloadable = std::sync::Arc::new(ReloadablePolicy::new(Policy::default_policy()));
+        let watch = reloadable.watch_file(&path, std::time::Duration::from_millis(10));
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        assert_eq!(
+            *reloadable.current(),
+            Policy::default_policy(),
+            "what was there at boot is not loaded again"
+        );
+        let until = async |wanted: &Policy| {
+            for _ in 0..300 {
+                if *reloadable.current() == *wanted {
+                    return true;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            false
+        };
+        std::fs::write(&path, DENY_ALL).unwrap();
+        assert!(
+            until(&Policy::from_json(DENY_ALL).unwrap()).await,
+            "the change was read"
+        );
+        std::fs::write(&path, "{\"rules\": [").unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+        assert_eq!(
+            *reloadable.current(),
+            Policy::from_json(DENY_ALL).unwrap(),
+            "kept"
+        );
+        std::fs::write(&path, ALLOW_ALL).unwrap();
+        assert!(
+            until(&Policy::from_json(ALLOW_ALL).unwrap()).await,
+            "and the next good one"
+        );
+        watch.abort();
+        std::fs::remove_file(&path).unwrap();
     }
 
     #[test]

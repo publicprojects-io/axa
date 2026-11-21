@@ -2,7 +2,7 @@
 name = "axa-problem"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "RFC 9457 problem details responses for Axum services."
 readme = "README.md"

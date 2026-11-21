@@ -267,17 +267,27 @@ impl std::fmt::Debug for Cache {
 }
 
 impl Cache {
-    /// Connect.
+    /// Connect, without waiting for Redis: a cache is an optimisation, so a Redis that
+    /// is down at boot must not stop the service. The first call connects, as does
+    /// each after a lost connection, each attempt within [`CacheConfig::timeout`], and
+    /// until Redis answers every call fails within that time and [`Cache::ping`] says
+    /// so for readiness.
     ///
     /// # Errors
     ///
-    /// Fails when the URL is invalid or Redis cannot be reached, or when the
-    /// default TTL is below one millisecond.
+    /// Fails when the URL is invalid, or when the default TTL is below one millisecond.
+    #[allow(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "it waited for Redis before, and callers await it"
+    )]
     pub async fn connect(config: &CacheConfig) -> Result<Self, Error> {
         ttl_millis(config.default_ttl)?;
         let client = redis::Client::open(config.url.as_str())?;
+        let manager =
+            redis::aio::ConnectionManagerConfig::new().set_connection_timeout(Some(config.timeout));
         Ok(Self {
-            backend: Backend::Redis(ConnectionManager::new(client).await?),
+            backend: Backend::Redis(ConnectionManager::new_lazy_with_config(client, manager)?),
             prefix: config.prefix.clone(),
             tenant: None,
             default_ttl: config.default_ttl,

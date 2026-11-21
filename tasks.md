@@ -19,6 +19,31 @@ Each uses an existing Axa interface or maintainer tool.
 | T-59 | Implemented | S | Run `bin/benchmarks` against `benchmarks/Cargo.toml`. Accept a report only if middleware, primitives and SQLite produced measurements. Record the revision, Rust version, host and optional database backends. An empty stream or failed runner must exit nonzero and preserve the previous report. |
 | T-60 | Open, gated on the driver | M | Retire the tracked SQLite advisory exception before releasing the held adapters. Confirm the resolved SQLite bindings include the fix, remove the exception from both audit configurations, and pass the SQLite queue and adapter suites plus `cargo audit` and `cargo deny --all-features check advisories`. See the [existing exception](.cargo/audit.toml). |
 
+## From the consuming services, week of 16 November 2026
+
+What `project-portfolio-management`, `contact-relationship-management`, and
+`workforce-planning-management` changed this week, read for what belongs in Axa. T-61 to
+T-71 are done.
+
+| Id | Status | Effort | Work and acceptance criteria |
+|---|---|---|---|
+| T-61 | Fixed, unreleased | S | `axa-redis-cache`: a Redis that is down at boot does not stop the service. `Cache::connect` builds without reaching Redis, so each call fails within `timeout` until Redis answers, and `ping` says so for readiness. |
+| T-62 | Fixed, unreleased | S | Require `authentication-verifier` 0.9.4, so neither 0.9.0 and 0.9.1, before the audience check, nor 0.9.3, which panics on every key fetch, can resolve. |
+| T-63 | Done, unreleased | S | One public, idempotent `axa::tls::install_provider()`, which installs ring, called before `axa` opens a connection and by `axa-test` before a test boots. `deny.toml` bans `aws-lc-rs` and `aws-lc-sys`, so a second provider cannot arrive unseen. |
+| T-64 | Done, unreleased | M | Tests that need no process environment: `TestApp::boot_test_with(lookup)` and `axa_test::request_with`; `cli::check_with` and `cli::health_with` take their inputs, and the logger keeps reading `RUST_LOG`, as a process-wide subscriber should; `axa_test::own_process!` runs one test in a process of its own, for state read once. |
+| T-65 | Done, unreleased | S | A setting that Axa renamed or retired is refused in production and warned about elsewhere, naming its replacement, as `check` reports it. |
+| T-66 | Done, unreleased | S | `axa-mail`: `Error::is_transient` tells a failure worth retrying from one that is not, and `address_is_safe` refuses an address with a line break, separator, or space. |
+| T-67 | Done, unreleased | S | `Http::cross_site_paths` takes a prefix ending `/*`, such as `/forms/*`, as well as an exact path. |
+| T-68 | Done, unreleased | S | `axa::error::Problems` gathers field errors, each with a JSON Pointer and a fixed detail, and answers them as one `422`. `axa::extract::SafeInt` refuses an integer a JSON client cannot hold exactly. |
+| T-69 | Done, unreleased | S | `axa-keycloak-auth`: `ReloadablePolicy::watch_file` reloads the ABAC policy when its file changes, and keeps the last good one when the new one does not parse. |
+| T-70 | Done | S | CI: every job has `timeout-minutes`; every crate takes `rust-version` from the workspace, which `bin/make-ci-minimum-supported-rust-version` checks with CI's versions; a coverage job fails under 66% of lines, from 68% with no database server. |
+| T-71 | Done | S | `bin/mutants-diff` runs `cargo mutants --in-diff` on a branch's changed lines, with paths from the workspace root, fails when the diff matched no mutant, and makes its output directory first. |
+
+Wait for a second consumer (P-2), or a new dependency, before: a deployment id checked at
+boot against the database, `security.txt`, a periodic sweep runner with `run_once`, a fan-out
+outbox sink, jiff timestamp types for sqlx, a ring backend for jsonwebtoken 10, and a
+tamper-evident audit log.
+
 ## Stage 1: close the holes, with no new dependency
 
 Done in Axa 0.11.0 (#23). T-7 needed no `no_store` helper of its own: neither auth crate

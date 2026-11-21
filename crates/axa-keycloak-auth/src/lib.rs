@@ -117,7 +117,9 @@ mod guard;
 pub mod keycloak;
 mod tenant;
 
-pub use abac::{Action, ActionPattern, Decision, Effect, Policy, ReloadablePolicy, Rule};
+pub use abac::{
+    Action, ActionPattern, Decision, Effect, Policy, ReloadError, ReloadablePolicy, Rule,
+};
 pub use guard::{
     Allowed, AuthUser, Guard, GuardConfig, PasetoVerifier, Rejection, bearer_token, derive_action,
     middleware,

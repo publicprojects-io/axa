@@ -514,9 +514,9 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "authentication-verifier"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53ddbd563e15b014b35faf1823cb5f5313bb8126cdf6f23addd40eadacc42bac"
+checksum = "c40381cdc7a7e858f38b132921fc5bd0cece722d0ff83d84cf9c577148932463"
 dependencies = [
  "base64 0.23.1",
  "rusty_paseto",
@@ -578,6 +578,7 @@ dependencies = [
  "hyper-util",
  "maud",
  "ppp",
+ "rustls",
  "sea-orm",
  "serde",
  "serde_json",
@@ -6342,7 +6343,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

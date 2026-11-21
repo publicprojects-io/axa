@@ -277,7 +277,21 @@ pub fn parse_vars(params: &[String]) -> Result<Vars> {
 ///
 /// Fails when the configuration is refused, so `main` exits non-zero.
 pub fn check(environment: &Environment, defaults: &Defaults) -> Result<()> {
-    let report = check_report(environment, defaults, |name| std::env::var(name).ok())?;
+    check_with(environment, defaults, |name| std::env::var(name).ok())
+}
+
+/// [`check`], reading settings through `lookup` rather than the process environment,
+/// so that a test, or a service that reads its settings from elsewhere, can run it.
+///
+/// # Errors
+///
+/// As [`check`].
+pub fn check_with(
+    environment: &Environment,
+    defaults: &Defaults,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Result<()> {
+    let report = check_report(environment, defaults, lookup)?;
     print!("{report}");
     Ok(())
 }
@@ -300,6 +314,17 @@ pub async fn health(
     port: Option<u16>,
 ) -> Result<()> {
     let config = Config::from_lookup(environment, defaults, |name| std::env::var(name).ok())?;
+    health_with(&config, ready, port).await
+}
+
+/// [`health`], for a configuration the service already holds, such as one with
+/// settings of its own, rather than one read again from the process environment.
+///
+/// # Errors
+///
+/// When the server cannot be reached in [`HEALTH_TIMEOUT`], or answers other than
+/// `2xx`.
+pub async fn health_with(config: &Config, ready: bool, port: Option<u16>) -> Result<()> {
     let port = port
         .or(config.server.internal_port)
         .unwrap_or(config.server.port);
@@ -795,5 +820,45 @@ mod tests {
             .unwrap();
         let asked = server.await.unwrap();
         assert!(asked.starts_with("GET /_health/live "), "{asked}");
+    }
+
+    #[tokio::test]
+    async fn health_with_asks_the_configured_internal_port_or_the_one_given() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let (internal, server) = answering("HTTP/1.1 200 OK\r\ncontent-length: 0\r\n\r\n").await;
+        let internal_port = internal.to_string();
+        let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
+            (name == "INTERNAL_PORT").then(|| internal_port.clone())
+        })
+        .unwrap();
+        health_with(&config, false, None).await.unwrap();
+        assert!(server.await.unwrap().starts_with("GET /_health/live "));
+        let (given, server) = answering("HTTP/1.1 204 No Content\r\n\r\n").await;
+        health_with(&config, true, Some(given)).await.unwrap();
+        assert!(server.await.unwrap().starts_with("GET /_health/ready "));
+    }
+
+    #[test]
+    fn check_with_reads_its_settings_through_the_lookup() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let asked = std::cell::RefCell::new(Vec::new());
+        check_with(&Environment::Test, &defaults, |name| {
+            asked.borrow_mut().push(name.to_string());
+            None
+        })
+        .unwrap();
+        let asked = asked.into_inner();
+        for name in ["PORT", "BINDING", "DB_URL"] {
+            assert!(
+                asked.iter().any(|asked| asked == name),
+                "{name} in {asked:?}"
+            );
+        }
     }
 }

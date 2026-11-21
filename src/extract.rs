@@ -264,6 +264,59 @@ impl<T: Serialize> Serialize for Patch<T> {
     }
 }
 
+/// The largest integer a JSON client that reads numbers as IEEE 754 doubles, as
+/// JavaScript does, holds exactly: 2^53 - 1.
+pub const MAX_SAFE_INT: i64 = (1 << 53) - 1;
+
+/// An integer every JSON client reads exactly, such as an amount in minor units: one
+/// beyond [`MAX_SAFE_INT`] either way is refused when read, so a body field of this
+/// type is a `422` with a pointer to it (ERR-15), and refused by [`SafeInt::new`] when
+/// made, so none is sent that a browser would round.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[serde(transparent)]
+pub struct SafeInt(i64);
+
+impl SafeInt {
+    /// `value`, or `None` beyond [`MAX_SAFE_INT`] either way.
+    #[must_use]
+    pub const fn new(value: i64) -> Option<Self> {
+        if value.unsigned_abs() <= MAX_SAFE_INT.unsigned_abs() {
+            Some(Self(value))
+        } else {
+            None
+        }
+    }
+
+    /// The integer.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+impl From<SafeInt> for i64 {
+    fn from(value: SafeInt) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<i64> for SafeInt {
+    type Error = i64;
+
+    fn try_from(value: i64) -> Result<Self, i64> {
+        Self::new(value).ok_or(value)
+    }
+}
+
+impl<'de> Deserialize<'de> for SafeInt {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = i64::deserialize(deserializer)?;
+        Self::new(value).ok_or_else(|| {
+            serde::de::Error::custom("an integer beyond what a JSON client holds exactly")
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use axum::{
@@ -583,5 +636,61 @@ mod tests {
             page.contains("<p>Enter a whole email address</p>"),
             "{page}"
         );
+    }
+
+    #[test]
+    fn a_safe_int_holds_what_a_json_client_holds_exactly_and_no_more() {
+        assert_eq!(
+            SafeInt::new(MAX_SAFE_INT).map(SafeInt::get),
+            Some(MAX_SAFE_INT)
+        );
+        assert_eq!(
+            SafeInt::new(-MAX_SAFE_INT).map(i64::from),
+            Some(-MAX_SAFE_INT)
+        );
+        assert_eq!(SafeInt::new(MAX_SAFE_INT + 1), None);
+        assert_eq!(SafeInt::new(i64::MIN), None);
+        assert_eq!(SafeInt::try_from(MAX_SAFE_INT + 1), Err(MAX_SAFE_INT + 1));
+        let read: SafeInt = serde_json::from_str("9007199254740991").unwrap();
+        assert_eq!(serde_json::to_string(&read).unwrap(), "9007199254740991");
+        assert!(serde_json::from_str::<SafeInt>("9007199254740992").is_err());
+        assert!(serde_json::from_str::<SafeInt>("-9007199254740992").is_err());
+        assert!(serde_json::from_str::<SafeInt>("1.5").is_err());
+    }
+
+    #[tokio::test]
+    async fn a_body_field_beyond_a_safe_int_is_a_422_pointing_at_it() {
+        #[derive(Deserialize)]
+        struct Deal {
+            #[allow(dead_code, reason = "only read")]
+            amount_minor: SafeInt,
+        }
+        let app = axum::Router::new().route(
+            "/deals",
+            axum::routing::post(|Json(_): Json<Deal>| async { "kept" }),
+        );
+        let send = async |body: &'static str| {
+            use tower::ServiceExt;
+            let request = axum::http::Request::post("/deals")
+                .header("content-type", "application/json")
+                .body(axum::body::Body::from(body))
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            let status = response.status();
+            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            (
+                status,
+                serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default(),
+            )
+        };
+        assert_eq!(
+            send(r#"{"amount_minor": 12345}"#).await.0,
+            axum::http::StatusCode::OK
+        );
+        let (status, body) = send(r#"{"amount_minor": 9007199254740993}"#).await;
+        assert_eq!(status, axum::http::StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["errors"][0]["pointer"], "#/amount_minor");
     }
 }

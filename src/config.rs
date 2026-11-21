@@ -217,9 +217,11 @@ pub struct Http {
     /// Routes with their own timeout, checked in order. Set these in code,
     /// for a route such as a large upload that legitimately takes longer.
     pub timeout_overrides: Vec<TimeoutOverride>,
-    /// Paths, matched exactly, where the cross-site write guard lets a cross-site
-    /// request through, such as an identity provider's `form_post` callback. Set these
-    /// in code, and only for a route that checks the request some other way.
+    /// Paths where the cross-site write guard lets a cross-site request through, such
+    /// as an identity provider's `form_post` callback. Each is matched exactly, or, when
+    /// it ends `/*`, such as `/forms/*`, as a prefix of the paths below it. `/*` alone is
+    /// refused. Set these in code, and only for routes that check the request some
+    /// other way.
     pub cross_site_paths: Vec<String>,
     /// Origins allowed by CORS. `["*"]` allows any and is refused in
     /// production-like environments. Empty sends no CORS headers.
@@ -451,6 +453,41 @@ fn session_settings_need_postgres_or_mysql<F: Fn(&str) -> Option<String>>(
     }
 }
 
+/// Settings `axa` once read under another name, and the name it reads now, or `None`
+/// for one it reads no longer. [`Config::from_lookup`] refuses each in production and
+/// warns about it elsewhere, as [`Settings::renamed`] says.
+pub const RENAMED: &[(&str, Option<&str>)] = &[
+    ("DATABASE_URL", Some("DB_URL")),
+    (
+        "BODY_LIMIT_BYTES",
+        Some("HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT"),
+    ),
+    (
+        "HEADER_READ_TIMEOUT_SECONDS",
+        Some("HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS"),
+    ),
+    ("HTTP_CSP", Some("HTTP_CONTENT_SECURITY_POLICY")),
+    ("LOCO_ENV", Some("APP_ENV")),
+];
+
+/// Note each of [`RENAMED`] that is set, and in production refuse at once, naming them.
+fn refuse_renamed<F: Fn(&str) -> Option<String>>(
+    vars: &Settings<F>,
+    production: bool,
+) -> Result<()> {
+    let renamed = RENAMED
+        .iter()
+        .filter(|(old, new)| vars.renamed(old, *new))
+        .count();
+    if production && renamed > 0 {
+        return Err(Error::string(&format!(
+            "invalid settings: {}",
+            vars.problems.borrow().join("; ")
+        )));
+    }
+    Ok(())
+}
+
 /// Typed reads of a service's settings, with Axa's rules: a blank value counts as
 /// unset, a value that is set but invalid is a problem, the problems are named all at
 /// once, and no secret is ever quoted.
@@ -518,6 +555,22 @@ impl<F: Fn(&str) -> Option<String>> Settings<F> {
     /// The value of `name`, when it is set to something other than blanks.
     pub fn optional(&self, name: &str) -> Option<String> {
         (self.lookup)(name).filter(|value| !value.trim().is_empty())
+    }
+
+    /// Note a problem when `old`, a name the service no longer reads, is set, naming
+    /// `new`, the one it reads in its place, or saying it is gone when `new` is `None`.
+    /// So a deploy config that still sets an old name is refused in production rather
+    /// than run on a default nobody chose, and is warned about elsewhere. Returns
+    /// whether `old` was set.
+    pub fn renamed(&self, old: &str, new: Option<&str>) -> bool {
+        if self.optional(old).is_none() {
+            return false;
+        }
+        self.problem(match new {
+            Some(new) => format!("{old} is no longer read: set {new}"),
+            None => format!("{old} is no longer read, and nothing takes its place"),
+        });
+        true
     }
 
     /// The value of `name`. An unset one is a problem.
@@ -941,6 +994,10 @@ impl Config {
         let production = environment.is_production_like();
         let test = *environment == Environment::Test;
 
+        // Before anything else is read, so that a production service that still sets an
+        // old name is told the new one, rather than that the new one is missing.
+        refuse_renamed(&vars, production)?;
+
         let uri = database_uri(&vars, environment, defaults)?;
         let cors_origins = cors_origins(&vars, production)?;
 
@@ -1252,6 +1309,53 @@ mod tests {
             assert!(with(&allowed, &Environment::Production).is_ok(), "{uri}");
             assert!(with(&[("DB_URL", uri)], &Environment::Development).is_ok());
         }
+    }
+
+    #[test]
+    fn a_name_axa_no_longer_reads_is_refused_in_production_naming_its_replacement() {
+        let url = ("DB_URL", "postgres://localhost/x");
+        for (old, new) in RENAMED {
+            let new = new.unwrap();
+            // Alone, as a deploy config that was never updated sets it.
+            let error = with(&[(old, "1")], &Environment::Production)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains(&format!("{old} is no longer read: set {new}")),
+                "{error}"
+            );
+            let warned = with(&[url, (old, "1")], &Environment::Development).unwrap();
+            assert!(
+                warned
+                    .logger
+                    .warnings
+                    .iter()
+                    .any(|warning| warning.contains(old)),
+                "{old}: {:?}",
+                warned.logger.warnings
+            );
+        }
+        // Blank counts as unset, as every setting does.
+        assert!(with(&[url, ("DATABASE_URL", " ")], &Environment::Production).is_ok());
+    }
+
+    #[test]
+    fn a_service_names_its_own_retired_settings_too() {
+        let set = |name: &str| (name == "SVC_OLD").then(|| "on".to_string());
+        let settings = Settings::from_lookup(&Environment::Production, set);
+        assert!(settings.renamed("SVC_OLD", Some("SVC_NEW")));
+        assert!(!settings.renamed("SVC_UNSET", None));
+        let error = settings.finish().unwrap_err().to_string();
+        assert!(
+            error.contains("SVC_OLD is no longer read: set SVC_NEW"),
+            "{error}"
+        );
+        let gone = Settings::from_lookup(&Environment::Development, set);
+        gone.renamed("SVC_OLD", None);
+        assert_eq!(
+            gone.finish().unwrap(),
+            ["SVC_OLD is no longer read, and nothing takes its place"]
+        );
     }
 
     #[test]

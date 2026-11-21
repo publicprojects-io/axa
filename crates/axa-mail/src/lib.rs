@@ -100,6 +100,47 @@ impl std::error::Error for Error {
     }
 }
 
+impl Error {
+    /// Whether the same message may go if sent again later, as a job retries it: the
+    /// server answered "try later" (a `4xx`), timed out, or could not be reached. A
+    /// refusal for good (a `5xx`), a TLS failure, a message that cannot be built, and
+    /// the file transport's failures are not, as sending again would fail the same way.
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::Smtp(error) => {
+                error.is_transient()
+                    || error.is_timeout()
+                    || !(error.is_permanent()
+                        || error.is_client()
+                        || error.is_response()
+                        || error.is_tls())
+            }
+            Self::Url | Self::Refused(_) | Self::Message(_) | Self::File(_) => false,
+        }
+    }
+}
+
+/// Whether `address` is one plain address, safe to hand on as a recipient or sender:
+/// a local part and a domain around one `@`, at most 254 bytes, with no space, control
+/// character, or `,` `;` `<` `>` `"` `(` `)`. So text that would add a header or a second
+/// recipient, as a name a person typed can, is refused before any message is built.
+#[must_use]
+pub fn address_is_safe(address: &str) -> bool {
+    let Some((local, domain)) = address.split_once('@') else {
+        return false;
+    };
+    !local.is_empty()
+        && !domain.is_empty()
+        && !domain.contains('@')
+        && address.len() <= 254
+        && !address.chars().any(|c| {
+            c.is_whitespace()
+                || c.is_control()
+                || matches!(c, ',' | ';' | '<' | '>' | '"' | '(' | ')')
+        })
+}
+
 impl From<lettre::address::AddressError> for Error {
     fn from(error: lettre::address::AddressError) -> Self {
         Self::Message(error.to_string())

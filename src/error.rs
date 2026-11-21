@@ -366,6 +366,92 @@ fn reason_code(status: StatusCode) -> Option<String> {
     Some(reason.replace(' ', "_").replace('\'', ""))
 }
 
+/// Field errors gathered while checking a request, answered together as one `422`
+/// problem whose `errors` member lists `{"pointer", "detail"}` for each (RFC 9457
+/// section 3, with RFC 6901 pointers), so a caller fixes them all at once:
+///
+/// ```
+/// use axa::error::Problems;
+///
+/// let mut problems = Problems::new();
+/// problems.field(&["amount"], "must be greater than zero");
+/// problems.field(&["lines", "0", "sku"], "is required");
+/// let error = problems.finish().unwrap_err();
+/// ```
+///
+/// A detail is the service's fixed text. Quoting what the caller sent in one is the
+/// caller's text in a server's answer, which this type leaves to no one.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Problems {
+    errors: Vec<(String, String)>,
+}
+
+impl Problems {
+    /// No problems yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Note that the value at `path`, given as its keys and indexes, such as
+    /// `["lines", "0", "sku"]`, is wrong for the reason `detail`.
+    pub fn field(&mut self, path: &[&str], detail: impl Into<String>) {
+        self.errors.push((pointer(path), detail.into()));
+    }
+
+    /// Whether nothing was noted.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// `Ok` when nothing was noted, and otherwise the `422` listing each problem in the
+    /// order noted.
+    ///
+    /// # Errors
+    ///
+    /// When any problem was noted.
+    pub fn finish(self) -> Result<()> {
+        if self.errors.is_empty() {
+            return Ok(());
+        }
+        let errors: Vec<serde_json::Value> = self
+            .errors
+            .into_iter()
+            .map(|(pointer, detail)| serde_json::json!({ "pointer": pointer, "detail": detail }))
+            .collect();
+        let status = StatusCode::UNPROCESSABLE_ENTITY;
+        Err(Error::CustomError(
+            status,
+            ErrorDetail {
+                code: reason_code(status),
+                detail: Some("The request has fields that are not valid".to_string()),
+                errors: Some(serde_json::Value::Array(errors)),
+            },
+        ))
+    }
+}
+
+/// The JSON Pointer to `path`, as a URI fragment: `#/lines/0/sku`, with `~` and `/`
+/// escaped in a key as RFC 6901 says, any other byte but a letter, digit, `-`, `.`,
+/// `_`, or `~` percent-encoded, as a fragment needs, and `#` for the whole body.
+#[must_use]
+pub fn pointer(path: &[&str]) -> String {
+    use std::fmt::Write as _;
+    let mut pointer = String::from("#");
+    for key in path {
+        pointer.push('/');
+        for byte in key.replace('~', "~0").replace('/', "~1").bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+                pointer.push(char::from(byte));
+            } else {
+                let _ = write!(pointer, "%{byte:02X}");
+            }
+        }
+    }
+    pointer
+}
+
 /// The body every internal failure shares. It carries no `detail`, as the title
 /// says all a client may be told.
 fn internal() -> (StatusCode, ErrorDetail) {
@@ -1228,6 +1314,34 @@ mod tests {
             text,
             r#"{"type":"about:blank","title":"Bad Request","status":400,"code":"validation","errors":{"name":[{"code":"length","message":"is required"}]}}"#
         );
+    }
+
+    #[tokio::test]
+    async fn problems_answer_together_as_one_422_with_a_pointer_each() {
+        assert!(Problems::new().finish().is_ok(), "nothing noted");
+        let mut problems = Problems::new();
+        assert!(problems.is_empty());
+        problems.field(&["amount"], "must be greater than zero");
+        problems.field(&["lines", "0", "sku"], "is required");
+        assert!(!problems.is_empty());
+        let (status, body) = problem_of(problems.finish().unwrap_err()).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "unprocessable_entity");
+        assert_eq!(
+            body["errors"],
+            serde_json::json!([
+                { "pointer": "#/amount", "detail": "must be greater than zero" },
+                { "pointer": "#/lines/0/sku", "detail": "is required" },
+            ])
+        );
+    }
+
+    #[test]
+    fn a_pointer_escapes_its_keys_as_rfc_6901_and_a_fragment_need() {
+        assert_eq!(pointer(&[]), "#");
+        assert_eq!(pointer(&["a/b", "m~n"]), "#/a~1b/m~0n");
+        assert_eq!(pointer(&["first name", "50%"]), "#/first%20name/50%25");
+        assert_eq!(pointer(&["café"]), "#/caf%C3%A9");
     }
 
     #[cfg(feature = "model")]

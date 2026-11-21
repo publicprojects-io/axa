@@ -2,7 +2,7 @@
 name = "axa-idempotency-key"
 version = "0.2.3"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Idempotency-Key handling over Postgres for Axum services."
 readme = "README.md"

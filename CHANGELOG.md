@@ -5,6 +5,40 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `axa::tls::install_provider()` installs ring as the process's rustls crypto provider,
+  and is safe to call again. `db::connect`, `AppContext::new`, and `axa-test`'s
+  `boot_test` and `request` call it, so a reqwest client built with
+  `rustls-no-provider` no longer panics in a test or after boot (SRV-18). `axa` now
+  depends on `rustls` directly, already in the build through `sqlx`.
+- `TestApp::boot_test_with(lookup)`, with `axa_test::boot_test_with`, `request_with`, and
+  `lookup`, boots a service with the settings a test names, so tests set no process
+  environment. A service that does not implement it is refused (TST-11).
+- `axa_test::own_process!()` runs one test alone in a fresh process of the same binary,
+  for state a service reads once (TST-12).
+- `axa-mail`: `Error::is_transient` says whether sending again later may work, as a job's
+  retry needs, and `address_is_safe` refuses an address that would add a header or a
+  second recipient (MAIL-9).
+- `Http::cross_site_paths` takes a prefix ending `/*`, such as `/forms/*`, for routes
+  added at run time. `/*` alone is refused (MID-27).
+- `axa::error::Problems` gathers field errors into one `422` with a JSON Pointer each, and
+  `axa::extract::SafeInt` refuses an integer a JSON client cannot hold exactly, such as
+  an amount in minor units past 2^53 - 1 (ERR-19, ERR-20).
+- `axa-keycloak-auth`: `ReloadablePolicy::watch_file` reloads the ABAC policy when its
+  file changes, and `reload_from` reloads it once. A file that does not parse keeps the
+  last good policy (KCK-22). The crate now depends on `tokio`, for the watch's timer.
+- `cli::check_with` and `cli::health_with` take their inputs rather than reading the
+  process environment (CLI-14).
+
+### Changed
+
+- **A setting `axa` renamed is refused in production.** `DATABASE_URL`,
+  `BODY_LIMIT_BYTES`, `HEADER_READ_TIMEOUT_SECONDS`, `HTTP_CSP`, and `LOCO_ENV` were
+  ignored, so a deploy config that still set one ran on a default. Production now fails
+  to boot, naming the name to set, and elsewhere each is a warning that `check` prints.
+  `Settings::renamed` does the same for a service's own (CFG-31).
+
 ### Fixed
 
 - Upload and download filenames now strip U+061C ARABIC LETTER MARK along with the
@@ -14,6 +48,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `axa-test`: `isolation::Probe::post`, `put`, and `patch` send their body as
   `application/json`. They sent `text/plain`, so a handler reading JSON answered `415`
   and `assert_hidden` failed on routes that keep tenants apart (TST-3).
+- `axa-redis-cache`: a Redis that is down at boot no longer stops the service.
+  `Cache::connect` waits for no answer, so each call fails within `timeout` until Redis
+  answers, and `ping` says so for readiness. A bad URL is still refused (RDS-5).
+- `axa-paseto-auth` and `axa-test` require `authentication-verifier` 0.9.4. The range
+  `0.9` allowed 0.9.0 and 0.9.1, from before the Keycloak verifier checked a token's
+  audience, and 0.9.3, whose key fetch panics with no TLS provider installed.
 
 ## [0.20.1] - 2026-11-18
 

@@ -104,7 +104,8 @@ AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
   with no database, are merged into one report. It covers the tests that need no
   server; add `-- --include-ignored --test-threads=1` with the database and S3 URLs set
   to include the rest, as CI runs them. `bin/coverage` does the same and commits the
-  report in [`docs/coverage/`](docs/coverage/).
+  report in [`docs/coverage/`](docs/coverage/). CI's coverage job runs the tests that
+  need no server and fails under 66% of lines.
 - **Benchmarks**: `make bench` runs [`benchmarks/`](benchmarks/), with criterion: the
   standard middleware's cost over bare Axum; checking a cursor, signing and verifying a
   webhook with HMAC and Ed25519, and escaping `LIKE` text; and a ping, insert, read by
@@ -118,6 +119,10 @@ AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
   benchmarks all measured, so a failed or empty run exits nonzero and keeps the last one.
 - **Mutation testing**: `make mutants CRATE=axa-webhooks` runs `cargo mutants` on one
   crate with the lean `mutants` profile. A missed mutant is a change no test notices.
+  `make mutants-diff`, or `bin/mutants-diff BASE`, mutates only the lines changed since
+  `BASE`, `origin/main` by default, uncommitted ones included, and CI runs it on every
+  pull request. It fails when the diff changes Rust but matches no mutant, which a diff
+  with the wrong path root would do while seeming to pass.
 
 CI builds and lints `fuzz/` and `benchmarks/` on every push, so neither rots, but does
 not run them: fuzzing needs nightly, and the database benchmarks need servers.

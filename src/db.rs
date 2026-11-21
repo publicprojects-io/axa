@@ -225,6 +225,7 @@ impl From<&Database> for axa_sqlite_diesel::PoolConfig {
     axa_db = "sqlite_diesel"
 ))]
 pub async fn connect(config: &Database) -> Result<crate::context::Db> {
+    crate::tls::install_provider();
     #[cfg(axa_db = "postgres_sqlx")]
     let db = axa_postgres_sqlx::connect(&config.into()).await?;
     #[cfg(axa_db = "postgres_seaorm")]
@@ -257,6 +258,7 @@ pub async fn connect(
     config: &Database,
     models: toasty_models::ModelSet,
 ) -> Result<crate::context::Db> {
+    crate::tls::install_provider();
     #[cfg(axa_db = "postgres_toasty")]
     let db = axa_postgres_toasty::connect(&config.into(), models).await?;
     #[cfg(axa_db = "mysql_toasty")]

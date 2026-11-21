@@ -1,0 +1,37 @@
+#!/bin/sh
+# Mutation-test only the lines this branch changed since BASE (default origin/main),
+# with cargo-mutants. Extra arguments go to cargo-mutants, such as `--shard 1/4`.
+#
+#   bin/mutants-diff [BASE] [-- cargo-mutants arguments]
+#
+# The diff's paths are relative to the workspace root, which `--in-diff` needs: with
+# any other root it matches no file and passes having tested nothing, so a diff that
+# changes Rust but matches no mutant fails here. cargo-mutants does not make the parent
+# of `--output`, so this makes it first.
+set -euf
+BASE_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) && cd "$BASE_DIR"
+base=${1:-origin/main}
+[ $# -gt 0 ] && shift
+[ "${1:-}" = "--" ] && shift
+out=${MUTANTS_OUT:-target/mutants-diff}
+mkdir -p "$out"
+diff="$out/changes.diff"
+# From where the branch left BASE to the working tree, which is what cargo-mutants
+# reads, so uncommitted changes count too.
+git diff "$(git merge-base "$base" HEAD)" -- '*.rs' > "$diff"
+if [ ! -s "$diff" ]; then
+  echo "no Rust changed since $base"
+  exit 0
+fi
+cargo mutants --in-diff "$diff" --list > "$out/mutants.txt"
+count=$(wc -l < "$out/mutants.txt" | tr -d ' ')
+if [ "$count" -eq 0 ]; then
+  if grep -q '^+[^+]' "$diff"; then
+    echo "the diff adds Rust lines but matched no mutant: are its paths relative to $BASE_DIR?"
+    exit 1
+  fi
+  echo "the Rust changed since $base holds nothing to mutate"
+  exit 0
+fi
+echo "$count mutants in the lines changed since $base"
+cargo mutants --in-diff "$diff" --output "$out" "$@"

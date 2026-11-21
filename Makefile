@@ -1,7 +1,7 @@
 # Makefile for axa development
 # Provides common commands for building, testing, and development
 
-.PHONY: all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants
+.PHONY: all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
 
 # Default target
 all: check
@@ -116,6 +116,10 @@ coverage:
 # Mutation testing of one crate, with cargo-mutants: make mutants CRATE=axa-webhooks
 mutants:
 	cargo mutants -p $(CRATE) --test-package $(CRATE) --profile mutants
+
+# Mutation testing of the lines this branch changed since origin/main: bin/mutants-diff
+mutants-diff:
+	bin/mutants-diff
 
 # Check every target on the minimum supported Rust (N-2) and on N-1.
 ci-minimum-supported-rust-version:

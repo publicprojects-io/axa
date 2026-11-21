@@ -398,7 +398,7 @@ pub fn apply(router: Router, config: &Http) -> Result<Router> {
     }
     // Inside CORS, the trace, and the standard headers, so that a refusal has them all.
     router = router.layer(from_fn_with_state(
-        Arc::new(CrossSite::new(config)),
+        Arc::new(CrossSite::new(config)?),
         cross_site_guard,
     ));
     if let Some(layer) = cors(&config.cors_origins)? {
@@ -505,22 +505,34 @@ struct CrossSite {
 }
 
 impl CrossSite {
-    fn new(config: &Http) -> Self {
-        Self {
+    /// # Errors
+    ///
+    /// For `/*`, which would let every path through.
+    fn new(config: &Http) -> Result<Self> {
+        let mut paths = Vec::with_capacity(config.cross_site_paths.len());
+        for path in &config.cross_site_paths {
+            if trimmed_path(path.trim_end_matches('*')) == "/" && path.ends_with('*') {
+                return Err(crate::Error::string(
+                    "cross_site_paths may not hold `/*`, which lets every path through",
+                ));
+            }
+            paths.push(if path.ends_with("/*") {
+                path.clone()
+            } else {
+                trimmed_path(path).to_string()
+            });
+        }
+        Ok(Self {
             any_origin: config.cors_origins.iter().any(|origin| origin == "*"),
             origins: config.cors_origins.clone(),
-            paths: config
-                .cross_site_paths
-                .iter()
-                .map(|path| trimmed_path(path).to_string())
-                .collect(),
-        }
+            paths,
+        })
     }
 
     /// Whether `request` may write from another site, whatever its headers say.
     fn allows(&self, request: &Request) -> bool {
         let path = trimmed_path(request.uri().path());
-        if self.paths.iter().any(|allowed| allowed == path) {
+        if self.paths.iter().any(|allowed| path_matches(allowed, path)) {
             return true;
         }
         request
@@ -532,6 +544,21 @@ impl CrossSite {
                     // Exactly, as CORS compares them.
                     || self.origins.iter().any(|allowed| allowed == origin)
             })
+    }
+}
+
+/// Whether `path` is the listed `allowed`, exactly, or, for an entry ending `/*`, a path
+/// below it with no `..` segment, which a route could resolve outside it.
+fn path_matches(allowed: &str, path: &str) -> bool {
+    match allowed.strip_suffix('*') {
+        Some(prefix) if prefix.ends_with('/') => {
+            path.len() > prefix.len()
+                && path.starts_with(prefix)
+                && !path[prefix.len()..]
+                    .split('/')
+                    .any(|segment| segment == "..")
+        }
+        _ => allowed == path,
     }
 }
 
@@ -1946,6 +1973,45 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn a_listed_prefix_lets_the_paths_below_it_through_and_no_other() {
+        let router = Router::new()
+            .route("/forms/{slug}", post(|| async { "submitted" }))
+            .route("/forms", post(|| async { "the list" }))
+            .route("/formsx", post(|| async { "other" }));
+        let app = apply(router, &with_cross_site(&[], &["/forms/*"])).unwrap();
+        let status = async |path: &str| {
+            app.clone()
+                .oneshot(cross_site_from(path, "https://partner.example"))
+                .await
+                .unwrap()
+                .status()
+        };
+        for below in ["/forms/contact", "/forms/contact/", "/forms/a/b"] {
+            assert_ne!(status(below).await, StatusCode::FORBIDDEN, "{below}");
+        }
+        for outside in [
+            "/forms",
+            "/forms/",
+            "/formsx",
+            "/forms/../admin",
+            "/forms/a/../../x",
+        ] {
+            assert_eq!(status(outside).await, StatusCode::FORBIDDEN, "{outside}");
+        }
+    }
+
+    #[test]
+    fn a_prefix_of_every_path_is_refused() {
+        for every in ["/*", "//*"] {
+            let error = apply(Router::new(), &with_cross_site(&[], &[every])).unwrap_err();
+            assert!(
+                error.to_string().contains("lets every path through"),
+                "{every}: {error}"
+            );
+        }
     }
 
     #[tokio::test]

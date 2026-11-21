@@ -327,6 +327,10 @@
       "purpose": "Command-line tasks"
     },
     {
+      "name": "tls",
+      "purpose": "The one rustls crypto provider, ring, installed before a connection"
+    },
+    {
       "name": "validation",
       "purpose": "Validation helpers"
     },
@@ -500,7 +504,7 @@
     {
       "name": "axa-test",
       "version": "0.10.0",
-      "description": "Request-level test helpers for Axa services, built on axum-test, with captured logs, the memory mailer's outbox behind its `mail` feature, and a Postgres database per test behind its `postgres-sqlx` feature.",
+      "description": "Request-level test helpers for Axa services, built on axum-test, with boots from given settings, one test in a process of its own, captured logs, the memory mailer's outbox behind its `mail` feature, and a Postgres database per test behind its `postgres-sqlx` feature.",
       "feature": null,
       "readme": "crates/axa-test/README.md"
     },

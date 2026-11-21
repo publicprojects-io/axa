@@ -2,6 +2,10 @@
 members = ["crates/*"]
 resolver = "3"
 
+# The minimum supported Rust, N-2, which every crate inherits, so none can drift.
+[workspace.package]
+rust-version = "1.98"
+
 [workspace.lints.rust]
 missing_docs = "deny"
 unsafe_code = "forbid"
@@ -16,7 +20,7 @@ pedantic = { level = "deny", priority = -1 }
 name = "axa"
 version = "0.20.1"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Accessories library for Axum websites, databases, microservices, and more."
 readme = "README.md"
@@ -214,6 +218,9 @@ validator = { version = "0.21", optional = true }
 
 sea-orm = { version = "2.0", default-features = false, features = ["runtime-tokio-rustls"], optional = true }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls-ring-webpki", "json", "uuid"], optional = true }
+# The one TLS crypto provider every connection shares (`axa::tls`), ring, as every Axa
+# crate uses. Already in the build through sqlx and the others.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 
 [dev-dependencies]
 validator = { version = "0.21", features = ["derive"] }

@@ -188,6 +188,7 @@ impl AppContext {
     /// Build a context with an empty store, no named checks, and no queue.
     #[must_use]
     pub fn new(environment: Environment, db: Db, config: Config) -> Self {
+        crate::tls::install_provider();
         Self {
             environment,
             db,

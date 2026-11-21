@@ -2,7 +2,7 @@
 name = "axa-postgres-job-queue"
 version = "0.6.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "A Postgres job queue, worker pool, and recurring schedules for Axum services."
 readme = "README.md"

@@ -2,7 +2,7 @@
 name = "axa-sqlite-seaorm"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "SeaORM connections, migrations, schema helpers, and test resets on SQLite for Axum services, with an easy path from Loco."
 readme = "README.md"

@@ -2,7 +2,7 @@
 name = "axa-keycloak-auth"
 version = "0.5.2"
 edition = "2024"
-rust-version = "1.98"
+rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]
 description = "Keycloak bearer authentication and ABAC enforcement for Axum services."
 readme = "README.md"
@@ -34,6 +34,9 @@ axum-keycloak-auth = { version = "0.8.4", default-features = false, features = [
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
+# The timer `ReloadablePolicy::watch_file` polls with. Already in the build through
+# axum-keycloak-auth.
+tokio = { version = "1", features = ["rt", "time"] }
 tracing = "0.1"
 
 [dev-dependencies]
