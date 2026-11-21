@@ -503,6 +503,43 @@ mod tests {
     }
 
     #[test]
+    fn a_missing_name_falls_back_to_the_username_and_then_to_nothing() {
+        let mut t = token(Vec::new());
+        t.extra.name = None;
+        assert_eq!(claims_from_token(&t, &settings()).unwrap().name, "ada");
+        t.extra.preferred_username = None;
+        assert_eq!(claims_from_token(&t, &settings()).unwrap().name, "");
+    }
+
+    #[test]
+    fn a_missing_session_id_falls_back_to_the_token_id() {
+        let mut t = token(Vec::new());
+        assert_eq!(claims_from_token(&t, &settings()).unwrap().sid, "sess-9");
+        t.extra.sid = None;
+        assert_eq!(claims_from_token(&t, &settings()).unwrap().sid, "jti-1");
+    }
+
+    #[test]
+    fn the_audience_is_the_configured_one_the_token_carried_or_else_the_first() {
+        let mut configured = settings();
+        configured.audiences = vec!["other".to_string(), "mxi-api".to_string()];
+        let t = token(Vec::new());
+        assert_eq!(claims_from_token(&t, &configured).unwrap().aud, "mxi-api");
+        let mut t = token(Vec::new());
+        t.audience = vec!["account".into()];
+        assert_eq!(claims_from_token(&t, &configured).unwrap().aud, "other");
+    }
+
+    #[test]
+    fn nothing_is_configured_where_no_url_is_set() {
+        assert!(
+            KeycloakSettings::from_env("AXA_SURELY_UNSET_PREFIX_7F3A")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
     fn unmapped_roles_grant_nothing() {
         let t = token(vec![realm("admin"), realm("offline_access")]);
         let c = claims_from_token(&t, &settings()).unwrap();
