@@ -7,6 +7,8 @@ all three parts: spec edit, code edit, test edit.
 Each requirement below has an id and names the test that proves it. A
 requirement with no test is marked **unverified**, and that is a gap to close.
 
+The licence options and the SPDX expression are in [Licenses](licenses/index.md).
+
 ## 1. Purpose
 
 `axa` is an accessories library for Axum websites, databases, microservices, and more. sqlx is the
@@ -64,7 +66,7 @@ fixed once and an auditor reads it once.
 | P-2 | **Two consumers first, or one with a safety case.** Code is added only once two services need it, or once one service needs it to keep a control that a hazard log, a regulator, or a security review holds it to. |
 | P-3 | **Fail closed.** A missing or unsafe production setting stops boot. It never falls back to a development value. |
 | P-4 | **Generic errors.** Internal failure text is logged and never sent to a client. |
-| P-5 | **Written afresh.** Loco is Apache-2.0 only and this crate offers five licences, so its source is not copied. |
+| P-5 | **Written afresh.** Loco is Apache-2.0 only and this crate offers seven licences, so its source is not copied. |
 | P-6 | **New dependencies are raised first.** They are a cost every consumer pays. |
 | P-7 | **A record is not state.** Where a row is evidence of something a service is answerable for, such as a disclosure, a refusal, or a decision, it is appended and never edited or deleted, and the database is given triggers that refuse it. State that is only a working copy, such as a cache, a lease, or a count, may change. A crate says which of its tables is which. |
 | P-8 | **Final means final.** An outcome a service has called final is never undone by a helper. Putting work back is an act of its own, by a named person, and is kept as a record. |
@@ -255,7 +257,7 @@ the requirements HLT-1 to HLT-15, are in [Health routes](health/index.md).
 | CLI-11 | `cli::parse` answers `--help` and `--version` for the service. Nothing presents this crate as the service. | `help_and_version_speak_for_the_service`, `nothing_says_this_crate_is_the_service` |
 | CLI-12 | `cli::parse`, `Cli::parse`, and `Cli::try_parse` refuse `db down`, `db reset`, and `db truncate`, before a service runs anything, unless the process environment is development or test and `AXA_DESTROY_DATA` is `true`. `--environment` can add to that refusal and never lift it. `Cli::parse_from` and `Cli::try_parse_from` read no process arguments, are for tests, and refuse nothing. All three read through one function, which takes the arguments and the environment, so a test reads as they do. | `only_down_reset_and_truncate_destroy_data`, `a_destructive_command_is_refused_outside_development_and_test`, `a_destructive_command_needs_confirming`, `the_environment_flag_cannot_lift_the_refusal`, `other_commands_are_never_refused`, `the_written_out_parser_reads_what_the_derived_one_did`, `reading_the_command_line_refuses_as_the_guard_says_and_lets_the_rest_through`. The exit statuses, `1` on a refusal and `2` on a bad argument, were seen by hand on a real binary through all three |
 | CLI-13 | `health` takes `--ready` and `--port`, and `cli::health` asks the server at the configured binding and port, or the port given, for `/_health/live`, or `/_health/ready` with `--ready`. A binding to every address is asked on loopback. It succeeds only on a `2xx`, and fails on any other answer, on one that is not HTTP, on no server, and on no answer within 5 seconds, so a container's health check needs no `curl`. | `health_takes_ready_and_a_port`, `health_passes_on_a_2xx_and_asks_the_path`, `health_fails_on_any_other_answer_or_none`, `health_gives_up_on_a_server_that_does_not_answer`, `the_health_command_asks_the_port_it_is_given` |
-| CLI-14 | `cli::check_with` reads its settings through a lookup it is given, and `cli::health_with` asks for a configuration the service holds, at its internal port or the port given, so neither reads the process environment. | `check_with_reads_its_settings_through_the_lookup`, `health_with_asks_the_configured_internal_port_or_the_one_given` |
+| CLI-14 | `cli::check_with` reads its settings through a lookup it is given, and `cli::health_with` asks for a configuration the service holds, at its internal port or the port given, so neither reads the process environment; `cli::health_from` is `health` with the lookup given. | `check_with_reads_its_settings_through_the_lookup`, `health_with_asks_the_configured_internal_port_or_the_one_given`, `health_from_refuses_a_closed_port_and_a_refused_configuration` |
 | TSK-1 | A registered task runs with its arguments. | `a_registered_task_runs_with_its_arguments` |
 | TSK-2 | An unknown task, or a missing argument, is an error. | `an_unknown_task_is_an_error`, `a_missing_argument_is_an_error` |
 | TSK-3 | A task marked `development_only` is refused outside development and test. Both the process environment and `--environment` must allow it. Other tasks run anywhere. | `a_task_runs_anywhere_unless_it_says_otherwise`, `a_development_task_needs_both_environments_to_allow_it`, `a_development_task_is_refused_in_production` |

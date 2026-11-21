@@ -64,7 +64,7 @@ These come from the principles in section 3 of the spec, and each is a reason to
   control that a hazard log, a regulator, or a security review holds it to.
 - A new dependency is raised with the user first, even one already in the tree as a
   transitive dependency, because it is a cost every consumer pays.
-- Never copy Loco source. Loco is Apache-2.0 only and this crate offers five licences,
+- Never copy Loco source. Loco is Apache-2.0 only and this crate offers seven licences,
   so write the behaviour afresh.
 - Fail closed. A missing or unsafe production setting stops boot, and internal failure
   text is logged and never sent to a client.

@@ -38,7 +38,7 @@ when stable moves.
 - Do not add lifecycle hooks, route macros, a dependency-injection container,
   or a database abstraction.
 - Write behaviour afresh rather than copying Loco source: Loco is Apache-2.0
-  only, and this crate offers five licences.
+  only, and this crate offers seven licences.
 - Add code only once two services need it, or one service needs it to keep a
   control that a hazard log, a regulator, or a security review holds it to.
 - Raise any new dependency with the user first.
