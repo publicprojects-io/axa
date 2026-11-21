@@ -3,8 +3,9 @@
 useDefault = true
 
 [allowlist]
-description = "Public test values: Standard Webhooks' published test-vector secret, and axa-request-rate-limit's expected HMAC of a key under the test secret [7; 32]. Neither signs anything real"
+description = "Public test values: Standard Webhooks' published test-vector secret, axa-request-rate-limit's expected HMAC of a key under the test secret [7; 32], and the access key and secret of the throwaway S3 endpoint that CI and podman-compose.yml start. None signs or opens anything real"
 regexes = [
     '''^whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw$''',
     '''01754edd21ab0860ceee492554db4491''',
+    '''axatest:axatestsecret''',
 ]

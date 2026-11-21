@@ -105,7 +105,7 @@ AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
   server; add `-- --include-ignored --test-threads=1` with the database and S3 URLs set
   to include the rest, as CI runs them. `bin/coverage` does the same and commits the
   report in [`docs/coverage/`](docs/coverage/). CI's coverage job runs the tests that
-  need no server and fails under 66% of lines.
+  need no server and fails when a section of `tarpaulin.toml` measures under 52% of lines.
 - **Benchmarks**: `make bench` runs [`benchmarks/`](benchmarks/), with criterion: the
   standard middleware's cost over bare Axum; checking a cursor, signing and verifying a
   webhook with HMAC and Ed25519, and escaping `LIKE` text; and a ping, insert, read by

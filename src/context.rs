@@ -289,7 +289,8 @@ mod webhook_tests {
     }
 }
 
-#[cfg(test)]
+// Toasty connects when its handle is made, so a Toasty-only build has no context to show.
+#[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
 mod tests {
     use super::{AppContext, Db};
     use crate::{

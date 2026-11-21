@@ -319,10 +319,11 @@ jobs:
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
         with:
           tool: cargo-tarpaulin
-      # The tests that need no server measure 68% of lines on 21 November 2026, and with
-      # the database and S3 suites, 95%. The floor stops coverage falling; raise it as
-      # coverage rises.
-      - run: cargo tarpaulin --config tarpaulin.toml --fail-under 66
+      # Tarpaulin holds each section of tarpaulin.toml to the floor on its own, and the
+      # narrower one, `axa` with no database, measures 54% of lines on 21 November 2026
+      # with no server, against 68% for all of them merged and 95% with the database and
+      # S3 suites. The floor stops coverage falling; raise it as coverage rises.
+      - run: cargo tarpaulin --config tarpaulin.toml --fail-under 52
 
   mutants:
     name: mutation test of the changed lines (cargo-mutants)

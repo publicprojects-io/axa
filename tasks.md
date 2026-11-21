@@ -36,7 +36,7 @@ T-71 are done.
 | T-67 | Done, unreleased | S | `Http::cross_site_paths` takes a prefix ending `/*`, such as `/forms/*`, as well as an exact path. |
 | T-68 | Done, unreleased | S | `axa::error::Problems` gathers field errors, each with a JSON Pointer and a fixed detail, and answers them as one `422`. `axa::extract::SafeInt` refuses an integer a JSON client cannot hold exactly. |
 | T-69 | Done, unreleased | S | `axa-keycloak-auth`: `ReloadablePolicy::watch_file` reloads the ABAC policy when its file changes, and keeps the last good one when the new one does not parse. |
-| T-70 | Done | S | CI: every job has `timeout-minutes`; every crate takes `rust-version` from the workspace, which `bin/make-ci-minimum-supported-rust-version` checks with CI's versions; a coverage job fails under 66% of lines, from 68% with no database server. |
+| T-70 | Done | S | CI: every job has `timeout-minutes`; every crate takes `rust-version` from the workspace, which `bin/make-ci-minimum-supported-rust-version` checks with CI's versions; a coverage job fails when a section of `tarpaulin.toml` measures under 52% of lines, from 54% for `axa` alone with no database server. |
 | T-71 | Done | S | `bin/mutants-diff` runs `cargo mutants --in-diff` on a branch's changed lines, with paths from the workspace root, fails when the diff matched no mutant, and makes its output directory first. |
 
 Wait for a second consumer (P-2), or a new dependency, before: a deployment id checked at
