@@ -5,11 +5,16 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.20.1
+## Current Version: 0.21.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.21.0
+- What the consuming services needed: a Redis down at boot no longer stops a service,
+  one shared rustls provider, tests booted from given settings or in a process of their
+  own, renamed settings refused in production, and field-error and safe-integer helpers
 
 ### Version 0.20.1
 - `axa-mail` 0.1.2 required, for lettre 0.11.24 and RUSTSEC-2026-0560 to 0565

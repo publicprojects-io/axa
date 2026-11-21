@@ -13,7 +13,7 @@ at the version this crate uses:
 
 ```toml
 [dependencies]
-axa = { version = "0.20", features = ["maud"] }
+axa = { version = "0.21", features = ["maud"] }
 maud = "0.27"
 ```
 

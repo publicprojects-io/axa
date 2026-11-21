@@ -10,7 +10,7 @@ the visitor.
 
 ```toml
 [dependencies]
-axa = { version = "0.20", features = ["minijinja"] }
+axa = { version = "0.21", features = ["minijinja"] }
 ```
 
 ```rust

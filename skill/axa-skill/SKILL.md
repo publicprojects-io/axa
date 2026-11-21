@@ -17,7 +17,7 @@ to read the whole path from `main.rs` down. Reach for plain Axum whenever Axa ha
 opinion, because everything Axa returns is plain Axum.
 
 Check the version in the project's `Cargo.toml` before relying on a detail here. This
-skill describes 0.9, and says so where an earlier version differs.
+skill describes 0.21, and says so where an earlier version differs.
 
 ## Where the truth lives
 
@@ -29,6 +29,7 @@ Read these rather than guessing at an API:
 | Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
+| Upgrading to 0.21 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.21/index.md) |
 | Upgrading to 0.20 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.20/index.md) |
 | Upgrading to 0.19 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.19/index.md) |
 | Upgrading to 0.15 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.15/index.md) |
@@ -44,12 +45,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.20", features = ["postgres-sqlx", "queue"] }
+axa = { version = "0.21", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa-test = "0.11"
+axa-test = "0.12"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must
@@ -570,6 +571,15 @@ async fn health_answers() {
     .await;
 }
 ```
+
+To boot with settings of the test's own rather than the process environment, implement
+`TestApp::boot_test_with(lookup)`, reading them with `Config::from_lookup`, and call
+`request_with::<App, _, _>(&[("HTTP_COMPRESSION", "false")], |server, ctx| ...)`: no
+`set_var`, and no tests run one at a time. A test whose service reads state once per
+process, such as a `OnceLock`, starts with `axa_test::own_process!();` and runs alone in a
+fresh process. Every `axa-test` boot installs ring as the rustls provider first, so a
+client built with reqwest's `rustls-no-provider` works in a test; a test that builds one
+without booting calls `axa::tls::install_provider()`. Since 0.21.
 
 For a test that needs Postgres, `axa-test`'s `postgres-sqlx` feature gives
 `TestDatabase::new(&MIGRATOR).await?`: a database of the test's own, cloned from a

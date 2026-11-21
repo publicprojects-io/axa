@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-21
+
+This covers `axa` 0.21.0, `axa-test` 0.12.0, `axa-keycloak-auth` 0.5.3, `axa-mail` 0.1.3,
+`axa-paseto-auth` 0.7.3, and `axa-redis-cache` 0.2.1. No other crate changes. To upgrade,
+read [Upgrading to Axa 0.21](help/upgrading-to-0.21/index.md). The published `axa`
+lacks the `sqlite-*` features, as the SQLite crates stay unpublished.
+
 ### Added
 
 - `axa::tls::install_provider()` installs ring as the process's rustls crypto provider,
