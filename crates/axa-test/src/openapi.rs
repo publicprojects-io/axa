@@ -363,6 +363,52 @@ mod tests {
 
     const JSON: Option<&str> = Some("application/json; charset=utf-8");
 
+    /// The test document, with `paths` added to it.
+    fn with_paths(paths: &Value) -> Conformance {
+        let mut document = document();
+        document["paths"]
+            .as_object_mut()
+            .unwrap()
+            .extend(paths.as_object().unwrap().clone());
+        Conformance::new(document)
+    }
+
+    fn mismatch(result: Result<(), Vec<String>>) -> String {
+        result.unwrap_err().join("; ")
+    }
+
+    #[test]
+    fn a_path_of_another_length_or_with_an_empty_segment_matches_no_template() {
+        for path in ["/api/places", "/api/places/1/extra", "/api/places/"] {
+            let error = mismatch(check("GET", path, 200, JSON, &Value::Null));
+            assert!(error.contains("no path in the document"), "{path}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_path_item_or_operation_that_cannot_be_read_is_said_so() {
+        let conformance = with_paths(&json!({
+            "/dangling": { "$ref": "#/components/missing" },
+            "/bare": { "get": {} }
+        }));
+        let error = mismatch(conformance.check("GET", "/dangling", 200, None, b""));
+        assert!(error.contains("/dangling cannot be read"), "{error}");
+        let error = mismatch(conformance.check("GET", "/bare", 200, None, b""));
+        assert!(error.contains("documents no responses"), "{error}");
+    }
+
+    #[test]
+    fn a_schema_that_cannot_be_used_is_reported_rather_than_trusted() {
+        let conformance = with_paths(&json!({
+            "/odd": { "get": { "responses": { "200": {
+                "description": "Odd",
+                "content": { "application/json": { "schema": { "type": 7 } } }
+            } } } }
+        }));
+        let error = mismatch(conformance.check("GET", "/odd", 200, JSON, b"{}"));
+        assert!(error.contains("cannot be used"), "{error}");
+    }
+
     #[test]
     fn a_documented_answer_conforms() {
         let place = json!({ "id": ID, "name": "Home", "tags": ["a"] });
