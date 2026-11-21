@@ -439,10 +439,15 @@ impl HttpBody for TrackedBody {
 
 /// Take a slot, then the next connection. Each is safe to cancel, so shutdown can
 /// interrupt this at any point.
-async fn next_connection(
-    listener: &TcpListener,
+///
+/// `accept` is the listener's, taken as a function so that a test can make it fail.
+async fn next_connection<F>(
+    accept: impl Fn() -> F,
     slots: &Arc<Semaphore>,
-) -> (TcpStream, SocketAddr, OwnedSemaphorePermit) {
+) -> (TcpStream, SocketAddr, OwnedSemaphorePermit)
+where
+    F: Future<Output = std::io::Result<(TcpStream, SocketAddr)>>,
+{
     let slot = if let Ok(slot) = slots.clone().try_acquire_owned() {
         slot
     } else {
@@ -454,7 +459,7 @@ async fn next_connection(
             .expect("the slots are never closed")
     };
     loop {
-        match listener.accept().await {
+        match accept().await {
             Ok((stream, address)) => return (stream, address, slot),
             // Running out of file descriptors, say. It passes, and a tight loop would
             // not help it to.
@@ -517,7 +522,7 @@ async fn accept_with(
     let mut shutdown = pin!(shutdown);
     loop {
         tokio::select! {
-            next = next_connection(&listener, &slots) => accept(next),
+            next = next_connection(|| listener.accept(), &slots) => accept(next),
             () = &mut shutdown => break,
         }
     }
@@ -528,7 +533,7 @@ async fn accept_with(
     let mut drain = pin!(drain);
     loop {
         tokio::select! {
-            next = next_connection(&listener, &slots) => accept(next),
+            next = next_connection(|| listener.accept(), &slots) => accept(next),
             () = &mut drain => break,
         }
     }
@@ -869,6 +874,35 @@ mod tests {
         net::TcpStream,
         sync::oneshot,
     };
+
+    #[tokio::test(start_paused = true)]
+    async fn a_failed_accept_waits_a_second_and_tries_again() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = tokio::spawn(TcpStream::connect(address));
+        let tries = std::sync::atomic::AtomicUsize::new(0);
+        let slots = Arc::new(Semaphore::new(1));
+        let started = tokio::time::Instant::now();
+        let (_stream, _from, _slot) = next_connection(
+            || {
+                let first = tries.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
+                let listener = &listener;
+                async move {
+                    if first {
+                        // As when the process is out of file descriptors.
+                        Err(std::io::Error::other("too many open files"))
+                    } else {
+                        listener.accept().await
+                    }
+                }
+            },
+            &slots,
+        )
+        .await;
+        assert_eq!(tries.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert!(started.elapsed() >= Duration::from_secs(1));
+        client.await.unwrap().unwrap();
+    }
 
     #[tokio::test]
     async fn shutdown_lets_a_request_in_flight_finish() {
