@@ -2642,6 +2642,42 @@ async fn a_changed_row_is_never_published() {
     assert_eq!(count(&pool, "axa_outbox_test_audit").await, 4);
 }
 
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_changed_row_whose_record_fails_waits_and_is_not_published() {
+    let _table = TABLE.lock().await;
+    let (outbox, pool) = fresh(OutboxOptions {
+        hold_interval: Duration::from_mins(10),
+        ..quick()
+    })
+    .await;
+    let changed = add(&pool, "1").await;
+    let untouched = add(&pool, "2").await;
+    tamper(
+        &pool,
+        "axa_outbox_payloads",
+        "axa_outbox_payloads_guard",
+        "UPDATE axa_outbox_payloads SET payload = '{\"key\": \"other\"}' WHERE event_id = $1",
+        &changed,
+    )
+    .await;
+    // A record that fails aborts only the tampered event's savepoint.
+    let record = async |attempt: &Attempt, tx: &mut PgConnection| {
+        if attempt.outcome == Outcome::Failed {
+            sqlx::query("SELECT * FROM no_such_table")
+                .execute(&mut *tx)
+                .await?;
+        }
+        Ok(())
+    };
+    let batch = outbox.claim(decide::deliver_all, record).await.unwrap();
+    assert_eq!(batch.len(), 1);
+    assert_eq!(batch[0].event_id, untouched.event_id);
+    assert_eq!(outcomes(&pool, &changed).await, Vec::<String>::new());
+    // It is not looked at again at once.
+    assert_eq!(take(&outbox).await.len(), 0);
+}
+
 // OBX-33 and OBX-35: what a payload may be.
 
 #[tokio::test]
@@ -3088,6 +3124,38 @@ async fn a_publish_in_progress_finishes_and_the_rest_go_back() {
     }
     assert_eq!(outbox.stats().await.unwrap().pending, 4);
     assert_eq!(count(&pool, "axa_outbox_leases").await, 0);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn giving_back_or_reporting_for_no_events_touches_nothing() {
+    let _table = TABLE.lock().await;
+    let (outbox, pool) = fresh(quick()).await;
+    assert_eq!(give_back(&outbox, &pool, &[]).await, 0);
+    assert_eq!(outbox.heartbeat(&[]).await.unwrap(), 0);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_relay_whose_database_fails_keeps_trying_and_still_stops() {
+    let _table = TABLE.lock().await;
+    let (outbox, pool) = fresh(quick()).await;
+    // Every round now fails on a missing table, as when a database is mid-restore.
+    sqlx::query("DROP TABLE axa_outbox_attempts, axa_outbox_payloads, axa_outbox_owed, axa_outbox_leases, axa_outbox_events CASCADE")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        outbox
+            .claim(decide::deliver_all, record::nothing)
+            .await
+            .is_err()
+    );
+    let broker = Broker::default();
+    let relay = Relay::start(&outbox, taking(&broker));
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    relay.stop().await;
+    assert_eq!(broker.len(), 0);
 }
 
 #[tokio::test]
