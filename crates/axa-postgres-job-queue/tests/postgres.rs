@@ -877,8 +877,8 @@ async fn a_scheduled_job_is_an_ordinary_job_and_shutdown_stops_the_ticks() {
 async fn a_heartbeat_that_hangs_stops_the_job_before_another_worker_may_take_it() {
     let mut queue = fresh(QueueOptions {
         heartbeat_interval: Duration::from_millis(30),
-        // Another worker may take it at once, so this one must stop at its first silence.
-        stale_minutes: 0,
+        // The least stale time, a minute, so the run stops two heartbeats before it.
+        stale_minutes: 1,
         ..quick()
     })
     .await;
@@ -888,7 +888,7 @@ async fn a_heartbeat_that_hangs_stops_the_job_before_another_worker_may_take_it(
         queue.handle("Long", move |_| {
             let finished = finished.clone();
             async move {
-                tokio::time::sleep(Duration::from_millis(800)).await;
+                tokio::time::sleep(Duration::from_secs(90)).await;
                 finished.fetch_add(1, Ordering::SeqCst);
                 Ok::<(), String>(())
             }
@@ -911,14 +911,14 @@ async fn a_heartbeat_that_hangs_stops_the_job_before_another_worker_may_take_it(
         .execute(&mut *holder)
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    tokio::time::sleep(Duration::from_secs(62)).await;
     assert_eq!(
         finished.load(Ordering::SeqCst),
         0,
         "the job ran on while its heartbeat hung"
     );
     holder.rollback().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(5), run)
+    tokio::time::timeout(Duration::from_secs(10), run)
         .await
         .expect("the run stopped once it could mark the job")
         .unwrap();
