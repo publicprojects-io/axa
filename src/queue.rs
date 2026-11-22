@@ -186,13 +186,30 @@ impl Queue {
 
     /// Change the engine, which only an unshared one allows. It is shared only once
     /// [`Queue::run`] starts, and that takes the queue whole, so `&mut self` always has
-    /// it alone. Were it not, the change is logged and dropped, not made.
-    fn with_engine(&mut self, change: impl FnOnce(&mut axa_postgres_job_queue::Queue)) {
-        if let Some(engine) = Arc::get_mut(&mut self.engine) {
-            change(engine);
-        } else {
+    /// it alone. Were it not, the change is not made, and `None` says so.
+    fn with_engine<R>(
+        &mut self,
+        change: impl FnOnce(&mut axa_postgres_job_queue::Queue) -> R,
+    ) -> Option<R> {
+        let engine = Arc::get_mut(&mut self.engine);
+        if engine.is_none() {
             tracing::error!("a queue that is running cannot take another registration");
         }
+        engine.map(change)
+    }
+
+    /// [`Queue::with_engine`] for a change that can fail, which a queue that is running
+    /// refuses as it would a schedule of a name already taken.
+    fn try_with_engine(
+        &mut self,
+        change: impl FnOnce(&mut axa_postgres_job_queue::Queue) -> axa_postgres_job_queue::Result<()>,
+    ) -> Result<()> {
+        self.with_engine(change).unwrap_or_else(|| {
+            Err(axa_postgres_job_queue::Error::Schedule(
+                "a queue that is running cannot take another registration".to_string(),
+            ))
+        })?;
+        Ok(())
     }
 
     /// Connect to tables that a migration made, and change no schema, for a database
@@ -277,23 +294,17 @@ impl Queue {
     ///
     /// # Errors
     ///
-    /// Fails when the arguments cannot be encoded.
-    ///
-    /// # Panics
-    ///
-    /// When the name is empty, over 200 characters, or used twice, or the interval
-    /// is under a second.
+    /// Fails when the arguments cannot be encoded, and, with the cause in the message, when the name is empty, over 200
+    /// characters, or used twice, or the interval is under a second: mistakes in code,
+    /// found at boot.
     pub fn every<A, W>(&mut self, name: &str, interval: Duration, args: &A) -> Result<()>
     where
         A: Serialize + DeserializeOwned + Send + Sync + 'static,
         W: BackgroundWorker<A>,
     {
         let job = job::<W, A>(args)?;
-        let schedule = Schedule::every(name, interval, job);
-        self.with_engine(|engine| {
-            engine.schedule(schedule);
-        });
-        Ok(())
+        let schedule = Schedule::every(name, interval, job)?;
+        self.try_with_engine(|engine| engine.schedule(schedule))
     }
 
     /// Queue a job of worker `W` with `args` at each time the cron `pattern` names, in
@@ -304,33 +315,27 @@ impl Queue {
     ///
     /// Fails when the arguments cannot be encoded.
     ///
-    /// # Panics
-    ///
-    /// When the name is empty, over 200 characters, or used twice, or the pattern
-    /// does not parse or names no time to come.
+    /// Fails, with the cause in the message, when the name is empty, over 200
+    /// characters, or used twice, or the pattern does not parse or names no time to
+    /// come: mistakes in code, found at boot.
     pub fn cron<A, W>(&mut self, name: &str, pattern: &str, args: &A) -> Result<()>
     where
         A: Serialize + DeserializeOwned + Send + Sync + 'static,
         W: BackgroundWorker<A>,
     {
         let job = job::<W, A>(args)?;
-        let schedule = Schedule::cron(name, pattern, job);
-        self.with_engine(|engine| {
-            engine.schedule(schedule);
-        });
-        Ok(())
+        let schedule = Schedule::cron(name, pattern, job)?;
+        self.try_with_engine(|engine| engine.schedule(schedule))
     }
 
     /// Add a schedule built with [`Schedule::every`] or [`Schedule::cron`], as for a
     /// first time.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When a schedule of that name was added already.
-    pub fn schedule(&mut self, schedule: Schedule) {
-        self.with_engine(|engine| {
-            engine.schedule(schedule);
-        });
+    /// Fails when a schedule of that name was added already.
+    pub fn schedule(&mut self, schedule: Schedule) -> Result<()> {
+        self.try_with_engine(|engine| engine.schedule(schedule))
     }
 
     /// Add a job and return its id.
@@ -1635,11 +1640,16 @@ mod tests {
         queue
             .cron::<Args, CountWorker>("count-nightly", "0 2 * * *", &args)
             .unwrap();
-        queue.schedule(Schedule::every(
-            "count-daily",
-            Duration::from_hours(24),
-            NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
-        ));
+        queue
+            .schedule(
+                Schedule::every(
+                    "count-daily",
+                    Duration::from_hours(24),
+                    NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+                )
+                .unwrap(),
+            )
+            .unwrap();
         assert!(queue.engine().handled().contains("CountWorker"));
 
         queue.tick_schedules().await.unwrap();

@@ -584,11 +584,16 @@ async fn connecting_to_tables_without_the_new_columns_fails_and_changes_nothing(
 // Schedules.
 
 fn every(queue: &mut Queue, name: &str, interval: Duration) {
-    queue.schedule(Schedule::every(
-        name,
-        interval,
-        NewJob::new("Tick", serde_json::json!({ "from": name })),
-    ));
+    queue
+        .schedule(
+            Schedule::every(
+                name,
+                interval,
+                NewJob::new("Tick", serde_json::json!({ "from": name })),
+            )
+            .unwrap(),
+        )
+        .unwrap();
 }
 
 async fn jobs_named(pool: &PgPool, name: &str) -> i64 {
@@ -784,9 +789,13 @@ async fn a_first_time_applies_only_when_the_row_is_made() {
     )
     .await;
     let job = NewJob::new("Tick", serde_json::Value::Null);
-    queue.schedule(
-        Schedule::every("nightly", Duration::from_hours(24), job.clone()).first_at(first),
-    );
+    queue
+        .schedule(
+            Schedule::every("nightly", Duration::from_hours(24), job.clone())
+                .unwrap()
+                .first_at(first),
+        )
+        .unwrap();
     assert_eq!(
         queue.tick_schedules().await.unwrap(),
         0,
@@ -802,7 +811,13 @@ async fn a_first_time_applies_only_when_the_row_is_made() {
     // A later release with another first time leaves the row where it is.
     let earlier = time_of(queue.pool(), "SELECT now() - interval '5 hours'").await;
     let mut later = replica(quick()).await;
-    later.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_at(earlier));
+    later
+        .schedule(
+            Schedule::every("nightly", Duration::from_hours(24), job)
+                .unwrap()
+                .first_at(earlier),
+        )
+        .unwrap();
     later.tick_schedules().await.unwrap();
     let stored = time_of(
         queue.pool(),
@@ -1641,11 +1656,16 @@ async fn a_key_that_is_not_a_code_is_refused() {
 // Cron schedules.
 
 fn cron(queue: &mut Queue, name: &str, pattern: &str) {
-    queue.schedule(Schedule::cron(
-        name,
-        pattern,
-        NewJob::new("Tick", serde_json::json!({ "from": name })),
-    ));
+    queue
+        .schedule(
+            Schedule::cron(
+                name,
+                pattern,
+                NewJob::new("Tick", serde_json::json!({ "from": name })),
+            )
+            .unwrap(),
+        )
+        .unwrap();
 }
 
 async fn set_due(pool: &PgPool, name: &str, seconds_ago: f64) {

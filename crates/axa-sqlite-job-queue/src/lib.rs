@@ -29,7 +29,7 @@
 //!     "nightly-report",
 //!     Duration::from_hours(24),
 //!     NewJob::new("Report", serde_json::json!({ "id": 0 })),
-//! ));
+//! )?)?;
 //!
 //! let id = queue
 //!     .enqueue_job(&NewJob::new("Report", serde_json::json!({ "id": 7 })).run_in(Duration::from_mins(5)))
@@ -209,6 +209,10 @@ pub enum Error {
     },
     /// A job's tenant is not a tenant id: see [`is_tenant_id`].
     NotATenant,
+    /// A schedule is a mistake in code, found at boot: a name that is empty, over 200
+    /// characters, or used twice, an interval under a second, or a cron pattern that does
+    /// not parse or names no time to come.
+    Schedule(String),
 }
 
 impl fmt::Display for Error {
@@ -221,6 +225,7 @@ impl fmt::Display for Error {
                 f,
                 "`{what}` must be 1 to {MAX_REASON_CHARS} characters with no line breaks"
             ),
+            Self::Schedule(text) => write!(f, "schedule error: {text}"),
             Self::NotATenant => f.write_str(
                 "a job's tenant must be 1 to 63 lower-case letters, digits, and hyphens, \
                  not starting or ending with a hyphen",
@@ -234,7 +239,7 @@ impl std::error::Error for Error {
         match self {
             Self::Database(error) => Some(error),
             Self::Encode(error) => Some(error),
-            Self::Job(_) | Self::NotACode { .. } | Self::NotATenant => None,
+            Self::Job(_) | Self::NotACode { .. } | Self::NotATenant | Self::Schedule(_) => None,
         }
     }
 }
@@ -1323,18 +1328,18 @@ impl Schedule {
     /// Queue `job` every `interval`, under the schedule name `name`. The name keys
     /// its row, so keep it stable across releases. A delay set on `job` is ignored.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When the name is empty or over 200 characters, or the interval is under a
-    /// second, as Axum panics on a bad route: these are mistakes in code, found at
-    /// boot.
-    pub fn every(name: impl Into<String>, interval: Duration, job: NewJob) -> Self {
-        let name = checked_name(name.into());
-        assert!(
-            interval >= Duration::from_secs(1),
-            "the schedule {name} needs an interval of at least a second"
-        );
-        Self {
+    /// [`Error::Schedule`] when the name is empty or over 200 characters, or the
+    /// interval is under a second: these are mistakes in code, found at boot.
+    pub fn every(name: impl Into<String>, interval: Duration, job: NewJob) -> Result<Self> {
+        let name = checked_name(name.into())?;
+        if interval < Duration::from_secs(1) {
+            return Err(Error::Schedule(format!(
+                "the schedule {name} needs an interval of at least a second"
+            )));
+        }
+        Ok(Self {
             name,
             times: Times::Every(interval),
             first: None,
@@ -1342,7 +1347,7 @@ impl Schedule {
                 when: When::Now,
                 ..job
             },
-        }
+        })
     }
 
     /// Queue `job` at each time the cron `pattern` names, in UTC on the database's
@@ -1351,21 +1356,24 @@ impl Schedule {
     /// 02:00 each day, and `"0 9 * * MON-FRI"` 09:00 each weekday. A delay set on `job`
     /// is ignored. The first time is the pattern's next after the row is made.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When the name is empty or over 200 characters, or the pattern does not parse
-    /// or names no time to come, as Axum panics on a bad route: these are mistakes in
-    /// code, found at boot.
-    pub fn cron(name: impl Into<String>, pattern: &str, job: NewJob) -> Self {
-        let name = checked_name(name.into());
-        let cron: croner::Cron = pattern
-            .parse()
-            .unwrap_or_else(|error| panic!("the schedule {name} has a bad cron pattern: {error}"));
-        assert!(
-            next_after(&cron, Timestamp::now()).is_ok(),
-            "the cron pattern of the schedule {name} names no time to come"
-        );
-        Self {
+    /// [`Error::Schedule`] when the name is empty or over 200 characters, or the
+    /// pattern does not parse or names no time to come: these are mistakes in code,
+    /// found at boot.
+    pub fn cron(name: impl Into<String>, pattern: &str, job: NewJob) -> Result<Self> {
+        let name = checked_name(name.into())?;
+        let cron: croner::Cron = pattern.parse().map_err(|error| {
+            Error::Schedule(format!(
+                "the schedule {name} has a bad cron pattern: {error}"
+            ))
+        })?;
+        if next_after(&cron, Timestamp::now()).is_err() {
+            return Err(Error::Schedule(format!(
+                "the cron pattern of the schedule {name} names no time to come"
+            )));
+        }
+        Ok(Self {
             name,
             times: Times::Cron(Box::new(cron), pattern.to_string()),
             first: None,
@@ -1373,7 +1381,7 @@ impl Schedule {
                 when: When::Now,
                 ..job
             },
-        }
+        })
     }
 
     /// The first due time, used only when the schedule's row is made. With an
@@ -1406,12 +1414,13 @@ impl Schedule {
 }
 
 /// Refuse a schedule name that is empty or over 200 characters.
-fn checked_name(name: String) -> String {
-    assert!(
-        !name.is_empty() && name.len() <= 200,
-        "a schedule name must be 1 to 200 characters"
-    );
-    name
+fn checked_name(name: String) -> Result<String> {
+    if name.is_empty() || name.len() > 200 {
+        return Err(Error::Schedule(
+            "a schedule name must be 1 to 200 characters".to_string(),
+        ));
+    }
+    Ok(name)
 }
 
 /// What the table holds of one schedule.
@@ -1695,16 +1704,18 @@ impl Queue {
 
     /// Queue a job on every due time of `schedule`.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When a schedule of that name was added already.
-    pub fn schedule(&mut self, schedule: Schedule) {
-        assert!(
-            self.schedules.iter().all(|s| s.name != schedule.name),
-            "the schedule {} was added twice",
-            schedule.name
-        );
+    /// [`Error::Schedule`] when a schedule of that name was added already.
+    pub fn schedule(&mut self, schedule: Schedule) -> Result<()> {
+        if self.schedules.iter().any(|s| s.name == schedule.name) {
+            return Err(Error::Schedule(format!(
+                "the schedule {} was added twice",
+                schedule.name
+            )));
+        }
         self.schedules.push(schedule);
+        Ok(())
     }
 
     /// Add a job and return its id.
@@ -2435,8 +2446,8 @@ mod tests {
     #[test]
     fn the_debug_text_leaves_out_arguments() {
         let job = NewJob::new("Report", serde_json::json!({ "nhs": "943 476 5919" }));
-        let schedule = Schedule::every("nightly", Duration::from_hours(1), job.clone());
-        let cron = Schedule::cron("at-two", "0 2 * * *", job.clone());
+        let schedule = Schedule::every("nightly", Duration::from_hours(1), job.clone()).unwrap();
+        let cron = Schedule::cron("at-two", "0 2 * * *", job.clone()).unwrap();
         for text in [
             format!("{job:?}"),
             format!("{schedule:?}"),
@@ -2474,23 +2485,27 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "at least a second")]
     fn a_schedule_under_a_second_is_refused_at_boot() {
-        let _ = Schedule::every(
+        let error = Schedule::every(
             "fast",
             Duration::from_millis(10),
             NewJob::new("J", serde_json::Value::Null),
-        );
+        )
+        .unwrap_err();
+        assert!(matches!(&error, Error::Schedule(_)), "{error:?}");
+        assert!(error.to_string().contains("at least a second"), "{error}");
     }
 
     #[test]
-    #[should_panic(expected = "bad cron pattern")]
     fn a_bad_cron_pattern_is_refused_at_boot() {
-        let _ = Schedule::cron(
+        let error = Schedule::cron(
             "bad",
             "61 * * * *",
             NewJob::new("J", serde_json::Value::Null),
-        );
+        )
+        .unwrap_err();
+        assert!(matches!(&error, Error::Schedule(_)), "{error:?}");
+        assert!(error.to_string().contains("bad cron pattern"), "{error}");
     }
 
     #[test]
@@ -2499,7 +2514,8 @@ mod tests {
             "weekdays",
             "0 9 * * MON-FRI",
             NewJob::new("J", serde_json::Value::Null),
-        );
+        )
+        .unwrap();
         assert_eq!(schedule.cron_pattern(), Some("0 9 * * MON-FRI"));
         assert_eq!(schedule.interval(), None);
         let Times::Cron(cron, _) = &schedule.times else {
@@ -2515,6 +2531,7 @@ mod tests {
                 Duration::from_secs(5),
                 NewJob::new("J", serde_json::Value::Null)
             )
+            .unwrap()
             .interval(),
             Some(Duration::from_secs(5))
         );
@@ -2564,31 +2581,37 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "1 to 200 characters")]
     fn a_schedule_with_no_name_is_refused_at_boot() {
-        let _ = Schedule::every(
+        let error = Schedule::every(
             "",
             Duration::from_secs(1),
             NewJob::new("J", serde_json::Value::Null),
-        );
+        )
+        .unwrap_err();
+        assert!(matches!(&error, Error::Schedule(_)), "{error:?}");
+        assert!(error.to_string().contains("1 to 200 characters"), "{error}");
     }
 
     #[tokio::test]
-    #[should_panic(expected = "added twice")]
     async fn a_schedule_added_twice_is_refused_at_boot() {
         let pool = SqlitePoolOptions::new()
             .connect_lazy("sqlite::memory:")
             .unwrap();
         let mut queue = Queue::from_pool(pool, QueueOptions::default());
         let job = NewJob::new("J", serde_json::Value::Null);
-        queue.schedule(Schedule::every("a", Duration::from_secs(5), job.clone()));
-        queue.schedule(Schedule::every("a", Duration::from_secs(9), job));
+        queue
+            .schedule(Schedule::every("a", Duration::from_secs(5), job.clone()).unwrap())
+            .unwrap();
+        let error = queue
+            .schedule(Schedule::every("a", Duration::from_secs(9), job).unwrap())
+            .unwrap_err();
+        assert!(error.to_string().contains("added twice"), "{error}");
     }
 
     #[test]
     fn a_schedule_ignores_a_delay_on_its_job() {
         let job = NewJob::new("J", serde_json::Value::Null).run_in(Duration::from_hours(1));
-        let schedule = Schedule::every("s", Duration::from_secs(5), job);
+        let schedule = Schedule::every("s", Duration::from_secs(5), job).unwrap();
         assert_eq!(schedule.job.when, When::Now);
     }
 
@@ -2613,13 +2636,18 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "names no time to come")]
     fn a_cron_pattern_that_names_no_time_to_come_is_refused_at_boot() {
         // The 30th of February.
-        let _ = Schedule::cron(
+        let error = Schedule::cron(
             "never",
             "0 0 30 2 *",
             NewJob::new("J", serde_json::Value::Null),
+        )
+        .unwrap_err();
+        assert!(matches!(&error, Error::Schedule(_)), "{error:?}");
+        assert!(
+            error.to_string().contains("names no time to come"),
+            "{error}"
         );
     }
 
@@ -2627,7 +2655,7 @@ mod tests {
     fn a_job_and_a_schedule_say_their_names_and_a_failure_its_text() {
         let job = NewJob::new("SendMail", serde_json::Value::Null);
         assert_eq!(job.name(), "SendMail");
-        let schedule = Schedule::every("hourly", Duration::from_hours(1), job);
+        let schedule = Schedule::every("hourly", Duration::from_hours(1), job).unwrap();
         assert_eq!(schedule.name(), "hourly");
         assert_eq!(
             Failure::from("the receiver is busy".to_string()).to_string(),
@@ -2647,11 +2675,16 @@ mod tests {
         let mut queue = Queue::from_pool(pool, options);
         queue.handle("A", |_: serde_json::Value| async { Ok::<(), String>(()) });
         queue.limit("A", 1);
-        queue.schedule(Schedule::every(
-            "hourly",
-            Duration::from_hours(1),
-            NewJob::new("A", serde_json::Value::Null),
-        ));
+        queue
+            .schedule(
+                Schedule::every(
+                    "hourly",
+                    Duration::from_hours(1),
+                    NewJob::new("A", serde_json::Value::Null),
+                )
+                .unwrap(),
+            )
+            .unwrap();
         assert_eq!(queue.options().workers, 3);
         let shown = format!("{queue:?}");
         assert!(

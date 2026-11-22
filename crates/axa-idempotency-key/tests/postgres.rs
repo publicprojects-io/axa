@@ -623,7 +623,7 @@ async fn a_run_that_reports_in_outlives_its_lease() {
     };
     let lease = Duration::from_millis(300);
     let app = routes.layer(from_fn_with_state(
-        keys(&pool).rerun_abandoned_after(lease),
+        keys(&pool).rerun_abandoned_after(lease).unwrap(),
         idempotent,
     ));
 
@@ -684,7 +684,7 @@ async fn a_cancelled_run_stops_reporting_in_and_its_key_comes_free() {
     let (runs, started) = (Runs::default(), Arc::new(Notify::new()));
     let lease = Duration::from_millis(200);
     let app = first_run_hangs(&runs, &started).layer(from_fn_with_state(
-        keys(&pool).rerun_abandoned_after(lease),
+        keys(&pool).rerun_abandoned_after(lease).unwrap(),
         idempotent,
     ));
 
@@ -704,8 +704,10 @@ async fn by_default_a_lost_run_holds_its_key_for_the_whole_ttl() {
     let pool = pool().await;
     let (runs, started) = (Runs::default(), Arc::new(Notify::new()));
     let ttl = Duration::from_millis(600);
-    let app = first_run_hangs(&runs, &started)
-        .layer(from_fn_with_state(keys(&pool).ttl(ttl), idempotent));
+    let app = first_run_hangs(&runs, &started).layer(from_fn_with_state(
+        keys(&pool).ttl(ttl).unwrap(),
+        idempotent,
+    ));
 
     // The key is claimed after this, so it must still be held a whole ttl past it.
     let claimed = tokio::time::Instant::now();
@@ -778,7 +780,7 @@ async fn a_run_that_lost_its_claim_cannot_overwrite_the_next_runs_answer() {
 async fn an_expired_answer_is_not_replayed_and_the_key_runs_afresh() {
     let pool = pool().await;
     let runs = Runs::default();
-    let app = app(keys(&pool).ttl(Duration::from_millis(100)), &runs);
+    let app = app(keys(&pool).ttl(Duration::from_millis(100)).unwrap(), &runs);
 
     send(&app, write("/things", "ana", Some("k"), "x")).await;
     tokio::time::sleep(Duration::from_millis(200)).await;

@@ -34,15 +34,28 @@ pub const CURRENT_API_VERSION: &str = "1.0";
 /// Every version served.
 pub const SUPPORTED_API_VERSIONS: &[&str] = &["1.0"];
 
+/// The current API version is not among the supported ones.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CurrentNotSupported;
+
+impl std::fmt::Display for CurrentNotSupported {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the current API version must be supported")
+    }
+}
+
+impl std::error::Error for CurrentNotSupported {}
+
 /// The versions a service serves, for when it serves more than `1.0`.
 ///
 /// ```
 /// use axa_accepts_version_negotiation::ApiVersions;
 ///
-/// let versions = ApiVersions::new("2.0", &["2.0", "1.0"]);
+/// let versions = ApiVersions::new("2.0", &["2.0", "1.0"])?;
 /// assert_eq!(versions.resolve(None), Ok("2.0"));
 /// assert_eq!(versions.resolve(Some("1")), Ok("1.0"));
 /// assert!(versions.resolve(Some("3")).is_err());
+/// # Ok::<(), axa_accepts_version_negotiation::CurrentNotSupported>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ApiVersions {
@@ -63,17 +76,19 @@ impl ApiVersions {
     /// Serve `supported`, with `current` for a request that names none. A bare major
     /// means the first version listed with that major, so list the newest first.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// If `supported` does not hold `current`. This is fixed in code, so it is a
-    /// mistake to find at boot rather than on a request.
-    #[must_use]
-    pub fn new(current: &'static str, supported: &'static [&'static str]) -> Self {
-        assert!(
-            supported.contains(&current),
-            "the current API version must be supported"
-        );
-        Self { current, supported }
+    /// [`CurrentNotSupported`] if `supported` does not hold `current`. This is fixed in
+    /// code, so it is a mistake to find at boot rather than on a request.
+    pub fn new(
+        current: &'static str,
+        supported: &'static [&'static str],
+    ) -> Result<Self, CurrentNotSupported> {
+        if supported.contains(&current) {
+            Ok(Self { current, supported })
+        } else {
+            Err(CurrentNotSupported)
+        }
     }
 
     /// Resolve a requested version to a supported one.
@@ -166,7 +181,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_service_can_serve_its_own_versions() {
-        let versions = ApiVersions::new("2.0", &["2.0", "1.0"]);
+        let versions = ApiVersions::new("2.0", &["2.0", "1.0"]).unwrap();
         let app = Router::new()
             .route("/api/things", get(|| async { "ok" }))
             .layer(axum::middleware::from_fn_with_state(
@@ -188,9 +203,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "must be supported")]
     fn a_current_version_that_is_not_supported_is_a_mistake() {
-        let _ = ApiVersions::new("2.0", &["1.0"]);
+        let error = ApiVersions::new("2.0", &["1.0"]).unwrap_err();
+        assert_eq!(error, CurrentNotSupported);
+        assert!(error.to_string().contains("must be supported"));
     }
 
     fn app() -> Router {

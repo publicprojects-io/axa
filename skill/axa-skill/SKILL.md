@@ -443,7 +443,7 @@ Get these right, because each fails quietly or later:
   use a new key once they have checked the write did not happen.
 - **`rerun_abandoned_after(lease)` lets the write run again** once a run has not
   reported in for `lease`. Pass it only for a handler that is safe to run twice. It
-  panics at boot under 60 ms or over the `ttl`. `lease` is gone, so a service that set
+  returns a `ConfigError` at boot under 60 ms or over the `ttl`. `lease` is gone, so a service that set
   it must choose again.
 - **A crash after the handler commits leaves no answer**, as the answer is stored
   separately. A handler that must never repeat also needs a unique constraint. A `202`

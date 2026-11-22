@@ -269,6 +269,37 @@ pub async fn setup(pool: &PgPool) -> Result<(), sqlx::Error> {
 type CallerOf = dyn Fn(&Request) -> Option<String> + Send + Sync;
 type Covers = dyn Fn(&Method, &str) -> bool + Send + Sync;
 
+/// A setting of [`Idempotency`] that cannot work: a mistake in code, found at boot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ConfigError {
+    /// The `ttl` is under 60 milliseconds, which the heartbeat cannot keep.
+    TtlTooShort,
+    /// The `ttl` is shorter than the lease given to `rerun_abandoned_after`.
+    TtlBelowLease,
+    /// The lease is under 60 milliseconds, which the heartbeat cannot keep.
+    LeaseTooShort,
+    /// The lease is longer than the `ttl`, which would hold a key past its life.
+    LeaseAboveTtl,
+}
+
+impl std::fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::TtlTooShort => "an idempotency ttl must be at least 60 milliseconds",
+            Self::TtlBelowLease => {
+                "an idempotency ttl cannot be shorter than rerun_abandoned_after"
+            }
+            Self::LeaseTooShort => "rerun_abandoned_after must be at least 60 milliseconds",
+            Self::LeaseAboveTtl => {
+                "rerun_abandoned_after cannot be longer than the idempotency ttl"
+            }
+        })
+    }
+}
+
+impl std::error::Error for ConfigError {}
+
 /// The settings and the store behind [`idempotent`].
 ///
 /// Clones share one pool.
@@ -344,24 +375,22 @@ impl Idempotency {
     /// without an answer, by a crash, a hang-up, or a panic, holds its key this long too,
     /// unless [`Idempotency::rerun_abandoned_after`] says otherwise.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When `ttl` is under 60 milliseconds, or shorter than the lease given to
-    /// [`Idempotency::rerun_abandoned_after`]. These are mistakes in code, found at boot.
-    #[must_use]
-    pub const fn ttl(mut self, ttl: Duration) -> Self {
-        assert!(
-            ttl.as_nanos() >= MIN_LEASE.as_nanos(),
-            "an idempotency ttl must be at least 60 milliseconds"
-        );
-        if let Some(lease) = self.rerun_abandoned_after {
-            assert!(
-                lease.as_nanos() <= ttl.as_nanos(),
-                "an idempotency ttl cannot be shorter than rerun_abandoned_after"
-            );
+    /// [`ConfigError`] when `ttl` is under 60 milliseconds, or shorter than the lease
+    /// given to [`Idempotency::rerun_abandoned_after`]. These are mistakes in code,
+    /// found at boot.
+    pub fn ttl(mut self, ttl: Duration) -> Result<Self, ConfigError> {
+        if ttl.as_nanos() < MIN_LEASE.as_nanos() {
+            return Err(ConfigError::TtlTooShort);
+        }
+        if let Some(lease) = self.rerun_abandoned_after
+            && lease.as_nanos() > ttl.as_nanos()
+        {
+            return Err(ConfigError::TtlBelowLease);
         }
         self.ttl = ttl;
-        self
+        Ok(self)
     }
 
     /// Let the same request run the write a second time once its first run has not
@@ -373,23 +402,20 @@ impl Idempotency {
     /// lost, and this runs it again. A run reports in every third of `lease`, so a live
     /// run is not taken over however long it takes.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// When `lease` is under 60 milliseconds, which the heartbeat cannot keep, or longer
-    /// than the `ttl`, which would hold a key past its life. These are mistakes in code,
-    /// found at boot.
-    #[must_use]
-    pub const fn rerun_abandoned_after(mut self, lease: Duration) -> Self {
-        assert!(
-            lease.as_nanos() >= MIN_LEASE.as_nanos(),
-            "rerun_abandoned_after must be at least 60 milliseconds"
-        );
-        assert!(
-            lease.as_nanos() <= self.ttl.as_nanos(),
-            "rerun_abandoned_after cannot be longer than the idempotency ttl"
-        );
+    /// [`ConfigError`] when `lease` is under 60 milliseconds, which the heartbeat
+    /// cannot keep, or longer than the `ttl`, which would hold a key past its life.
+    /// These are mistakes in code, found at boot.
+    pub fn rerun_abandoned_after(mut self, lease: Duration) -> Result<Self, ConfigError> {
+        if lease.as_nanos() < MIN_LEASE.as_nanos() {
+            return Err(ConfigError::LeaseTooShort);
+        }
+        if lease.as_nanos() > self.ttl.as_nanos() {
+            return Err(ConfigError::LeaseAboveTtl);
+        }
         self.rerun_abandoned_after = Some(lease);
-        self
+        Ok(self)
     }
 
     /// The largest request held to compare it, 1 MiB by default. A larger one with a key
@@ -1184,47 +1210,85 @@ mod tests {
     async fn the_lease_is_the_ttl_unless_a_shorter_one_is_chosen() {
         assert_eq!(keys().lease(), Duration::from_hours(24));
         let hour = Duration::from_hours(1);
-        assert_eq!(keys().ttl(hour).lease(), hour);
+        assert_eq!(keys().ttl(hour).unwrap().lease(), hour);
         let minute = Duration::from_mins(1);
-        assert_eq!(keys().rerun_abandoned_after(minute).lease(), minute);
         assert_eq!(
-            keys().ttl(hour).rerun_abandoned_after(minute).lease(),
+            keys().rerun_abandoned_after(minute).unwrap().lease(),
             minute
         );
+        let both = keys()
+            .ttl(hour)
+            .unwrap()
+            .rerun_abandoned_after(minute)
+            .unwrap();
+        assert_eq!(both.lease(), minute);
         // Set either way round, the shorter lease is kept.
-        assert_eq!(
-            keys().rerun_abandoned_after(minute).ttl(hour).lease(),
-            minute
-        );
-        assert_eq!(keys().rerun_abandoned_after(hour).ttl(hour).lease(), hour);
+        let both = keys()
+            .rerun_abandoned_after(minute)
+            .unwrap()
+            .ttl(hour)
+            .unwrap();
+        assert_eq!(both.lease(), minute);
+        let both = keys()
+            .rerun_abandoned_after(hour)
+            .unwrap()
+            .ttl(hour)
+            .unwrap();
+        assert_eq!(both.lease(), hour);
     }
 
     #[tokio::test]
-    #[should_panic(expected = "cannot be longer than the idempotency ttl")]
     async fn a_lease_longer_than_the_ttl_is_refused() {
-        let _ = keys()
+        let error = keys()
             .ttl(Duration::from_mins(1))
-            .rerun_abandoned_after(Duration::from_mins(2));
-    }
-
-    #[tokio::test]
-    #[should_panic(expected = "cannot be shorter than rerun_abandoned_after")]
-    async fn a_ttl_shorter_than_its_lease_is_refused() {
-        let _ = keys()
+            .unwrap()
             .rerun_abandoned_after(Duration::from_mins(2))
-            .ttl(Duration::from_mins(1));
+            .unwrap_err();
+        assert_eq!(error, ConfigError::LeaseAboveTtl);
+        assert!(
+            error
+                .to_string()
+                .contains("cannot be longer than the idempotency ttl")
+        );
     }
 
     #[tokio::test]
-    #[should_panic(expected = "rerun_abandoned_after must be at least 60 milliseconds")]
+    async fn a_ttl_shorter_than_its_lease_is_refused() {
+        let error = keys()
+            .rerun_abandoned_after(Duration::from_mins(2))
+            .unwrap()
+            .ttl(Duration::from_mins(1))
+            .unwrap_err();
+        assert_eq!(error, ConfigError::TtlBelowLease);
+        assert!(
+            error
+                .to_string()
+                .contains("cannot be shorter than rerun_abandoned_after")
+        );
+    }
+
+    #[tokio::test]
     async fn a_lease_the_heartbeat_cannot_keep_is_refused() {
-        let _ = keys().rerun_abandoned_after(Duration::from_millis(59));
+        let error = keys()
+            .rerun_abandoned_after(Duration::from_millis(59))
+            .unwrap_err();
+        assert_eq!(error, ConfigError::LeaseTooShort);
+        assert!(
+            error
+                .to_string()
+                .contains("rerun_abandoned_after must be at least 60 milliseconds")
+        );
     }
 
     #[tokio::test]
-    #[should_panic(expected = "ttl must be at least 60 milliseconds")]
     async fn a_ttl_the_heartbeat_cannot_keep_is_refused() {
-        let _ = keys().ttl(Duration::ZERO);
+        let error = keys().ttl(Duration::ZERO).unwrap_err();
+        assert_eq!(error, ConfigError::TtlTooShort);
+        assert!(
+            error
+                .to_string()
+                .contains("ttl must be at least 60 milliseconds")
+        );
     }
 
     #[tokio::test]

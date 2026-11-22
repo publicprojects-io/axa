@@ -292,7 +292,11 @@ fn routes_ending_badly(keys: Idempotency, http: &Http, panics: bool) -> Router {
 async fn a_panic_is_answered_and_its_key_comes_free_after_the_lease() {
     let pool = pool().await;
     let lease = Duration::from_millis(200);
-    let app = routes_ending_badly(keys(&pool).rerun_abandoned_after(lease), &http(), true);
+    let app = routes_ending_badly(
+        keys(&pool).rerun_abandoned_after(lease).unwrap(),
+        &http(),
+        true,
+    );
 
     let panicked = send(&app, write("ana", None)).await;
     assert_eq!(panicked.status(), StatusCode::INTERNAL_SERVER_ERROR);
@@ -335,7 +339,11 @@ async fn a_request_the_stack_cuts_off_frees_its_key_after_the_lease() {
         timeout_seconds: 1,
         ..http()
     };
-    let app = routes_ending_badly(keys(&pool).rerun_abandoned_after(lease), &timed, false);
+    let app = routes_ending_badly(
+        keys(&pool).rerun_abandoned_after(lease).unwrap(),
+        &timed,
+        false,
+    );
 
     let cut_off = send(&app, write("ana", None)).await;
     assert_eq!(cut_off.status(), StatusCode::REQUEST_TIMEOUT);

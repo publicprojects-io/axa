@@ -7,6 +7,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Breaking: boot-time mistakes in code return an error instead of panicking.
+  `Schedule::every`, `Schedule::cron` and `Queue::schedule` in the three job queues, and
+  `axa::queue::Queue::schedule`, return `Result`, with a new `Error::Schedule` for a
+  bad name, an interval under a second, a bad or empty cron pattern, and a name added
+  twice. `Idempotency::ttl` and `rerun_abandoned_after` return `Result<_, ConfigError>`,
+  and are no longer `const`. `ApiVersions::new` returns `Result<_, CurrentNotSupported>`.
+  Add a `?` to each call (WRK-22, WRK-39, IDM-32, VER-4).
 - `logger::init_env_filter` and `init_with` no longer panic on an invalid override
   filter or extra directive: the override is passed over, as a bad `RUST_LOG` is, and the
   directive dropped (LOG-7).

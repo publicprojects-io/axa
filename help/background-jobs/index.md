@@ -302,9 +302,10 @@ schedule's row is locked while its job is queued, in the same transaction.
 ```rust
 # use std::time::Duration;
 # use axa::queue::{NewJob, Queue, Schedule, Timestamp};
-# fn example(queue: &mut Queue, job: NewJob, next_two_am_utc: Timestamp) {
+# fn example(queue: &mut Queue, job: NewJob, next_two_am_utc: Timestamp) -> axa::Result<()> {
 let first = next_two_am_utc;
-queue.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_at(first));
+queue.schedule(Schedule::every("nightly", Duration::from_hours(24), job)?.first_at(first))?;
+# Ok(())
 # }
 ```
 
@@ -337,8 +338,8 @@ above hold: each due time is queued once across processes, times missed while ev
 process was down queue one job and the next time is the pattern's next after now, and a
 due time is skipped while the last job is queued or running. A changed pattern takes its
 next time from the new pattern. A pattern that does not parse, or names no time to come,
-panics at boot. Times are UTC: a schedule for 09:00 in a zone with daylight saving moves
-by an hour twice a year.
+is an error at boot, from `Schedule::cron`. Times are UTC: a schedule for 09:00 in a zone
+with daylight saving moves by an hour twice a year.
 
 A job queued wakes an idle worker at once, through `LISTEN` and `NOTIFY` on the
 `axa_queue` channel, on one connection of the queue's pool. A delayed job, or one queued
@@ -349,8 +350,8 @@ so a due job is queued within about that. A process with no job loops can call
 `queue.tick_schedules()` itself.
 
 A schedule name keys its row, so keep it stable. A name that is empty, over 200
-characters, or used twice, or an interval under a second, panics at boot, as Axum does
-for a bad route.
+characters, or used twice, or an interval under a second, is an `Error::Schedule` at
+boot: `Schedule::every`, `Schedule::cron` and `Queue::schedule` return it.
 
 ### Removing a schedule
 

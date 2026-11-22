@@ -81,9 +81,10 @@ taken for lost. The lease is the `ttl` unless you choose a shorter one, and choo
 lets the write run a second time:
 
 ```rust
-# fn example(keys: axa::idempotency::Idempotency) {
+# fn example(keys: axa::idempotency::Idempotency) -> Result<(), axa::idempotency::ConfigError> {
 // Only for a handler that is safe to run twice, such as one with a unique constraint.
-let keys = keys.rerun_abandoned_after(std::time::Duration::from_mins(1));
+let keys = keys.rerun_abandoned_after(std::time::Duration::from_mins(1))?;
+# Ok(())
 # }
 ```
 

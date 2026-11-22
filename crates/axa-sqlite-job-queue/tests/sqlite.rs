@@ -578,11 +578,16 @@ async fn connecting_to_tables_missing_or_out_of_date_fails_and_changes_nothing()
 // Schedules.
 
 fn every(queue: &mut Queue, name: &str, interval: Duration) {
-    queue.schedule(Schedule::every(
-        name,
-        interval,
-        NewJob::new("Tick", serde_json::json!({ "from": name })),
-    ));
+    queue
+        .schedule(
+            Schedule::every(
+                name,
+                interval,
+                NewJob::new("Tick", serde_json::json!({ "from": name })),
+            )
+            .unwrap(),
+        )
+        .unwrap();
 }
 
 /// Mark every unfinished job completed. SQLite runs one writer at a time, so this
@@ -771,9 +776,13 @@ async fn a_first_time_applies_only_when_the_row_is_made() {
     let mut queue = fresh(quick()).await;
     let first = time((now(&queue).await / 1_000_000 + 3_600) * 1_000_000);
     let job = NewJob::new("Tick", serde_json::Value::Null);
-    queue.schedule(
-        Schedule::every("nightly", Duration::from_hours(24), job.clone()).first_at(first),
-    );
+    queue
+        .schedule(
+            Schedule::every("nightly", Duration::from_hours(24), job.clone())
+                .unwrap()
+                .first_at(first),
+        )
+        .unwrap();
     assert_eq!(
         queue.tick_schedules().await.unwrap(),
         0,
@@ -788,7 +797,13 @@ async fn a_first_time_applies_only_when_the_row_is_made() {
     // A later release with another first time leaves the row where it is.
     let earlier = time(now(&queue).await - 5 * 3_600_000_000);
     let mut later = replica(quick()).await;
-    later.schedule(Schedule::every("nightly", Duration::from_hours(24), job).first_at(earlier));
+    later
+        .schedule(
+            Schedule::every("nightly", Duration::from_hours(24), job)
+                .unwrap()
+                .first_at(earlier),
+        )
+        .unwrap();
     later.tick_schedules().await.unwrap();
     let stored: i64 = sqlx::query_scalar("SELECT due_at FROM axa_schedule WHERE name = 'nightly'")
         .fetch_one(queue.pool())
@@ -1540,11 +1555,16 @@ async fn a_key_that_is_not_a_code_is_refused() {
 // Cron schedules.
 
 fn cron(queue: &mut Queue, name: &str, pattern: &str) {
-    queue.schedule(Schedule::cron(
-        name,
-        pattern,
-        NewJob::new("Tick", serde_json::json!({ "from": name })),
-    ));
+    queue
+        .schedule(
+            Schedule::cron(
+                name,
+                pattern,
+                NewJob::new("Tick", serde_json::json!({ "from": name })),
+            )
+            .unwrap(),
+        )
+        .unwrap();
 }
 
 async fn set_due(pool: &SqlitePool, name: &str, seconds_ago: u32) {
