@@ -342,6 +342,7 @@ async fn read_file(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
     })
 }
 
+#[allow(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
 #[cfg(test)]
 mod tests {
     use axum::{

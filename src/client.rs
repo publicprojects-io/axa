@@ -60,6 +60,10 @@ impl ProxyNet {
 }
 
 /// `bits` of `width`, keeping the leading `prefix`.
+#[expect(
+    clippy::as_conversions,
+    reason = "RCA-EXC-2: a u8 fits a u32, and From is not yet const"
+)]
 const fn masked(bits: u128, width: u8, prefix: u8) -> u128 {
     if prefix == 0 {
         0

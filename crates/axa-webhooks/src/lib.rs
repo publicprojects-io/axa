@@ -791,7 +791,7 @@ mod tests {
         for (text, error) in [
             ("MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw", KeyError::Prefix),
             ("whsec_!!!", KeyError::Base64),
-            (&format!("whsec_{secret_bytes}") as &str, KeyError::Length),
+            (format!("whsec_{secret_bytes}").as_str(), KeyError::Length),
             (
                 &format!("whsk_{}", STANDARD.encode([1; 31])),
                 KeyError::Length,

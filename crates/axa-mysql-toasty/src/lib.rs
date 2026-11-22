@@ -218,10 +218,11 @@ impl Driver for Setting {
     {
         Box::pin(async move {
             let inner = self.driver.connect(cx).await?;
-            Ok(Box::new(SettingConnection {
+            let connection: Box<dyn Connection> = Box::new(SettingConnection {
                 inner,
                 setup: Some(self.setup.clone()),
-            }) as Box<dyn Connection>)
+            });
+            Ok(connection)
         })
     }
 

@@ -226,7 +226,12 @@ fn encode_base64(bytes: &[u8]) -> String {
         for index in 0..4 {
             if index <= chunk.len() {
                 let six = (triple >> (18 - 6 * index)) & 0x3f;
-                encoded.push(char::from(ALPHABET[six as usize]));
+                #[expect(
+                    clippy::as_conversions,
+                    reason = "RCA-EXC-2: six is at most 63, so it fits a usize"
+                )]
+                let at = six as usize;
+                encoded.push(char::from(ALPHABET[at]));
             } else {
                 encoded.push('=');
             }

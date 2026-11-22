@@ -273,10 +273,11 @@ impl Driver for Retiring {
     {
         Box::pin(async move {
             let inner = self.0.connect(cx).await?;
-            Ok(Box::new(RetiringConnection {
+            let connection: Box<dyn Connection> = Box::new(RetiringConnection {
                 inner,
                 opened: Instant::now(),
-            }) as Box<dyn Connection>)
+            });
+            Ok(connection)
         })
     }
 

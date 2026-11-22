@@ -700,7 +700,7 @@ struct Failure {
 
 impl Failure {
     fn from_error<E: fmt::Display + 'static>(error: E) -> Self {
-        let any = &error as &dyn std::any::Any;
+        let any: &dyn std::any::Any = &error;
         // A handler's own error, or one boxed, as `axa`'s workers hand theirs on.
         let retry_in = any
             .downcast_ref::<RetryAfter>()
@@ -736,7 +736,11 @@ impl fmt::Display for Failure {
 #[must_use]
 pub fn jittered(wait: Duration) -> Duration {
     let random = Uuid::new_v4().as_u128();
-    #[allow(clippy::cast_precision_loss)]
+    #[expect(
+        clippy::cast_precision_loss,
+        clippy::as_conversions,
+        reason = "RCA-EXC-2: below one million, which an f64 holds exactly"
+    )]
     let fraction = (random % 1_000_000) as f64 / 1_000_000.0;
     wait.mul_f64(0.5 + fraction / 2.0)
 }

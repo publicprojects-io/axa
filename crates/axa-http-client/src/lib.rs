@@ -327,9 +327,10 @@ impl Resolve for Resolver {
                 .filter(|address| policy.permits(address.ip()))
                 .collect();
             if kept.is_empty() {
-                return Err(Box::new(Refused::NoAddress) as _);
+                return Err(Refused::NoAddress.into());
             }
-            Ok(Box::new(kept.into_iter()) as Addrs)
+            let addresses: Addrs = Box::new(kept.into_iter());
+            Ok(addresses)
         })
     }
 }

@@ -317,6 +317,7 @@ impl<'de> Deserialize<'de> for SafeInt {
     }
 }
 
+#[allow(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
 #[cfg(test)]
 mod tests {
     use axum::{

@@ -635,6 +635,7 @@ fn origin_host(origin: &str) -> &str {
     origin.split_once("://").map_or(origin, |(_, host)| host)
 }
 
+#[allow(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
 #[cfg(test)]
 mod tests {
     use super::*;

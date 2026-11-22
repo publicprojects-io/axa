@@ -285,7 +285,7 @@ impl Hasher for KeyHasher {
     }
 
     fn write_usize(&mut self, i: usize) {
-        self.write_u64(i as u64);
+        self.write_u64(u64::try_from(i).unwrap_or(u64::MAX)); // ARI-5
     }
 
     fn write_i8(&mut self, i: i8) {
@@ -309,7 +309,7 @@ impl Hasher for KeyHasher {
     }
 
     fn write_isize(&mut self, i: isize) {
-        self.write_i64(i as i64);
+        self.write_i64(i64::try_from(i).unwrap_or(i64::MAX)); // ARI-5
     }
 }
 

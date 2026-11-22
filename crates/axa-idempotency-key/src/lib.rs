@@ -876,7 +876,7 @@ fn fingerprint(method: &str, path: &str, query: &str, body: &[u8]) -> String {
 
     let mut hash = Sha256::new();
     for part in [method.as_bytes(), path.as_bytes(), query.as_bytes(), body] {
-        hash.update((part.len() as u64).to_be_bytes());
+        hash.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes()); // ARI-5
         hash.update(part);
     }
     hash.finalize()
@@ -929,7 +929,12 @@ fn wait(running_for: f64, lease_left: f64) -> u64 {
     let ceil = |seconds: f64| {
         if seconds.is_finite() && seconds > 1.0 {
             // A lease is at most a `ttl`, which fits in a `u64` of seconds.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                clippy::as_conversions,
+                reason = "RCA-EXC-2: finite and above one, and below a ttl in seconds"
+            )]
             let seconds = seconds.ceil() as u64;
             seconds
         } else {
@@ -1011,7 +1016,7 @@ mod tests {
     fn obeying_the_wait_asks_about_a_lost_run_a_handful_of_times_a_day() {
         let (lease, mut at, mut asked) = (86_400.0, 0.0, 0);
         while at < lease {
-            #[allow(clippy::cast_precision_loss)]
+            #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
             let waited = wait(at, lease - at) as f64;
             at += waited;
             asked += 1;

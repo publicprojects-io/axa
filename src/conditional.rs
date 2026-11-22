@@ -387,7 +387,7 @@ fn should_tag(response: &Response) -> bool {
             .body()
             .size_hint()
             .exact()
-            .is_some_and(|size| size > 0 && size <= MAX_BODY as u64)
+            .is_some_and(|size| size > 0 && size <= u64::try_from(MAX_BODY).unwrap_or(u64::MAX))
 }
 
 /// Give a `GET`'s `200` a weak `ETag` from a hash of its body.

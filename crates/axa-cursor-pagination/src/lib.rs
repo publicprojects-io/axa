@@ -198,7 +198,11 @@ fn query_hash(path: &str, kept: &[&str], context: &str) -> [u8; 32] {
     }
     if !context.is_empty() {
         hash.update([1]);
-        hash.update((context.len() as u64).to_be_bytes());
+        hash.update(
+            u64::try_from(context.len())
+                .unwrap_or(u64::MAX)
+                .to_be_bytes(),
+        ); // ARI-5
         hash.update(context.as_bytes());
     }
     hash.finalize().into()
