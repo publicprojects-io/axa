@@ -374,16 +374,13 @@ pub async fn probe(binding: &str, port: u16, path: &str, timeout: Duration) -> R
         let request =
             format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
         stream.write_all(request.as_bytes()).await?;
-        let mut head = [0_u8; 64];
-        let mut read = 0;
-        while read < 12 {
-            let more = stream.read(&mut head[read..]).await?;
-            if more == 0 {
+        let mut head = Vec::with_capacity(64);
+        while head.len() < 12 {
+            if stream.read_buf(&mut head).await? == 0 {
                 break;
             }
-            read = read.checked_add(more).unwrap_or(head.len()); // ARI-5
         }
-        Ok::<_, std::io::Error>(head[..read].to_vec())
+        Ok::<_, std::io::Error>(head)
     };
     let head = tokio::time::timeout(timeout, ask)
         .await

@@ -1,3 +1,7 @@
+#![allow(
+    clippy::indexing_slicing,
+    reason = "RCA-SCOPE-4: tests may index"
+)]
 //! The integration tests, in one binary, as one link is faster than one per file.
 //!
 //! `logs_and_mail` and `postgres_templates` are binaries of their own, named in

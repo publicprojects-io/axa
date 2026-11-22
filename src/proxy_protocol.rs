@@ -40,8 +40,14 @@ pub(crate) async fn read_header<S: AsyncRead + Unpin>(
     if start == v2::PROTOCOL_PREFIX {
         let mut header = Vec::from(start);
         header.resize(V2_FIXED, 0);
-        stream.read_exact(&mut header[start.len()..]).await?;
-        let rest = usize::from(u16::from_be_bytes([header[14], header[15]]));
+        let short = || invalid("a PROXY v2 header too short to read".to_string());
+        stream
+            .read_exact(header.get_mut(start.len()..).ok_or_else(short)?)
+            .await?;
+        let Some(&[high, low]) = header.get(14..16) else {
+            return Err(short());
+        };
+        let rest = usize::from(u16::from_be_bytes([high, low]));
         if rest > V2_MAX_REST {
             return Err(invalid(format!(
                 "a PROXY v2 header of more than {V2_MAX_REST} bytes"
@@ -51,7 +57,9 @@ pub(crate) async fn read_header<S: AsyncRead + Unpin>(
             .checked_add(rest)
             .ok_or_else(|| invalid("a PROXY v2 header too long to read".to_string()))?;
         header.resize(whole, 0);
-        stream.read_exact(&mut header[V2_FIXED..]).await?;
+        stream
+            .read_exact(header.get_mut(V2_FIXED..).ok_or_else(short)?)
+            .await?;
         let header = v2::Header::try_from(header.as_slice())
             .map_err(|error| invalid(format!("a bad PROXY v2 header: {error}")))?;
         return Ok(match (header.command, header.addresses) {

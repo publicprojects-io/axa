@@ -145,8 +145,23 @@ where
 /// of `components` are left alone.
 pub fn with_bearer_auth(spec: &mut Value) {
     let scheme = json!({ "type": "http", "scheme": "bearer", "bearerFormat": "PASETO" });
-    spec["components"]["securitySchemes"]["bearer"] = scheme;
-    spec["security"] = json!([{ "bearer": [] }]);
+    let Some(root) = spec.as_object_mut() else {
+        return;
+    };
+    let schemes = root
+        .entry("components")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .map(|components| {
+            components
+                .entry("securitySchemes")
+                .or_insert_with(|| json!({}))
+        })
+        .and_then(Value::as_object_mut);
+    if let Some(schemes) = schemes {
+        schemes.insert("bearer".to_string(), scheme);
+    }
+    root.insert("security".to_string(), json!([{ "bearer": [] }]));
 }
 
 /// The JSON for a `utoipa` document.

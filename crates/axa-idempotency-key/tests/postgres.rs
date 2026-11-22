@@ -1,6 +1,7 @@
 #![allow(
     clippy::arithmetic_side_effects,
-    reason = "RCA-SCOPE-4: tests may use plain operators"
+    clippy::indexing_slicing,
+    reason = "RCA-SCOPE-4: tests may use plain operators and index"
 )]
 //! The layer against a real Postgres. Each test starts from an empty table, so run
 //! these with `--test-threads=1`.

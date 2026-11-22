@@ -295,18 +295,22 @@ impl Checks {
         let checks: Vec<Check> = built_in.into_iter().chain(named.iter().cloned()).collect();
         let mut running = JoinSet::new();
         for (index, check) in checks.iter().enumerate() {
-            let (run, limit) = (check.run.clone(), self.time_limit);
-            running.spawn(async move { (index, timeout(limit, run()).await) });
+            let (run, limit, name) = (check.run.clone(), self.time_limit, check.name.clone());
+            running.spawn(async move { (index, name, timeout(limit, run()).await) });
         }
         let mut passed = vec![false; checks.len()];
         while let Some(finished) = running.join_next().await {
             match finished {
-                Ok((index, Ok(Ok(())))) => passed[index] = true,
-                Ok((index, Ok(Err(error)))) => {
-                    tracing::error!(check = checks[index].name, %error, "readiness_check_failed");
+                Ok((index, _, Ok(Ok(())))) => {
+                    if let Some(slot) = passed.get_mut(index) {
+                        *slot = true;
+                    }
                 }
-                Ok((index, Err(_))) => {
-                    tracing::error!(check = checks[index].name, "readiness_check_timed_out");
+                Ok((_, name, Ok(Err(error)))) => {
+                    tracing::error!(check = name, %error, "readiness_check_failed");
+                }
+                Ok((_, name, Err(_))) => {
+                    tracing::error!(check = name, "readiness_check_timed_out");
                 }
                 Err(error) => tracing::error!(%error, "readiness_check_panicked"),
             }

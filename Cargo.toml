@@ -26,6 +26,7 @@ arithmetic_side_effects = "deny"
 # RCA-CONV-2: no `as` for a number. The two forms left, `as` for a trait object and an
 # exception with a proof, are written without it or with `#[expect]`.
 as_conversions = "deny"
+indexing_slicing = "deny"
 
 [package]
 name = "axa"

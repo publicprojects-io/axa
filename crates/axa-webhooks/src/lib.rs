@@ -159,7 +159,11 @@ impl FromStr for SigningKey {
             .and_then(|seed| seed.try_into().ok())
             .ok_or(KeyError::Length)?;
         let key = ed25519_dalek::SigningKey::from_bytes(&seed);
-        if bytes.len() == 64 && bytes[32..] != key.verifying_key().to_bytes() {
+        if bytes.len() == 64
+            && bytes
+                .get(32..)
+                .is_some_and(|tail| tail != key.verifying_key().to_bytes())
+        {
             return Err(KeyError::Ed25519);
         }
         Ok(Self(Signing::Ed25519(key)))

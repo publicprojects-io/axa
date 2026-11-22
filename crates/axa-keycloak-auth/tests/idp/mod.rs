@@ -1,6 +1,7 @@
 #![allow(
     clippy::arithmetic_side_effects,
-    reason = "RCA-SCOPE-4: tests may use plain operators"
+    clippy::indexing_slicing,
+    reason = "RCA-SCOPE-4: tests may use plain operators and index"
 )]
 //! A local OIDC provider for tests.
 //!

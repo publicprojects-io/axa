@@ -245,13 +245,8 @@ fn read_tag(bytes: &[u8]) -> Option<(Tag<'_>, &[u8])> {
     };
     let rest = rest.strip_prefix(b"\"")?;
     let end = rest.iter().position(|byte| !is_tag_byte(*byte))?;
-    (rest[end] == b'"').then_some((
-        Tag {
-            weak,
-            opaque: &rest[..end],
-        },
-        rest.get(end.checked_add(1)?..)?,
-    ))
+    let (opaque, after) = rest.split_at_checked(end)?;
+    Some((Tag { weak, opaque }, after.strip_prefix(b"\"")?))
 }
 
 /// A header holding exactly one tag, as `ETag` does.

@@ -165,21 +165,28 @@ impl Keys {
 
     /// Open `sealed`, which was sealed for `event_id`.
     pub(crate) fn open(&self, event_id: Uuid, sealed: &[u8]) -> Result<Vec<u8>, Unopened> {
-        if sealed.len() < HEADER_LEN || sealed[0] != VERSION {
+        let (Some(&version), Some(&id), Some(nonce), Some(body)) = (
+            sealed.first(),
+            sealed.get(1),
+            sealed.get(2..HEADER_LEN),
+            sealed.get(HEADER_LEN..),
+        ) else {
+            return Err(Unopened::NoKey);
+        };
+        if version != VERSION {
             return Err(Unopened::NoKey);
         }
-        let id = sealed[1];
         let key = std::iter::once(&self.current)
             .chain(&self.older)
             .find(|key| key.id == id)
             .ok_or(Unopened::NoKey)?;
-        let nonce = XNonce::try_from(&sealed[2..HEADER_LEN]).map_err(|_| Unopened::Tampered)?;
+        let nonce = XNonce::try_from(nonce).map_err(|_| Unopened::Tampered)?;
         let aad = associated(id, event_id);
         key.cipher
             .decrypt(
                 &nonce,
                 Payload {
-                    msg: &sealed[HEADER_LEN..],
+                    msg: body,
                     aad: &aad,
                 },
             )

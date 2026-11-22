@@ -256,7 +256,9 @@ impl Hasher for KeyHasher {
     fn finish(&self) -> u64 {
         let digest = self.0.clone().finalize().into_bytes();
         let mut first = [0; 8];
-        first.copy_from_slice(&digest[..8]);
+        for (to, from) in first.iter_mut().zip(digest.iter()) {
+            *to = *from;
+        }
         u64::from_le_bytes(first)
     }
 
@@ -364,7 +366,7 @@ impl SharedLimiter {
         key.hash(&mut hasher);
         let digest = hasher.0.finalize().into_bytes();
         let mut stored = format!("{}:", self.inner.name);
-        for byte in &digest[..16] {
+        for byte in digest.iter().take(16) {
             let _ = write!(stored, "{byte:02x}");
         }
         stored

@@ -102,14 +102,14 @@ impl CursorKey {
 
     fn decode(&self, cursor: &str, query: &[u8; 32]) -> Option<u64> {
         let bytes = URL_SAFE_NO_PAD.decode(cursor).ok()?;
-        if bytes.len() != CURSOR_LEN || bytes[0] != VERSION {
+        let (&version, rest) = bytes.split_first()?;
+        if bytes.len() != CURSOR_LEN || version != VERSION {
             return None;
         }
-        let position = u64::from_be_bytes(bytes[1..=POSITION_LEN].try_into().ok()?);
+        let (position, tag) = rest.split_at_checked(POSITION_LEN)?;
+        let position = u64::from_be_bytes(position.try_into().ok()?);
         // Constant time, so a caller cannot learn the tag a byte at a time.
-        self.tag(position, query)
-            .verify_slice(&bytes[1 + POSITION_LEN..])
-            .ok()?;
+        self.tag(position, query).verify_slice(tag).ok()?;
         Some(position)
     }
 }

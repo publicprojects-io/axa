@@ -230,8 +230,8 @@ fn percent_decode(value: &str) -> Result<String, Error> {
     let bytes = value.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' {
+    while let Some(&byte) = bytes.get(i) {
+        if byte == b'%' {
             let bad = || Error::Url("bad percent escape in `ssl-ca'".to_string());
             let (from, to) = i.checked_add(1).zip(i.checked_add(3)).ok_or_else(bad)?;
             let hex = value
@@ -241,7 +241,7 @@ fn percent_decode(value: &str) -> Result<String, Error> {
             out.push(hex);
             i = to;
         } else {
-            out.push(bytes[i]);
+            out.push(byte);
             i = i
                 .checked_add(1)
                 .ok_or_else(|| Error::Url("`ssl-ca' is too long".to_string()))?;

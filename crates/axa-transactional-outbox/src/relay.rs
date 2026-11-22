@@ -999,7 +999,12 @@ impl Outbox {
         beat.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut round = Round::Worked;
         for (place, event) in batch.iter().enumerate() {
-            let held = &batch[place..];
+            let Some(held) = batch.get(place..) else {
+                break;
+            };
+            let Some((_, rest)) = held.split_first() else {
+                break;
+            };
             if *shutdown.borrow() {
                 self.hand_back(held, None, Duration::ZERO).await?;
                 break;
@@ -1023,13 +1028,13 @@ impl Outbox {
             };
             if let Err(error) = outcome {
                 // The event stays claimed, to be recovered. The rest go back now.
-                if let Err(also) = self.hand_back(&held[1..], None, Duration::ZERO).await {
+                if let Err(also) = self.hand_back(rest, None, Duration::ZERO).await {
                     tracing::error!(error = %also, "outbox could not give back a batch");
                 }
                 return Err(error);
             }
             if matches!(round, Round::Stalled) {
-                self.hand_back(&held[1..], None, Duration::ZERO).await?;
+                self.hand_back(rest, None, Duration::ZERO).await?;
                 break;
             }
         }
@@ -1097,15 +1102,18 @@ impl Outbox {
     /// and waits [`OutboxOptions::retry_backoff`], so that one event a publisher wrongly
     /// calls an outage holds up its own key and no other.
     async fn hold_back(&self, held: &[Claimed], reason: &str) -> Result<(), sqlx::Error> {
+        let Some((first, rest)) = held.split_at_checked(1) else {
+            return Ok(());
+        };
         let mut transaction = self.pool.begin().await?;
         self.give_back(
             &mut transaction,
-            &held[..1],
+            first,
             Some(reason),
             self.options.retry_backoff,
         )
         .await?;
-        self.give_back(&mut transaction, &held[1..], None, Duration::ZERO)
+        self.give_back(&mut transaction, rest, None, Duration::ZERO)
             .await?;
         transaction.commit().await
     }
