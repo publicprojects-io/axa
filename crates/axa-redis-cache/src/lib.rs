@@ -567,6 +567,11 @@ mod tests {
 
     const LIVE: Duration = Duration::from_mins(1);
 
+    #[test]
+    fn an_entry_is_sized_by_its_key_and_value() {
+        assert_eq!(size_of("ab", "cde"), Some(5));
+    }
+
     fn memory() -> Cache {
         Cache::memory("svc", LIVE).unwrap()
     }

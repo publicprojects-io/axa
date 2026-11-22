@@ -1209,4 +1209,15 @@ mod tests {
         assert_eq!(backoff(base, 3, MAX_PAUSE), Some(base * 4));
         assert_eq!(backoff(base, 1_000, MAX_PAUSE), Some(MAX_PAUSE));
     }
+
+    #[test]
+    fn a_count_that_does_not_fit_is_an_error_naming_it() {
+        let mut figure = 1_usize;
+        count(&mut figure, "attempts").unwrap();
+        assert_eq!(figure, 2);
+        figure = usize::MAX;
+        let error = count(&mut figure, "attempts").unwrap_err();
+        assert_eq!(figure, usize::MAX);
+        assert!(error.to_string().contains("attempts"));
+    }
 }
