@@ -1777,3 +1777,35 @@ async fn a_job_that_panics_fails_and_its_loop_carries_on() {
     stop.send(true).unwrap();
     run.await.unwrap();
 }
+
+#[tokio::test]
+async fn a_run_whose_claim_was_taken_stops_at_its_next_heartbeat() {
+    let mut queue = fresh(QueueOptions {
+        heartbeat_interval: Duration::from_millis(50),
+        ..quick()
+    })
+    .await;
+    queue.handle("Slow", |_| async {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        Ok::<(), String>(())
+    });
+    let id = queue
+        .enqueue("Slow", serde_json::Value::Null)
+        .await
+        .unwrap();
+    let queue = Arc::new(queue);
+    let run = tokio::spawn({
+        let queue = queue.clone();
+        async move { queue.run_one().await }
+    });
+    until(|| async { state(&queue, id).await == JobState::Running }).await;
+    // Another worker or a recovery takes the claim.
+    sqlx::query("UPDATE axa_queue SET status = 'failed' WHERE id = ?")
+        .bind(id)
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    let ended = tokio::time::timeout(Duration::from_secs(10), run).await;
+    assert!(ended.is_ok(), "the run stopped without waiting for the job");
+    assert_ne!(state(&queue, id).await, JobState::Running);
+}
