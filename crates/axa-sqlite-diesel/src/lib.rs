@@ -351,7 +351,7 @@ where
             connection
                 .revert_last_migration(migrations.clone())
                 .map_err(migration_error)?;
-            reverted += 1;
+            reverted = reverted.checked_add(1).unwrap_or(usize::MAX); // ARI-3
         }
         Ok(reverted)
     })

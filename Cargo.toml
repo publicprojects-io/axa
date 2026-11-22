@@ -15,6 +15,9 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("sqlite-sq
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }
+# RCA-INT-4 forbids `saturating_*`, and RCA-NONE-2 writes a declared bound as
+# `checked_*(..).unwrap_or(BOUND)`, which this lint would rewrite back into `saturating_*`.
+manual_saturating_arithmetic = "allow"
 
 [package]
 name = "axa"
@@ -176,7 +179,7 @@ axa-paseto-auth = { version = "0.7.3", path = "crates/axa-paseto-auth", optional
 axa-problem = { version = "0.2.0", path = "crates/axa-problem" }
 axa-prometheus-metrics = { version = "0.1.2", path = "crates/axa-prometheus-metrics", optional = true }
 axa-request-rate-limit = { version = "0.3.3", path = "crates/axa-request-rate-limit", optional = true }
-axa-redis-cache = { version = "0.2.1", path = "crates/axa-redis-cache", optional = true }
+axa-redis-cache = { version = "0.3.0", path = "crates/axa-redis-cache", optional = true }
 axa-postgres-seaorm = { version = "0.4.1", path = "crates/axa-postgres-seaorm", optional = true }
 axa-web-session = { version = "0.3.1", path = "crates/axa-web-session", optional = true }
 axa-postgres-sqlx = { version = "0.2.1", path = "crates/axa-postgres-sqlx", optional = true }

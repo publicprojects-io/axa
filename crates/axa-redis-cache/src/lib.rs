@@ -65,6 +65,9 @@ pub enum Error {
     /// A TTL below one millisecond, which would store nothing useful.
     #[error("a cache entry needs a TTL of at least one millisecond")]
     InvalidTtl,
+    /// A time to hold an entry that does not fit in an instant.
+    #[error("{0}: the time is too large to compute")]
+    Overflow(&'static str),
     /// [`Cache::for_tenant`] refused: the tenant is not a tenant id, the cache is
     /// already a tenant's, or it has no prefix to keep tenants' keys apart from the rest.
     #[error("no cache for this tenant: {0}")]
@@ -198,7 +201,9 @@ impl Memory {
     fn remove(&mut self, key: &str) -> bool {
         match self.entries.remove(key) {
             Some((_, value)) => {
-                self.bytes -= key.len() + value.len();
+                // ARI-5, ARI-3: a size past the type is past the tally, and the tally is never below zero.
+                let size = key.len().checked_add(value.len()).unwrap_or(usize::MAX);
+                self.bytes = self.bytes.checked_sub(size).unwrap_or(0);
                 true
             }
             None => false,
@@ -207,11 +212,16 @@ impl Memory {
 
     fn insert(&mut self, key: &str, value: String, expires: Instant, now: Instant) {
         self.remove(key);
-        let size = key.len() + value.len();
+        let size = key.len().checked_add(value.len()).unwrap_or(usize::MAX); // ARI-5
+        let full = |bytes: usize| {
+            bytes
+                .checked_add(size)
+                .is_none_or(|total| total > MEMORY_LIMIT)
+        };
         if size > MEMORY_LIMIT {
             return;
         }
-        if self.bytes + size > MEMORY_LIMIT {
+        if full(self.bytes) {
             let stale: Vec<String> = self
                 .entries
                 .iter()
@@ -223,11 +233,11 @@ impl Memory {
             }
         }
         // A cache may lose anything, so when live entries fill it, it starts again.
-        if self.bytes + size > MEMORY_LIMIT {
+        if full(self.bytes) {
             self.entries.clear();
             self.bytes = 0;
         }
-        self.bytes += size;
+        self.bytes = self.bytes.checked_add(size).unwrap_or(MEMORY_LIMIT); // ARI-5
         self.entries.insert(key.to_string(), (expires, value));
     }
 }
@@ -448,7 +458,13 @@ impl Cache {
             }
             Backend::Memory(memory) => {
                 let now = Instant::now();
-                let expires = now.checked_add(ttl).unwrap_or(now + MEMORY_MAX_TTL);
+                // A time past what an instant holds is held for as long as the cache holds anything.
+                let Some(expires) = now
+                    .checked_add(ttl)
+                    .or_else(|| now.checked_add(MEMORY_MAX_TTL))
+                else {
+                    return Err(Error::Overflow("a cache entry's expiry"));
+                };
                 Backend::with_memory(memory, |memory| {
                     memory.insert(&full, encoded, expires, now);
                 });

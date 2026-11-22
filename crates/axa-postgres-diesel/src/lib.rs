@@ -323,7 +323,7 @@ pub fn note_stale_plan(error: &QueryError) -> bool {
         return false;
     }
     let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
-    LAST_STALE_PLAN.fetch_max(since.saturating_add(1), Ordering::SeqCst);
+    LAST_STALE_PLAN.fetch_max(since.checked_add(1).unwrap_or(u64::MAX), Ordering::SeqCst); // ARI-5
     true
 }
 
@@ -332,7 +332,9 @@ pub fn note_stale_plan(error: &QueryError) -> bool {
 fn opened_before_last_stale_plan(created: Instant) -> bool {
     opened_before(
         AtomicU64::load(&LAST_STALE_PLAN, Ordering::SeqCst),
-        created.saturating_duration_since(epoch()),
+        created
+            .checked_duration_since(epoch())
+            .unwrap_or(Duration::ZERO),
     )
 }
 
@@ -343,7 +345,7 @@ fn opened_before(last: u64, opened: Duration) -> bool {
     if last == 0 {
         return false;
     }
-    opened <= Duration::from_nanos(last - 1)
+    opened <= Duration::from_nanos(last.checked_sub(1).unwrap_or(0))
 }
 
 /// Open a pool and prove it works with one connection.
@@ -465,7 +467,7 @@ where
             harness
                 .revert_last_migration(migrations.clone())
                 .map_err(|error| error.to_string())?;
-            reverted += 1;
+            reverted = reverted.checked_add(1).unwrap_or(usize::MAX); // ARI-3
         }
         Ok(reverted)
     })

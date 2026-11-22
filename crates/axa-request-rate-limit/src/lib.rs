@@ -428,7 +428,11 @@ impl Limiter {
             ..
         } = &mut *table;
         if now >= *next_sweep {
-            slots.retain(|_, slot| now.saturating_duration_since(slot.start) < window);
+            slots.retain(|_, slot| {
+                now.checked_duration_since(slot.start)
+                    .unwrap_or(Duration::ZERO)
+                    < window
+            });
             *next_sweep = now + window;
         }
         let own_limit = overrides.get(&key).copied();
@@ -443,7 +447,11 @@ impl Limiter {
                     return verdict;
                 }
                 WhenFull::Refuse => {
-                    if now.saturating_duration_since(overflow.start) >= window {
+                    if now
+                        .checked_duration_since(overflow.start)
+                        .unwrap_or(Duration::ZERO)
+                        >= window
+                    {
                         *overflow = Slot::new(now);
                     }
                     let mut verdict = self.verdict(*overflow, limit, false, now);
@@ -462,12 +470,16 @@ impl Limiter {
         } else {
             slots.entry(key).or_insert_with(|| Slot::new(now))
         };
-        if now.saturating_duration_since(slot.start) >= window {
+        if now
+            .checked_duration_since(slot.start)
+            .unwrap_or(Duration::ZERO)
+            >= window
+        {
             *slot = Slot::new(now);
         }
         let allowed = slot.count < limit;
         if allowed && mode == Mode::Charge {
-            slot.count += 1;
+            slot.count = slot.count.checked_add(1).unwrap_or(u32::MAX);
         }
         let mut verdict = self.verdict(*slot, limit, allowed, now);
         verdict.overflowed = full;
@@ -479,11 +491,16 @@ impl Limiter {
     }
 
     fn verdict(&self, slot: Slot, limit: u32, allowed: bool, now: Instant) -> Verdict {
-        let left = (slot.start + self.window).saturating_duration_since(now);
+        let left = slot
+            .start
+            .checked_add(self.window)
+            .map_or(Duration::ZERO, |end| {
+                end.checked_duration_since(now).unwrap_or(Duration::ZERO)
+            });
         Verdict {
             allowed,
             limit,
-            remaining: limit.saturating_sub(slot.count),
+            remaining: limit.checked_sub(slot.count).unwrap_or(0),
             reset_seconds: left.as_secs() + u64::from(left.subsec_nanos() > 0),
             overflowed: false,
             first_refusal: false,

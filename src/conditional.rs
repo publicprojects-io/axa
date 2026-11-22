@@ -250,7 +250,7 @@ fn read_tag(bytes: &[u8]) -> Option<(Tag<'_>, &[u8])> {
             weak,
             opaque: &rest[..end],
         },
-        &rest[end + 1..],
+        rest.get(end.checked_add(1)?..)?,
     ))
 }
 

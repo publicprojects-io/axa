@@ -47,7 +47,10 @@ pub(crate) async fn read_header<S: AsyncRead + Unpin>(
                 "a PROXY v2 header of more than {V2_MAX_REST} bytes"
             )));
         }
-        header.resize(V2_FIXED + rest, 0);
+        let whole = V2_FIXED
+            .checked_add(rest)
+            .ok_or_else(|| invalid("a PROXY v2 header too long to read".to_string()))?;
+        header.resize(whole, 0);
         stream.read_exact(&mut header[V2_FIXED..]).await?;
         let header = v2::Header::try_from(header.as_slice())
             .map_err(|error| invalid(format!("a bad PROXY v2 header: {error}")))?;

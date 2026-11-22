@@ -177,7 +177,7 @@ pub fn note_stale_plan(error: &DbErr) -> bool {
         return false;
     }
     let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
-    LAST_STALE_PLAN.fetch_max(since.saturating_add(1), Ordering::SeqCst);
+    LAST_STALE_PLAN.fetch_max(since.checked_add(1).unwrap_or(u64::MAX), Ordering::SeqCst);
     true
 }
 
@@ -196,7 +196,8 @@ fn opened_before(last: u64, now: Duration, age: Duration) -> bool {
     if last == 0 {
         return false;
     }
-    now.saturating_sub(age) <= Duration::from_nanos(last - 1)
+    now.checked_sub(age).unwrap_or(Duration::ZERO)
+        <= Duration::from_nanos(last.checked_sub(1).unwrap_or(0))
 }
 
 impl PoolConfig {

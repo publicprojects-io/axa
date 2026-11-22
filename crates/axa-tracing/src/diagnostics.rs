@@ -135,9 +135,15 @@ pub fn monitor_runtime(monitor: RuntimeMonitor) -> JoinHandle<()> {
     let handle = Handle::current();
     tokio::spawn(async move {
         loop {
-            let expected = Instant::now() + monitor.interval;
+            // ARI-6: an interval that does not fit in an instant cannot be waited for.
+            let Some(expected) = Instant::now().checked_add(monitor.interval) else {
+                tracing::error!("the runtime monitor's interval is too large to wait for");
+                return;
+            };
             tokio::time::sleep(monitor.interval).await;
-            let lag = Instant::now().saturating_duration_since(expected);
+            let lag = Instant::now()
+                .checked_duration_since(expected)
+                .unwrap_or(Duration::ZERO); // ARI-4
             if lag >= monitor.max_lag {
                 let snapshot = snapshot_of(&handle);
                 tracing::warn!(

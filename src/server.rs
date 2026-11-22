@@ -208,7 +208,11 @@ impl Limits {
             header_read: seconds(header_read_seconds),
             keep_alive: seconds(keep_alive_seconds),
             send_stall: seconds(send_stall_seconds),
-            max_connections: max_connections.clamp(1, Semaphore::MAX_PERMITS),
+            max_connections: match max_connections {
+                0 => 1, // SRV-10: zero is not a limit
+                over if over > Semaphore::MAX_PERMITS => Semaphore::MAX_PERMITS,
+                held => held,
+            },
             drain: Duration::ZERO,
         }
     }

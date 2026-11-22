@@ -131,15 +131,17 @@ impl Net {
     pub fn contains(&self, address: IpAddr) -> bool {
         match (self.address, canonical(address)) {
             (IpAddr::V4(net), IpAddr::V4(address)) => {
-                let mask = u32::MAX
-                    .checked_shl(32 - u32::from(self.prefix))
-                    .unwrap_or(0);
+                let mask = 32_u32
+                    .checked_sub(u32::from(self.prefix))
+                    .and_then(|shift| u32::MAX.checked_shl(shift))
+                    .unwrap_or(0); // ARI-8
                 u32::from(net) & mask == u32::from(address) & mask
             }
             (IpAddr::V6(net), IpAddr::V6(address)) => {
-                let mask = u128::MAX
-                    .checked_shl(128 - u32::from(self.prefix))
-                    .unwrap_or(0);
+                let mask = 128_u32
+                    .checked_sub(u32::from(self.prefix))
+                    .and_then(|shift| u128::MAX.checked_shl(shift))
+                    .unwrap_or(0); // ARI-8
                 u128::from(net) & mask == u128::from(address) & mask
             }
             _ => false,
@@ -541,13 +543,18 @@ pub async fn bytes_limited(
 ) -> Result<Bytes, BodyError> {
     if response
         .content_length()
-        .is_some_and(|length| length > limit as u64)
+        .is_some_and(|length| length > u64::try_from(limit).unwrap_or(u64::MAX))
     {
         return Err(BodyError::TooLarge);
     }
     let mut body = BytesMut::new();
     while let Some(chunk) = response.chunk().await.map_err(BodyError::Read)? {
-        if body.len() + chunk.len() > limit {
+        if body
+            .len()
+            .checked_add(chunk.len())
+            .is_none_or(|total| total > limit)
+        // ARI-5: a total past the type is past the limit
+        {
             return Err(BodyError::TooLarge);
         }
         body.extend_from_slice(&chunk);

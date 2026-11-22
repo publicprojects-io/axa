@@ -502,7 +502,8 @@ where
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         if let Some(session) = request.extensions().get::<Session<T>>()
             && let Some(at) = session.get::<u64>(SIGNED_IN_KEY)
-            && now_ms().saturating_sub(at) >= self.deadline.lifetime_ms
+            // ARI-4: a session signed in at a later time than now has no age.
+            && now_ms().checked_sub(at).unwrap_or(0) >= self.deadline.lifetime_ms
         {
             session.clear();
             session.destroy();

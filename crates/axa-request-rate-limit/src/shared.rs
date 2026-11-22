@@ -391,7 +391,7 @@ impl SharedLimiter {
         Ok(Verdict {
             allowed: count <= limit,
             limit: self.inner.limit,
-            remaining: u32::try_from(limit.saturating_sub(count)).unwrap_or(0),
+            remaining: u32::try_from(limit.checked_sub(count).unwrap_or(0)).unwrap_or(0), // ARI-3
             reset_seconds: reset.max(1),
             overflowed: false,
             first_refusal: count == limit + 1,

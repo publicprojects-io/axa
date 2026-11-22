@@ -190,12 +190,12 @@ impl TokioMetrics {
             let count = |metric: &IntCounterVec, now: u64, was: u64| {
                 metric
                     .with_label_values(&[name])
-                    .inc_by(now.saturating_sub(was));
+                    .inc_by(now.checked_sub(was).unwrap_or(0)); // ARI-4
             };
             let seconds = |metric: &CounterVec, now: Duration, was: Duration| {
                 metric
                     .with_label_values(&[name])
-                    .inc_by(now.saturating_sub(was).as_secs_f64());
+                    .inc_by(now.checked_sub(was).unwrap_or(Duration::ZERO).as_secs_f64()); // ARI-4
             };
             count(
                 &inner.instrumented,

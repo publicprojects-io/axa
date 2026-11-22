@@ -874,7 +874,13 @@ impl OutboxOptions {
             Some("batch_size must be at least 1")
         } else if self.stale_minutes < 1 {
             Some("stale_minutes must be at least 1")
-        } else if self.heartbeat_interval.is_zero() || self.heartbeat_interval * 2 > stale {
+        } else if self.heartbeat_interval.is_zero()
+            || self
+                .heartbeat_interval
+                .checked_mul(2)
+                .is_none_or(|twice| twice > stale)
+        // ARI-5: twice past the type is past the stale time
+        {
             Some("heartbeat_interval must be above zero and at most half of stale_minutes")
         } else if self.publish_timeout.is_zero() {
             Some("publish_timeout must be above zero")

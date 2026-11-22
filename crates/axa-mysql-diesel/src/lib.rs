@@ -232,15 +232,19 @@ fn percent_decode(value: &str) -> Result<String, Error> {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' {
+            let bad = || Error::Url("bad percent escape in `ssl-ca'".to_string());
+            let (from, to) = i.checked_add(1).zip(i.checked_add(3)).ok_or_else(bad)?;
             let hex = value
-                .get(i + 1..i + 3)
+                .get(from..to)
                 .and_then(|hex| u8::from_str_radix(hex, 16).ok())
-                .ok_or_else(|| Error::Url("bad percent escape in `ssl-ca'".to_string()))?;
+                .ok_or_else(bad)?;
             out.push(hex);
-            i += 3;
+            i = to;
         } else {
             out.push(bytes[i]);
-            i += 1;
+            i = i
+                .checked_add(1)
+                .ok_or_else(|| Error::Url("`ssl-ca' is too long".to_string()))?;
         }
     }
     String::from_utf8(out).map_err(|_| Error::Url("`ssl-ca' is not UTF-8".to_string()))
@@ -482,7 +486,7 @@ where
             harness
                 .revert_last_migration(migrations.clone())
                 .map_err(|error| error.to_string())?;
-            reverted += 1;
+            reverted = reverted.checked_add(1).unwrap_or(usize::MAX); // ARI-3
         }
         Ok(reverted)
     })

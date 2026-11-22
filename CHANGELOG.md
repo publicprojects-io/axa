@@ -7,6 +7,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Arithmetic follows [`spec/rust-checked-arithmetic`](spec/rust-checked-arithmetic/index.md):
+  production code uses `checked_*` in place of bare operators, `saturating_*`, and
+  `clamp`. Where a figure has a declared fallback (ARI-1 to ARI-8 in the spec), the code
+  recovers with `unwrap_or` and cites it. Elsewhere it returns an error. New: the job
+  queues' `Error::Overflow`, and `axa_redis_cache::Error::Overflow`, which makes that
+  enum's `match` non-exhaustive for callers (breaking).
 - Breaking: boot-time mistakes in code return an error instead of panicking.
   `Schedule::every`, `Schedule::cron` and `Queue::schedule` in the three job queues, and
   `axa::queue::Queue::schedule`, return `Result`, with a new `Error::Schedule` for a

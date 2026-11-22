@@ -213,6 +213,8 @@ pub enum Error {
     /// characters, or used twice, an interval under a second, or a cron pattern that does
     /// not parse or names no time to come.
     Schedule(String),
+    /// A figure was too large to compute: a count, or a time that does not fit.
+    Overflow(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -226,6 +228,7 @@ impl fmt::Display for Error {
                 "`{what}` must be 1 to {MAX_REASON_CHARS} characters with no line breaks"
             ),
             Self::Schedule(text) => write!(f, "schedule error: {text}"),
+            Self::Overflow(figure) => write!(f, "{figure}: the value is too large to compute"),
             Self::NotATenant => f.write_str(
                 "a job's tenant must be 1 to 63 lower-case letters, digits, and hyphens, \
                  not starting or ending with a hyphen",
@@ -239,7 +242,11 @@ impl std::error::Error for Error {
         match self {
             Self::Database(error) => Some(error),
             Self::Encode(error) => Some(error),
-            Self::Job(_) | Self::NotACode { .. } | Self::NotATenant | Self::Schedule(_) => None,
+            Self::Job(_)
+            | Self::NotACode { .. }
+            | Self::NotATenant
+            | Self::Schedule(_)
+            | Self::Overflow(_) => None,
         }
     }
 }
@@ -604,13 +611,22 @@ const MAX_BACKOFF: Duration = Duration::from_hours(1);
 /// The longest error text kept on a row.
 const MAX_ERROR: usize = 1024;
 
+/// The most a backoff doubles: 16 doublings.
+const MAX_DOUBLING_FACTOR: u32 = 1 << 16;
+
 /// How long to wait before the attempt after `attempts`, doubling each time.
 #[must_use]
 pub fn backoff(base: Duration, attempts: i32) -> Duration {
-    let doublings = u32::try_from(attempts.saturating_sub(1))
+    // ARI-2: fewer than one attempt has no doublings, and a wait that does not fit is the cap.
+    let doublings = attempts
+        .checked_sub(1)
+        .and_then(|earlier| u32::try_from(earlier).ok())
         .unwrap_or(0)
         .min(16);
-    base.saturating_mul(1 << doublings).min(MAX_BACKOFF)
+    let factor = 1_u32.checked_shl(doublings).unwrap_or(MAX_DOUBLING_FACTOR);
+    base.checked_mul(factor)
+        .unwrap_or(MAX_BACKOFF)
+        .min(MAX_BACKOFF)
 }
 
 /// The shortest delay a job may choose with [`RetryAfter`].
@@ -706,7 +722,10 @@ pub fn jittered(wait: Duration) -> Duration {
 #[must_use]
 pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Duration {
     match chosen {
-        Some(delay) => delay.clamp(MIN_RETRY_AFTER, MAX_BACKOFF),
+        // WRK-41: a delay a job chose is held between the shortest and the longest wait.
+        Some(delay) if delay < MIN_RETRY_AFTER => MIN_RETRY_AFTER,
+        Some(delay) if delay > MAX_BACKOFF => MAX_BACKOFF,
+        Some(delay) => delay,
         None => jittered(backoff(base, attempts)),
     }
 }
@@ -714,13 +733,26 @@ pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Du
 /// Cut `text` to at most [`MAX_ERROR`] bytes, on a character boundary.
 fn cut(mut text: String) -> String {
     if text.len() > MAX_ERROR {
-        let mut end = MAX_ERROR;
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
+        let end = text.floor_char_boundary(MAX_ERROR);
         text.truncate(end);
     }
     text
+}
+
+/// Why a run is stopped when its times do not fit.
+const TIMING: &str = "a time for the run is too large to compute";
+
+/// When a worker stops a job it cannot report on: two heartbeats before another worker
+/// may take it, and at half of `stale_minutes` at the latest. `None` when the times do
+/// not fit.
+fn give_up_after(stale_minutes: i32, every: Duration) -> Option<Duration> {
+    let stale = Duration::from_secs(u64::try_from(stale_minutes).ok()?.checked_mul(60)?);
+    let half = stale.checked_div(2)?;
+    let early = every
+        .checked_mul(2)
+        .and_then(|twice| stale.checked_sub(twice));
+    // ARI-1: when two heartbeats do not fit before the stale time, give up at half of it.
+    Some(early.map_or(half, |early| early.max(half)))
 }
 
 fn millis(duration: Duration) -> i64 {
@@ -1550,7 +1582,7 @@ impl Queue {
             .journal_mode(SqliteJournalMode::Wal)
             .busy_timeout(Duration::from_secs(5));
         let pool = SqlitePoolOptions::new()
-            .max_connections(loops.saturating_add(2))
+            .max_connections(loops.checked_add(2).unwrap_or(u32::MAX)) // ARI-5
             .connect_with(connect)
             .await?;
         Ok(Self::from_pool(pool, options))
@@ -1896,10 +1928,12 @@ impl Queue {
     ///
     /// Fails on a database error, which leaves that schedule due for the next tick.
     pub async fn tick_schedules(&self) -> Result<usize> {
-        let mut queued = 0;
+        let mut queued: usize = 0;
         for schedule in &self.schedules {
             if self.tick(schedule).await? {
-                queued += 1;
+                queued = queued
+                    .checked_add(1)
+                    .ok_or(Error::Overflow("schedules queued"))?;
             }
         }
         Ok(queued)
@@ -2053,13 +2087,13 @@ impl Queue {
     async fn supervise(&self, job: JobFuture, claim: &Claimed) -> Outcome {
         let mut job = AbortOnDrop(tokio::spawn(job));
         let every = self.options.heartbeat_interval.max(MIN_HEARTBEAT);
-        // Not heard from for this long, a run is taken for lost by any worker.
-        let stale =
-            Duration::from_secs(u64::try_from(self.options.stale_minutes).unwrap_or(0) * 60);
-        // This worker stops the job before then, two heartbeats early, and at half the
-        // time at the latest, so that it has stopped before another can take it.
-        let give_up = stale.saturating_sub(every * 2).max(stale / 2);
+        let Some(give_up) = give_up_after(self.options.stale_minutes, every) else {
+            return Outcome::Lost(TIMING.to_string());
+        };
         let mut last_heard = tokio::time::Instant::now();
+        let Some(mut give_up_at) = last_heard.checked_add(give_up) else {
+            return Outcome::Lost(TIMING.to_string());
+        };
         // A heartbeat is given at most `every` to answer, and runs beside the job, so
         // a database that hangs holds up neither the job's time limit nor giving up.
         let beat = || {
@@ -2072,11 +2106,17 @@ impl Queue {
             )
         };
         let mut beating = None;
-        let mut next_beat = tokio::time::Instant::now() + every;
+        let Some(mut next_beat) = tokio::time::Instant::now().checked_add(every) else {
+            return Outcome::Lost(TIMING.to_string());
+        };
         let mut failing = false;
-        let limit = claim
-            .timeout
-            .map(|timeout| tokio::time::Instant::now() + timeout);
+        let limit = match claim.timeout {
+            Some(timeout) => match tokio::time::Instant::now().checked_add(timeout) {
+                Some(at) => Some(at),
+                None => return Outcome::Lost(TIMING.to_string()),
+            },
+            None => None,
+        };
         let deadline = async {
             match limit {
                 Some(at) => tokio::time::sleep_until(at).await,
@@ -2097,7 +2137,7 @@ impl Queue {
                         Error::Job(format!("timed out after {}s", limit.as_secs_f64())).to_string().into(),
                     ));
                 }
-                () = tokio::time::sleep_until(last_heard + give_up), if failing => {
+                () = tokio::time::sleep_until(give_up_at), if failing => {
                     return Outcome::Lost(format!(
                         "it could not report in for {}s, near the {} minutes after which another worker may take it",
                         give_up.as_secs(),
@@ -2114,10 +2154,17 @@ impl Queue {
                     }
                 }, if beating.is_some() => {
                     beating = None;
-                    next_beat = tokio::time::Instant::now() + every;
+                    let Some(next) = tokio::time::Instant::now().checked_add(every) else {
+                        return Outcome::Lost(TIMING.to_string());
+                    };
+                    next_beat = next;
                     match answer {
                         Ok(Ok(done)) if done.rows_affected() == 1 => {
                             last_heard = tokio::time::Instant::now();
+                            let Some(at) = last_heard.checked_add(give_up) else {
+                                return Outcome::Lost(TIMING.to_string());
+                            };
+                            give_up_at = at;
                             failing = false;
                         }
                         Ok(Ok(_)) => return Outcome::Lost("another worker or recovery took its claim".to_string()),
@@ -2381,6 +2428,35 @@ impl<T> Drop for AbortOnDrop<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_time_to_give_up_is_two_heartbeats_early_and_at_half_at_the_latest() {
+        let beat = Duration::from_secs(30);
+        assert_eq!(give_up_after(60, beat), Some(Duration::from_mins(59)));
+        // Two heartbeats of the stale time or more: half of it.
+        assert_eq!(
+            give_up_after(1, Duration::from_secs(40)),
+            Some(Duration::from_secs(30))
+        );
+        // A heartbeat too long to double: half of it too.
+        assert_eq!(
+            give_up_after(60, Duration::MAX),
+            Some(Duration::from_mins(30))
+        );
+        // A stale time that does not fit, or is negative, has no time.
+        assert_eq!(give_up_after(-1, beat), None);
+        assert!(give_up_after(i32::MAX, Duration::ZERO).is_some());
+    }
+
+    #[test]
+    fn a_figure_too_large_to_compute_is_named_in_its_error() {
+        let error = Error::Overflow("schedules queued");
+        assert_eq!(
+            error.to_string(),
+            "schedules queued: the value is too large to compute"
+        );
+        assert!(std::error::Error::source(&error).is_none());
+    }
 
     #[test]
     fn a_stored_word_that_is_not_a_known_state_or_act_is_refused() {

@@ -90,7 +90,10 @@ where
             && let Some(timing) = span.extensions_mut().get_mut::<Timing>()
             && let Some(entered) = timing.entered.take()
         {
-            timing.busy += entered.elapsed();
+            timing.busy = timing
+                .busy
+                .checked_add(entered.elapsed())
+                .unwrap_or(Duration::MAX); // ARI-5
         }
     }
 
@@ -107,7 +110,7 @@ where
                 parent: &id,
                 span = span.name(),
                 busy_ms = millis(busy),
-                idle_ms = millis(total.saturating_sub(busy)),
+                idle_ms = millis(total.checked_sub(busy).unwrap_or(Duration::ZERO)), // ARI-4
                 "slow_span",
             );
         }

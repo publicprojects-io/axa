@@ -185,12 +185,19 @@ const STATS: &str = "SELECT
          WHERE a.outcome = 'refused' AND a.at > now() - interval '1 hour') AS refused
     FROM axa_outbox_owed o JOIN axa_outbox_events e ON e.event_id = o.event_id";
 
+/// The most a backoff doubles: 16 doublings.
+const MAX_DOUBLING_FACTOR: u32 = 1 << 16;
+
 /// How long to wait before the try after `attempts`, doubling each time up to `limit`.
 pub(crate) fn backoff(base: Duration, attempts: i32, limit: Duration) -> Duration {
-    let doublings = u32::try_from(attempts.saturating_sub(1))
+    // ARI-2: fewer than one attempt has no doublings, and a wait that does not fit is the cap.
+    let doublings = attempts
+        .checked_sub(1)
+        .and_then(|earlier| u32::try_from(earlier).ok())
         .unwrap_or(0)
         .min(16);
-    base.saturating_mul(1 << doublings).min(limit)
+    let factor = 1_u32.checked_shl(doublings).unwrap_or(MAX_DOUBLING_FACTOR);
+    base.checked_mul(factor).unwrap_or(limit).min(limit)
 }
 
 /// How one round of a relay ended.
@@ -417,7 +424,7 @@ impl Outbox {
             let charges: i32 = row.try_get("charges")?;
             let mut event = Claimed {
                 id: row.try_get("id")?,
-                attempts: charges.saturating_add(1),
+                attempts: charges.checked_add(1).unwrap_or(i32::MAX), // ARI-3
                 event_id: row.try_get("event_id")?,
                 topic: row.try_get("topic")?,
                 kind: row.try_get("kind")?,
@@ -430,11 +437,11 @@ impl Outbox {
             match self.payload_of(&event, row)? {
                 Ok(payload) => event.payload = payload,
                 Err(Unread::NoKey) => {
-                    taken.unopened += 1;
+                    taken.unopened = taken.unopened.checked_add(1).unwrap_or(usize::MAX); // ARI-3
                     continue;
                 }
                 Err(Unread::Tampered) => {
-                    taken.decided += 1;
+                    taken.decided = taken.decided.checked_add(1).unwrap_or(usize::MAX); // ARI-3
                     let mut point = (&mut transaction).begin().await?;
                     match self.tampered(record, &event, &mut point).await {
                         Ok(()) => {
@@ -462,7 +469,7 @@ impl Outbox {
                 }
                 Ok(decided) => {
                     point.commit().await?;
-                    taken.decided += 1;
+                    taken.decided = taken.decided.checked_add(1).unwrap_or(usize::MAX); // ARI-3
                     if matches!(decided, Decided::Refused) {
                         tracing::info!(
                             id = event.id,
@@ -474,7 +481,7 @@ impl Outbox {
                 }
                 Err(error) => {
                     point.rollback().await?;
-                    taken.decided += 1;
+                    taken.decided = taken.decided.checked_add(1).unwrap_or(usize::MAX); // ARI-3
                     self.defer(&mut transaction, &event, &error).await?;
                 }
             }
@@ -813,9 +820,9 @@ impl Outbox {
             let outcome: String = row.try_get("outcome")?;
             let outcome = Outcome::parse(&outcome).unwrap_or(Outcome::Lost);
             if outcome == Outcome::Abandoned {
-                abandoned += 1;
+                abandoned = abandoned.checked_add(1).unwrap_or(u64::MAX); // ARI-3
             } else {
-                lost += 1;
+                lost = lost.checked_add(1).unwrap_or(u64::MAX); // ARI-3
             }
             let attempt = Attempt {
                 id: row.try_get("id")?,
@@ -914,7 +921,7 @@ impl Outbox {
         F: Future<Output = Result<(), Failure>> + Send + 'static,
         R: AsyncFn(&Attempt, &mut PgConnection) -> Result<(), sqlx::Error> + Send + Sync,
     {
-        let mut pauses = 0;
+        let mut pauses: i32 = 0;
         while !*shutdown.borrow() {
             let wait = match self.round(&decide, &publish, &record, &shutdown).await {
                 Ok(Round::Worked) => {
@@ -926,12 +933,12 @@ impl Outbox {
                     self.options.poll_interval
                 }
                 Ok(Round::Stalled) => {
-                    pauses += 1;
+                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-3
                     backoff(self.options.poll_interval, pauses, MAX_PAUSE)
                 }
                 Err(error) => {
                     tracing::error!(%error, "outbox relay error");
-                    pauses += 1;
+                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-3
                     backoff(self.options.poll_interval, pauses, MAX_PAUSE)
                 }
             };
@@ -980,7 +987,13 @@ impl Outbox {
             });
         };
         let every = self.options.heartbeat_interval;
-        let mut beat = tokio::time::interval_at(Instant::now() + every, every);
+        // ARI-6: a heartbeat that does not fit in an instant cannot be waited for.
+        let Some(first) = Instant::now().checked_add(every) else {
+            return Err(sqlx::Error::Protocol(
+                "heartbeat_interval is too large to wait for".to_string(),
+            ));
+        };
+        let mut beat = tokio::time::interval_at(first, every);
         beat.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut round = Round::Worked;
         for (place, event) in batch.iter().enumerate() {

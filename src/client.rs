@@ -64,7 +64,13 @@ const fn masked(bits: u128, width: u8, prefix: u8) -> u128 {
     if prefix == 0 {
         0
     } else {
-        bits >> (width - prefix)
+        match width.checked_sub(prefix) {
+            Some(shift) => match bits.checked_shr(shift as u32) {
+                Some(kept) => kept,
+                None => 0,
+            },
+            None => 0,
+        }
     }
 }
 
@@ -179,6 +185,13 @@ mod tests {
     use super::*;
 
     const PEER: &str = "10.0.0.1";
+
+    #[test]
+    fn a_prefix_wider_than_the_address_keeps_nothing() {
+        assert_eq!(masked(u128::MAX, 8, 200), 0);
+        assert_eq!(masked(u128::MAX, 200, 1), 0);
+        assert_eq!(masked(0xff00, 16, 8), 0xff);
+    }
 
     fn trusted() -> Vec<ProxyNet> {
         ["10.0.0.0/8", "fd00::/8"]

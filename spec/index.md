@@ -246,6 +246,22 @@ Math must not panic. It uses Rust's `checked_*` functions, which return `None` r
 panicking or wrapping, and never saturates. The rules and their requirements, RCA-*, are in
 [Rust checked arithmetic](rust-checked-arithmetic/index.md).
 
+Where a figure below fails to compute, the spec names the fallback and why it is correct
+(RCA-DECL-4), and the code cites the id at the `unwrap_or`. A figure with no row has no
+fallback: its failure is an error or a refusal.
+
+| Id | Figure and failure | Declared fallback | Why it is correct |
+|---|---|---|---|
+| ARI-1 | A job queue's time to stop a job it cannot report on, when two heartbeats do not fit before the stale time | Half the stale time | WRK-12 stops a job at half the stale time at the latest, before another worker can take it |
+| ARI-2 | A retry's backoff, `base * 2^(attempts - 1)`, when it does not fit, and the doublings for fewer than one attempt | The cap, `MAX_BACKOFF`; and no doublings | WRK-40 caps the wait, so a wait past what fits is past the cap; a first try waits the base |
+| ARI-3 | A count that cannot go below zero or above its type: a byte tally, a retry counter, a pause count, a request count at the limit, the requests remaining | Zero below, the type's maximum above | A tally of held bytes is never negative; a count at the maximum of its type is at or over any limit; no requests remain once the limit is reached |
+| ARI-4 | An elapsed time when the clock reads earlier than its start, or a counter that went backwards | Zero | Nothing has elapsed, and a counter that went backwards added nothing |
+| ARI-5 | A pool size, a page size plus one, or a total of sizes, past what its type holds | The type's maximum | It is past every limit set on it, so the limit refuses it |
+| ARI-6 | A time to wait or to stop at, when `Instant` plus a `Duration` does not fit | None: the run is stopped as lost, or the figure is refused | A time that cannot be represented cannot be waited for |
+| ARI-8 | A network mask for an address range, when the shift for its prefix does not fit: a prefix of zero keeps no bits, and one past the address width is refused when the range is parsed | Zero, no bits kept | A prefix of zero names every address, and a prefix that does not fit never reaches the mask |
+| ARI-7 | A figure counted in a function that returns a `Result`, such as the schedules queued, when it does not fit | None: `Error::Overflow`, naming the figure | There is no correct count to give |
+
+
 ### 4.8 Command line and tasks
 
 | Id | Requirement | Test |

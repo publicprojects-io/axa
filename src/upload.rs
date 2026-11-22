@@ -198,7 +198,10 @@ struct Tally<'a> {
 
 impl Tally<'_> {
     fn add(&mut self, bytes: usize) -> Result<()> {
-        self.total = self.total.saturating_add(bytes as u64);
+        self.total = self
+            .total
+            .checked_add(u64::try_from(bytes).unwrap_or(u64::MAX))
+            .unwrap_or(u64::MAX); // ARI-5
         if self.total > self.limits.total_bytes {
             return Err(too_large(format!(
                 "The upload is larger than {} bytes",
@@ -226,9 +229,9 @@ pub async fn read(mut multipart: Multipart, limits: &Limits) -> Result<Upload> {
         total: 0,
         memory: 0,
     };
-    let mut parts = 0;
+    let mut parts: usize = 0;
     while let Some(field) = multipart.next_field().await.map_err(|e| unreadable(&e))? {
-        parts += 1;
+        parts = parts.checked_add(1).unwrap_or(usize::MAX); // ARI-5
         if parts > limits.parts {
             return Err(too_large(format!(
                 "The upload has more than {} parts",
@@ -269,8 +272,12 @@ async fn read_text(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
     let mut bytes = Vec::new();
     while let Some(chunk) = field.chunk().await.map_err(|e| unreadable(&e))? {
         tally.add(chunk.len())?;
-        tally.memory = tally.memory.saturating_add(chunk.len());
-        if bytes.len() + chunk.len() > limits.field_bytes {
+        tally.memory = tally.memory.checked_add(chunk.len()).unwrap_or(usize::MAX); // ARI-5
+        if bytes
+            .len()
+            .checked_add(chunk.len())
+            .is_none_or(|total| total > limits.field_bytes)
+        {
             return Err(too_large(format!(
                 "A text field is larger than {} bytes",
                 limits.field_bytes
@@ -314,7 +321,9 @@ async fn read_file(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
     let mut size: u64 = 0;
     while let Some(chunk) = field.chunk().await.map_err(|e| unreadable(&e))? {
         tally.add(chunk.len())?;
-        size = size.saturating_add(chunk.len() as u64);
+        size = size
+            .checked_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX))
+            .unwrap_or(u64::MAX); // ARI-5
         if size > limits.file_bytes {
             return Err(too_large(format!(
                 "A file is larger than {} bytes",

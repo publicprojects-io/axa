@@ -289,7 +289,7 @@ impl CursorPage {
             _ => return Err(PageError::BadCursor),
         };
 
-        let next_cursor = key.encode(offset.saturating_add(limit), &query);
+        let next_cursor = key.encode(offset.checked_add(limit).unwrap_or(u64::MAX), &query); // ARI-5
         let mut next_query: Vec<&str> = parts
             .iter()
             .copied()
@@ -324,7 +324,7 @@ impl CursorPage {
     #[must_use]
     pub fn bounds(&self) -> (i64, i64) {
         (
-            i64::try_from(self.limit.saturating_add(1)).unwrap_or(i64::MAX),
+            i64::try_from(self.limit.checked_add(1).unwrap_or(u64::MAX)).unwrap_or(i64::MAX), // ARI-5
             i64::try_from(self.offset).unwrap_or(i64::MAX),
         )
     }

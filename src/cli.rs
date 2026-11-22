@@ -381,7 +381,7 @@ pub async fn probe(binding: &str, port: u16, path: &str, timeout: Duration) -> R
             if more == 0 {
                 break;
             }
-            read += more;
+            read = read.checked_add(more).unwrap_or(head.len()); // ARI-5
         }
         Ok::<_, std::io::Error>(head[..read].to_vec())
     };
