@@ -228,7 +228,9 @@ struct Inner {
     name: String,
     limit: u32,
     window: u32,
-    secret: Vec<u8>,
+    /// The HMAC made from the secret once, where one it refuses is found, so hashing a
+    /// key cannot fail.
+    mac: Hmac<Sha256>,
     when_down: WhenDown,
 }
 
@@ -341,13 +343,15 @@ impl SharedLimiter {
         if !fits {
             return Err(SetupError::BadName);
         }
+        // HMAC takes a key of any length, so this does not fail.
+        let mac = Hmac::<Sha256>::new_from_slice(secret).map_err(|_| SetupError::ShortSecret)?;
         Ok(Self {
             inner: Arc::new(Inner {
                 store,
                 name: name.to_string(),
                 limit: limit.get(),
                 window: window_seconds.get(),
-                secret: secret.to_vec(),
+                mac,
                 when_down,
             }),
         })
@@ -356,11 +360,7 @@ impl SharedLimiter {
     /// The hash `key` is counted under, keyed by the secret, so the store never holds
     /// the key itself.
     fn hashed(&self, key: impl Hash) -> String {
-        let mut hasher = KeyHasher(
-            // HMAC takes a key of any length, so this cannot fail.
-            Hmac::<Sha256>::new_from_slice(&self.inner.secret)
-                .expect("HMAC takes a key of any length"),
-        );
+        let mut hasher = KeyHasher(self.inner.mac.clone());
         key.hash(&mut hasher);
         let digest = hasher.0.finalize().into_bytes();
         let mut stored = format!("{}:", self.inner.name);

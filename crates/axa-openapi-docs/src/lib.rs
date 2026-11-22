@@ -151,13 +151,11 @@ pub fn with_bearer_auth(spec: &mut Value) {
 
 /// The JSON for a `utoipa` document.
 ///
-/// # Panics
-///
-/// If the document cannot be encoded as JSON, which would be a defect in the
+/// `null` if the document cannot be encoded as JSON, which would be a defect in the
 /// `utoipa` types rather than in anything a caller supplied.
 #[must_use]
 pub fn spec_of<T: OpenApi>() -> Value {
-    serde_json::to_value(T::openapi()).expect("an OpenAPI document encodes as JSON")
+    serde_json::to_value(T::openapi()).unwrap_or(Value::Null)
 }
 
 #[cfg(test)]

@@ -184,8 +184,15 @@ impl Queue {
         }
     }
 
-    fn engine_mut(&mut self) -> &mut axa_postgres_job_queue::Queue {
-        Arc::get_mut(&mut self.engine).expect("a queue is shared only once it runs")
+    /// Change the engine, which only an unshared one allows. It is shared only once
+    /// [`Queue::run`] starts, and that takes the queue whole, so `&mut self` always has
+    /// it alone. Were it not, the change is logged and dropped, not made.
+    fn with_engine(&mut self, change: impl FnOnce(&mut axa_postgres_job_queue::Queue)) {
+        if let Some(engine) = Arc::get_mut(&mut self.engine) {
+            change(engine);
+        } else {
+            tracing::error!("a queue that is running cannot take another registration");
+        }
     }
 
     /// Connect to tables that a migration made, and change no schema, for a database
@@ -234,8 +241,8 @@ impl Queue {
         W: BackgroundWorker<A> + 'static,
     {
         let worker = Arc::new(worker);
-        self.engine_mut()
-            .handle_with_tenant(W::class_name(), move |tenant, args| {
+        self.with_engine(|engine| {
+            engine.handle_with_tenant(W::class_name(), move |tenant, args| {
                 let worker = worker.clone();
                 async move {
                     let args: A = serde_json::from_value(args).map_err(Error::from)?;
@@ -249,6 +256,7 @@ impl Queue {
                     })
                 }
             });
+        });
     }
 
     /// Run at most `jobs` of worker `W`'s jobs at once in this process, and at least
@@ -258,7 +266,9 @@ impl Queue {
         A: Serialize + DeserializeOwned + Send + Sync + 'static,
         W: BackgroundWorker<A>,
     {
-        self.engine_mut().limit(W::class_name(), jobs);
+        self.with_engine(|engine| {
+            engine.limit(W::class_name(), jobs);
+        });
     }
 
     /// Queue a job of worker `W` with `args` every `interval`, under the schedule
@@ -279,8 +289,10 @@ impl Queue {
         W: BackgroundWorker<A>,
     {
         let job = job::<W, A>(args)?;
-        self.engine_mut()
-            .schedule(Schedule::every(name, interval, job));
+        let schedule = Schedule::every(name, interval, job);
+        self.with_engine(|engine| {
+            engine.schedule(schedule);
+        });
         Ok(())
     }
 
@@ -302,8 +314,10 @@ impl Queue {
         W: BackgroundWorker<A>,
     {
         let job = job::<W, A>(args)?;
-        self.engine_mut()
-            .schedule(Schedule::cron(name, pattern, job));
+        let schedule = Schedule::cron(name, pattern, job);
+        self.with_engine(|engine| {
+            engine.schedule(schedule);
+        });
         Ok(())
     }
 
@@ -314,7 +328,9 @@ impl Queue {
     ///
     /// When a schedule of that name was added already.
     pub fn schedule(&mut self, schedule: Schedule) {
-        self.engine_mut().schedule(schedule);
+        self.with_engine(|engine| {
+            engine.schedule(schedule);
+        });
     }
 
     /// Add a job and return its id.

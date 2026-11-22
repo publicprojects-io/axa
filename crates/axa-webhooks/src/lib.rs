@@ -124,14 +124,16 @@ pub struct SigningKey(Signing);
 
 #[derive(Clone)]
 enum Signing {
-    Hmac(Vec<u8>),
+    /// The secret, for the key receivers verify with, and the HMAC made from it once,
+    /// where a secret that HMAC refuses is found, so signing cannot fail.
+    Hmac(Vec<u8>, Hmac<Sha256>),
     Ed25519(ed25519_dalek::SigningKey),
 }
 
 impl fmt::Debug for SigningKey {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self.0 {
-            Signing::Hmac(_) => "SigningKey(hmac)",
+            Signing::Hmac(..) => "SigningKey(hmac)",
             Signing::Ed25519(_) => "SigningKey(ed25519)",
         })
     }
@@ -143,7 +145,9 @@ impl FromStr for SigningKey {
     fn from_str(text: &str) -> Result<Self, KeyError> {
         let text = text.trim();
         if let Some(rest) = text.strip_prefix(HMAC_PREFIX) {
-            return Ok(Self(Signing::Hmac(hmac_key(rest)?)));
+            let secret = hmac_key(rest)?;
+            let mac = Hmac::<Sha256>::new_from_slice(&secret).map_err(|_| KeyError::Length)?;
+            return Ok(Self(Signing::Hmac(secret, mac)));
         }
         let rest = text
             .strip_prefix(SECRET_KEY_PREFIX)
@@ -168,7 +172,7 @@ impl SigningKey {
     #[must_use]
     pub fn verifying_key(&self) -> VerifyingKey {
         VerifyingKey(match &self.0 {
-            Signing::Hmac(secret) => Verifying::Hmac(secret.clone()),
+            Signing::Hmac(secret, _) => Verifying::Hmac(secret.clone()),
             Signing::Ed25519(key) => Verifying::Ed25519(key.verifying_key()),
         })
     }
@@ -178,7 +182,7 @@ impl SigningKey {
     #[must_use]
     pub fn public_key(&self) -> Option<String> {
         match &self.0 {
-            Signing::Hmac(_) => None,
+            Signing::Hmac(..) => None,
             Signing::Ed25519(key) => Some(format!(
                 "{PUBLIC_KEY_PREFIX}{}",
                 STANDARD.encode(key.verifying_key().to_bytes())
@@ -189,7 +193,10 @@ impl SigningKey {
     /// This key's signature of `content`, as it is listed in the header.
     fn sign(&self, content: &[u8]) -> String {
         match &self.0 {
-            Signing::Hmac(secret) => format!("v1,{}", STANDARD.encode(hmac(secret, content))),
+            Signing::Hmac(_, mac) => {
+                let signature = mac.clone().chain_update(content).finalize().into_bytes();
+                format!("v1,{}", STANDARD.encode(signature))
+            }
             Signing::Ed25519(key) => {
                 format!("v1a,{}", STANDARD.encode(key.sign(content).to_bytes()))
             }
@@ -246,12 +253,6 @@ impl VerifyingKey {
             _ => false,
         }
     }
-}
-
-fn hmac(secret: &[u8], content: &[u8]) -> Vec<u8> {
-    // Every key length is valid for HMAC, so this cannot fail.
-    let mac = Hmac::<Sha256>::new_from_slice(secret).expect("HMAC takes a key of any length");
-    mac.chain_update(content).finalize().into_bytes().to_vec()
 }
 
 /// What is signed: `{id}.{timestamp}.{body}`.

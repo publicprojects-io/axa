@@ -109,11 +109,8 @@ impl fmt::Display for Format {
 }
 
 /// Build the filter: `RUST_LOG` wins, then `override_filter`, then the
-/// default modules plus the service at `level`.
-///
-/// # Panics
-///
-/// If `override_filter` is not a valid filter string.
+/// default modules plus the service at `level`. An `override_filter` that is not a
+/// valid filter string is passed over, as a bad `RUST_LOG` is.
 #[must_use]
 pub fn init_env_filter(
     app_name: &str,
@@ -140,24 +137,23 @@ fn choose_filter(
     if let Some(filter) = from_rust_log {
         return filter;
     }
+    let default_filter = || {
+        // A log target is a module path, so `case-folder` logs as `case_folder`.
+        let app_name = app_name.replace('-', "_");
+        let directives = DEFAULT_MODULES
+            .iter()
+            .copied()
+            .chain(std::iter::once(app_name.as_str()))
+            .map(|module| format!("{module}={level}"))
+            .chain(extra_directives.iter().map(ToString::to_string))
+            .collect::<Vec<_>>()
+            .join(",");
+        // `new` keeps the directives that parse and drops the rest, where `try_new` refuses.
+        EnvFilter::new(directives)
+    };
     override_filter
-        .map_or_else(
-            || {
-                // A log target is a module path, so `case-folder` logs as `case_folder`.
-                let app_name = app_name.replace('-', "_");
-                let directives = DEFAULT_MODULES
-                    .iter()
-                    .copied()
-                    .chain(std::iter::once(app_name.as_str()))
-                    .map(|module| format!("{module}={level}"))
-                    .chain(extra_directives.iter().map(ToString::to_string))
-                    .collect::<Vec<_>>()
-                    .join(",");
-                EnvFilter::try_new(directives)
-            },
-            EnvFilter::try_new,
-        )
-        .expect("logger filter is invalid")
+        .and_then(|filter| EnvFilter::try_new(filter).ok())
+        .unwrap_or_else(default_filter)
 }
 
 /// Build a formatting layer writing to `writer`.
@@ -194,11 +190,8 @@ pub fn init(app_name: &str, config: &Logger) {
 /// `layers` see what the filter lets through, as the logs do, and they keep running
 /// when `LOG_ENABLE=false` turns off stdout. `extra_directives` widen the default
 /// filter, for example to show an exporter's own errors, and are left out when
-/// `RUST_LOG` or an override filter is set.
-///
-/// # Panics
-///
-/// If an override filter or an extra directive is not valid.
+/// `RUST_LOG` or an override filter is set. An override filter that is not valid is
+/// passed over, and an extra directive that is not valid is dropped.
 pub fn init_with(
     app_name: &str,
     config: &Logger,
@@ -371,5 +364,14 @@ mod tests {
         let custom = "my_service=trace".to_string();
         let filter = init_env_filter("my_service", Some(&custom), &LogLevel::Info).to_string();
         assert_eq!(filter, custom);
+    }
+
+    #[test]
+    fn an_override_that_is_not_a_filter_is_passed_over_and_a_bad_directive_dropped() {
+        let bad = "a=b=c=d".to_string();
+        let filter = choose_filter(None, "my_service", Some(&bad), LogLevel::Debug, &[]);
+        assert!(filter.to_string().contains("my_service=debug"), "{filter}");
+        let filter = choose_filter(None, "my_service", None, LogLevel::Debug, &["x=y=z"]);
+        assert!(filter.to_string().contains("my_service=debug"), "{filter}");
     }
 }

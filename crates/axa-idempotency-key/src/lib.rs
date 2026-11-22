@@ -524,17 +524,19 @@ impl Idempotency {
     /// Run `work`, reporting in as it goes. The heartbeat is polled beside the work and
     /// not between its polls, so a slow database cannot hold up a handler.
     async fn hold(&self, run: &Run, work: impl Future<Output = Response>) -> Response {
-        let heartbeat = async {
-            loop {
-                // At least 20 ms, as no lease is under `MIN_LEASE`. A 24-hour `ttl`
-                // reports in every 8 hours.
-                tokio::time::sleep(self.lease() / 3).await;
-                self.renew(run).await;
-            }
-        };
         tokio::select! {
             response = work => response,
-            () = heartbeat => unreachable!("the heartbeat never ends"),
+            never = self.heartbeat(run) => match never {},
+        }
+    }
+
+    /// Report in on the lease for as long as it is polled, which is never to the end.
+    async fn heartbeat(&self, run: &Run) -> std::convert::Infallible {
+        loop {
+            // At least 20 ms, as no lease is under `MIN_LEASE`. A 24-hour `ttl`
+            // reports in every 8 hours.
+            tokio::time::sleep(self.lease() / 3).await;
+            self.renew(run).await;
         }
     }
 

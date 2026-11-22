@@ -5,6 +5,17 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `logger::init_env_filter` and `init_with` no longer panic on an invalid override
+  filter or extra directive: the override is passed over, as a bad `RUST_LOG` is, and the
+  directive dropped (LOG-7).
+- `server::shutdown_signal` no longer panics when a signal handler cannot be installed:
+  it logs the error and that signal never fires (SRV-20).
+- `axa-webhooks`, `axa-request-rate-limit`, `axa-openapi-docs` and `axa-idempotency-key`
+  lose their `expect` and `unreachable!` calls. `axa_openapi_docs::spec_of` answers
+  `null` for a document that cannot be encoded, where it panicked.
+
 ## [0.21.0] - 2026-11-21
 
 This covers `axa` 0.21.0, `axa-test` 0.12.0, `axa-keycloak-auth` 0.5.3, `axa-mail` 0.1.3,

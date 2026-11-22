@@ -116,27 +116,36 @@ impl<S: Send + Sync> FromRequestParts<S> for Shutdown {
 
 /// Resolve when the process receives `SIGTERM` or Ctrl-C.
 ///
-/// # Panics
-///
-/// If the signal handlers cannot be installed.
+/// A handler that cannot be installed is logged and then never fires, so the signal
+/// keeps its default action, which ends the process at once.
 pub async fn shutdown_signal() {
     let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("install Ctrl-C handler");
+        survive("Ctrl-C", tokio::signal::ctrl_c().await).await;
     };
     #[cfg(unix)]
     let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("install SIGTERM handler")
-            .recv()
-            .await;
+        let installed = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
+        match installed {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => survive("SIGTERM", Err(error)).await,
+        }
     };
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! {
         () = ctrl_c => {},
         () = terminate => {},
+    }
+}
+
+/// Return when `outcome` is `Ok`. On an error, log it and wait forever, so one signal
+/// that cannot be handled does not end the wait for the other.
+async fn survive(signal: &str, outcome: std::io::Result<()>) {
+    if let Err(error) = outcome {
+        tracing::error!(%error, "could not install the {signal} handler, so it will not stop the service gracefully");
+        std::future::pending::<()>().await;
     }
 }
 
@@ -452,11 +461,12 @@ where
         slot
     } else {
         tracing::warn!("at the connection limit, so new connections wait");
-        slots
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("the slots are never closed")
+        match slots.clone().acquire_owned().await {
+            Ok(slot) => slot,
+            // Only closing the semaphore ends the wait with an error, and nothing
+            // closes it. Were it closed, no slot would ever come, so wait for shutdown.
+            Err(_) => std::future::pending().await,
+        }
     };
     loop {
         match accept().await {
@@ -874,6 +884,30 @@ mod tests {
         net::TcpStream,
         sync::oneshot,
     };
+
+    #[tokio::test(start_paused = true)]
+    async fn closed_slots_never_yield_a_connection_and_wait_for_shutdown() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let slots = Arc::new(Semaphore::new(0));
+        slots.close();
+        let waited = tokio::time::timeout(
+            Duration::from_hours(1),
+            next_connection(|| listener.accept(), &slots),
+        )
+        .await;
+        assert!(waited.is_err(), "it kept waiting");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_signal_that_cannot_be_handled_is_logged_and_never_fires() {
+        survive("SIGTERM", Ok(())).await;
+        let waited = tokio::time::timeout(
+            Duration::from_hours(1),
+            survive("SIGTERM", Err(std::io::Error::other("no signals here"))),
+        )
+        .await;
+        assert!(waited.is_err(), "it kept waiting");
+    }
 
     #[tokio::test(start_paused = true)]
     async fn a_failed_accept_waits_a_second_and_tries_again() {

@@ -703,7 +703,7 @@ impl<F: Fn(&str) -> Option<String>> Settings<F> {
     }
 
     /// The log filter from `LOG_FILTER`. One that does not parse is noted and
-    /// dropped, because [`logger::init_env_filter`] would panic on it.
+    /// dropped, as [`logger::init_env_filter`] would pass over it.
     fn log_filter(&self) -> Option<String> {
         let filter = self.optional("LOG_FILTER")?;
         if tracing_subscriber::EnvFilter::try_new(&filter).is_err() {
