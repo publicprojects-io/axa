@@ -163,7 +163,7 @@ impl Routes {
     /// order. See [`AppRoutes::mounted`].
     #[must_use]
     pub fn mounted(&self) -> Vec<(String, String)> {
-        let prefix = self.prefix.as_deref().unwrap_or_default();
+        let prefix = self.prefix.as_deref().unwrap_or("");
         self.handlers
             .iter()
             .flat_map(|handler| {
@@ -245,7 +245,7 @@ impl AppRoutes {
         self.groups
             .into_iter()
             .flat_map(|group| {
-                let prefix = group.prefix.unwrap_or_default();
+                let prefix = group.prefix.unwrap_or(String::new());
                 let group_limit = group.timeout;
                 group.handlers.into_iter().map(move |handler| {
                     let path = join(&[&prefix, &handler.uri]);

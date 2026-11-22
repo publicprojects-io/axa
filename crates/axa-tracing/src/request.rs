@@ -97,7 +97,7 @@ mod tests {
 
     async fn id_seen_by_a_handler(header: Option<&str>) -> String {
         async fn handler() -> String {
-            current_request_id().unwrap_or_default()
+            current_request_id().unwrap_or(String::new())
         }
         let app = Router::new().route("/", get(handler)).layer(from_fn(track));
         let mut request = HttpRequest::builder().uri("/");

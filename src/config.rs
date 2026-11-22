@@ -763,11 +763,11 @@ fn stays_private(uri: &str) -> bool {
     {
         return true;
     }
-    let authority = location.split('/').next().unwrap_or_default();
-    let address = authority.rsplit('@').next().unwrap_or_default();
+    let authority = location.split('/').next().unwrap_or("");
+    let address = authority.rsplit('@').next().unwrap_or("");
     let host = match address.strip_prefix('[') {
-        Some(bracketed) => bracketed.split(']').next().unwrap_or_default(),
-        None => address.split(':').next().unwrap_or_default(),
+        Some(bracketed) => bracketed.split(']').next().unwrap_or(""),
+        None => address.split(':').next().unwrap_or(""),
     };
     let host = parameter(&["host", "hostaddr"]).unwrap_or(host);
     host.starts_with('/')

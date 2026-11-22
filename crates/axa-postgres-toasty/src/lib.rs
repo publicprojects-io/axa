@@ -421,7 +421,9 @@ pub fn note_stale_plan(error: &Error) -> bool {
 fn opened_before_last_stale_plan(opened: Instant) -> bool {
     opened_before(
         LAST_STALE_PLAN.load(Ordering::SeqCst),
-        opened.saturating_duration_since(epoch()),
+        opened
+            .checked_duration_since(epoch())
+            .unwrap_or(Duration::ZERO), /* ARI-4 */
     )
 }
 

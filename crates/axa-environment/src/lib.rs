@@ -58,7 +58,7 @@ impl Environment {
     /// ```
     #[must_use]
     pub fn resolve(name: Option<&str>, debug: bool) -> Self {
-        let name = name.unwrap_or_default().trim().to_ascii_lowercase();
+        let name = name.unwrap_or("").trim().to_ascii_lowercase();
         match (name.as_str(), debug) {
             ("development" | "dev", _) | ("", true) => Self::Development,
             ("test", _) => Self::Test,

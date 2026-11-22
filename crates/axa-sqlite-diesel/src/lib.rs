@@ -174,7 +174,7 @@ fn target(uri: &str) -> Option<Target> {
     let rest = uri
         .strip_prefix("sqlite://")
         .or_else(|| uri.strip_prefix("sqlite:"))?;
-    let path = rest.split(['?', '#']).next().unwrap_or_default();
+    let path = rest.split(['?', '#']).next().unwrap_or("");
     if path.is_empty() || path.starts_with(':') {
         return None;
     }

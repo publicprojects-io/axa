@@ -142,7 +142,7 @@ pub fn content_disposition(media_type: &str, file_name: &str) -> HeaderValue {
     let essence = media_type
         .split(';')
         .next()
-        .unwrap_or_default()
+        .unwrap_or("")
         .trim()
         .to_ascii_lowercase();
     let disposition = if INLINE_MEDIA_TYPES.contains(&essence.as_str()) {
@@ -182,7 +182,7 @@ pub fn content_disposition(media_type: &str, file_name: &str) -> HeaderValue {
 /// left.
 #[must_use]
 pub fn clean_file_name(name: &str) -> String {
-    let last = name.rsplit(['/', '\\']).next().unwrap_or_default();
+    let last = name.rsplit(['/', '\\']).next().unwrap_or("");
     let kept: String = last
         .chars()
         .filter(|&c| !c.is_control() && !is_bidi_control(c) && !matches!(c, '"' | '\\'))
@@ -213,7 +213,7 @@ fn shorten(name: &str, max: usize) -> String {
         .rfind('.')
         .map(|dot| &name[dot..])
         .filter(|extension| extension.len() <= 16)
-        .unwrap_or_default();
+        .unwrap_or("");
     let mut stem_end = max.checked_sub(extension.len()).unwrap_or(0); // ARI-3
     while !name.is_char_boundary(stem_end) {
         stem_end = stem_end.checked_sub(1).unwrap_or(0); // ARI-3

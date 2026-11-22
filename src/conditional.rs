@@ -192,7 +192,7 @@ impl ETag {
 
 impl fmt::Display for ETag {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0.to_str().unwrap_or_default())
+        f.write_str(self.0.to_str().unwrap_or(""))
     }
 }
 

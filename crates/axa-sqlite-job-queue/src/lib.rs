@@ -2132,7 +2132,7 @@ impl Queue {
                     }));
                 }
                 () = &mut deadline => {
-                    let limit = claim.timeout.unwrap_or_default();
+                    let limit = claim.timeout.unwrap_or(Duration::ZERO);
                     return Outcome::Done(Err(
                         Error::Job(format!("timed out after {}s", limit.as_secs_f64())).to_string().into(),
                     ));

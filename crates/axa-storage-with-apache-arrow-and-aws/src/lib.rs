@@ -197,7 +197,7 @@ pub fn install_ring_provider() {
 fn refuse_plain_http(builder: &AmazonS3Builder) -> Result<(), Error> {
     let endpoint = builder
         .get_config_value(&AmazonS3ConfigKey::Endpoint)
-        .unwrap_or_default();
+        .unwrap_or(String::new());
     let allow_http = builder
         .get_config_value(&AmazonS3ConfigKey::Client(ClientConfigKey::AllowHttp))
         .is_some_and(|value| value.eq_ignore_ascii_case("true"));

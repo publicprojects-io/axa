@@ -39,11 +39,11 @@ async fn token(session: Session<SessionNullPool>) -> String {
 }
 
 async fn check(session: Session<SessionNullPool>, query: RawQuery) -> String {
-    csrf_verify(&session, &query.0.unwrap_or_default()).to_string()
+    csrf_verify(&session, &query.0.unwrap_or(String::new())).to_string()
 }
 
 async fn read(session: Session<SessionNullPool>) -> String {
-    session.get::<String>("name").unwrap_or_default()
+    session.get::<String>("name").unwrap_or(String::new())
 }
 
 async fn id(session: Session<SessionNullPool>) -> String {
@@ -423,7 +423,7 @@ mod postgres {
     }
 
     async fn read(session: SessionPgSession) -> String {
-        session.get::<String>("note").unwrap_or_default()
+        session.get::<String>("note").unwrap_or(String::new())
     }
 
     async fn pg_app(pool: &sqlx::PgPool, options: &SessionOptions) -> Router {

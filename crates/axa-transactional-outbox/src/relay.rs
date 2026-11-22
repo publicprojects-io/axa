@@ -864,7 +864,9 @@ impl Outbox {
         let row = sqlx::query(STATS).fetch_one(&self.pool).await?;
         let age = |column: &str| -> Result<Option<Duration>, sqlx::Error> {
             let seconds: Option<f64> = row.try_get(column)?;
-            Ok(seconds.map(|seconds| Duration::from_secs_f64(seconds.max(0.0))))
+            // ARI-4: an age below zero, from a clock set back, is no age.
+            Ok(seconds
+                .map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)))
         };
         Ok(Stats {
             pending: row.try_get("pending")?,

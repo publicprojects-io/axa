@@ -315,7 +315,7 @@ async fn read_file(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
             format!("A file must be one of {}", accept.join(", ")),
         ));
     }
-    let file_name = clean_file_name(field.file_name().unwrap_or_default());
+    let file_name = clean_file_name(field.file_name().unwrap_or(""));
     let temp = tempfile::NamedTempFile::new().map_err(Error::IO)?;
     let mut writer = tokio::fs::File::from_std(temp.reopen().map_err(Error::IO)?);
     let mut size: u64 = 0;

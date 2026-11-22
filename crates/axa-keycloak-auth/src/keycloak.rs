@@ -395,17 +395,17 @@ pub fn claims_from_token(
         .find(|a| token.audience.contains(a))
         .or_else(|| settings.audiences.first())
         .cloned()
-        .unwrap_or_default();
+        .unwrap_or(String::new());
 
     Ok(Claims {
         sub: token.subject.clone(),
-        email: token.extra.email.clone().unwrap_or_default(),
+        email: token.extra.email.clone().unwrap_or(String::new()),
         name: token
             .extra
             .name
             .clone()
             .or_else(|| token.extra.preferred_username.clone())
-            .unwrap_or_default(),
+            .unwrap_or(String::new()),
         iss: token.issuer.clone(),
         aud,
         exp: token.expires_at.unix_timestamp(),

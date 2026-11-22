@@ -1,3 +1,23 @@
 # Names clippy's `doc_markdown` lint takes as words, not code, on top of its own
 # list. Clippy does not know these yet.
 doc-valid-idents = ["MiniJinja", "MySQL", "MariaDB", "PostgreSQL", "SeaORM", "SQLite", ".."]
+
+# RCA-ENF-2: what bypasses checked arithmetic.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+disallowed-methods = [
+  { path = "core::iter::Iterator::sum", reason = "RCA-AGG-1: use try_fold with checked_add" },
+  { path = "core::iter::Iterator::product", reason = "RCA-AGG-1: use try_fold with checked_mul" },
+  { path = "core::time::Duration::from_secs_f64", reason = "RCA-TIME-2: use try_from_secs_f64" },
+  { path = "core::time::Duration::from_secs_f32", reason = "RCA-TIME-2: use try_from_secs_f32" },
+  { path = "core::option::Option::unwrap_or_default", reason = "RCA-P-3: an unknown is never a zero" },
+  { path = "std::time::Instant::duration_since", reason = "RCA-TIME-1: use checked_duration_since" },
+  { path = "std::time::Instant::saturating_duration_since", reason = "RCA-INT-4: no saturation" },
+]
+disallowed-types = [
+  { path = "core::num::Saturating", reason = "RCA-INT-4: no saturation" },
+  { path = "core::num::Wrapping", reason = "RCA-INT-4: no wrapping" },
+]

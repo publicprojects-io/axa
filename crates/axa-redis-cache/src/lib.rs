@@ -104,7 +104,7 @@ fn without_credentials(url: &str) -> String {
     let Some((scheme, rest)) = url.split_once("://") else {
         return url.to_string();
     };
-    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
     match authority.rfind('@') {
         Some(at) => format!("{scheme}://REDACTED{}", &rest[at..]),
         None => url.to_string(),

@@ -262,7 +262,7 @@ impl HttpBody for LimitedLater {
     ) -> Poll<Option<std::result::Result<hyper::body::Frame<Bytes>, Self::Error>>> {
         if let Self::Waiting(body, limit) = &mut *self {
             let bytes = limit.0.load(Ordering::SeqCst);
-            let body = body.take().unwrap_or_default();
+            let body = body.take().unwrap_or_else(Body::default);
             *self = Self::Reading(http_body_util::Limited::new(body, bytes));
         }
         match &mut *self {

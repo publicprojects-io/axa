@@ -18,6 +18,9 @@ pedantic = { level = "deny", priority = -1 }
 # RCA-INT-4 forbids `saturating_*`, and RCA-NONE-2 writes a declared bound as
 # `checked_*(..).unwrap_or(BOUND)`, which this lint would rewrite back into `saturating_*`.
 manual_saturating_arithmetic = "allow"
+# RCA-ENF-2 disallows `Option::unwrap_or_default`, and this lint would rewrite
+# `unwrap_or(String::new())` back into it.
+unwrap_or_default = "allow"
 
 [package]
 name = "axa"
@@ -239,6 +242,10 @@ tower = { version = "0.5", features = ["util"] }
 
 [package.metadata.docs.rs]
 all-features = true
+
+# RCA-ENF-4: an operator the lints miss panics, which is detectable, rather than wraps.
+[profile.release]
+overflow-checks = true
 
 # Line tables only, kept apart from the binaries, and none for dependencies: backtraces
 # keep file and line, and builds and links are faster and the target directory smaller.

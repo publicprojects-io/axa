@@ -315,9 +315,11 @@ mod tests {
         assert!(text.contains("# TYPE tokio_runtime_worker_busy_seconds_total counter"));
         let busy = seconds(&text, "tokio_runtime_worker_busy_seconds_total");
         for _ in 0..10 {
-            tokio::spawn(async { std::hint::black_box((0..10_000).sum::<u64>()) })
-                .await
-                .unwrap();
+            tokio::spawn(async {
+                std::hint::black_box((0..10_000_u64).filter(|n| n % 3 == 0).count())
+            })
+            .await
+            .unwrap();
         }
         let later = render(&registry);
         assert!(seconds(&later, "tokio_runtime_worker_busy_seconds_total") >= busy);
