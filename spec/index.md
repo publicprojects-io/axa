@@ -240,6 +240,12 @@ The health routes, `/_health/live`, `/_health/ready`, and `/_health/startup`, fo
 liveness, readiness, and startup probes Kubernetes gives a container. Their rules, and
 the requirements HLT-1 to HLT-15, are in [Health routes](health/index.md).
 
+### 4.7.1 Arithmetic
+
+Math must not panic. It uses Rust's `checked_*` functions, which return `None` rather than
+panicking or wrapping. The rule and the requirements ARI-1 to ARI-3 are in
+[Arithmetic](arithmetic/index.md).
+
 ### 4.8 Command line and tasks
 
 | Id | Requirement | Test |
