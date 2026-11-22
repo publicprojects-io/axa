@@ -2430,6 +2430,7 @@ impl<T> Drop for AbortOnDrop<T> {
 }
 
 #[cfg(test)]
+#[allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 mod tests {
     use super::*;
 

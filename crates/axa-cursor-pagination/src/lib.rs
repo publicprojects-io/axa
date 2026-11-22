@@ -381,6 +381,7 @@ pub fn escape_like(text: &str) -> String {
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]
 #[cfg(test)]
+#[allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 mod tests {
     use super::*;
 

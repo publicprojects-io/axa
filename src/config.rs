@@ -351,8 +351,11 @@ fn redact_pairs(value: &str) -> String {
         let Some(separator) = tail.chars().next() else {
             return out;
         };
+        let Some(after) = tail.strip_prefix(separator) else {
+            return out;
+        };
         out.push(separator);
-        rest = &tail[separator.len_utf8()..];
+        rest = after;
     }
 }
 

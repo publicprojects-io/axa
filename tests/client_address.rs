@@ -1,3 +1,4 @@
+#![allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 //! The client's address, through a real server and the standard middleware stack.
 
 use std::net::IpAddr;

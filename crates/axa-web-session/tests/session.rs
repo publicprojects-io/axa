@@ -1,3 +1,4 @@
+#![allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 //! Real requests through the layer. The Postgres test is ignored by default. Run it with:
 //!
 //! ```sh

@@ -554,9 +554,9 @@ fn path_matches(allowed: &str, path: &str) -> bool {
         Some(prefix) if prefix.ends_with('/') => {
             path.len() > prefix.len()
                 && path.starts_with(prefix)
-                && !path[prefix.len()..]
-                    .split('/')
-                    .any(|segment| segment == "..")
+                && path
+                    .get(prefix.len()..)
+                    .is_some_and(|tail| !tail.split('/').any(|segment| segment == ".."))
         }
         _ => allowed == path,
     }

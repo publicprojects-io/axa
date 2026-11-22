@@ -211,18 +211,22 @@ fn shorten(name: &str, max: usize) -> String {
     }
     let extension = name
         .rfind('.')
-        .map(|dot| &name[dot..])
+        .and_then(|dot| name.get(dot..))
         .filter(|extension| extension.len() <= 16)
         .unwrap_or("");
     let mut stem_end = max.checked_sub(extension.len()).unwrap_or(0); // ARI-3
     while !name.is_char_boundary(stem_end) {
         stem_end = stem_end.checked_sub(1).unwrap_or(0); // ARI-3
     }
-    let stem = name[..stem_end].trim_end_matches(['.', ' ']);
+    let Some(stem) = name.get(..stem_end) else {
+        return name.to_string();
+    };
+    let stem = stem.trim_end_matches(['.', ' ']);
     format!("{stem}{extension}")
 }
 
 #[cfg(test)]
+#[allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 mod tests {
     use super::*;
 

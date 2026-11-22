@@ -126,6 +126,7 @@ fn millis(duration: Duration) -> u64 {
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]
 #[cfg(test)]
+#[allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 mod tests {
     use std::thread::sleep;
 
