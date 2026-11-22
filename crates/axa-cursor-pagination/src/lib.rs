@@ -179,6 +179,8 @@ impl std::error::Error for PageError {}
 pub struct CursorPage {
     limit: u64,
     offset: u64,
+    /// `LIMIT` and `OFFSET` as signed numbers, checked to fit when the page is read.
+    bounds: (i64, i64),
     next: String,
 }
 
@@ -187,6 +189,19 @@ pub struct CursorPage {
 /// if any. An empty context adds nothing, so the cursors [`CursorPage::new`] makes are
 /// those it made before contexts were added. A context is marked by a byte no query
 /// part can hold, and its length, so no context reads as another or as a filter.
+/// A length as the 8 bytes of a big-endian `u64`, whatever the width of `usize`.
+fn length_bytes(length: usize) -> [u8; 8] {
+    let mut bytes = [0_u8; 8];
+    for (to, from) in bytes
+        .iter_mut()
+        .rev()
+        .zip(length.to_be_bytes().iter().rev())
+    {
+        *to = *from;
+    }
+    bytes
+}
+
 fn query_hash(path: &str, kept: &[&str], context: &str) -> [u8; 32] {
     let mut sorted = kept.to_vec();
     sorted.sort_unstable();
@@ -198,11 +213,7 @@ fn query_hash(path: &str, kept: &[&str], context: &str) -> [u8; 32] {
     }
     if !context.is_empty() {
         hash.update([1]);
-        hash.update(
-            u64::try_from(context.len())
-                .unwrap_or(u64::MAX)
-                .to_be_bytes(),
-        ); // ARI-5
+        hash.update(length_bytes(context.len()));
         hash.update(context.as_bytes());
     }
     hash.finalize().into()
@@ -293,7 +304,16 @@ impl CursorPage {
             _ => return Err(PageError::BadCursor),
         };
 
-        let next_cursor = key.encode(offset.checked_add(limit).unwrap_or(u64::MAX), &query); // ARI-5
+        // A page that ends past what a number holds, or a bound that SQL cannot take, is
+        // not a position a cursor can name.
+        let next_offset = offset.checked_add(limit).ok_or(PageError::BadCursor)?;
+        let rows = limit.checked_add(1).and_then(|rows| i64::try_from(rows).ok());
+        let skip = i64::try_from(offset).ok();
+        let (Some(rows), Some(skip), Ok(_)) = (rows, skip, i64::try_from(next_offset)) else {
+            return Err(PageError::BadCursor);
+        };
+        let bounds = (rows, skip);
+        let next_cursor = key.encode(next_offset, &query);
         let mut next_query: Vec<&str> = parts
             .iter()
             .copied()
@@ -305,6 +325,7 @@ impl CursorPage {
         Ok(Self {
             limit,
             offset,
+            bounds,
             next,
         })
     }
@@ -323,14 +344,11 @@ impl CursorPage {
 
     /// `LIMIT` and `OFFSET` as Postgres takes them, which is as signed numbers.
     /// The limit is one more than the page, so that [`CursorPage::split`] can tell
-    /// whether more rows follow. A value too large for `i64` saturates, so an offset
-    /// past every row is an empty page, not a failed query.
+    /// whether more rows follow. A page whose numbers do not fit `i64` is refused when
+    /// it is read, as [`PageError::BadCursor`], so these always fit.
     #[must_use]
-    pub fn bounds(&self) -> (i64, i64) {
-        (
-            i64::try_from(self.limit.checked_add(1).unwrap_or(u64::MAX)).unwrap_or(i64::MAX), // ARI-5
-            i64::try_from(self.offset).unwrap_or(i64::MAX),
-        )
+    pub const fn bounds(&self) -> (i64, i64) {
+        self.bounds
     }
 
     /// Drop the extra row [`CursorPage::bounds`] asked for. The flag says whether
@@ -607,16 +625,27 @@ mod tests {
     }
 
     #[test]
-    fn bounds_fetch_one_more_row_and_saturate() {
+    fn bounds_fetch_one_more_row() {
         let page = page("/things?limit=2").unwrap();
         assert_eq!(page.bounds(), (3, 0));
-        let far = CursorPage {
-            limit: u64::MAX,
-            offset: u64::MAX,
-            next: String::new(),
-        };
-        assert_eq!(far.bounds(), (i64::MAX, i64::MAX));
-        assert_eq!(far.split(vec![1]), (vec![1], false));
+    }
+
+    #[test]
+    fn a_cursor_past_what_sql_holds_is_refused() {
+        let query = query_hash("/things", &[], "");
+        for offset in [u64::MAX, u64::MAX / 2 + 1, u64::MAX / 2] {
+            let cursor = key().encode(offset, &query);
+            assert_eq!(
+                page(&format!("/things?cursor={cursor}&limit=2")),
+                Err(PageError::BadCursor),
+                "{offset}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_length_is_eight_big_endian_bytes() {
+        assert_eq!(length_bytes(0x0102), [0, 0, 0, 0, 0, 0, 1, 2]);
     }
 }
 

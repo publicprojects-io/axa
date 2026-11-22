@@ -322,8 +322,13 @@ pub fn note_stale_plan(error: &QueryError) -> bool {
     if !is_stale_plan(error) {
         return false;
     }
-    let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
-    LAST_STALE_PLAN.fetch_max(since.checked_add(1).unwrap_or(u64::MAX), Ordering::SeqCst); // ARI-5
+    // A time that does not fit a `u64` of nanoseconds is not recorded.
+    if let Some(mark) = u64::try_from(epoch().elapsed().as_nanos())
+        .ok()
+        .and_then(|since| since.checked_add(1))
+    {
+        LAST_STALE_PLAN.fetch_max(mark, Ordering::SeqCst);
+    }
     true
 }
 
@@ -456,20 +461,18 @@ where
     M: MigrationSource<Pg> + Clone + Send + 'static,
 {
     with_harness(pool, move |harness| {
-        let mut reverted = 0;
-        while reverted < steps {
+        for reverted in 0..steps {
             let applied = harness
                 .applied_migrations()
                 .map_err(|error| error.to_string())?;
             if applied.is_empty() {
-                break;
+                return Ok(reverted);
             }
             harness
                 .revert_last_migration(migrations.clone())
                 .map_err(|error| error.to_string())?;
-            reverted = reverted.checked_add(1).unwrap_or(usize::MAX); // ARI-3
         }
-        Ok(reverted)
+        Ok(steps)
     })
     .await
 }

@@ -248,19 +248,21 @@ panicking or wrapping, and never saturates. The rules and their requirements, RC
 
 Where a figure below fails to compute, the spec names the fallback and why it is correct
 (RCA-DECL-4), and the code cites the id at the `unwrap_or`. A figure with no row has no
-fallback: its failure is an error or a refusal.
+fallback: its failure is an error, a refusal or an "unknown". An input out of range or
+malformed never has a fallback: it is invalid data, so it is an error (RCA-DECL-5).
+A count, a size, a page size, a pool size, an age or an elapsed time that does not
+compute is such a figure.
 
 | Id | Figure and failure | Declared fallback | Why it is correct |
 |---|---|---|---|
 | ARI-1 | A job queue's time to stop a job it cannot report on, when two heartbeats do not fit before the stale time | Half the stale time | WRK-12 stops a job at half the stale time at the latest, before another worker can take it |
-| ARI-2 | A retry's backoff, `base * 2^(attempts - 1)`, when it does not fit, and the doublings for fewer than one attempt | The cap, `MAX_BACKOFF`; and no doublings | WRK-40 caps the wait, so a wait past what fits is past the cap; a first try waits the base |
-| ARI-3 | A count that cannot go below zero or above its type: a byte tally, a retry counter, a pause count, a request count at the limit, the requests remaining | Zero below, the type's maximum above | A tally of held bytes is never negative; a count at the maximum of its type is at or over any limit; no requests remain once the limit is reached |
-| ARI-4 | An elapsed time when the clock reads earlier than its start, or a counter that went backwards | Zero | Nothing has elapsed, and a counter that went backwards added nothing |
-| ARI-5 | A pool size, a page size plus one, or a total of sizes, past what its type holds | The type's maximum | It is past every limit set on it, so the limit refuses it |
+| ARI-2 | A retry's backoff, `base * 2^(attempts - 1)`, when it does not fit, and the pause count behind a relay's wait, when it does not fit | The cap, `MAX_BACKOFF`; and the count's maximum | WRK-40 caps the wait, so a wait past what fits is past the cap, and a count past the step where the wait reaches the cap changes nothing |
+| ARI-3 | The requests remaining, `limit - count`, when the count is at or past the limit | Zero | No requests remain once the limit is reached (the limit may have been lowered) |
 | ARI-6 | A time to wait or to stop at, when `Instant` plus a `Duration` does not fit | None: the run is stopped as lost, or the figure is refused | A time that cannot be represented cannot be waited for |
 | ARI-8 | A network mask for an address range, when the shift for its prefix does not fit: a prefix of zero keeps no bits, and one past the address width is refused when the range is parsed | Zero, no bits kept | A prefix of zero names every address, and a prefix that does not fit never reaches the mask |
 | ARI-9 | A capacity hint, `with_capacity`, when its size does not fit | Zero | It is only a hint: the buffer grows as it fills |
 | ARI-10 | When the next sweep of a rate limiter falls past what an instant holds | Now | A sweep is housekeeping, so sweeping at every request is safe |
+| ARI-11 | The seconds until a rate limiter's window resets, rounded up, when rounding up does not fit | The whole seconds, not rounded up | A reset time is a wait to try again, and the whole seconds is within one second of it |
 | ARI-7 | A figure counted in a function that returns a `Result`, such as the schedules queued, when it does not fit | None: `Error::Overflow`, naming the figure | There is no correct count to give |
 
 

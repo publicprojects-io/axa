@@ -394,10 +394,9 @@ impl Limiter {
             Shared::Watching {
                 client: seen,
                 requests,
-            } if seen == client => Shared::Watching {
-                client,
-                requests: requests.checked_add(1).unwrap_or(u32::MAX), // ARI-3
-            },
+            } if seen == client => requests.checked_add(1).map_or(Shared::Settled, |requests| {
+                Shared::Watching { client, requests }
+            }),
             Shared::Watching { .. } => Shared::Settled,
         };
         let warn = matches!(next, Shared::Watching { requests, .. } if requests >= SHARED_ALLOWANCE_SAMPLE);
@@ -479,7 +478,10 @@ impl Limiter {
         }
         let allowed = slot.count < limit;
         if allowed && mode == Mode::Charge {
-            slot.count = slot.count.checked_add(1).unwrap_or(u32::MAX);
+            // `count < limit` here, so one more fits a `u32`.
+            if let Some(count) = slot.count.checked_add(1) {
+                slot.count = count;
+            }
         }
         let mut verdict = self.verdict(*slot, limit, allowed, now);
         verdict.overflowed = full;
@@ -504,7 +506,7 @@ impl Limiter {
             reset_seconds: left
                 .as_secs()
                 .checked_add(u64::from(left.subsec_nanos() > 0))
-                .unwrap_or(u64::MAX), /* ARI-5 */
+                .unwrap_or(left.as_secs()), // ARI-11
             overflowed: false,
             first_refusal: false,
         }

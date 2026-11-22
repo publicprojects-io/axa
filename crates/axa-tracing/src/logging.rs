@@ -38,7 +38,7 @@ impl<T> fmt::Debug for Redacted<T> {
 struct Timing {
     created: Instant,
     entered: Option<Instant>,
-    busy: Duration,
+    busy: Option<Duration>,
 }
 
 /// Logs a warning, `slow_span`, for each span that lasts `threshold` or longer.
@@ -71,7 +71,7 @@ where
             span.extensions_mut().insert(Timing {
                 created: Instant::now(),
                 entered: None,
-                busy: Duration::ZERO,
+                busy: Some(Duration::ZERO),
             });
         }
     }
@@ -90,10 +90,10 @@ where
             && let Some(timing) = span.extensions_mut().get_mut::<Timing>()
             && let Some(entered) = timing.entered.take()
         {
+            // A busy time that does not fit is unknown, and is reported as such.
             timing.busy = timing
                 .busy
-                .checked_add(entered.elapsed())
-                .unwrap_or(Duration::MAX); // ARI-5
+                .and_then(|busy| busy.checked_add(entered.elapsed()));
         }
     }
 
@@ -109,8 +109,8 @@ where
             tracing::warn!(
                 parent: &id,
                 span = span.name(),
-                busy_ms = millis(busy),
-                idle_ms = millis(total.checked_sub(busy).unwrap_or(Duration::ZERO)), // ARI-4
+                busy_ms = busy.map(millis),
+                idle_ms = busy.and_then(|busy| total.checked_sub(busy)).map(millis),
                 "slow_span",
             );
         }

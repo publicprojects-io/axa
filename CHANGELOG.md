@@ -13,6 +13,15 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   recovers with `unwrap_or` and cites it. Elsewhere it returns an error. New: the job
   queues' `Error::Overflow`, and `axa_redis_cache::Error::Overflow`, which makes that
   enum's `match` non-exhaustive for callers (breaking).
+- Input out of range or malformed no longer has a fallback (RCA-DECL-5). A size, count,
+  page size, age or elapsed time that does not compute is an error or an "unknown":
+  uploads are refused as too large; a cursor or limit past what SQL holds is
+  `PageError::BadCursor`; a counter that went backwards adds nothing to a metric; a
+  session signed in at a later time than now is destroyed; an age below zero is `None`
+  in the outbox's `Stats`; a slow-span warning leaves out a busy time that does not fit.
+  Breaking: `backoff` and `retry_wait` in the three job queues return `Option<Duration>`
+  (`None` below one attempt), and `Outbox::failed` and the job queues' `connect` return an
+  error for a figure that does not fit.
 - Breaking: boot-time mistakes in code return an error instead of panicking.
   `Schedule::every`, `Schedule::cron` and `Queue::schedule` in the three job queues, and
   `axa::queue::Queue::schedule`, return `Result`, with a new `Error::Schedule` for a

@@ -475,20 +475,18 @@ where
     M: MigrationSource<Mysql> + Clone + Send + 'static,
 {
     with_harness(pool, move |harness| {
-        let mut reverted = 0;
-        while reverted < steps {
+        for reverted in 0..steps {
             let applied = harness
                 .applied_migrations()
                 .map_err(|error| error.to_string())?;
             if applied.is_empty() {
-                break;
+                return Ok(reverted);
             }
             harness
                 .revert_last_migration(migrations.clone())
                 .map_err(|error| error.to_string())?;
-            reverted = reverted.checked_add(1).unwrap_or(usize::MAX); // ARI-3
         }
-        Ok(reverted)
+        Ok(steps)
     })
     .await
 }

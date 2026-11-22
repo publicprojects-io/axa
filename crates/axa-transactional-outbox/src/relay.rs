@@ -189,15 +189,17 @@ const STATS: &str = "SELECT
 const MAX_DOUBLING_FACTOR: u32 = 1 << 16;
 
 /// How long to wait before the try after `attempts`, doubling each time up to `limit`.
-pub(crate) fn backoff(base: Duration, attempts: i32, limit: Duration) -> Duration {
-    // ARI-2: fewer than one attempt has no doublings, and a wait that does not fit is the cap.
-    let doublings = attempts
-        .checked_sub(1)
-        .and_then(|earlier| u32::try_from(earlier).ok())
-        .unwrap_or(0)
-        .min(16);
+/// `None` for fewer than one attempt, which is invalid.
+pub(crate) fn backoff(base: Duration, attempts: i32, limit: Duration) -> Option<Duration> {
+    let doublings = u32::try_from(attempts.checked_sub(1)?).ok()?.min(16);
     let factor = 1_u32.checked_shl(doublings).unwrap_or(MAX_DOUBLING_FACTOR);
-    base.checked_mul(factor).unwrap_or(limit).min(limit)
+    // ARI-2: a wait that does not fit is the cap.
+    Some(base.checked_mul(factor).unwrap_or(limit).min(limit))
+}
+
+/// A figure counted from the database that does not fit, as an error naming it.
+fn overflow(figure: &str) -> sqlx::Error {
+    sqlx::Error::Protocol(format!("the outbox figure `{figure}` does not fit"))
 }
 
 /// How one round of a relay ended.
@@ -424,7 +426,7 @@ impl Outbox {
             let charges: i32 = row.try_get("charges")?;
             let mut event = Claimed {
                 id: row.try_get("id")?,
-                attempts: charges.checked_add(1).unwrap_or(i32::MAX), // ARI-3
+                attempts: charges.checked_add(1).ok_or_else(|| overflow("attempts"))?,
                 event_id: row.try_get("event_id")?,
                 topic: row.try_get("topic")?,
                 kind: row.try_get("kind")?,
@@ -437,11 +439,11 @@ impl Outbox {
             match self.payload_of(&event, row)? {
                 Ok(payload) => event.payload = payload,
                 Err(Unread::NoKey) => {
-                    taken.unopened = taken.unopened.checked_add(1).unwrap_or(usize::MAX); // ARI-3
+                    taken.unopened = taken.unopened.checked_add(1).ok_or_else(|| overflow("unopened"))?;
                     continue;
                 }
                 Err(Unread::Tampered) => {
-                    taken.decided = taken.decided.checked_add(1).unwrap_or(usize::MAX); // ARI-3
+                    taken.decided = taken.decided.checked_add(1).ok_or_else(|| overflow("decided"))?;
                     let mut point = (&mut transaction).begin().await?;
                     match self.tampered(record, &event, &mut point).await {
                         Ok(()) => {
@@ -469,7 +471,7 @@ impl Outbox {
                 }
                 Ok(decided) => {
                     point.commit().await?;
-                    taken.decided = taken.decided.checked_add(1).unwrap_or(usize::MAX); // ARI-3
+                    taken.decided = taken.decided.checked_add(1).ok_or_else(|| overflow("decided"))?;
                     if matches!(decided, Decided::Refused) {
                         tracing::info!(
                             id = event.id,
@@ -481,7 +483,7 @@ impl Outbox {
                 }
                 Err(error) => {
                     point.rollback().await?;
-                    taken.decided = taken.decided.checked_add(1).unwrap_or(usize::MAX); // ARI-3
+                    taken.decided = taken.decided.checked_add(1).ok_or_else(|| overflow("decided"))?;
                     self.defer(&mut transaction, &event, &error).await?;
                 }
             }
@@ -679,7 +681,8 @@ impl Outbox {
         event: &Claimed,
         reason: &str,
     ) -> Result<Option<Attempt>, sqlx::Error> {
-        let wait = backoff(self.options.retry_backoff, event.attempts, MAX_BACKOFF);
+        let wait = backoff(self.options.retry_backoff, event.attempts, MAX_BACKOFF)
+            .ok_or_else(|| overflow("attempts"))?;
         self.ended(transaction, event, false, &code(reason), wait)
             .await
     }
@@ -820,9 +823,9 @@ impl Outbox {
             let outcome: String = row.try_get("outcome")?;
             let outcome = Outcome::parse(&outcome).unwrap_or(Outcome::Lost);
             if outcome == Outcome::Abandoned {
-                abandoned = abandoned.checked_add(1).unwrap_or(u64::MAX); // ARI-3
+                abandoned = abandoned.checked_add(1).ok_or_else(|| overflow("abandoned"))?;
             } else {
-                lost = lost.checked_add(1).unwrap_or(u64::MAX); // ARI-3
+                lost = lost.checked_add(1).ok_or_else(|| overflow("lost"))?;
             }
             let attempt = Attempt {
                 id: row.try_get("id")?,
@@ -864,9 +867,8 @@ impl Outbox {
         let row = sqlx::query(STATS).fetch_one(&self.pool).await?;
         let age = |column: &str| -> Result<Option<Duration>, sqlx::Error> {
             let seconds: Option<f64> = row.try_get(column)?;
-            // ARI-4: an age below zero, from a clock set back, is no age.
-            Ok(seconds
-                .map(|seconds| Duration::try_from_secs_f64(seconds).unwrap_or(Duration::ZERO)))
+            // An age below zero, from a clock set back, is unknown.
+            Ok(seconds.and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()))
         };
         Ok(Stats {
             pending: row.try_get("pending")?,
@@ -935,13 +937,21 @@ impl Outbox {
                     self.options.poll_interval
                 }
                 Ok(Round::Stalled) => {
-                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-3
-                    backoff(self.options.poll_interval, pauses, MAX_PAUSE)
+                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-2
+                    let Some(wait) = backoff(self.options.poll_interval, pauses, MAX_PAUSE) else {
+                        tracing::error!(pauses, "outbox relay stopped: its pause count is invalid");
+                        return;
+                    };
+                    wait
                 }
                 Err(error) => {
                     tracing::error!(%error, "outbox relay error");
-                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-3
-                    backoff(self.options.poll_interval, pauses, MAX_PAUSE)
+                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-2
+                    let Some(wait) = backoff(self.options.poll_interval, pauses, MAX_PAUSE) else {
+                        tracing::error!(pauses, "outbox relay stopped: its pause count is invalid");
+                        return;
+                    };
+                    wait
                 }
             };
             tokio::select! {
@@ -1176,17 +1186,19 @@ mod tests {
     #[test]
     fn each_retry_waits_twice_as_long_up_to_a_limit() {
         let base = Duration::from_secs(5);
-        assert_eq!(backoff(base, 1, MAX_BACKOFF), base);
-        assert_eq!(backoff(base, 2, MAX_BACKOFF), base * 2);
-        assert_eq!(backoff(base, 3, MAX_BACKOFF), base * 4);
-        assert_eq!(backoff(base, 1_000, MAX_BACKOFF), MAX_BACKOFF);
+        assert_eq!(backoff(base, 1, MAX_BACKOFF), Some(base));
+        assert_eq!(backoff(base, 2, MAX_BACKOFF), Some(base * 2));
+        assert_eq!(backoff(base, 3, MAX_BACKOFF), Some(base * 4));
+        assert_eq!(backoff(base, 1_000, MAX_BACKOFF), Some(MAX_BACKOFF));
+        assert_eq!(backoff(base, 0, MAX_BACKOFF), None);
+        assert_eq!(backoff(base, i32::MIN, MAX_BACKOFF), None);
     }
 
     #[test]
     fn an_outage_waits_longer_each_time_up_to_a_minute() {
         let base = Duration::from_secs(1);
-        assert_eq!(backoff(base, 1, MAX_PAUSE), base);
-        assert_eq!(backoff(base, 3, MAX_PAUSE), base * 4);
-        assert_eq!(backoff(base, 1_000, MAX_PAUSE), MAX_PAUSE);
+        assert_eq!(backoff(base, 1, MAX_PAUSE), Some(base));
+        assert_eq!(backoff(base, 3, MAX_PAUSE), Some(base * 4));
+        assert_eq!(backoff(base, 1_000, MAX_PAUSE), Some(MAX_PAUSE));
     }
 }

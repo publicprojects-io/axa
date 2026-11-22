@@ -252,6 +252,16 @@ impl std::fmt::Debug for SharedLimiter {
 /// and `usize`'s native width and order would not.
 struct KeyHasher(Hmac<Sha256>);
 
+/// Little-endian `bytes` as the 8 bytes of a 64-bit number, padded with `fill`, so that
+/// a `usize` or `isize` hashes alike on a 32-bit and a 64-bit build.
+fn widened(bytes: &[u8], fill: u8) -> [u8; 8] {
+    let mut wide = [fill; 8];
+    for (to, from) in wide.iter_mut().zip(bytes) {
+        *to = *from;
+    }
+    wide
+}
+
 impl Hasher for KeyHasher {
     fn finish(&self) -> u64 {
         let digest = self.0.clone().finalize().into_bytes();
@@ -287,7 +297,7 @@ impl Hasher for KeyHasher {
     }
 
     fn write_usize(&mut self, i: usize) {
-        self.write_u64(u64::try_from(i).unwrap_or(u64::MAX)); // ARI-5
+        self.0.update(&widened(&i.to_le_bytes(), 0));
     }
 
     fn write_i8(&mut self, i: i8) {
@@ -311,7 +321,8 @@ impl Hasher for KeyHasher {
     }
 
     fn write_isize(&mut self, i: isize) {
-        self.write_i64(i64::try_from(i).unwrap_or(i64::MAX)); // ARI-5
+        let fill = if i < 0 { 0xff } else { 0 };
+        self.0.update(&widened(&i.to_le_bytes(), fill));
     }
 }
 

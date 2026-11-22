@@ -188,14 +188,17 @@ impl TokioMetrics {
             let now = task.monitor.cumulative();
             let was = &task.reported;
             let count = |metric: &IntCounterVec, now: u64, was: u64| {
-                metric
-                    .with_label_values(&[name])
-                    .inc_by(now.checked_sub(was).unwrap_or(0)); // ARI-4
+                // A counter that went backwards is unknown, so it adds nothing.
+                if let Some(added) = now.checked_sub(was) {
+                    metric.with_label_values(&[name]).inc_by(added);
+                }
             };
             let seconds = |metric: &CounterVec, now: Duration, was: Duration| {
-                metric
-                    .with_label_values(&[name])
-                    .inc_by(now.checked_sub(was).unwrap_or(Duration::ZERO).as_secs_f64()); // ARI-4
+                if let Some(added) = now.checked_sub(was) {
+                    metric
+                        .with_label_values(&[name])
+                        .inc_by(added.as_secs_f64());
+                }
             };
             count(
                 &inner.instrumented,

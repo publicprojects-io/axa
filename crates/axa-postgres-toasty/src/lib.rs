@@ -412,8 +412,13 @@ pub fn note_stale_plan(error: &Error) -> bool {
     if !is_stale_plan(error) {
         return false;
     }
-    let since = u64::try_from(epoch().elapsed().as_nanos()).unwrap_or(u64::MAX - 1);
-    LAST_STALE_PLAN.fetch_max(since.saturating_add(1), Ordering::SeqCst);
+    // A time that does not fit a `u64` of nanoseconds is not recorded.
+    if let Some(mark) = u64::try_from(epoch().elapsed().as_nanos())
+        .ok()
+        .and_then(|since| since.checked_add(1))
+    {
+        LAST_STALE_PLAN.fetch_max(mark, Ordering::SeqCst);
+    }
     true
 }
 
@@ -422,20 +427,18 @@ pub fn note_stale_plan(error: &Error) -> bool {
 fn opened_before_last_stale_plan(opened: Instant) -> bool {
     opened_before(
         LAST_STALE_PLAN.load(Ordering::SeqCst),
-        opened
-            .checked_duration_since(epoch())
-            .unwrap_or(Duration::ZERO), /* ARI-4 */
+        opened.checked_duration_since(epoch()),
     )
 }
 
 /// Whether a connection opened at `opened` since [`EPOCH`] was opened at or before
-/// `last`, as [`LAST_STALE_PLAN`] holds it. One opened before the epoch counts as
-/// opened at it.
-fn opened_before(last: u64, opened: Duration) -> bool {
+/// `last`, as [`LAST_STALE_PLAN`] holds it. One opened before the epoch, which has no
+/// time since it, was opened before any stale plan.
+fn opened_before(last: u64, opened: Option<Duration>) -> bool {
     if last == 0 {
         return false;
     }
-    opened <= Duration::from_nanos(last.checked_sub(1).unwrap_or(0)) /* ARI-3 */
+    opened.is_none_or(|opened| opened < Duration::from_nanos(last))
 }
 
 /// Check the database connection.
@@ -810,14 +813,15 @@ mod tests {
     fn a_connection_is_retired_only_if_opened_by_the_last_stale_plan() {
         let second = Duration::from_secs(1);
         // Never a stale plan: nothing is retired.
-        assert!(!opened_before(0, second));
+        assert!(!opened_before(0, Some(second)));
         // A stale plan at 5s: a connection opened at 0s, 1s, or 5s goes, one at 6s
         // stays.
         let at_five = 5_000_000_000 + 1;
-        assert!(opened_before(at_five, Duration::ZERO));
-        assert!(opened_before(at_five, second));
-        assert!(opened_before(at_five, 5 * second));
-        assert!(!opened_before(at_five, 6 * second));
+        assert!(opened_before(at_five, None));
+        assert!(opened_before(at_five, Some(Duration::ZERO)));
+        assert!(opened_before(at_five, Some(second)));
+        assert!(opened_before(at_five, Some(5 * second)));
+        assert!(!opened_before(at_five, Some(6 * second)));
     }
 
     #[test]

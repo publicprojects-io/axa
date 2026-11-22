@@ -342,18 +342,16 @@ where
     M: MigrationSource<Sqlite> + Clone + Send + 'static,
 {
     blocking(pool, move |connection| {
-        let mut reverted = 0;
-        while reverted < steps {
+        for reverted in 0..steps {
             let applied = connection.applied_migrations().map_err(migration_error)?;
             if applied.is_empty() {
-                break;
+                return Ok(reverted);
             }
             connection
                 .revert_last_migration(migrations.clone())
                 .map_err(migration_error)?;
-            reverted = reverted.checked_add(1).unwrap_or(usize::MAX); // ARI-3
         }
-        Ok(reverted)
+        Ok(steps)
     })
     .await
 }

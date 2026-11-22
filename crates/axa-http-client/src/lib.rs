@@ -544,7 +544,7 @@ pub async fn bytes_limited(
 ) -> Result<Bytes, BodyError> {
     if response
         .content_length()
-        .is_some_and(|length| length > u64::try_from(limit).unwrap_or(u64::MAX))
+        .is_some_and(|length| !usize::try_from(length).is_ok_and(|length| length <= limit))
     {
         return Err(BodyError::TooLarge);
     }
@@ -554,7 +554,6 @@ pub async fn bytes_limited(
             .len()
             .checked_add(chunk.len())
             .is_none_or(|total| total > limit)
-        // ARI-5: a total past the type is past the limit
         {
             return Err(BodyError::TooLarge);
         }

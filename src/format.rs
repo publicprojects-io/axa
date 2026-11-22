@@ -212,14 +212,14 @@ fn shorten(name: &str, max: usize) -> String {
     let extension = name
         .rfind('.')
         .and_then(|dot| name.get(dot..))
-        .filter(|extension| extension.len() <= 16)
+        .filter(|extension| extension.len() <= 16 && extension.len() < max)
         .unwrap_or("");
-    let mut stem_end = max.checked_sub(extension.len()).unwrap_or(0); // ARI-3
-    while !name.is_char_boundary(stem_end) {
-        stem_end = stem_end.checked_sub(1).unwrap_or(0); // ARI-3
-    }
-    let Some(stem) = name.get(..stem_end) else {
-        return name.to_string();
+    // The extension is shorter than `max`, so there is room for a stem.
+    let Some(room) = max.checked_sub(extension.len()) else {
+        return String::new();
+    };
+    let Some(stem) = name.get(..name.floor_char_boundary(room)) else {
+        return String::new();
     };
     let stem = stem.trim_end_matches(['.', ' ']);
     format!("{stem}{extension}")

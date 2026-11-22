@@ -879,7 +879,7 @@ impl OutboxOptions {
                 .heartbeat_interval
                 .checked_mul(2)
                 .is_none_or(|twice| twice > stale)
-        // ARI-5: twice past the type is past the stale time
+        // Twice past the type is past the stale time.
         {
             Some("heartbeat_interval must be above zero and at most half of stale_minutes")
         } else if self.publish_timeout.is_zero() {

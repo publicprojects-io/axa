@@ -920,10 +920,7 @@ fn pool_size<F: Fn(&str) -> Option<String>>(
         vars.invalid("DB_MAX_CONNECTIONS", "0", "at least 1");
         max = default_max;
     }
-    let default_min = u32::from(production)
-        .checked_add(1)
-        .unwrap_or(u32::MAX)
-        .min(max); // ARI-5
+    let default_min = if production { 2 } else { 1 }.min(max);
     let min = vars.parsed("DB_MIN_CONNECTIONS", default_min);
     if min > max {
         let shown = min.to_string();

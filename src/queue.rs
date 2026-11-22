@@ -1260,10 +1260,11 @@ mod tests {
     fn each_retry_waits_twice_as_long_up_to_a_limit() {
         let base = Duration::from_secs(30);
         let backoff = axa_postgres_job_queue::backoff;
-        assert_eq!(backoff(base, 1), base);
-        assert_eq!(backoff(base, 2), base * 2);
-        assert_eq!(backoff(base, 3), base * 4);
-        assert_eq!(backoff(base, 1_000), Duration::from_hours(1));
+        assert_eq!(backoff(base, 1), Some(base));
+        assert_eq!(backoff(base, 2), Some(base * 2));
+        assert_eq!(backoff(base, 3), Some(base * 4));
+        assert_eq!(backoff(base, 1_000), Some(Duration::from_hours(1)));
+        assert_eq!(backoff(base, 0), None);
     }
 
     #[test]

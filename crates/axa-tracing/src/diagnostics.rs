@@ -141,9 +141,10 @@ pub fn monitor_runtime(monitor: RuntimeMonitor) -> JoinHandle<()> {
                 return;
             };
             tokio::time::sleep(monitor.interval).await;
-            let lag = Instant::now()
-                .checked_duration_since(expected)
-                .unwrap_or(Duration::ZERO); // ARI-4
+            // Waking before it was due is no lag, and there is nothing to report.
+            let Some(lag) = Instant::now().checked_duration_since(expected) else {
+                continue;
+            };
             if lag >= monitor.max_lag {
                 let snapshot = snapshot_of(&handle);
                 tracing::warn!(

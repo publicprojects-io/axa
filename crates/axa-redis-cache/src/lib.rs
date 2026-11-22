@@ -181,6 +181,11 @@ const MEMORY_MAX_TTL: Duration = Duration::from_hours(24 * 365);
 /// The most the in-process cache holds, in bytes of keys and values.
 const MEMORY_LIMIT: usize = 32 * 1024 * 1024;
 
+/// What an entry holds, or `None` when that does not fit a `usize`.
+fn size_of(key: &str, value: &str) -> Option<usize> {
+    key.len().checked_add(value.len())
+}
+
 /// Entries in this process, each with the moment it expires.
 #[derive(Debug, Default)]
 struct Memory {
@@ -201,9 +206,16 @@ impl Memory {
     fn remove(&mut self, key: &str) -> bool {
         match self.entries.remove(key) {
             Some((_, value)) => {
-                // ARI-5, ARI-3: a size past the type is past the tally, and the tally is never below zero.
-                let size = key.len().checked_add(value.len()).unwrap_or(usize::MAX);
-                self.bytes = self.bytes.checked_sub(size).unwrap_or(0);
+                // A tally that does not add up is not trusted: the cache starts again,
+                // as it does when it is full, because a cache may lose anything.
+                if let Some(bytes) =
+                    size_of(key, &value).and_then(|size| self.bytes.checked_sub(size))
+                {
+                    self.bytes = bytes;
+                } else {
+                    self.entries.clear();
+                    self.bytes = 0;
+                }
                 true
             }
             None => false,
@@ -212,7 +224,10 @@ impl Memory {
 
     fn insert(&mut self, key: &str, value: String, expires: Instant, now: Instant) {
         self.remove(key);
-        let size = key.len().checked_add(value.len()).unwrap_or(usize::MAX); // ARI-5
+        // An entry whose size does not fit is not kept.
+        let Some(size) = size_of(key, &value) else {
+            return;
+        };
         let full = |bytes: usize| {
             bytes
                 .checked_add(size)
@@ -237,7 +252,10 @@ impl Memory {
             self.entries.clear();
             self.bytes = 0;
         }
-        self.bytes = self.bytes.checked_add(size).unwrap_or(MEMORY_LIMIT); // ARI-5
+        let Some(bytes) = self.bytes.checked_add(size) else {
+            return;
+        };
+        self.bytes = bytes;
         self.entries.insert(key.to_string(), (expires, value));
     }
 }

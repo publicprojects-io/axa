@@ -561,17 +561,16 @@ const MAX_DOUBLING_FACTOR: u32 = 1 << 16;
 
 /// How long to wait before the attempt after `attempts`, doubling each time.
 #[must_use]
-pub fn backoff(base: Duration, attempts: i32) -> Duration {
-    // ARI-2: fewer than one attempt has no doublings, and a wait that does not fit is the cap.
-    let doublings = attempts
-        .checked_sub(1)
-        .and_then(|earlier| u32::try_from(earlier).ok())
-        .unwrap_or(0)
-        .min(16);
+pub fn backoff(base: Duration, attempts: i32) -> Option<Duration> {
+    // Fewer than one attempt is invalid, so it has no wait.
+    let doublings = u32::try_from(attempts.checked_sub(1)?).ok()?.min(16);
     let factor = 1_u32.checked_shl(doublings).unwrap_or(MAX_DOUBLING_FACTOR);
-    base.checked_mul(factor)
-        .unwrap_or(MAX_BACKOFF)
-        .min(MAX_BACKOFF)
+    // ARI-2: a wait that does not fit is the cap.
+    Some(
+        base.checked_mul(factor)
+            .unwrap_or(MAX_BACKOFF)
+            .min(MAX_BACKOFF),
+    )
 }
 
 /// The shortest delay a job may choose with [`RetryAfter`].
@@ -669,13 +668,13 @@ pub fn jittered(wait: Duration) -> Duration {
 /// held between [`MIN_RETRY_AFTER`] and an hour, or else the doubling backoff
 /// from `base`, jittered.
 #[must_use]
-pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Duration {
+pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Option<Duration> {
     match chosen {
         // WRK-41: a delay a job chose is held between the shortest and the longest wait.
-        Some(delay) if delay < MIN_RETRY_AFTER => MIN_RETRY_AFTER,
-        Some(delay) if delay > MAX_BACKOFF => MAX_BACKOFF,
-        Some(delay) => delay,
-        None => jittered(backoff(base, attempts)),
+        Some(delay) if delay < MIN_RETRY_AFTER => Some(MIN_RETRY_AFTER),
+        Some(delay) if delay > MAX_BACKOFF => Some(MAX_BACKOFF),
+        Some(delay) => Some(delay),
+        None => backoff(base, attempts).map(jittered),
     }
 }
 
@@ -1486,7 +1485,7 @@ impl Queue {
         let loops = u32::try_from(options.workers).unwrap_or(u32::MAX);
         let pool = PgPoolOptions::new()
             // The loops, housekeeping, schedules, and the listener.
-            .max_connections(loops.checked_add(3).unwrap_or(u32::MAX)) // ARI-5
+            .max_connections(loops.checked_add(3).ok_or(Error::Overflow("connections"))?)
             .connect(uri)
             .await?;
         Ok(Self::from_pool(pool, options))
@@ -2192,7 +2191,8 @@ impl Queue {
             }
             Outcome::Done(Err(error)) if attempts < job.limit => {
                 tracing::warn!(job = %name, %id, attempts, %error, "job failed, will retry");
-                let wait = retry_wait(self.options.retry_backoff, attempts, error.retry_in);
+                let wait = retry_wait(self.options.retry_backoff, attempts, error.retry_in)
+                    .ok_or(Error::Overflow("retry wait"))?;
                 sqlx::query(RETRY)
                     .bind(id)
                     .bind(attempts)
@@ -2444,28 +2444,31 @@ mod tests {
     #[test]
     fn each_retry_waits_twice_as_long_up_to_a_limit() {
         let base = Duration::from_secs(30);
-        assert_eq!(backoff(base, 1), base);
-        assert_eq!(backoff(base, 2), base * 2);
-        assert_eq!(backoff(base, 3), base * 4);
-        assert_eq!(backoff(base, 1_000), MAX_BACKOFF);
+        assert_eq!(backoff(base, 1), Some(base));
+        assert_eq!(backoff(base, 2), Some(base * 2));
+        assert_eq!(backoff(base, 3), Some(base * 4));
+        assert_eq!(backoff(base, 1_000), Some(MAX_BACKOFF));
+        assert_eq!(backoff(base, 0), None);
+        assert_eq!(backoff(base, i32::MIN), None);
     }
 
     #[test]
     fn a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose() {
         let base = Duration::from_secs(30);
         for _ in 0..200 {
-            let wait = retry_wait(base, 2, None);
+            let wait = retry_wait(base, 2, None).unwrap();
             assert!(wait >= base && wait <= base * 2, "{wait:?}");
         }
-        let waits: HashSet<_> = (0..20).map(|_| retry_wait(base, 1, None)).collect();
+        let waits: HashSet<_> = (0..20).map(|_| retry_wait(base, 1, None).unwrap()).collect();
         assert!(waits.len() > 1, "the waits are spread");
-        assert_eq!(retry_wait(Duration::ZERO, 3, None), Duration::ZERO);
+        assert_eq!(retry_wait(Duration::ZERO, 3, None), Some(Duration::ZERO));
+        assert_eq!(retry_wait(base, 0, None), None);
         let chosen = Some(Duration::from_secs(90));
-        assert_eq!(retry_wait(base, 1, chosen), Duration::from_secs(90));
-        assert_eq!(retry_wait(base, 1, Some(Duration::ZERO)), MIN_RETRY_AFTER);
+        assert_eq!(retry_wait(base, 1, chosen), Some(Duration::from_secs(90)));
+        assert_eq!(retry_wait(base, 1, Some(Duration::ZERO)), Some(MIN_RETRY_AFTER));
         assert_eq!(
             retry_wait(base, 1, Some(Duration::from_hours(9))),
-            MAX_BACKOFF
+            Some(MAX_BACKOFF)
         );
     }
 

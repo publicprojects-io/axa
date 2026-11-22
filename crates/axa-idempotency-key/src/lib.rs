@@ -869,6 +869,19 @@ fn key_of(headers: &HeaderMap) -> Option<String> {
     usable.then(|| value.to_str().ok().map(str::to_string))?
 }
 
+/// A length as the 8 bytes of a big-endian `u64`, whatever the width of `usize`.
+fn length_bytes(length: usize) -> [u8; 8] {
+    let mut bytes = [0_u8; 8];
+    for (to, from) in bytes
+        .iter_mut()
+        .rev()
+        .zip(length.to_be_bytes().iter().rev())
+    {
+        *to = *from;
+    }
+    bytes
+}
+
 /// A hash of what makes a request the same request. Each part carries its length, so
 /// that moving a byte from one part to the next changes the hash.
 fn fingerprint(method: &str, path: &str, query: &str, body: &[u8]) -> String {
@@ -876,7 +889,7 @@ fn fingerprint(method: &str, path: &str, query: &str, body: &[u8]) -> String {
 
     let mut hash = Sha256::new();
     for part in [method.as_bytes(), path.as_bytes(), query.as_bytes(), body] {
-        hash.update(u64::try_from(part.len()).unwrap_or(u64::MAX).to_be_bytes()); // ARI-5
+        hash.update(length_bytes(part.len()));
         hash.update(part);
     }
     hash.finalize()

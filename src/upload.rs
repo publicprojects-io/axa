@@ -198,16 +198,17 @@ struct Tally<'a> {
 
 impl Tally<'_> {
     fn add(&mut self, bytes: usize) -> Result<()> {
-        self.total = self
-            .total
-            .checked_add(u64::try_from(bytes).unwrap_or(u64::MAX))
-            .unwrap_or(u64::MAX); // ARI-5
-        if self.total > self.limits.total_bytes {
-            return Err(too_large(format!(
-                "The upload is larger than {} bytes",
-                self.limits.total_bytes
-            )));
-        }
+        // A total that does not fit is past the limit, and refused as such.
+        self.total = u64::try_from(bytes)
+            .ok()
+            .and_then(|bytes| self.total.checked_add(bytes))
+            .filter(|total| *total <= self.limits.total_bytes)
+            .ok_or_else(|| {
+                too_large(format!(
+                    "The upload is larger than {} bytes",
+                    self.limits.total_bytes
+                ))
+            })?;
         Ok(())
     }
 }
@@ -231,13 +232,15 @@ pub async fn read(mut multipart: Multipart, limits: &Limits) -> Result<Upload> {
     };
     let mut parts: usize = 0;
     while let Some(field) = multipart.next_field().await.map_err(|e| unreadable(&e))? {
-        parts = parts.checked_add(1).unwrap_or(usize::MAX); // ARI-5
-        if parts > limits.parts {
-            return Err(too_large(format!(
-                "The upload has more than {} parts",
-                limits.parts
-            )));
-        }
+        parts = parts
+            .checked_add(1)
+            .filter(|parts| *parts <= limits.parts)
+            .ok_or_else(|| {
+                too_large(format!(
+                    "The upload has more than {} parts",
+                    limits.parts
+                ))
+            })?;
         let name = match field.name() {
             Some(name) if !name.is_empty() && name.len() <= MAX_FIELD_NAME_BYTES => {
                 name.to_string()
@@ -272,7 +275,16 @@ async fn read_text(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
     let mut bytes = Vec::new();
     while let Some(chunk) = field.chunk().await.map_err(|e| unreadable(&e))? {
         tally.add(chunk.len())?;
-        tally.memory = tally.memory.checked_add(chunk.len()).unwrap_or(usize::MAX); // ARI-5
+        tally.memory = tally
+            .memory
+            .checked_add(chunk.len())
+            .filter(|memory| *memory <= limits.memory_bytes)
+            .ok_or_else(|| {
+                too_large(format!(
+                    "The text fields are larger than {} bytes together",
+                    limits.memory_bytes
+                ))
+            })?;
         if bytes
             .len()
             .checked_add(chunk.len())
@@ -281,12 +293,6 @@ async fn read_text(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
             return Err(too_large(format!(
                 "A text field is larger than {} bytes",
                 limits.field_bytes
-            )));
-        }
-        if tally.memory > limits.memory_bytes {
-            return Err(too_large(format!(
-                "The text fields are larger than {} bytes together",
-                limits.memory_bytes
             )));
         }
         bytes.extend_from_slice(&chunk);
@@ -321,15 +327,13 @@ async fn read_file(mut field: Field<'_>, name: String, tally: &mut Tally<'_>) ->
     let mut size: u64 = 0;
     while let Some(chunk) = field.chunk().await.map_err(|e| unreadable(&e))? {
         tally.add(chunk.len())?;
-        size = size
-            .checked_add(u64::try_from(chunk.len()).unwrap_or(u64::MAX))
-            .unwrap_or(u64::MAX); // ARI-5
-        if size > limits.file_bytes {
-            return Err(too_large(format!(
-                "A file is larger than {} bytes",
-                limits.file_bytes
-            )));
-        }
+        size = u64::try_from(chunk.len())
+            .ok()
+            .and_then(|chunk| size.checked_add(chunk))
+            .filter(|size| *size <= limits.file_bytes)
+            .ok_or_else(|| {
+                too_large(format!("A file is larger than {} bytes", limits.file_bytes))
+            })?;
         writer.write_all(&chunk).await.map_err(Error::IO)?;
     }
     writer.flush().await.map_err(Error::IO)?;
