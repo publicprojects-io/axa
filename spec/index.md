@@ -243,8 +243,8 @@ the requirements HLT-1 to HLT-15, are in [Health routes](health/index.md).
 ### 4.7.1 Arithmetic
 
 Math must not panic. It uses Rust's `checked_*` functions, which return `None` rather than
-panicking or wrapping. The rule and the requirements ARI-1 to ARI-3 are in
-[Arithmetic](arithmetic/index.md).
+panicking or wrapping, and never saturates. The rules and their requirements, RCA-*, are in
+[Rust checked arithmetic](rust-checked-arithmetic/index.md).
 
 ### 4.8 Command line and tasks
 
