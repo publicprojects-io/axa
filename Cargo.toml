@@ -162,7 +162,7 @@ zstd = ["tower-http/compression-zstd", "tower-http/decompression-zstd"]
 [dependencies]
 axa-postgres-diesel = { version = "0.4.0", path = "crates/axa-postgres-diesel", optional = true }
 axa-environment = { version = "0.2.0", path = "crates/axa-environment" }
-axa-idempotency-key = { version = "0.2.3", path = "crates/axa-idempotency-key", optional = true }
+axa-idempotency-key = { version = "0.3.0", path = "crates/axa-idempotency-key", optional = true }
 axa-openapi-docs = { version = "0.1.0", path = "crates/axa-openapi-docs", optional = true }
 axa-transactional-outbox = { version = "0.4.0", path = "crates/axa-transactional-outbox", optional = true }
 axa-cursor-pagination = { version = "0.1.2", path = "crates/axa-cursor-pagination", optional = true }
@@ -193,8 +193,8 @@ axa-sqlite-seaorm = { version = "0.1.0", path = "crates/axa-sqlite-seaorm", opti
 axa-sqlite-diesel = { version = "0.1.0", path = "crates/axa-sqlite-diesel", optional = true }
 axa-tracing = { version = "0.1.0", path = "crates/axa-tracing", optional = true }
 axa-opentelemetry = { version = "0.1.1", path = "crates/axa-opentelemetry", optional = true }
-axa-accepts-version-negotiation = { version = "0.2.1", path = "crates/axa-accepts-version-negotiation", optional = true }
-axa-postgres-job-queue = { version = "0.6.0", path = "crates/axa-postgres-job-queue", optional = true }
+axa-accepts-version-negotiation = { version = "0.3.0", path = "crates/axa-accepts-version-negotiation", optional = true }
+axa-postgres-job-queue = { version = "0.7.0", path = "crates/axa-postgres-job-queue", optional = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["macros", "multipart"] }
 clap = { version = "4", features = ["derive"] }

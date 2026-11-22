@@ -519,6 +519,9 @@ impl Queue {
     ))
 ))]
 mod tests {
+    /// What a test returns, so a failed step ends it with an error rather than a panic.
+    type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;
+
     use super::*;
     use crate::{
         AppContext, Environment,
@@ -619,49 +622,54 @@ mod tests {
         }
 
         async fn perform_for(&self, tenant: Option<String>, (): ()) -> Result<()> {
-            TENANTS.lock().unwrap().push(tenant);
+            if let Ok(mut tenants) = TENANTS.lock() {
+                tenants.push(tenant);
+            }
             Ok(())
         }
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_worker_gets_its_jobs_tenant_and_one_that_takes_none_refuses_it() {
+    async fn a_worker_gets_its_jobs_tenant_and_one_that_takes_none_refuses_it() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(TenantWorker);
-        TENANTS.lock().unwrap().clear();
+        TENANTS.lock().map_err(|e| e.to_string())?.clear();
         let acme = queue
-            .enqueue_job(&job::<TenantWorker, _>(&()).unwrap().tenant("acme"))
-            .await
-            .unwrap();
+            .enqueue_job(&job::<TenantWorker, _>(&())?.tenant("acme"))
+            .await?;
         let args = Args { fail: false };
         let refused = queue
-            .enqueue_job(&job::<CountWorker, _>(&args).unwrap().tenant("acme"))
+            .enqueue_job(&job::<CountWorker, _>(&args)?.tenant("acme"))
+            .await?;
+        let Err(bad) = queue
+            .enqueue_job(&job::<TenantWorker, _>(&())?.tenant("Acme"))
             .await
-            .unwrap();
-        let bad = queue
-            .enqueue_job(&job::<TenantWorker, _>(&()).unwrap().tenant("Acme"))
-            .await
-            .unwrap_err();
+        else {
+            return Err("an invalid tenant was accepted".into());
+        };
         assert!(matches!(bad, Error::BadRequest(_)), "{bad}");
-        while queue.run_one().await.unwrap() {}
-        assert_eq!(*TENANTS.lock().unwrap(), vec![Some("acme".to_string())]);
-        assert_eq!(status_of(&queue, &acme).await.0, "completed");
-        let (status, error) = status_of(&queue, &refused).await;
+        while queue.run_one().await? {}
+        assert_eq!(
+            *TENANTS.lock().map_err(|e| e.to_string())?,
+            vec![Some("acme".to_string())]
+        );
+        assert_eq!(status_of(&queue, &acme).await?.0, "completed");
+        let (status, error) = status_of(&queue, &refused).await?;
         assert_eq!(status, "failed");
-        assert!(error.unwrap().contains("perform_for"));
-        let info = queue.job(&acme).await.unwrap().unwrap();
+        assert!(error.is_some_and(|e| e.contains("perform_for")));
+        let info = queue.job(&acme).await?.ok_or("missing")?;
         assert_eq!(info.tenant.as_deref(), Some("acme"));
+        Ok(())
     }
 
-    async fn attempts_of(queue: &Queue, id: &str) -> i32 {
-        sqlx::query("SELECT attempts FROM axa_queue WHERE id = $1")
-            .bind(Uuid::parse_str(id).unwrap())
+    async fn attempts_of(queue: &Queue, id: &str) -> Result<i32, Box<dyn std::error::Error>> {
+        let row = sqlx::query("SELECT attempts FROM axa_queue WHERE id = $1")
+            .bind(Uuid::parse_str(id)?)
             .fetch_one(queue.pool())
-            .await
-            .unwrap()
-            .get("attempts")
+            .await?;
+        Ok(row.get("attempts"))
     }
 
     /// Asks to be tried again in two minutes.
@@ -683,150 +691,132 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_worker_that_asks_for_a_delay_is_tried_again_after_it() {
+    async fn a_worker_that_asks_for_a_delay_is_tried_again_after_it() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(BusyWorker);
         let job = NewJob::new("BusyWorker", serde_json::json!(null)).max_attempts(Some(3));
-        let id = queue.enqueue_job(&job).await.unwrap();
-        assert!(queue.run_one().await.unwrap());
-        let info = queue.job(&id).await.unwrap().unwrap();
+        let id = queue.enqueue_job(&job).await?;
+        assert!(queue.run_one().await?);
+        let info = queue.job(&id).await?.ok_or("missing")?;
         assert_eq!(info.state, JobState::Queued);
         assert_eq!(info.error.as_deref(), Some("the receiver is busy"));
         let wait = info.run_at.duration_since(info.updated_at).as_millis();
         assert!((119_000..=121_000).contains(&wait), "{wait}");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_job_that_panics_fails_and_its_loop_carries_on() {
+    async fn a_job_that_panics_fails_and_its_loop_carries_on() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(PanicWorker);
         let queue = Arc::new(queue);
         let panics = queue
             .enqueue("PanicWorker", serde_json::json!(null))
-            .await
-            .unwrap();
+            .await?;
         let args = serde_json::json!({ "fail": false });
-        let after = queue.enqueue("CountWorker", args).await.unwrap();
+        let after = queue.enqueue("CountWorker", args).await?;
         let (stop, stopped) = watch::channel(false);
         let running = tokio::spawn(queue.clone().run(stopped));
         for _ in 0..100 {
-            if status_of(&queue, &after).await.0 == "completed" {
+            if status_of(&queue, &after).await?.0 == "completed" {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        stop.send(true).unwrap();
-        running.await.unwrap();
-        let (status, error) = status_of(&queue, &panics).await;
+        stop.send(true)?;
+        running.await?;
+        let (status, error) = status_of(&queue, &panics).await?;
         assert_eq!(status, "failed");
         assert_eq!(error.as_deref(), Some("worker error: the job panicked"));
-        assert_eq!(status_of(&queue, &after).await.0, "completed");
+        assert_eq!(status_of(&queue, &after).await?.0, "completed");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_long_job_that_reports_in_is_not_taken_for_lost() {
+    async fn a_long_job_that_reports_in_is_not_taken_for_lost() -> TestResult {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
             heartbeat_interval: Duration::from_millis(30),
             max_attempts: 2,
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         queue.register(SlowWorker);
         let queue = Arc::new(queue);
-        let id = queue
-            .enqueue("SlowWorker", serde_json::json!(600))
-            .await
-            .unwrap();
+        let id = queue.enqueue("SlowWorker", serde_json::json!(600)).await?;
         let worker = {
             let queue = queue.clone();
-            tokio::spawn(async move { queue.run_one().await.unwrap() })
+            tokio::spawn(async move { queue.run_one().await })
         };
         tokio::time::sleep(Duration::from_millis(100)).await;
         // As if it had been running for hours, and silent until now. The next
         // heartbeat brings `updated_at` back, and `started_at` stays old.
         let hours_ago = "UPDATE axa_queue SET started_at = now() - interval '2 hours',
              updated_at = now() - interval '2 hours'";
-        sqlx::query(hours_ago).execute(queue.pool()).await.unwrap();
+        sqlx::query(hours_ago).execute(queue.pool()).await?;
         tokio::time::sleep(Duration::from_millis(100)).await;
-        assert_eq!(queue.requeue_stale().await.unwrap(), 0);
-        assert_eq!(status_of(&queue, &id).await.0, "running");
-        assert!(worker.await.unwrap());
-        assert_eq!(status_of(&queue, &id).await.0, "completed");
+        assert_eq!(queue.requeue_stale().await?, 0);
+        assert_eq!(status_of(&queue, &id).await?.0, "running");
+        assert!(worker.await??);
+        assert_eq!(status_of(&queue, &id).await?.0, "completed");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_job_given_up_on_cannot_overwrite_its_replacement() {
+    async fn a_job_given_up_on_cannot_overwrite_its_replacement() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(SlowWorker);
         let queue = Arc::new(queue);
-        let id = queue
-            .enqueue("SlowWorker", serde_json::json!(200))
-            .await
-            .unwrap();
+        let id = queue.enqueue("SlowWorker", serde_json::json!(200)).await?;
         let worker = {
             let queue = queue.clone();
-            tokio::spawn(async move { queue.run_one().await.unwrap() })
+            tokio::spawn(async move { queue.run_one().await })
         };
         tokio::time::sleep(Duration::from_millis(50)).await;
         // Given up on and claimed again by another worker.
         sqlx::query("UPDATE axa_queue SET attempts = attempts + 1")
             .execute(queue.pool())
-            .await
-            .unwrap();
-        assert!(worker.await.unwrap());
+            .await?;
+        assert!(worker.await??);
         // It cannot write its result, and stops for a person to look.
-        assert_eq!(status_of(&queue, &id).await.0, "needs_review");
+        assert_eq!(status_of(&queue, &id).await?.0, "needs_review");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_persons_act_through_axa_is_kept_with_who_and_why() {
+    async fn a_persons_act_through_axa_is_kept_with_who_and_why() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         let queued = queue
             .enqueue("OtherWorker", serde_json::json!({ "fail": false }))
-            .await
-            .unwrap();
+            .await?;
         let failed = queue
             .enqueue("CountWorker", serde_json::json!({ "fail": true }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
-        assert_eq!(status_of(&queue, &failed).await.0, "failed");
+            .await?;
+        assert!(queue.run_one().await?);
+        assert_eq!(status_of(&queue, &failed).await?.0, "failed");
 
-        let mut transaction = queue.pool().begin().await.unwrap();
+        let mut transaction = queue.pool().begin().await?;
         let refused = cancel(&mut transaction, &queued, "ops:alice", "two\nlines").await;
         assert!(matches!(refused, Err(Error::BadRequest(_))), "{refused:?}");
-        assert!(
-            cancel(&mut transaction, &queued, "ops:alice", "duplicate")
-                .await
-                .unwrap()
-        );
-        assert!(
-            retry(&mut transaction, &failed, "ops:alice", "fixed_upstream")
-                .await
-                .unwrap()
-        );
-        assert!(
-            !cancel(&mut transaction, "not-an-id", "ops:alice", "duplicate")
-                .await
-                .unwrap()
-        );
-        transaction.commit().await.unwrap();
+        assert!(cancel(&mut transaction, &queued, "ops:alice", "duplicate").await?);
+        assert!(retry(&mut transaction, &failed, "ops:alice", "fixed_upstream").await?);
+        assert!(!cancel(&mut transaction, "not-an-id", "ops:alice", "duplicate").await?);
+        transaction.commit().await?;
 
-        assert_eq!(status_of(&queue, &queued).await.0, "cancelled");
-        assert_eq!(status_of(&queue, &failed).await.0, "queued");
-        let cancelled = queue.acts(&queued).await.unwrap();
+        assert_eq!(status_of(&queue, &queued).await?.0, "cancelled");
+        assert_eq!(status_of(&queue, &failed).await?.0, "queued");
+        let cancelled = queue.acts(&queued).await?;
         assert_eq!(cancelled.len(), 1);
         assert_eq!(cancelled[0].kind, ActKind::Cancelled);
-        let retried = queue.acts(&failed).await.unwrap();
+        let retried = queue.acts(&failed).await?;
         assert_eq!(retried.len(), 1);
         assert_eq!(
             (
@@ -836,24 +826,24 @@ mod tests {
             ),
             (ActKind::Retried, "ops:alice", "fixed_upstream")
         );
-        assert!(queue.acts("not-an-id").await.unwrap().is_empty());
+        assert!(queue.acts("not-an-id").await?.is_empty());
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_worker_alone_stops_when_told() {
+    async fn a_worker_alone_stops_when_told() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = Arc::new(queue().await);
-        crate::server::run_until(None, Some(queue), &local_server(), async {})
-            .await
-            .unwrap();
+        let queue = Arc::new(queue().await?);
+        crate::server::run_until(None, Some(queue), &local_server(), async {}).await?;
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn the_job_loops_stop_when_the_server_cannot_start() {
+    async fn the_job_loops_stop_when_the_server_cannot_start() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = Arc::new(queue().await);
+        let queue = Arc::new(queue().await?);
         let config = crate::config::Server {
             port: 1,
             binding: "256.0.0.1".to_string(),
@@ -862,7 +852,8 @@ mod tests {
         let router = Some(axum::Router::new());
         let run = crate::server::run_until(router, Some(queue), &config, std::future::pending());
         let outcome = tokio::time::timeout(Duration::from_secs(10), run).await;
-        assert!(outcome.expect("the job loops kept running").is_err());
+        assert!(outcome.map_err(|_| "the job loops kept running")?.is_err());
+        Ok(())
     }
 
     fn local_server() -> crate::config::Server {
@@ -910,15 +901,12 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_hung_job_cannot_hold_shutdown_past_its_limit() {
+    async fn a_hung_job_cannot_hold_shutdown_past_its_limit() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(HangWorker);
         let queue = Arc::new(queue);
-        let id = queue
-            .enqueue("HangWorker", serde_json::json!(null))
-            .await
-            .unwrap();
+        let id = queue.enqueue("HangWorker", serde_json::json!(null)).await?;
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
             shutdown_drain_seconds: 0,
@@ -929,7 +917,7 @@ mod tests {
             ..local_server()
         };
         for _ in 0..50 {
-            if status_of(&queue, &id).await.0 == "queued" {
+            if status_of(&queue, &id).await?.0 == "queued" {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
@@ -937,30 +925,29 @@ mod tests {
         let stop = tokio::time::sleep(Duration::from_millis(500));
         let run = crate::server::run_until(None, Some(queue.clone()), &config, stop);
         let ended = tokio::time::timeout(Duration::from_secs(5), run).await;
-        ended.expect("a hung job held shutdown").unwrap();
-        assert_eq!(status_of(&queue, &id).await.0, "running");
+        ended.map_err(|_| "a hung job held shutdown")??;
+        assert_eq!(status_of(&queue, &id).await?.0, "running");
         assert_eq!(
             HUNG.load(std::sync::atomic::Ordering::SeqCst),
             0,
             "the hung job was left running after shutdown"
         );
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn jobs_held_back_for_migrations_are_never_claimed_and_shutdown_still_ends() {
+    async fn jobs_held_back_for_migrations_are_never_claimed_and_shutdown_still_ends() -> TestResult
+    {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
             poll_interval: Duration::from_millis(20),
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         queue.register(HangWorker);
         let queue = Arc::new(queue);
-        let id = queue
-            .enqueue("HangWorker", serde_json::json!(null))
-            .await
-            .unwrap();
+        let id = queue.enqueue("HangWorker", serde_json::json!(null)).await?;
         let stop = tokio::time::sleep(Duration::from_millis(300));
         let config = local_server();
         // Migrations that never finish: the job loops must not start.
@@ -972,31 +959,27 @@ mod tests {
             std::future::pending(),
         );
         let ended = tokio::time::timeout(Duration::from_secs(5), run).await;
-        ended
-            .expect("waiting for migrations held shutdown")
-            .unwrap();
-        assert_eq!(status_of(&queue, &id).await.0, "queued");
+        ended.map_err(|_| "waiting for migrations held shutdown")??;
+        assert_eq!(status_of(&queue, &id).await?.0, "queued");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn requests_and_jobs_share_one_limit_and_no_job_starts_during_it() {
+    async fn requests_and_jobs_share_one_limit_and_no_job_starts_during_it() -> TestResult {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
             workers: 2,
             poll_interval: Duration::from_millis(20),
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         queue.register(HangWorker);
         queue.register(CountWorker);
         let queue = Arc::new(queue);
-        queue
-            .enqueue("HangWorker", serde_json::json!(null))
-            .await
-            .unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
+        queue.enqueue("HangWorker", serde_json::json!(null)).await?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
         drop(listener);
         let config = crate::config::Server {
             shutdown_timeout_seconds: 1,
@@ -1016,10 +999,10 @@ mod tests {
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             loop {
                 if let Ok(mut stream) = tokio::net::TcpStream::connect(address).await {
-                    stream
-                        .write_all(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
-                        .await
-                        .unwrap();
+                    let sent = stream.write_all(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n").await;
+                    if sent.is_err() {
+                        return;
+                    }
                     let mut held = Vec::new();
                     let _ = stream.read_to_end(&mut held).await;
                     return;
@@ -1034,7 +1017,7 @@ mod tests {
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(600)).await;
                 let args = serde_json::json!({ "fail": false });
-                queue.enqueue("CountWorker", args).await.unwrap()
+                queue.enqueue("CountWorker", args).await
             })
         };
         let run = crate::server::run_until(Some(router), Some(queue.clone()), &config, stop);
@@ -1042,45 +1025,44 @@ mod tests {
         // take until 2.3.
         let ended = tokio::time::timeout(Duration::from_millis(1800), run).await;
         client.abort();
-        ended.expect("shutdown took longer than its limit").unwrap();
-        let late = late.await.unwrap();
-        assert_eq!(status_of(&queue, &late).await.0, "queued");
+        ended.map_err(|_| "shutdown took longer than its limit")??;
+        let late = late.await??;
+        assert_eq!(status_of(&queue, &late).await?.0, "queued");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_job_in_progress_finishes_before_shutdown() {
+    async fn a_job_in_progress_finishes_before_shutdown() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(SlowWorker);
         let queue = Arc::new(queue);
-        let id = queue
-            .enqueue("SlowWorker", serde_json::json!(300))
-            .await
-            .unwrap();
+        let id = queue.enqueue("SlowWorker", serde_json::json!(300)).await?;
         let (stop, stopped) = watch::channel(false);
         let running = tokio::spawn(queue.clone().run(stopped));
         for _ in 0..50 {
-            if status_of(&queue, &id).await.0 == "running" {
+            if status_of(&queue, &id).await?.0 == "running" {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        assert_eq!(status_of(&queue, &id).await.0, "running");
-        stop.send(true).unwrap();
-        running.await.unwrap();
-        assert_eq!(status_of(&queue, &id).await.0, "completed");
+        assert_eq!(status_of(&queue, &id).await?.0, "running");
+        stop.send(true)?;
+        running.await?;
+        assert_eq!(status_of(&queue, &id).await?.0, "completed");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_worker_can_allow_more_tries_than_the_queue() {
+    async fn a_worker_can_allow_more_tries_than_the_queue() -> TestResult {
         let _table = TABLE.lock().await;
         let mut queue = queue_with(QueueOptions {
             retry_backoff: Duration::ZERO,
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         queue.register(RetryingWorker);
         let id = queue
             .enqueue_limited(
@@ -1088,159 +1070,145 @@ mod tests {
                 serde_json::json!(null),
                 RetryingWorker::max_attempts(),
             )
-            .await
-            .unwrap();
+            .await?;
         for _ in 0..3 {
-            assert!(queue.run_one().await.unwrap());
+            assert!(queue.run_one().await?);
         }
-        assert_eq!(attempts_of(&queue, &id).await, 3);
-        assert_eq!(status_of(&queue, &id).await.0, "failed");
-        assert!(!queue.run_one().await.unwrap());
+        assert_eq!(attempts_of(&queue, &id).await?, 3);
+        assert_eq!(status_of(&queue, &id).await?.0, "failed");
+        assert!(!queue.run_one().await?);
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_lost_job_uses_its_workers_limit_too() {
+    async fn a_lost_job_uses_its_workers_limit_too() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         let id = queue
             .enqueue_limited("CountWorker", serde_json::json!({ "fail": false }), Some(3))
-            .await
-            .unwrap();
-        make_stale(&queue, &id, 2).await;
-        assert_eq!(queue.requeue_stale().await.unwrap(), 1);
-        make_stale(&queue, &id, 3).await;
-        assert_eq!(queue.requeue_stale().await.unwrap(), 0);
-        assert_eq!(status_of(&queue, &id).await.0, "failed");
+            .await?;
+        make_stale(&queue, &id, 2).await?;
+        assert_eq!(queue.requeue_stale().await?, 1);
+        make_stale(&queue, &id, 3).await?;
+        assert_eq!(queue.requeue_stale().await?, 0);
+        assert_eq!(status_of(&queue, &id).await?.0, "failed");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_job_queued_in_a_transaction_rolls_back_with_it() {
+    async fn a_job_queued_in_a_transaction_rolls_back_with_it() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         let args = Args { fail: false };
 
-        let mut transaction = queue.pool().begin().await.unwrap();
-        let dropped = enqueue_on::<CountWorker, _, _>(&mut *transaction, &args)
-            .await
-            .unwrap();
-        transaction.rollback().await.unwrap();
+        let mut transaction = queue.pool().begin().await?;
+        let dropped = enqueue_on::<CountWorker, _, _>(&mut *transaction, &args).await?;
+        transaction.rollback().await?;
         let row = sqlx::query("SELECT 1 AS n FROM axa_queue WHERE id = $1")
-            .bind(Uuid::parse_str(&dropped).unwrap())
+            .bind(Uuid::parse_str(&dropped)?)
             .fetch_optional(queue.pool())
-            .await
-            .unwrap();
+            .await?;
         assert!(row.is_none());
 
-        let mut transaction = queue.pool().begin().await.unwrap();
-        let kept = enqueue_on::<CountWorker, _, _>(&mut *transaction, &args)
-            .await
-            .unwrap();
-        transaction.commit().await.unwrap();
-        assert_eq!(status_of(&queue, &kept).await.0, "queued");
+        let mut transaction = queue.pool().begin().await?;
+        let kept = enqueue_on::<CountWorker, _, _>(&mut *transaction, &args).await?;
+        transaction.commit().await?;
+        assert_eq!(status_of(&queue, &kept).await?.0, "queued");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn the_max_attempts_column_is_added_to_an_older_table() {
+    async fn the_max_attempts_column_is_added_to_an_older_table() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         sqlx::query("ALTER TABLE axa_queue DROP COLUMN max_attempts")
             .execute(queue.pool())
-            .await
-            .unwrap();
-        let queue = self::queue().await;
+            .await?;
+        let queue = self::queue().await?;
         queue
             .enqueue("CountWorker", serde_json::json!({ "fail": false }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
+            .await?;
+        assert!(queue.run_one().await?);
+        Ok(())
     }
 
-    async fn queue() -> Queue {
-        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
-        let mut queue = Queue::connect(&uri, QueueOptions::default()).await.unwrap();
-        sqlx::query("DELETE FROM axa_queue")
-            .execute(queue.pool())
-            .await
-            .unwrap();
-        queue.register(CountWorker);
-        queue
+    async fn queue() -> Result<Queue, Box<dyn std::error::Error>> {
+        queue_with(QueueOptions::default()).await
     }
 
-    async fn status_of(queue: &Queue, id: &str) -> (String, Option<String>) {
+    async fn status_of(
+        queue: &Queue,
+        id: &str,
+    ) -> Result<(String, Option<String>), Box<dyn std::error::Error>> {
         let row = sqlx::query("SELECT status, error FROM axa_queue WHERE id = $1")
-            .bind(Uuid::parse_str(id).unwrap())
+            .bind(Uuid::parse_str(id)?)
             .fetch_one(queue.pool())
-            .await
-            .unwrap();
-        (row.get("status"), row.get("error"))
+            .await?;
+        Ok((row.get("status"), row.get("error")))
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn queue_behaviour_against_postgres() {
+    async fn queue_behaviour_against_postgres() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = Arc::new(queue().await);
-        queue.ping().await.unwrap();
+        let queue = Arc::new(queue().await?);
+        queue.ping().await?;
 
         // An empty queue has nothing to run.
-        assert!(!queue.run_one().await.unwrap());
+        assert!(!queue.run_one().await?);
 
         // A job runs and is marked completed.
         let before = COUNT.load(Ordering::SeqCst);
         let args = serde_json::json!({ "fail": false });
-        let id = queue.enqueue("CountWorker", args.clone()).await.unwrap();
-        assert!(queue.run_one().await.unwrap());
+        let id = queue.enqueue("CountWorker", args.clone()).await?;
+        assert!(queue.run_one().await?);
         assert_eq!(COUNT.load(Ordering::SeqCst), before + 1);
-        assert_eq!(status_of(&queue, &id).await.0, "completed");
+        assert_eq!(status_of(&queue, &id).await?.0, "completed");
 
         // A failure is kept on the row and does not fail the loop.
         let id = queue
             .enqueue("CountWorker", serde_json::json!({ "fail": true }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
-        let (status, error) = status_of(&queue, &id).await;
+            .await?;
+        assert!(queue.run_one().await?);
+        let (status, error) = status_of(&queue, &id).await?;
         assert_eq!(status, "failed");
-        assert!(error.unwrap().contains("told to fail"));
+        assert!(error.is_some_and(|e| e.contains("told to fail")));
 
         // Bad arguments fail the job rather than panicking the worker.
         let id = queue
             .enqueue("CountWorker", serde_json::json!({ "wrong": 1 }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
-        assert_eq!(status_of(&queue, &id).await.0, "failed");
+            .await?;
+        assert!(queue.run_one().await?);
+        assert_eq!(status_of(&queue, &id).await?.0, "failed");
 
         // A job with no handler stays queued for a worker that has one.
-        let id = queue.enqueue("OtherWorker", args.clone()).await.unwrap();
-        assert!(!queue.run_one().await.unwrap());
-        assert_eq!(status_of(&queue, &id).await.0, "queued");
+        let id = queue.enqueue("OtherWorker", args.clone()).await?;
+        assert!(!queue.run_one().await?);
+        assert_eq!(status_of(&queue, &id).await?.0, "queued");
 
         // A stale running job is queued again, and a recent one is not.
-        let stale = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        let stale = queue.enqueue("CountWorker", args.clone()).await?;
         sqlx::query(
             "UPDATE axa_queue SET status = 'running', started_at = now() - interval '2 hours',
              updated_at = now() - interval '2 hours' WHERE id = $1",
         )
-        .bind(Uuid::parse_str(&stale).unwrap())
+        .bind(Uuid::parse_str(&stale)?)
         .execute(queue.pool())
-        .await
-        .unwrap();
-        assert_eq!(queue.requeue_stale().await.unwrap(), 1);
-        assert_eq!(status_of(&queue, &stale).await.0, "queued");
-        assert!(queue.run_one().await.unwrap());
+        .await?;
+        assert_eq!(queue.requeue_stale().await?, 1);
+        assert_eq!(status_of(&queue, &stale).await?.0, "queued");
+        assert!(queue.run_one().await?);
 
         // Concurrent loops run each job exactly once.
         sqlx::query("DELETE FROM axa_queue")
             .execute(queue.pool())
-            .await
-            .unwrap();
+            .await?;
         let before = COUNT.load(Ordering::SeqCst);
         for _ in 0..20 {
-            queue.enqueue("CountWorker", args.clone()).await.unwrap();
+            queue.enqueue("CountWorker", args.clone()).await?;
         }
         let (stop, stopped) = watch::channel(false);
         let running = tokio::spawn(queue.clone().run(stopped));
@@ -1250,31 +1218,30 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
-        stop.send(true).unwrap();
-        running.await.unwrap();
+        stop.send(true)?;
+        running.await?;
         assert_eq!(COUNT.load(Ordering::SeqCst), before + 20);
         let left: i64 =
             sqlx::query("SELECT count(*) AS n FROM axa_queue WHERE status <> 'completed'")
                 .fetch_one(queue.pool())
-                .await
-                .unwrap()
+                .await?
                 .get("n");
         assert_eq!(left, 0);
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn services_booting_together_all_connect() {
+    async fn services_booting_together_all_connect() -> TestResult {
         let _table = TABLE.lock().await;
-        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
-        let admin = PgPoolOptions::new().connect(&uri).await.unwrap();
+        let uri = std::env::var("AXA_TEST_DB_URL")?;
+        let admin = PgPoolOptions::new().connect(&uri).await?;
         // Setup only races when the table is really missing.
         for _ in 0..5 {
             for table in ["axa_queue", "axa_job_acts"] {
                 sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
                     .execute(&admin)
-                    .await
-                    .unwrap();
+                    .await?;
             }
             let boots: Vec<_> = (0..8)
                 .map(|_| {
@@ -1283,9 +1250,10 @@ mod tests {
                 })
                 .collect();
             for boot in boots {
-                boot.await.unwrap().unwrap();
+                boot.await??;
             }
         }
+        Ok(())
     }
 
     #[test]
@@ -1299,141 +1267,141 @@ mod tests {
     }
 
     #[test]
-    fn a_service_without_a_queue_gets_no_worker_warning() {
+    fn a_service_without_a_queue_gets_no_worker_warning() -> TestResult {
         let defaults = Defaults {
             database: "",
             ..Defaults::default()
         };
-        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None)?;
         let ctx = AppContext::for_test(Environment::Test, config);
         assert!(!warn_if_unserved(&ctx, false));
+        Ok(())
     }
 
-    async fn queue_with(options: QueueOptions) -> Queue {
-        let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
-        let mut queue = Queue::connect(&uri, options).await.unwrap();
+    async fn queue_with(options: QueueOptions) -> Result<Queue, Box<dyn std::error::Error>> {
+        let uri = std::env::var("AXA_TEST_DB_URL")?;
+        let mut queue = Queue::connect(&uri, options).await?;
         sqlx::query("DELETE FROM axa_queue")
             .execute(queue.pool())
-            .await
-            .unwrap();
+            .await?;
         queue.register(CountWorker);
-        queue
+        Ok(queue)
     }
 
-    async fn make_stale(queue: &Queue, id: &str, attempts: i32) {
+    async fn make_stale(queue: &Queue, id: &str, attempts: i32) -> TestResult {
         sqlx::query(
             "UPDATE axa_queue
              SET status = 'running', attempts = $2, started_at = now() - interval '2 hours',
                  updated_at = now() - interval '2 hours'
              WHERE id = $1",
         )
-        .bind(Uuid::parse_str(id).unwrap())
+        .bind(Uuid::parse_str(id)?)
         .bind(attempts)
         .execute(queue.pool())
-        .await
-        .unwrap();
+        .await?;
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_failing_job_retries_up_to_its_limit() {
+    async fn a_failing_job_retries_up_to_its_limit() -> TestResult {
         let _table = TABLE.lock().await;
         let queue = queue_with(QueueOptions {
             max_attempts: 2,
             retry_backoff: Duration::ZERO,
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         let id = queue
             .enqueue("CountWorker", serde_json::json!({ "fail": true }))
-            .await
-            .unwrap();
+            .await?;
 
-        assert!(queue.run_one().await.unwrap());
-        let (status, error) = status_of(&queue, &id).await;
+        assert!(queue.run_one().await?);
+        let (status, error) = status_of(&queue, &id).await?;
         assert_eq!(status, "queued");
-        assert!(error.unwrap().contains("told to fail"));
+        assert!(error.is_some_and(|e| e.contains("told to fail")));
 
-        assert!(queue.run_one().await.unwrap());
-        assert_eq!(status_of(&queue, &id).await.0, "failed");
-        assert!(!queue.run_one().await.unwrap());
+        assert!(queue.run_one().await?);
+        assert_eq!(status_of(&queue, &id).await?.0, "failed");
+        assert!(!queue.run_one().await?);
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_retry_waits_for_its_backoff() {
+    async fn a_retry_waits_for_its_backoff() -> TestResult {
         let _table = TABLE.lock().await;
         let queue = queue_with(QueueOptions {
             max_attempts: 2,
             retry_backoff: Duration::from_mins(10),
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         queue
             .enqueue("CountWorker", serde_json::json!({ "fail": true }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
-        assert!(!queue.run_one().await.unwrap());
+            .await?;
+        assert!(queue.run_one().await?);
+        assert!(!queue.run_one().await?);
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn by_default_a_failed_job_is_not_repeated() {
+    async fn by_default_a_failed_job_is_not_repeated() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         let id = queue
             .enqueue("CountWorker", serde_json::json!({ "fail": true }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
-        assert_eq!(status_of(&queue, &id).await.0, "failed");
+            .await?;
+        assert!(queue.run_one().await?);
+        assert_eq!(status_of(&queue, &id).await?.0, "failed");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_job_that_keeps_killing_workers_ends_as_failed() {
+    async fn a_job_that_keeps_killing_workers_ends_as_failed() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         let id = queue
             .enqueue("CountWorker", serde_json::json!({ "fail": false }))
-            .await
-            .unwrap();
-        make_stale(&queue, &id, 1).await;
-        assert_eq!(queue.requeue_stale().await.unwrap(), 0);
-        let (status, error) = status_of(&queue, &id).await;
+            .await?;
+        make_stale(&queue, &id, 1).await?;
+        assert_eq!(queue.requeue_stale().await?, 0);
+        let (status, error) = status_of(&queue, &id).await?;
         assert_eq!(status, "failed");
-        assert!(error.unwrap().contains("abandoned"));
+        assert!(error.is_some_and(|e| e.contains("abandoned")));
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_stale_job_with_attempts_left_runs_again() {
+    async fn a_stale_job_with_attempts_left_runs_again() -> TestResult {
         let _table = TABLE.lock().await;
         let queue = queue_with(QueueOptions {
             max_attempts: 3,
             ..QueueOptions::default()
         })
-        .await;
+        .await?;
         let id = queue
             .enqueue("CountWorker", serde_json::json!({ "fail": false }))
-            .await
-            .unwrap();
-        make_stale(&queue, &id, 1).await;
-        assert_eq!(queue.requeue_stale().await.unwrap(), 1);
-        assert_eq!(status_of(&queue, &id).await.0, "queued");
+            .await?;
+        make_stale(&queue, &id, 1).await?;
+        assert_eq!(queue.requeue_stale().await?, 1);
+        assert_eq!(status_of(&queue, &id).await?.0, "queued");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn old_finished_rows_are_deleted_and_nothing_else() {
+    async fn old_finished_rows_are_deleted_and_nothing_else() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         let args = serde_json::json!({ "fail": false });
-        let old_done = queue.enqueue("CountWorker", args.clone()).await.unwrap();
-        let old_failed = queue.enqueue("CountWorker", args.clone()).await.unwrap();
-        let new_done = queue.enqueue("CountWorker", args.clone()).await.unwrap();
-        let old_queued = queue.enqueue("CountWorker", args.clone()).await.unwrap();
+        let old_done = queue.enqueue("CountWorker", args.clone()).await?;
+        let old_failed = queue.enqueue("CountWorker", args.clone()).await?;
+        let new_done = queue.enqueue("CountWorker", args.clone()).await?;
+        let old_queued = queue.enqueue("CountWorker", args.clone()).await?;
         let set = |id: String, status: &'static str, days: i32| {
             let pool = queue.pool().clone();
             async move {
@@ -1441,30 +1409,31 @@ mod tests {
                     "UPDATE axa_queue SET status = $2,
                      updated_at = now() - make_interval(days => $3) WHERE id = $1",
                 )
-                .bind(Uuid::parse_str(&id).unwrap())
+                .bind(Uuid::parse_str(&id)?)
                 .bind(status)
                 .bind(days)
                 .execute(&pool)
-                .await
-                .unwrap();
+                .await?;
+                Ok::<(), Box<dyn std::error::Error>>(())
             }
         };
-        set(old_done, "completed", 30).await;
-        set(old_failed, "failed", 30).await;
-        set(new_done.clone(), "completed", 1).await;
-        set(old_queued.clone(), "queued", 30).await;
+        set(old_done, "completed", 30).await?;
+        set(old_failed, "failed", 30).await?;
+        set(new_done.clone(), "completed", 1).await?;
+        set(old_queued.clone(), "queued", 30).await?;
 
-        assert_eq!(queue.purge_finished().await.unwrap(), 2);
-        assert_eq!(status_of(&queue, &new_done).await.0, "completed");
-        assert_eq!(status_of(&queue, &old_queued).await.0, "queued");
+        assert_eq!(queue.purge_finished().await?, 2);
+        assert_eq!(status_of(&queue, &new_done).await?.0, "completed");
+        assert_eq!(status_of(&queue, &old_queued).await?.0, "queued");
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn connecting_to_an_existing_table_changes_no_schema() {
+    async fn connecting_to_an_existing_table_changes_no_schema() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
-        let uri = std::env::var("AXA_TEST_DB_URL").unwrap();
+        let queue = queue().await?;
+        let uri = std::env::var("AXA_TEST_DB_URL")?;
         assert!(
             Queue::connect_existing(&uri, QueueOptions::default())
                 .await
@@ -1473,8 +1442,7 @@ mod tests {
 
         sqlx::query("ALTER TABLE axa_queue DROP COLUMN max_attempts")
             .execute(queue.pool())
-            .await
-            .unwrap();
+            .await?;
         let outdated = Queue::connect_existing(&uri, QueueOptions::default()).await;
         assert!(outdated.is_err());
         let columns: i64 = sqlx::query_scalar(
@@ -1482,51 +1450,51 @@ mod tests {
              WHERE table_name = 'axa_queue' AND column_name = 'max_attempts'",
         )
         .fetch_one(queue.pool())
-        .await
-        .unwrap();
+        .await?;
         assert_eq!(columns, 0);
 
         // Put the column back for the tests that follow.
         for statement in SETUP_STATEMENTS {
-            sqlx::query(statement).execute(queue.pool()).await.unwrap();
+            sqlx::query(statement).execute(queue.pool()).await?;
         }
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn the_attempts_column_is_added_to_an_older_table() {
+    async fn the_attempts_column_is_added_to_an_older_table() -> TestResult {
         let _table = TABLE.lock().await;
-        let queue = queue().await;
+        let queue = queue().await?;
         sqlx::query("ALTER TABLE axa_queue DROP COLUMN attempts")
             .execute(queue.pool())
-            .await
-            .unwrap();
-        let queue = self::queue().await;
+            .await?;
+        let queue = self::queue().await?;
         queue
             .enqueue("CountWorker", serde_json::json!({ "fail": false }))
-            .await
-            .unwrap();
-        assert!(queue.run_one().await.unwrap());
+            .await?;
+        assert!(queue.run_one().await?);
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn a_service_with_a_queue_and_no_worker_is_warned() {
+    async fn a_service_with_a_queue_and_no_worker_is_warned() -> TestResult {
         let _table = TABLE.lock().await;
         let defaults = Defaults {
             database: "",
             ..Defaults::default()
         };
-        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None)?;
         let mut ctx = AppContext::for_test(Environment::Test, config);
-        ctx.queue_provider = Some(Arc::new(queue().await));
+        ctx.queue_provider = Some(Arc::new(queue().await?));
         assert!(warn_if_unserved(&ctx, false));
         assert!(!warn_if_unserved(&ctx, true));
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn perform_later_enqueues_in_queue_mode() {
+    async fn perform_later_enqueues_in_queue_mode() -> TestResult {
         let _table = TABLE.lock().await;
         let defaults = Defaults {
             database: "",
@@ -1534,15 +1502,13 @@ mod tests {
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
             (name == "WORKER_MODE").then(|| "BackgroundQueue".to_string())
-        })
-        .unwrap();
+        })?;
         let mut ctx = AppContext::for_test(Environment::Test, config);
-        let queue = Arc::new(queue().await);
+        let queue = Arc::new(queue().await?);
         ctx.queue_provider = Some(queue.clone());
-        let id = CountWorker::perform_later(&ctx, Args { fail: false })
-            .await
-            .unwrap();
-        assert_eq!(status_of(&queue, &id).await.0, "queued");
+        let id = CountWorker::perform_later(&ctx, Args { fail: false }).await?;
+        assert_eq!(status_of(&queue, &id).await?.0, "queued");
+        Ok(())
     }
 
     /// A worker with a time limit of its own.
@@ -1565,7 +1531,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn perform_in_delays_a_queued_job_and_carries_its_workers_timeout() {
+    async fn perform_in_delays_a_queued_job_and_carries_its_workers_timeout() -> TestResult {
         let _table = TABLE.lock().await;
         let defaults = Defaults {
             database: "",
@@ -1573,39 +1539,37 @@ mod tests {
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
             (name == "WORKER_MODE").then(|| "BackgroundQueue".to_string())
-        })
-        .unwrap();
+        })?;
         let mut ctx = AppContext::for_test(Environment::Test, config);
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         queue.register(TimedWorker);
         let queue = Arc::new(queue);
         ctx.queue_provider = Some(queue.clone());
 
-        let later = TimedWorker::perform_in(&ctx, (), Duration::from_hours(1))
-            .await
-            .unwrap();
-        let info = queue.job(&later).await.unwrap().unwrap();
+        let later = TimedWorker::perform_in(&ctx, (), Duration::from_hours(1)).await?;
+        let info = queue.job(&later).await?.ok_or("missing")?;
         assert_eq!(info.state, JobState::Queued);
         assert_eq!(info.timeout, Some(Duration::from_secs(5)));
         assert!(info.run_at.duration_since(info.created_at).as_mins() >= 59);
-        assert!(!queue.run_one().await.unwrap(), "not before its time");
+        assert!(!queue.run_one().await?, "not before its time");
 
         // A worker that sets no limit gives its jobs none.
-        let plain = CountWorker::perform_later(&ctx, Args { fail: false })
-            .await
-            .unwrap();
-        assert_eq!(queue.job(&plain).await.unwrap().unwrap().timeout, None);
-        assert!(queue.job("not an id").await.unwrap().is_none());
+        let plain = CountWorker::perform_later(&ctx, Args { fail: false }).await?;
+        assert_eq!(queue.job(&plain).await?.ok_or("missing")?.timeout, None);
+        assert!(queue.job("not an id").await?.is_none());
+        Ok(())
     }
 
     #[test]
-    fn each_engine_error_becomes_the_axa_error_that_answers_for_it() {
+    fn each_engine_error_becomes_the_axa_error_that_answers_for_it() -> TestResult {
         use axa_postgres_job_queue::Error as Engine;
         assert!(matches!(
             Error::from(Engine::Database(sqlx::Error::RowNotFound)),
             Error::Sqlx(sqlx::Error::RowNotFound)
         ));
-        let encode = serde_json::from_str::<u8>("x").unwrap_err();
+        let Err(encode) = serde_json::from_str::<u8>("x") else {
+            return Err("x parsed as a number".into());
+        };
         assert!(matches!(
             Error::from(Engine::Encode(encode)),
             Error::JSON(_)
@@ -1621,57 +1585,48 @@ mod tests {
                 "{text}"
             );
         }
+        Ok(())
     }
 
     #[tokio::test]
     #[ignore = "needs AXA_TEST_DB_URL"]
-    async fn schedules_limits_batches_and_counts_pass_through_to_the_engine() {
+    async fn schedules_limits_batches_and_counts_pass_through_to_the_engine() -> TestResult {
         let _table = TABLE.lock().await;
-        let mut queue = queue().await;
+        let mut queue = queue().await?;
         sqlx::query("DELETE FROM axa_schedule")
             .execute(queue.pool())
-            .await
-            .unwrap();
+            .await?;
         let args = Args { fail: false };
         queue.limit::<Args, CountWorker>(1);
-        queue
-            .every::<Args, CountWorker>("count-hourly", Duration::from_hours(1), &args)
-            .unwrap();
-        queue
-            .cron::<Args, CountWorker>("count-nightly", "0 2 * * *", &args)
-            .unwrap();
-        queue
-            .schedule(
-                Schedule::every(
-                    "count-daily",
-                    Duration::from_hours(24),
-                    NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
-                )
-                .unwrap(),
-            )
-            .unwrap();
+        queue.every::<Args, CountWorker>("count-hourly", Duration::from_hours(1), &args)?;
+        queue.cron::<Args, CountWorker>("count-nightly", "0 2 * * *", &args)?;
+        queue.schedule(Schedule::every(
+            "count-daily",
+            Duration::from_hours(24),
+            NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+        )?)?;
         assert!(queue.engine().handled().contains("CountWorker"));
 
-        queue.tick_schedules().await.unwrap();
-        let mut schedules = queue.schedules().await.unwrap();
+        queue.tick_schedules().await?;
+        let mut schedules = queue.schedules().await?;
         schedules.sort_by(|a, b| a.name.cmp(&b.name));
         let names: Vec<_> = schedules.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(names, ["count-daily", "count-hourly", "count-nightly"]);
         assert_eq!(schedules[1].interval, Some(Duration::from_hours(1)));
         assert_eq!(schedules[2].cron.as_deref(), Some("0 2 * * *"));
-        assert_eq!(queue.archive_schedules().await.unwrap(), 0, "all in code");
+        assert_eq!(queue.archive_schedules().await?, 0, "all in code");
 
-        let before = queue.counts().await.unwrap();
+        let before = queue.counts().await?;
         let ids = queue
             .enqueue_all(&[
                 NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
                 NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
             ])
-            .await
-            .unwrap();
+            .await?;
         assert_eq!(ids.len(), 2);
         assert!(ids.iter().all(|id| Uuid::parse_str(id).is_ok()), "{ids:?}");
-        let after = queue.counts().await.unwrap();
+        let after = queue.counts().await?;
         assert_eq!(after.ready, before.ready + 2);
+        Ok(())
     }
 }

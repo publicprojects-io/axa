@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "axa-accepts-version-negotiation"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "axa-problem",
  "axum",
@@ -647,7 +647,7 @@ dependencies = [
 
 [[package]]
 name = "axa-idempotency-key"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "axa-problem",
  "axum",
@@ -726,7 +726,7 @@ dependencies = [
 
 [[package]]
 name = "axa-mysql-job-queue"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "croner",
  "jiff 1.0.0",
@@ -834,7 +834,7 @@ dependencies = [
 
 [[package]]
 name = "axa-postgres-job-queue"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "croner",
  "jiff 1.0.0",
@@ -941,7 +941,7 @@ dependencies = [
 
 [[package]]
 name = "axa-sqlite-job-queue"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "croner",
  "jiff 1.0.0",
