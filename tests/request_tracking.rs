@@ -37,7 +37,7 @@ async fn serve(request: Request<Body>) -> Response<Body> {
     let router = Router::new()
         .route(
             "/",
-            get(|| async { current_request_id().unwrap_or_default() }),
+            get(|| async { current_request_id().unwrap_or(String::new()) }),
         )
         .layer(from_fn(track));
     middleware::apply(router, &config())

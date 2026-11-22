@@ -6,7 +6,7 @@ const MANIFEST: &str = include_str!("../Cargo.toml");
 #[test]
 fn no_dependency_on_what_this_crate_was_copied_from() {
     for line in MANIFEST.lines().filter(|line| !line.starts_with('#')) {
-        let dependency = line.split(['=', ' ']).next().unwrap_or_default();
+        let dependency = line.split(['=', ' ']).next().unwrap_or("");
         assert_ne!(dependency, "authentication-verifier");
         assert!(
             dependency == "axa-keycloak-auth" || !dependency.starts_with("axa"),

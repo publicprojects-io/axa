@@ -44,7 +44,7 @@ impl Conformance {
     /// If `document` is not `OpenAPI` 3.1.
     #[must_use]
     pub fn new(document: Value) -> Self {
-        let version = document["openapi"].as_str().unwrap_or_default();
+        let version = document["openapi"].as_str().unwrap_or("");
         assert!(
             version.starts_with("3.1."),
             "axa_test::openapi checks OpenAPI 3.1 documents, and this is {version:?}"

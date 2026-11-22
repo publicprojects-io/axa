@@ -1164,7 +1164,7 @@ impl Config {
             ("LOG_FORMAT", logger.format.to_string()),
             (
                 "LOG_FILTER",
-                logger.override_filter.clone().unwrap_or_default(),
+                logger.override_filter.clone().unwrap_or(String::new()),
             ),
             ("DB_URL", database.uri.clone()),
             ("DB_MIN_CONNECTIONS", database.min_connections.to_string()),
@@ -1204,11 +1204,11 @@ impl Config {
             ("HSTS_MAX_AGE_SECONDS", http.hsts_max_age.to_string()),
             (
                 "HTTP_CONTENT_SECURITY_POLICY",
-                http.csp.clone().unwrap_or_default(),
+                http.csp.clone().unwrap_or(String::new()),
             ),
             (
                 "HTTP_PERMISSIONS_POLICY",
-                http.permissions_policy.clone().unwrap_or_default(),
+                http.permissions_policy.clone().unwrap_or(String::new()),
             ),
             ("HTTP_LOG_TENANT", http.log_tenant.to_string()),
             ("WORKER_MODE", format!("{workers:?}")),
