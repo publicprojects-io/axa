@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "RCA-SCOPE-4: tests may unwrap"
+)]
 //! Behaviour against a real MySQL 8.4. Ignored by default, because these drop
 //! every table in the database they are given. The tests share one database,
 //! so run them one at a time:

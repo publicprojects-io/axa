@@ -1,6 +1,7 @@
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::indexing_slicing,
+    clippy::expect_used,
     reason = "RCA-SCOPE-4: test-support code, which may use plain operators and index"
 )]
 //! Request-level test helpers for `axa` services, built on

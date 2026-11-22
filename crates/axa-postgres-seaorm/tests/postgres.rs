@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "RCA-SCOPE-4: tests may unwrap"
+)]
 //! Behaviour against a real Postgres. Ignored by default, because these create
 //! and drop tables in the database they are given. Run them with:
 //!

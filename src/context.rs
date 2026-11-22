@@ -86,6 +86,7 @@ pub async fn ping(db: &Db) -> crate::Result<()> {
         axa_db = "sqlite_sqlx"
     )
 ))]
+#[allow(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 fn test_db() -> Db {
     static RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
         std::sync::LazyLock::new(|| tokio::runtime::Runtime::new().expect("a runtime"));
@@ -113,6 +114,7 @@ fn test_db() -> Db {
     sea_orm::DatabaseConnection::default()
 }
 #[cfg(all(test, axa_db = "postgres_diesel"))]
+#[allow(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 fn test_db() -> Db {
     let config = axa_postgres_diesel::PoolConfig {
         wait_timeout: std::time::Duration::from_millis(50),

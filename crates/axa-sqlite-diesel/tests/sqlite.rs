@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "RCA-SCOPE-4: tests may unwrap"
+)]
 //! Behaviour against a real SQLite. Each test opens a database file of its own
 //! under Cargo's temporary directory, so these run with plain `cargo test`.
 

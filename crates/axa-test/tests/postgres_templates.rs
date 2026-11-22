@@ -1,4 +1,8 @@
-#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    reason = "RCA-SCOPE-4: tests may unwrap"
+)]
 //! `axa_test::postgres::drop_templates`, against a real Postgres. It is a binary of its
 //! own, as it drops the templates the tests in `postgres.rs` clone, and cargo runs one
 //! test binary at a time:

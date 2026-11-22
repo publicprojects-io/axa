@@ -1,3 +1,4 @@
+#![allow(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 #![allow(
     clippy::arithmetic_side_effects,
     clippy::indexing_slicing,
