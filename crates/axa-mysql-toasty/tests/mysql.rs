@@ -1,6 +1,7 @@
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
+    clippy::panic,
     reason = "RCA-SCOPE-4: tests may unwrap"
 )]
 //! Against a real MySQL. The tests share one database, so run them with

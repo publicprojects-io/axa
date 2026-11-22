@@ -30,6 +30,7 @@ indexing_slicing = "deny"
 string_slice = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
+panic = "deny"
 
 [package]
 name = "axa"
