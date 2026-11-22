@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! The queue against a real SQLite file. Each test has a database file of its own,
 //! under Cargo's temporary directory for tests, so they run in parallel with no server.
 

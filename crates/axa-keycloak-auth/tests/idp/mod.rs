@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! A local OIDC provider for tests.
 //!
 //! It serves a Keycloak-shaped discovery document and JWKS on an ephemeral loopback

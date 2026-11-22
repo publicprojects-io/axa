@@ -561,7 +561,12 @@ impl Idempotency {
         loop {
             // At least 20 ms, as no lease is under `MIN_LEASE`. A 24-hour `ttl`
             // reports in every 8 hours.
-            tokio::time::sleep(self.lease() / 3).await;
+            #[expect(
+                clippy::arithmetic_side_effects,
+                reason = "RCA-EXC-2: divides a duration by the constant 3"
+            )]
+            let wait = self.lease() / 3;
+            tokio::time::sleep(wait).await;
             self.renew(run).await;
         }
     }

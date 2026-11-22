@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! `server::run` and a real `SIGTERM`.
 //!
 //! Each test is run twice. Run by `cargo test` it is the parent: it starts this same

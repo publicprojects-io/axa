@@ -209,9 +209,13 @@ fn same_bytes(expected: &[u8], sent: &[u8]) -> bool {
 }
 
 /// Standard base64 with padding, as a client encodes Basic credentials.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-EXC-2: the chunk index is at most 3, so the shifts are at most 18 of 32 bits"
+)]
 fn encode_base64(bytes: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3).checked_mul(4).unwrap_or(0)); // ARI-9
     for chunk in bytes.chunks(3) {
         let triple = chunk
             .iter()

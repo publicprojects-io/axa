@@ -183,7 +183,7 @@ const HEX_DIGITS: &[u8; 16] = b"0123456789abcdef";
 
 fn hash_hex(secret: &str) -> String {
     let digest = Sha256::digest(secret.as_bytes());
-    let mut hex = String::with_capacity(digest.len() * 2);
+    let mut hex = String::with_capacity(digest.len().checked_mul(2).unwrap_or(0)) /* ARI-9 */;
     for byte in digest {
         hex.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
         hex.push(char::from(HEX_DIGITS[usize::from(byte & 0xf)]));

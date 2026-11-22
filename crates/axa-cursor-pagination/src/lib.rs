@@ -372,6 +372,10 @@ pub fn escape_like(text: &str) -> String {
         .replace('_', "\\_")
 }
 
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,6 +618,10 @@ mod tests {
 /// Properties over generated input: a cursor holds for its own query only, a walk
 /// through pages lands where the limits say, nothing a caller sends panics, and
 /// escaped text holds no live wildcard.
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 #[cfg(test)]
 mod properties {
     use proptest::prelude::*;

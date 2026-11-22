@@ -155,7 +155,7 @@ impl Keys {
                 },
             )
             .map_err(|_| sqlx::Error::Encode("the payload could not be sealed".into()))?;
-        let mut out = Vec::with_capacity(HEADER_LEN + sealed.len());
+        let mut out = Vec::with_capacity(HEADER_LEN.checked_add(sealed.len()).unwrap_or(0)) /* ARI-9 */;
         out.push(VERSION);
         out.push(key.id);
         out.extend_from_slice(&nonce);

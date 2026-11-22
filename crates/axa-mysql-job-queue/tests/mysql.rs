@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! The queue against a real MySQL 8.4. The tests share three tables, so run them with
 //! `--test-threads=1`. `axa_job_acts` refuses `DELETE`, so a test starts by dropping
 //! it.

@@ -21,6 +21,8 @@ manual_saturating_arithmetic = "allow"
 # RCA-ENF-2 disallows `Option::unwrap_or_default`, and this lint would rewrite
 # `unwrap_or(String::new())` back into it.
 unwrap_or_default = "allow"
+# RCA-ENF-1: no plain operator on a number that can overflow.
+arithmetic_side_effects = "deny"
 
 [package]
 name = "axa"

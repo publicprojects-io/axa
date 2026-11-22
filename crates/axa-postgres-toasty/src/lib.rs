@@ -434,7 +434,7 @@ fn opened_before(last: u64, opened: Duration) -> bool {
     if last == 0 {
         return false;
     }
-    opened <= Duration::from_nanos(last - 1)
+    opened <= Duration::from_nanos(last.checked_sub(1).unwrap_or(0)) /* ARI-3 */
 }
 
 /// Check the database connection.
@@ -737,6 +737,10 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
     Ok(())
 }
 
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;

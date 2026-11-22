@@ -259,6 +259,8 @@ fallback: its failure is an error or a refusal.
 | ARI-5 | A pool size, a page size plus one, or a total of sizes, past what its type holds | The type's maximum | It is past every limit set on it, so the limit refuses it |
 | ARI-6 | A time to wait or to stop at, when `Instant` plus a `Duration` does not fit | None: the run is stopped as lost, or the figure is refused | A time that cannot be represented cannot be waited for |
 | ARI-8 | A network mask for an address range, when the shift for its prefix does not fit: a prefix of zero keeps no bits, and one past the address width is refused when the range is parsed | Zero, no bits kept | A prefix of zero names every address, and a prefix that does not fit never reaches the mask |
+| ARI-9 | A capacity hint, `with_capacity`, when its size does not fit | Zero | It is only a hint: the buffer grows as it fills |
+| ARI-10 | When the next sweep of a rate limiter falls past what an instant holds | Now | A sweep is housekeeping, so sweeping at every request is safe |
 | ARI-7 | A figure counted in a function that returns a `Result`, such as the schedules queued, when it does not fit | None: `Error::Overflow`, naming the figure | There is no correct count to give |
 
 

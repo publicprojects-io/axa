@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: test-support code, which may use plain operators"
+)]
 //! Request-level test helpers for `axa` services, built on
 //! [`axum-test`](https://docs.rs/axum-test).
 //!

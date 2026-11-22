@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! OTL-4: an `https` endpoint trusts the system's roots, proved by a handshake.
 //!
 //! The system's roots are read from `SSL_CERT_FILE` when it is set, so the test makes

@@ -878,6 +878,10 @@ pub(crate) async fn run_after(
     served
 }
 
+#[allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 #[cfg(test)]
 mod tests {
     use super::*;

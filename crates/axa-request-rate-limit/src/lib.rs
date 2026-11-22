@@ -313,7 +313,7 @@ impl Limiter {
             table: Arc::new(Mutex::new(Table {
                 slots: HashMap::new(),
                 overflow: Slot::new(now),
-                next_sweep: now + window,
+                next_sweep: now.checked_add(window).unwrap_or(now), // ARI-10
                 overrides: HashMap::new(),
                 shared: Shared::Unseen,
             })),
@@ -396,7 +396,7 @@ impl Limiter {
                 requests,
             } if seen == client => Shared::Watching {
                 client,
-                requests: requests + 1,
+                requests: requests.checked_add(1).unwrap_or(u32::MAX), // ARI-3
             },
             Shared::Watching { .. } => Shared::Settled,
         };
@@ -433,7 +433,7 @@ impl Limiter {
                     .unwrap_or(Duration::ZERO)
                     < window
             });
-            *next_sweep = now + window;
+            *next_sweep = now.checked_add(window).unwrap_or(now); // ARI-10
         }
         let own_limit = overrides.get(&key).copied();
         let limit = own_limit.unwrap_or(self.limit);
@@ -501,7 +501,10 @@ impl Limiter {
             allowed,
             limit,
             remaining: limit.checked_sub(slot.count).unwrap_or(0),
-            reset_seconds: left.as_secs() + u64::from(left.subsec_nanos() > 0),
+            reset_seconds: left
+                .as_secs()
+                .checked_add(u64::from(left.subsec_nanos() > 0))
+                .unwrap_or(u64::MAX), /* ARI-5 */
             overflowed: false,
             first_refusal: false,
         }

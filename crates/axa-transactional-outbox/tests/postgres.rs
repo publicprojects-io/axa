@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! The outbox against a real Postgres. These are ignored by default. Run them with
 //! `AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox --all-features -- --ignored`.
 //!

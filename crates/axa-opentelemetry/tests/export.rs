@@ -1,3 +1,7 @@
+#![allow(
+    clippy::arithmetic_side_effects,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 //! Export against a real OTLP/gRPC collector in this process, so that the assertions
 //! are about the protobuf that crossed a socket.
 
