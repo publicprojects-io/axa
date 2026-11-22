@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! Each store, reading and writing real objects, and S3 signing, which needs no network.
 //! The S3 round trip needs an endpoint: it runs with `--ignored` and `AXA_TEST_S3_URL`.
 

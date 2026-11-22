@@ -228,6 +228,7 @@ fn no_queue() -> Result<String> {
         axa_db = "mysql_toasty"
     ))
 ))]
+#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod tests {
     use super::*;
     use crate::{

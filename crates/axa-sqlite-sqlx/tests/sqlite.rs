@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! Behaviour against a real SQLite. Each test has a database file of its own
 //! under Cargo's target directory, so these run in a plain `cargo test`.
 

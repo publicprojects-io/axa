@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! Limits shared across replicas. The Postgres and Redis tests are ignored by default:
 //!
 //! ```sh

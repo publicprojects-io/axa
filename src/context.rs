@@ -230,6 +230,7 @@ impl axum::extract::FromRef<AppContext> for axa_webhooks::Verifier {
 }
 
 #[cfg(all(test, feature = "webhooks"))]
+#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod webhook_tests {
     use axa_webhooks::{Signer, SigningKey, Verified, Verifier};
     use axum::{Router, body::Body, http::Request, http::StatusCode, routing::post};
@@ -291,6 +292,7 @@ mod webhook_tests {
 
 // Toasty connects when its handle is made, so a Toasty-only build has no context to show.
 #[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
+#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod tests {
     use super::{AppContext, Db};
     use crate::{

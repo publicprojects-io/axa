@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! Captured logs, and the outbox of a service's memory mailer.
 
 use axa_test::logs;

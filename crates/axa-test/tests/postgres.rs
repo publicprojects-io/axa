@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! `axa_test::postgres`, against a real Postgres:
 //!
 //! ```sh

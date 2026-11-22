@@ -453,6 +453,7 @@ pub async fn by_client_shared(
 }
 
 #[cfg(all(test, feature = "postgres"))]
+#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod tests {
     use super::*;
 

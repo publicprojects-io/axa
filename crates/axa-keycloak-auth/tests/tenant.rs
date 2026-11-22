@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! The tenant from a real Keycloak token, through the real guard. A local OIDC provider
 //! stands in for Keycloak, and the role map turns a realm role into a tenant. The role
 //! map already refuses a value that is not a short lower-case token, so a malformed

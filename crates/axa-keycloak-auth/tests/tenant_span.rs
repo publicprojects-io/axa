@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! The tenant on the request span, which the guard records where the span has a
 //! `tenant` field.
 //!

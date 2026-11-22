@@ -322,6 +322,7 @@ async fn slash_redirect(mounted: Router, uri: Uri) -> Response {
 
 // Toasty connects when its handle is made, so with it alone there is no context.
 #[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
+#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod tests {
     use super::*;
     use crate::{Environment, config::Defaults};

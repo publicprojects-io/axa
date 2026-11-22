@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! The client against a server on this machine, which, being loopback, it must not
 //! reach unless told it may.
 

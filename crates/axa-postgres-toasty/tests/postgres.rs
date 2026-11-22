@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! Against a real Postgres. The tests share one database, so run them with
 //! `--test-threads=1`, on a database this suite may wipe.
 //!

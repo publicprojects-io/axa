@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! A real token through the real guard. A local OIDC provider stands in for
 //! Keycloak, so signature, issuer, and audience checks all run.
 

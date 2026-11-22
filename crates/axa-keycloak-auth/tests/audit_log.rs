@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! The audit line a refusal leaves.
 //!
 //! This has its own test binary, so its own process. `tracing` caches per process

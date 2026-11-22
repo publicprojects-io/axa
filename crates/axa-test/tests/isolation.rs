@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! What `assert_hidden` accepts and refuses, against a tiny service with one route
 //! that keeps tenants apart and one that does not.
 

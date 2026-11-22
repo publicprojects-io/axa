@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! What the layer writes to the log. In its own binary, as `tracing` caches per process
 //! whether a log site is on.
 //!

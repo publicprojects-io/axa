@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 #![allow(
     clippy::indexing_slicing,
     reason = "RCA-SCOPE-4: tests may index"

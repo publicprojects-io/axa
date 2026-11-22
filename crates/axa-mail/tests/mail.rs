@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! Each transport, sending a real message. The SMTP test talks to a small server on a
 //! local port, in the clear, as development allows.
 

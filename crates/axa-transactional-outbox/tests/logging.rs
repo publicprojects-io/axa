@@ -1,3 +1,4 @@
+#![allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 //! What reaches a log, against a real Postgres. It has its own binary because `tracing`
 //! caches per process whether a log site is on. Ignored by default: run it with
 //! `AXA_TEST_DB_URL=postgres://... cargo test -p axa-transactional-outbox -- --ignored`.
