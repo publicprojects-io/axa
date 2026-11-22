@@ -197,6 +197,12 @@ pub(crate) fn backoff(base: Duration, attempts: i32, limit: Duration) -> Option<
     Some(base.checked_mul(factor).unwrap_or(limit).min(limit))
 }
 
+/// One more in `figure`, or an error when it does not fit.
+fn count(figure: &mut usize, name: &str) -> Result<(), sqlx::Error> {
+    *figure = figure.checked_add(1).ok_or_else(|| overflow(name))?;
+    Ok(())
+}
+
 /// A figure counted from the database that does not fit, as an error naming it.
 fn overflow(figure: &str) -> sqlx::Error {
     sqlx::Error::Protocol(format!("the outbox figure `{figure}` does not fit"))
@@ -439,11 +445,11 @@ impl Outbox {
             match self.payload_of(&event, row)? {
                 Ok(payload) => event.payload = payload,
                 Err(Unread::NoKey) => {
-                    taken.unopened = taken.unopened.checked_add(1).ok_or_else(|| overflow("unopened"))?;
+                    count(&mut taken.unopened, "unopened")?;
                     continue;
                 }
                 Err(Unread::Tampered) => {
-                    taken.decided = taken.decided.checked_add(1).ok_or_else(|| overflow("decided"))?;
+                    count(&mut taken.decided, "decided")?;
                     let mut point = (&mut transaction).begin().await?;
                     match self.tampered(record, &event, &mut point).await {
                         Ok(()) => {
@@ -471,7 +477,7 @@ impl Outbox {
                 }
                 Ok(decided) => {
                     point.commit().await?;
-                    taken.decided = taken.decided.checked_add(1).ok_or_else(|| overflow("decided"))?;
+                    count(&mut taken.decided, "decided")?;
                     if matches!(decided, Decided::Refused) {
                         tracing::info!(
                             id = event.id,
@@ -483,7 +489,7 @@ impl Outbox {
                 }
                 Err(error) => {
                     point.rollback().await?;
-                    taken.decided = taken.decided.checked_add(1).ok_or_else(|| overflow("decided"))?;
+                    count(&mut taken.decided, "decided")?;
                     self.defer(&mut transaction, &event, &error).await?;
                 }
             }
@@ -823,7 +829,9 @@ impl Outbox {
             let outcome: String = row.try_get("outcome")?;
             let outcome = Outcome::parse(&outcome).unwrap_or(Outcome::Lost);
             if outcome == Outcome::Abandoned {
-                abandoned = abandoned.checked_add(1).ok_or_else(|| overflow("abandoned"))?;
+                abandoned = abandoned
+                    .checked_add(1)
+                    .ok_or_else(|| overflow("abandoned"))?;
             } else {
                 lost = lost.checked_add(1).ok_or_else(|| overflow("lost"))?;
             }

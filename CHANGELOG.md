@@ -9,7 +9,7 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Arithmetic follows [`spec/rust-checked-arithmetic`](spec/rust-checked-arithmetic/index.md):
   production code uses `checked_*` in place of bare operators, `saturating_*`, and
-  `clamp`. Where a figure has a declared fallback (ARI-1 to ARI-8 in the spec), the code
+  `clamp`. Where a figure has a declared fallback (ARI-* in the spec), the code
   recovers with `unwrap_or` and cites it. Elsewhere it returns an error. New: the job
   queues' `Error::Overflow`, and `axa_redis_cache::Error::Overflow`, which makes that
   enum's `match` non-exhaustive for callers (breaking).
@@ -22,6 +22,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Breaking: `backoff` and `retry_wait` in the three job queues return `Option<Duration>`
   (`None` below one attempt), and `Outbox::failed` and the job queues' `connect` return an
   error for a figure that does not fit.
+- Breaking: the job queues refuse a setting out of range, where they held it to a limit.
+  `Queue::from_pool` returns `Result`, and `QueueOptions::check` (new) is what it and
+  `connect` run: a `heartbeat_interval` under 20 ms or over a quarter of `stale_minutes`, a
+  `stale_minutes` under one, or `workers` past a `u32` is `Error::OutOfRange` (new). So is a
+  `RetryAfter` delay under a second or over an hour: `RetryAfter::new` returns `Result`, and
+  `retry_wait` gives `None` for it. The give-up time of a run is exactly two heartbeats
+  before it is stale, with no half-way fallback (ARI-1 is removed).
 - Breaking: boot-time mistakes in code return an error instead of panicking.
   `Schedule::every`, `Schedule::cron` and `Queue::schedule` in the three job queues, and
   `axa::queue::Queue::schedule`, return `Result`, with a new `Error::Schedule` for a

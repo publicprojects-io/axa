@@ -1362,10 +1362,13 @@ mod tests {
     #[cfg(feature = "queue")]
     #[tokio::test]
     async fn a_jobs_retry_after_returned_by_a_handler_is_a_plain_500() {
-        let error = Error::RetryAfter(axa_postgres_job_queue::RetryAfter::new(
-            std::time::Duration::from_secs(30),
-            "the receiver is busy",
-        ));
+        let error = Error::RetryAfter(
+            axa_postgres_job_queue::RetryAfter::new(
+                std::time::Duration::from_secs(30),
+                "the receiver is busy",
+            )
+            .unwrap(),
+        );
         let (status, body) = problem_of(error).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["code"], "internal_server_error");

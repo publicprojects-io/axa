@@ -394,9 +394,14 @@ impl Limiter {
             Shared::Watching {
                 client: seen,
                 requests,
-            } if seen == client => requests.checked_add(1).map_or(Shared::Settled, |requests| {
-                Shared::Watching { client, requests }
-            }),
+            } if seen == client => {
+                requests
+                    .checked_add(1)
+                    .map_or(Shared::Settled, |requests| Shared::Watching {
+                        client,
+                        requests,
+                    })
+            }
             Shared::Watching { .. } => Shared::Settled,
         };
         let warn = matches!(next, Shared::Watching { requests, .. } if requests >= SHARED_ALLOWANCE_SAMPLE);

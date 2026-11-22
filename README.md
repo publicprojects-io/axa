@@ -626,7 +626,7 @@ A job gets one attempt by default, because a retry repeats its work. Raise
 written to be repeated, and each retry then waits about twice as long as the last,
 spread at random so jobs that failed together do not return together. A job that knows
 when to come back, from a receiver's `Retry-After`, fails with
-`Error::RetryAfter(RetryAfter::new(delay, reason))`, held between a second and an hour. A job
+`Error::RetryAfter(RetryAfter::new(delay, reason)?)`, for a delay from a second to an hour; any other is refused with `Error::OutOfRange`. A job
 lost with its worker is queued again if it has attempts left and otherwise fails,
 so a crash cannot loop forever. Finished rows are deleted after `retention_days`.
 

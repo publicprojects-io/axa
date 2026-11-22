@@ -226,10 +226,7 @@ fn encode_base64(bytes: &[u8]) -> String {
         for index in 0..4 {
             if index <= chunk.len() {
                 let six = (triple >> (18 - 6 * index)) & 0x3f;
-                if let Some(&letter) = usize::try_from(six)
-                    .ok()
-                    .and_then(|at| ALPHABET.get(at))
-                {
+                if let Some(&letter) = usize::try_from(six).ok().and_then(|at| ALPHABET.get(at)) {
                     encoded.push(char::from(letter));
                 }
             } else {

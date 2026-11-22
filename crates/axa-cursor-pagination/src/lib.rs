@@ -307,7 +307,9 @@ impl CursorPage {
         // A page that ends past what a number holds, or a bound that SQL cannot take, is
         // not a position a cursor can name.
         let next_offset = offset.checked_add(limit).ok_or(PageError::BadCursor)?;
-        let rows = limit.checked_add(1).and_then(|rows| i64::try_from(rows).ok());
+        let rows = limit
+            .checked_add(1)
+            .and_then(|rows| i64::try_from(rows).ok());
         let skip = i64::try_from(offset).ok();
         let (Some(rows), Some(skip), Ok(_)) = (rows, skip, i64::try_from(next_offset)) else {
             return Err(PageError::BadCursor);

@@ -1722,10 +1722,10 @@ async fn replicas_ticking_a_cron_schedule_queue_each_due_time_once() {
 async fn a_job_that_asks_for_a_delay_is_tried_again_after_it() {
     let mut queue = fresh(quick()).await;
     queue.handle("Busy", |_| async {
-        Err(axa_sqlite_job_queue::RetryAfter::new(
-            Duration::from_mins(2),
-            "the receiver is busy",
-        ))
+        Err(
+            axa_sqlite_job_queue::RetryAfter::new(Duration::from_mins(2), "the receiver is busy")
+                .unwrap(),
+        )
     });
     let job = NewJob::new("Busy", serde_json::Value::Null).max_attempts(Some(3));
     let id = queue.enqueue_job(&job).await.unwrap();

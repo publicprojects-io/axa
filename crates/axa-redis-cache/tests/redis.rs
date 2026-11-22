@@ -3,10 +3,7 @@
     clippy::expect_used,
     reason = "RCA-SCOPE-4: tests may unwrap"
 )]
-#![allow(
-    clippy::indexing_slicing,
-    reason = "RCA-SCOPE-4: tests may index"
-)]
+#![allow(clippy::indexing_slicing, reason = "RCA-SCOPE-4: tests may index")]
 //! Behaviour against a real Redis. Ignored by default. Run them with:
 //!
 //! ```sh

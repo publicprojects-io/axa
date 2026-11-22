@@ -235,12 +235,7 @@ pub async fn read(mut multipart: Multipart, limits: &Limits) -> Result<Upload> {
         parts = parts
             .checked_add(1)
             .filter(|parts| *parts <= limits.parts)
-            .ok_or_else(|| {
-                too_large(format!(
-                    "The upload has more than {} parts",
-                    limits.parts
-                ))
-            })?;
+            .ok_or_else(|| too_large(format!("The upload has more than {} parts", limits.parts)))?;
         let name = match field.name() {
             Some(name) if !name.is_empty() && name.len() <= MAX_FIELD_NAME_BYTES => {
                 name.to_string()

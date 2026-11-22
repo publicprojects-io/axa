@@ -215,6 +215,9 @@ pub enum Error {
     Schedule(String),
     /// A figure was too large to compute: a count, or a time that does not fit.
     Overflow(&'static str),
+    /// A figure given is out of range, so it is refused, not held to a limit: a setting
+    /// in [`QueueOptions`], or the delay of a [`RetryAfter`].
+    OutOfRange(&'static str),
 }
 
 impl fmt::Display for Error {
@@ -229,6 +232,7 @@ impl fmt::Display for Error {
             ),
             Self::Schedule(text) => write!(f, "schedule error: {text}"),
             Self::Overflow(figure) => write!(f, "{figure}: the value is too large to compute"),
+            Self::OutOfRange(figure) => write!(f, "{figure}: the value is out of range"),
             Self::NotATenant => f.write_str(
                 "a job's tenant must be 1 to 63 lower-case letters, digits, and hyphens, \
                  not starting or ending with a hyphen",
@@ -246,7 +250,8 @@ impl std::error::Error for Error {
             | Self::NotACode { .. }
             | Self::NotATenant
             | Self::Schedule(_)
-            | Self::Overflow(_) => None,
+            | Self::Overflow(_)
+            | Self::OutOfRange(_) => None,
         }
     }
 }
@@ -633,7 +638,7 @@ pub const MIN_RETRY_AFTER: Duration = Duration::from_secs(1);
 
 /// A job's error that also says when to try it again, such as a receiver's
 /// `Retry-After`. Return it as a handler's error: the next attempt waits `delay`,
-/// held between [`MIN_RETRY_AFTER`] and an hour, rather than the backoff. It still
+/// which is from [`MIN_RETRY_AFTER`] to an hour, rather than the backoff. It still
 /// counts as an attempt, so a job out of attempts fails as any other.
 #[derive(Debug, Clone)]
 pub struct RetryAfter {
@@ -643,15 +648,22 @@ pub struct RetryAfter {
 
 impl RetryAfter {
     /// Try again after `delay`, keeping `reason` as the job's error.
-    #[must_use]
-    pub fn new(delay: Duration, reason: impl Into<String>) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::OutOfRange`] when `delay` is under [`MIN_RETRY_AFTER`] or over an hour.
+    /// It is refused, not held to those limits.
+    pub fn new(delay: Duration, reason: impl Into<String>) -> Result<Self> {
+        if !(MIN_RETRY_AFTER..=MAX_BACKOFF).contains(&delay) {
+            return Err(Error::OutOfRange("retry after"));
+        }
+        Ok(Self {
             delay,
             reason: reason.into(),
-        }
+        })
     }
 
-    /// The delay the job asked for, before it is held to its limits.
+    /// The delay the job asked for.
     #[must_use]
     pub const fn delay(&self) -> Duration {
         self.delay
@@ -725,10 +737,11 @@ pub fn jittered(wait: Duration) -> Duration {
 #[must_use]
 pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Option<Duration> {
     match chosen {
-        // WRK-41: a delay a job chose is held between the shortest and the longest wait.
-        Some(delay) if delay < MIN_RETRY_AFTER => Some(MIN_RETRY_AFTER),
-        Some(delay) if delay > MAX_BACKOFF => Some(MAX_BACKOFF),
-        Some(delay) => Some(delay),
+        // WRK-41: a delay a job chose is between the shortest and the longest wait, or
+        // it has no wait.
+        Some(delay) => (MIN_RETRY_AFTER..=MAX_BACKOFF)
+            .contains(&delay)
+            .then_some(delay),
         None => backoff(base, attempts).map(jittered),
     }
 }
@@ -746,16 +759,11 @@ fn cut(mut text: String) -> String {
 const TIMING: &str = "a time for the run is too large to compute";
 
 /// When a worker stops a job it cannot report on: two heartbeats before another worker
-/// may take it, and at half of `stale_minutes` at the latest. `None` when the times do
-/// not fit.
+/// may take it. `None` when the times do not fit. [`QueueOptions::check`] keeps
+/// the heartbeat to a quarter of the stale time, so this is at half of it or later.
 fn give_up_after(stale_minutes: i32, every: Duration) -> Option<Duration> {
     let stale = Duration::from_secs(u64::try_from(stale_minutes).ok()?.checked_mul(60)?);
-    let half = stale.checked_div(2)?;
-    let early = every
-        .checked_mul(2)
-        .and_then(|twice| stale.checked_sub(twice));
-    // ARI-1: when two heartbeats do not fit before the stale time, give up at half of it.
-    Some(early.map_or(half, |early| early.max(half)))
+    stale.checked_sub(every.checked_mul(2)?)
 }
 
 fn millis(duration: Duration) -> i64 {
@@ -1495,7 +1503,8 @@ pub struct QueueOptions {
     /// A running job not heard from for this many minutes is assumed lost with
     /// its worker.
     pub stale_minutes: i32,
-    /// How often a running job reports in. Keep it well under `stale_minutes`.
+    /// How often a running job reports in: at least 20 ms, and at most a quarter of
+    /// `stale_minutes`. [`QueueOptions::check`] refuses anything else.
     pub heartbeat_interval: Duration,
     /// Tries a job gets, including the first, unless it has its own limit. One
     /// means no retries.
@@ -1506,6 +1515,38 @@ pub struct QueueOptions {
     pub retention_days: i32,
     /// How often to recover stale jobs and delete old rows.
     pub maintenance_interval: Duration,
+}
+
+impl QueueOptions {
+    /// Whether these settings can run a queue. A setting out of range is refused here,
+    /// not held to a limit.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::OutOfRange`], naming the setting: `workers` that do not fit a `u32`;
+    /// `stale_minutes` under one or too many to count in seconds; or a
+    /// `heartbeat_interval` under 20 ms or over a quarter of `stale_minutes`, so that a
+    /// run gives up two heartbeats before it is stale, and no earlier than half of it.
+    pub fn check(&self) -> Result<()> {
+        if u32::try_from(self.workers).is_err() {
+            return Err(Error::OutOfRange("workers"));
+        }
+        let stale = u64::try_from(self.stale_minutes)
+            .ok()
+            .filter(|minutes| *minutes >= 1)
+            .and_then(|minutes| minutes.checked_mul(60))
+            .map(Duration::from_secs)
+            .ok_or(Error::OutOfRange("stale_minutes"))?;
+        let fits = self.heartbeat_interval >= MIN_HEARTBEAT
+            && self
+                .heartbeat_interval
+                .checked_mul(4)
+                .is_some_and(|four| four <= stale);
+        if !fits {
+            return Err(Error::OutOfRange("heartbeat_interval"));
+        }
+        Ok(())
+    }
 }
 
 impl Default for QueueOptions {
@@ -1565,20 +1606,25 @@ enum Outcome {
 impl Queue {
     /// A queue on `pool`, checking and changing nothing. Call [`Queue::check`] at
     /// boot. Give the pool at least `workers + 2` connections.
-    #[must_use]
-    pub fn from_pool(pool: SqlitePool, options: QueueOptions) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::OutOfRange`] when `options` fail [`QueueOptions::check`].
+    pub fn from_pool(pool: SqlitePool, options: QueueOptions) -> Result<Self> {
+        options.check()?;
+        Ok(Self {
             pool,
             handlers: HashMap::new(),
             limits: HashMap::new(),
             schedules: Vec::new(),
             options,
-        }
+        })
     }
 
     /// Open a pool sized for the job loops, without touching the schema.
     async fn open(uri: &str, options: QueueOptions) -> Result<Self> {
-        let loops = u32::try_from(options.workers).unwrap_or(u32::MAX);
+        options.check()?;
+        let loops = u32::try_from(options.workers).map_err(|_| Error::OutOfRange("workers"))?;
         let connect = uri
             .parse::<SqliteConnectOptions>()?
             .create_if_missing(true)
@@ -1588,7 +1634,7 @@ impl Queue {
             .max_connections(loops.checked_add(2).ok_or(Error::Overflow("connections"))?)
             .connect_with(connect)
             .await?;
-        Ok(Self::from_pool(pool, options))
+        Self::from_pool(pool, options)
     }
 
     /// Connect to tables that a migration made, and change no schema, for a database
@@ -2089,7 +2135,7 @@ impl Queue {
     /// claim is found taken, or when this future is dropped.
     async fn supervise(&self, job: JobFuture, claim: &Claimed) -> Outcome {
         let mut job = AbortOnDrop(tokio::spawn(job));
-        let every = self.options.heartbeat_interval.max(MIN_HEARTBEAT);
+        let every = self.options.heartbeat_interval;
         let Some(give_up) = give_up_after(self.options.stale_minutes, every) else {
             return Outcome::Lost(TIMING.to_string());
         };
@@ -2189,7 +2235,7 @@ impl Queue {
     /// run must not be taken for a crash and retried.
     async fn mark_lost(&self, claim: &Claimed, reason: &str) {
         let text = Error::Job(format!("stopped: {reason}")).to_string();
-        let every = self.options.heartbeat_interval.max(MIN_HEARTBEAT);
+        let every = self.options.heartbeat_interval;
         loop {
             match sqlx::query(MARK_LOST)
                 .bind(&text)
@@ -2435,22 +2481,70 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_time_to_give_up_is_two_heartbeats_early_and_at_half_at_the_latest() {
+    fn the_time_to_give_up_is_two_heartbeats_before_the_stale_time() {
         let beat = Duration::from_secs(30);
         assert_eq!(give_up_after(60, beat), Some(Duration::from_mins(59)));
-        // Two heartbeats of the stale time or more: half of it.
-        assert_eq!(
-            give_up_after(1, Duration::from_secs(40)),
-            Some(Duration::from_secs(30))
-        );
-        // A heartbeat too long to double: half of it too.
-        assert_eq!(
-            give_up_after(60, Duration::MAX),
-            Some(Duration::from_mins(30))
-        );
+        // Two heartbeats that do not fit before the stale time have no time.
+        assert_eq!(give_up_after(1, Duration::from_secs(40)), None);
+        assert_eq!(give_up_after(60, Duration::MAX), None);
         // A stale time that does not fit, or is negative, has no time.
         assert_eq!(give_up_after(-1, beat), None);
         assert!(give_up_after(i32::MAX, Duration::ZERO).is_some());
+    }
+
+    #[test]
+    fn options_out_of_range_are_refused() {
+        assert!(QueueOptions::default().check().is_ok());
+        let refused = |change: fn(&mut QueueOptions)| {
+            let mut options = QueueOptions::default();
+            change(&mut options);
+            options.check()
+        };
+        assert!(matches!(
+            refused(|o| o.stale_minutes = 0),
+            Err(Error::OutOfRange("stale_minutes"))
+        ));
+        assert!(matches!(
+            refused(|o| o.stale_minutes = -1),
+            Err(Error::OutOfRange("stale_minutes"))
+        ));
+        // A heartbeat over a quarter of the stale time, or under the least.
+        assert!(matches!(
+            refused(|o| o.heartbeat_interval = Duration::from_mins(16)),
+            Err(Error::OutOfRange("heartbeat_interval"))
+        ));
+        assert!(refused(|o| o.heartbeat_interval = Duration::from_mins(15)).is_ok());
+        assert!(matches!(
+            refused(|o| o.heartbeat_interval = Duration::ZERO),
+            Err(Error::OutOfRange("heartbeat_interval"))
+        ));
+        assert!(matches!(
+            refused(|o| o.heartbeat_interval = Duration::MAX),
+            Err(Error::OutOfRange("heartbeat_interval"))
+        ));
+    }
+
+    #[test]
+    fn a_delay_out_of_range_is_refused() {
+        assert!(RetryAfter::new(MIN_RETRY_AFTER, "x").is_ok());
+        assert!(RetryAfter::new(MAX_BACKOFF, "x").is_ok());
+        for delay in [
+            Duration::ZERO,
+            Duration::from_millis(999),
+            MAX_BACKOFF + Duration::from_secs(1),
+        ] {
+            assert!(
+                matches!(
+                    RetryAfter::new(delay, "x"),
+                    Err(Error::OutOfRange("retry after"))
+                ),
+                "{delay:?}"
+            );
+        }
+        assert_eq!(
+            Error::OutOfRange("retry after").to_string(),
+            "retry after: the value is out of range"
+        );
     }
 
     #[test]
@@ -2497,28 +2591,28 @@ mod tests {
             let wait = retry_wait(base, 2, None).unwrap();
             assert!(wait >= base && wait <= base * 2, "{wait:?}");
         }
-        let waits: HashSet<_> = (0..20).map(|_| retry_wait(base, 1, None).unwrap()).collect();
+        let waits: HashSet<_> = (0..20)
+            .map(|_| retry_wait(base, 1, None).unwrap())
+            .collect();
         assert!(waits.len() > 1, "the waits are spread");
         assert_eq!(retry_wait(Duration::ZERO, 3, None), Some(Duration::ZERO));
         assert_eq!(retry_wait(base, 0, None), None);
         let chosen = Some(Duration::from_secs(90));
         assert_eq!(retry_wait(base, 1, chosen), Some(Duration::from_secs(90)));
-        assert_eq!(retry_wait(base, 1, Some(Duration::ZERO)), Some(MIN_RETRY_AFTER));
-        assert_eq!(
-            retry_wait(base, 1, Some(Duration::from_hours(9))),
-            Some(MAX_BACKOFF)
-        );
+        // A delay out of range has no wait.
+        assert_eq!(retry_wait(base, 1, Some(Duration::ZERO)), None);
+        assert_eq!(retry_wait(base, 1, Some(Duration::from_hours(9))), None);
     }
 
     #[test]
     fn a_retry_after_error_carries_its_delay_and_others_none() {
-        let chosen = Failure::from_error(RetryAfter::new(Duration::from_secs(7), "busy"));
+        let chosen = Failure::from_error(RetryAfter::new(Duration::from_secs(7), "busy").unwrap());
         assert_eq!(
             (chosen.text.as_str(), chosen.retry_in),
             ("busy", Some(Duration::from_secs(7)))
         );
         let boxed: Box<dyn std::error::Error + Send + Sync> =
-            Box::new(RetryAfter::new(Duration::from_secs(8), "boxed"));
+            Box::new(RetryAfter::new(Duration::from_secs(8), "boxed").unwrap());
         assert_eq!(
             Failure::from_error(boxed).retry_in,
             Some(Duration::from_secs(8))
@@ -2681,7 +2775,7 @@ mod tests {
         let pool = SqlitePoolOptions::new()
             .connect_lazy("sqlite::memory:")
             .unwrap();
-        let mut queue = Queue::from_pool(pool, QueueOptions::default());
+        let mut queue = Queue::from_pool(pool, QueueOptions::default()).unwrap();
         let job = NewJob::new("J", serde_json::Value::Null);
         queue
             .schedule(Schedule::every("a", Duration::from_secs(5), job.clone()).unwrap())
@@ -2756,7 +2850,7 @@ mod tests {
             workers: 3,
             ..QueueOptions::default()
         };
-        let mut queue = Queue::from_pool(pool, options);
+        let mut queue = Queue::from_pool(pool, options).unwrap();
         queue.handle("A", |_: serde_json::Value| async { Ok::<(), String>(()) });
         queue.limit("A", 1);
         queue

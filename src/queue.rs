@@ -426,10 +426,7 @@ impl Queue {
             .acquire_timeout(Duration::from_millis(50))
             .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
             .unwrap();
-        Self::wrap(axa_postgres_job_queue::Queue::from_pool(
-            pool,
-            QueueOptions::default(),
-        ))
+        Self::wrap(axa_postgres_job_queue::Queue::from_pool(pool, QueueOptions::default()).unwrap())
     }
 
     /// Check the database connection.
@@ -685,7 +682,7 @@ mod tests {
             Err(Error::RetryAfter(RetryAfter::new(
                 Duration::from_mins(2),
                 "the receiver is busy",
-            )))
+            )?))
         }
     }
 
