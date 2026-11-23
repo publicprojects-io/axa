@@ -1,7 +1,7 @@
 # Makefile for axa development
 # Provides common commands for building, testing, and development
 
-.PHONY: all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
+.PHONY: test-fast all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
 
 # Default target
 all: check
@@ -22,6 +22,14 @@ test:
 
 test-all:
 	cargo test --workspace --all-features
+
+# The same tests that need no server, faster: cargo-nextest runs each test in its own
+# process, across every test binary at once. It runs no doctests, and not `cli_exit`,
+# which has a custom harness, so those two run with `cargo test`.
+test-fast:
+	cargo nextest run --workspace --all-features
+	cargo test --workspace --all-features --doc
+	cargo test --test cli_exit --all-features
 
 # Run ignored tests (requires running containers)
 test-ignored:

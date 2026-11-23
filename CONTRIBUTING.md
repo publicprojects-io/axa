@@ -63,6 +63,11 @@ cargo test --workspace
 
 # Run with a specific feature
 cargo test --features postgres-sqlx
+
+# The tests that need no server, faster, with cargo-nextest (`cargo install cargo-nextest`):
+# each test runs in its own process, across every test binary at once. It runs no
+# doctests, and not `cli_exit`, so `make test-fast` runs those with `cargo test`.
+make test-fast
 ```
 
 ### Running Database Tests

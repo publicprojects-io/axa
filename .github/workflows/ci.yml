@@ -76,6 +76,10 @@ jobs:
       # version and current stable: a lint can pass on one and fail on the other.
       - run: rustup toolchain install stable --profile minimal --component clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Runs the tests that need no server, across every test binary at once.
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest
 
       - name: Format
         run: cargo fmt --all --check
@@ -151,8 +155,13 @@ jobs:
       - name: Clippy, stable, all features
         run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
 
+      # nextest runs no doctests, and not `cli_exit`, which has a custom harness, so those
+      # run with `cargo test`. See .config/nextest.toml.
       - name: Test, default features
-        run: cargo test --workspace
+        run: |
+          cargo nextest run --workspace --profile ci
+          cargo test --workspace --doc
+          cargo test --test cli_exit
       # A release build reads no name as production. The crate has no
       # dependencies, so its release build is quick.
       - name: Test, release build, environment
@@ -175,7 +184,10 @@ jobs:
       - name: Doctests, idempotency and paseto
         run: cargo test --doc --features idempotency,paseto
       - name: Test, all features
-        run: cargo test --workspace --all-features
+        run: |
+          cargo nextest run --workspace --all-features --profile ci
+          cargo test --workspace --all-features --doc
+          cargo test --test cli_exit --all-features
 
       - name: Docs
         run: cargo doc --workspace --no-deps --all-features

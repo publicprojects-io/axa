@@ -1,0 +1,21 @@
+# cargo-nextest, for a faster run of the tests that need no server: `make test-fast`, or
+# `cargo nextest run --workspace --all-features`. It runs each test in a process of its
+# own, across every test binary at once. It runs no doctests (use `cargo test --doc`),
+# and it cannot run a test binary with a custom harness, so `cli_exit` is left to
+# `cargo test --test cli_exit`. CI and `cargo test` remain the reference; coverage
+# (`cargo tarpaulin`) uses `cargo test`.
+nextest-version = "0.9.84"
+
+[profile.default]
+# `cli_exit` has `harness = false`, which nextest cannot list.
+default-filter = "not binary(cli_exit)"
+# A test that takes long is shown; one that hangs is ended at two minutes. The database
+# suites (`--ignored`) have one test that waits out a real minute, so they are not run
+# through nextest.
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.ci]
+inherits = "default"
+# Every failure, not only the first.
+fail-fast = false
+failure-output = "immediate-final"
