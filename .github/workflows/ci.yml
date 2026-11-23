@@ -518,6 +518,47 @@ jobs:
           curl -sf --aws-sigv4 "aws:amz:us-east-1:s3" --user axatest:axatestsecret -X PUT http://localhost:9000/axa-test
           cargo test -p axa-storage-with-apache-arrow-and-aws --test storage -- --ignored
 
+  # A change to a published crate's public API needs a new version first. This compares
+  # each crate with its last release on crates.io, and fails where the version is still the
+  # published one and the API changed in a way that needs a bump: a removed item, a changed
+  # parameter list, a new enum variant without `non_exhaustive`, and the rest of its lints.
+  # It cannot see a changed return type, so a `Result` where there was none is the
+  # reviewer's to catch. A crate bumped past its release is not checked: the bump is the
+  # signal. A crate with no release yet, such as the held SQLite ones, has no baseline, so
+  # it is left out here, and a new crate goes in the list until it is published.
+  semver:
+    name: semver (public API against the last release on crates.io)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTUP_TOOLCHAIN: "1.98"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-semver-checks
+
+      - name: Subcrates against their last release
+        run: |
+          cargo semver-checks check-release --workspace --all-features \
+            --exclude axa \
+            --exclude axa-sqlite-sqlx --exclude axa-sqlite-seaorm --exclude axa-sqlite-diesel
+
+      # The published `axa` has no `sqlite-*` features, as the SQLite crates are held, so
+      # they are left out of the feature list. Every other feature is on.
+      - name: axa against its last release
+        shell: bash
+        run: |
+          features=$(sed -n '/^\[features\]/,/^\[dependencies\]/p' Cargo.toml | grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' =' | grep -v '^sqlite-' | grep -vx default | paste -sd, -)
+          cargo semver-checks check-release -p axa --features "$features"
+
   # One result for the required-status rule, as the single `check` job was before.
   check:
     name: check
@@ -535,6 +576,7 @@ jobs:
       - postgres
       - mysql
       - redis-s3
+      - semver
     steps:
       - name: Every job passed
         env:

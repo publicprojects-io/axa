@@ -21,6 +21,12 @@ done
 - Update each changed subcrate's version in its own `Cargo.toml` and in the root
   `Cargo.toml`, which depends on them by version.
 - A subcrate with no changes is not republished.
+- Run `make semver` before choosing versions: it names a crate whose API changed while
+  its version is still the published one. It misses a changed return type, so also read
+  `git diff "$LAST_TAG" HEAD -- crates/*/src | grep '^[-+] *pub '`.
+- After the release, add any crate published for the first time to CI's `semver` job
+  and the `Makefile`'s `semver` target, and take it out of their exclude lists if it was
+  held.
 
 ## 2. Prepare
 

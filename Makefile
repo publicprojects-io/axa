@@ -1,7 +1,7 @@
 # Makefile for axa development
 # Provides common commands for building, testing, and development
 
-.PHONY: test-fast all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
+.PHONY: semver test-fast all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
 
 # Default target
 all: check
@@ -37,6 +37,13 @@ test-ignored:
 	AXA_TEST_MYSQL_URL=mysql://axa:axa@localhost:3307/axa_test \
 	AXA_TEST_REDIS_URL=redis://localhost:6379 \
 	cargo test --all-features -- --ignored
+
+# The public API of each published crate against its last release on crates.io, as CI does
+# (cargo install cargo-semver-checks). It cannot see a changed return type.
+semver:
+	cargo semver-checks check-release --workspace --all-features \
+		--exclude axa --exclude axa-sqlite-sqlx --exclude axa-sqlite-seaorm --exclude axa-sqlite-diesel
+	cargo semver-checks check-release -p axa --features "$$(sed -n '/^\[features\]/,/^\[dependencies\]/p' Cargo.toml | grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' =' | grep -v '^sqlite-' | grep -vx default | paste -sd, -)"
 
 # Lint and format
 lint:

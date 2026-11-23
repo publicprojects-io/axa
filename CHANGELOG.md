@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- CI has a `semver` job, and the `Makefile` a `semver` target: `cargo semver-checks`
+  compares each published crate, and `axa` with every feature but the held `sqlite-*`
+  ones, with its last release on crates.io. A change to a public API at a version that is
+  still the published one fails. It cannot see a changed return type.
+
 ## [0.22.0] - 2026-11-23
 
 This covers `axa` 0.22.0, `axa-test` 0.13.0, `axa-postgres-job-queue` 0.7.0,
