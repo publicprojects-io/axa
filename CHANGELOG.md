@@ -29,6 +29,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `allow_attributes_without_reason`: an exception is `#[expect]` with a reason.
   `default_numeric_fallback` is denied too: a number literal that no type fixes carries its
   suffix, as `0_i32` or `1.0_f64`.
+- `axa-test`'s Postgres template name is the first eight bytes of a SHA-256 of the migrations, in place
+  of a hand-written FNV hash (RCA-EXC-3), so existing templates are made again once. The
+  `postgres-sqlx` feature now turns on `sha2`, which the `paseto` feature already used.
 - Breaking: the job queues refuse a setting out of range, where they held it to a limit.
   `Queue::from_pool` returns `Result`, and `QueueOptions::check` (new) is what it and
   `connect` run: a `heartbeat_interval` under 20 ms or over a quarter of `stale_minutes`, a

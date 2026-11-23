@@ -51,6 +51,7 @@ use axa_postgres_sqlx::{
         postgres::{PgConnectOptions, PgPoolOptions},
     },
 };
+use sha2::{Digest, Sha256};
 
 /// The variable that names the server tests may create databases on.
 pub const URL_VAR: &str = "AXA_TEST_DB_URL";
@@ -97,18 +98,22 @@ impl std::fmt::Debug for TestDatabase {
 }
 
 /// The template's name for `migrator`: a hash of each migration's version and
-/// checksum, so that a changed migration names another template. It is FNV-1a, stable
-/// across builds and Rust versions, so a template outlives the build that made it.
+/// checksum, so that a changed migration names another template. It is the first eight
+/// bytes of their SHA-256, stable across builds and Rust versions, so a template
+/// outlives the build that made it.
 #[must_use]
 pub fn template_name(migrator: &Migrator) -> String {
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut digest = Sha256::new();
     for migration in migrator.iter() {
-        let version = migration.version.to_le_bytes();
-        for byte in version.iter().chain(migration.checksum.iter()) {
-            hash ^= u64::from(*byte);
-            hash = hash.wrapping_mul(0x0100_0000_01b3);
-        }
+        digest.update(migration.version.to_le_bytes());
+        digest.update(&*migration.checksum);
     }
+    // The first eight bytes, as one number: a template's name is sixteen hex digits.
+    let hash = digest
+        .finalize()
+        .iter()
+        .take(8)
+        .fold(0_u64, |hash, byte| (hash << 8_u32) | u64::from(*byte));
     format!("{TEMPLATE_PREFIX}{hash:016x}")
 }
 
@@ -144,7 +149,10 @@ async fn sweep(connection: &mut PgConnection) -> Result<(), sqlx::Error> {
     .iter()
     .map(|row| row.try_get("datname"))
     .collect::<Result<_, _>>()?;
-    let cutoff = now().saturating_sub(ABANDONED_SECONDS);
+    // A clock within two minutes of the epoch has nothing old enough to sweep.
+    let Some(cutoff) = now().checked_sub(ABANDONED_SECONDS) else {
+        return Ok(());
+    };
     for name in names {
         if made_at(&name).is_some_and(|made| made < cutoff) {
             execute(
@@ -453,7 +461,7 @@ mod tests {
     fn a_template_name_follows_the_migrations() {
         let empty = Migrator::DEFAULT;
         let name = template_name(&empty);
-        assert_eq!(name, format!("{TEMPLATE_PREFIX}cbf29ce484222325"));
+        assert_eq!(name, format!("{TEMPLATE_PREFIX}e3b0c44298fc1c14"));
         assert!(quote_identifier(&name).is_some());
         assert!(format!("{name}_partial").len() <= 63);
     }

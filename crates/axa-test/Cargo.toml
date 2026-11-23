@@ -24,7 +24,7 @@ mail = ["axa/mail"]
 # Responses checked against the OpenAPI document, status, content type, and schema.
 openapi = ["dep:jsonschema"]
 # A Postgres database of its own for each test, cloned from a template migrated once.
-postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:tokio"]
+postgres-sqlx = ["dep:axa-postgres-sqlx", "dep:tokio", "dep:sha2"]
 
 # Integration tests: `tests/main.rs` holds most, as modules, so they link once. Each
 # one below it needs a process of its own; see the top of `tests/main.rs`.
