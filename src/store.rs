@@ -82,7 +82,10 @@ where
 {
     type Rejection = Error;
 
-    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait declares the method async; the lint is newer than the minimum Rust"
+    )]
     async fn from_request_parts(_parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         AppContext::from_ref(state)
             .shared_store

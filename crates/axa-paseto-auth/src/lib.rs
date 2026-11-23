@@ -476,7 +476,10 @@ pub struct AuthUser(pub Claims);
 impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
     type Rejection = Rejection;
 
-    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait declares the method async; the lint is newer than the minimum Rust"
+    )]
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         // Already verified for this request, so there is no need to do it twice.
         if let Some(allowed) = parts.extensions.get::<Allowed>() {

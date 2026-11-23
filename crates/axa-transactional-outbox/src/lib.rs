@@ -760,7 +760,7 @@ pub mod decide {
     /// # Errors
     ///
     /// None.
-    #[allow(clippy::unused_async, reason = "the relay awaits every decision")]
+    #[expect(clippy::unused_async, reason = "the relay awaits every decision")]
     pub async fn deliver_all(
         _event: &Claimed,
         _transaction: &mut PgConnection,
@@ -779,7 +779,7 @@ pub mod record {
     /// # Errors
     ///
     /// None.
-    #[allow(clippy::unused_async, reason = "the relay awaits every record")]
+    #[expect(clippy::unused_async, reason = "the relay awaits every record")]
     pub async fn nothing(
         _attempt: &Attempt,
         _transaction: &mut PgConnection,

@@ -61,6 +61,5 @@ fn only_a_server_fault_is_an_error_and_a_clients_text_is_not_logged() {
 #[derive(Debug, thiserror::Error)]
 #[error("the insert failed")]
 struct RowFault {
-    #[allow(dead_code)]
     detail: &'static str,
 }

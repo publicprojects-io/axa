@@ -641,7 +641,10 @@ pub enum ReloadError {
 /// Engine unit tests — pure, offline, per
 /// `authorization-attributes.md` §7.
 #[cfg(test)]
-#[allow(unknown_lints, clippy::assert_is_empty)]
+#[expect(
+    clippy::assert_is_empty,
+    reason = "a test asserts an emptiness the lint would rewrite; older Clippy lacks the lint"
+)]
 mod tests {
     use super::*;
 

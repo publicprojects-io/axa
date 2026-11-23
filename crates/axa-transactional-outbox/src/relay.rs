@@ -543,7 +543,7 @@ impl Outbox {
     }
 
     #[cfg(not(feature = "encryption"))]
-    #[allow(clippy::unused_self, reason = "the same call as with the feature")]
+    #[expect(clippy::unused_self, reason = "the same call as with the feature")]
     fn open_sealed(&self, _event_id: Uuid, _sealed: &[u8]) -> Result<Value, Unread> {
         Err(Unread::NoKey)
     }

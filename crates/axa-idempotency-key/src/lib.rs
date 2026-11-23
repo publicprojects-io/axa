@@ -1029,7 +1029,11 @@ mod tests {
     fn obeying_the_wait_asks_about_a_lost_run_a_handful_of_times_a_day() {
         let (lease, mut at, mut asked) = (86_400.0, 0.0, 0);
         while at < lease {
-            #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
+            #[expect(
+                clippy::cast_precision_loss,
+                clippy::as_conversions,
+                reason = "RCA-EXC-2: a wait of a few seconds, which an f64 holds exactly"
+            )]
             let waited = wait(at, lease - at) as f64;
             at += waited;
             asked += 1;

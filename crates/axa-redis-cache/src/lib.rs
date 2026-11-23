@@ -304,7 +304,7 @@ impl Cache {
     /// # Errors
     ///
     /// Fails when the URL is invalid, or when the default TTL is below one millisecond.
-    #[allow(
+    #[expect(
         clippy::unused_async,
         clippy::unused_async_trait_impl,
         reason = "it waited for Redis before, and callers await it"
@@ -562,7 +562,7 @@ impl Cache {
 }
 
 #[cfg(test)]
-#[allow(
+#[expect(
     clippy::integer_division,
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]

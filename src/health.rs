@@ -409,6 +409,11 @@ pub fn routes() -> Routes {
 
 // With a database in the context, a context that was never opened fails readiness.
 #[cfg(all(test, axa_db = "none"))]
+#[expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    reason = "RCA-SCOPE-4: tests may unwrap and panic"
+)]
 mod tests {
     use super::*;
     use crate::{
@@ -678,11 +683,13 @@ mod tests {
         assert_eq!(body, refused(r#"["slow"]"#));
     }
 
+    async fn boom() -> Result<(), String> {
+        panic!("boom")
+    }
+
     #[tokio::test]
     async fn a_check_that_panics_fails() {
-        let checks = Checks::new()
-            .add("fine", passes)
-            .add("broken", || async { panic!("boom") as Result<(), String> });
+        let checks = Checks::new().add("fine", passes).add("broken", boom);
         let (status, body) = answer(with_checks(checks)).await;
         assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(body, refused(r#"["broken"]"#));

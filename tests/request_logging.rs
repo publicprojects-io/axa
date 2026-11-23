@@ -54,7 +54,10 @@ async fn log_lines_carry_the_request_id_and_not_the_query() {
         "/panics",
         get(|| async {
             panic!("the secret is hunter2");
-            #[allow(unreachable_code)]
+            #[expect(
+                unreachable_code,
+                reason = "the handler never returns, as the test wants"
+            )]
             "never"
         }),
     );

@@ -421,6 +421,7 @@ impl Queue {
 
     /// A queue on a pool nothing listens to, for testing what depends on it.
     #[cfg(all(test, axa_db = "none"))]
+    #[expect(clippy::unwrap_used, reason = "RCA-SCOPE-4: a helper for tests")]
     pub(crate) fn unreachable() -> Self {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .acquire_timeout(Duration::from_millis(50))
@@ -515,11 +516,7 @@ impl Queue {
         axa_db = "mysql_toasty"
     ))
 ))]
-#[allow(
-    clippy::unwrap_used,
-    clippy::panic,
-    reason = "RCA-SCOPE-4: tests may unwrap and panic"
-)]
+#[expect(clippy::panic, reason = "RCA-SCOPE-4: tests may unwrap and panic")]
 mod tests {
     /// What a test returns, so a failed step ends it with an error rather than a panic.
     type TestResult = std::result::Result<(), Box<dyn std::error::Error>>;

@@ -158,7 +158,7 @@ pub struct Logger {
 }
 
 /// Database settings. `Debug` hides any password in the connection string.
-#[allow(
+#[expect(
     clippy::struct_excessive_bools,
     reason = "each is a switch of its own, read from a variable of its own"
 )]

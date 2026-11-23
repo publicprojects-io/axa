@@ -226,7 +226,7 @@ fn shorten(name: &str, max: usize) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
+#[expect(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
 mod tests {
     use super::*;
 

@@ -317,7 +317,7 @@ impl<'de> Deserialize<'de> for SafeInt {
     }
 }
 
-#[allow(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
+#[expect(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
 #[cfg(test)]
 mod tests {
     use axum::{
@@ -663,7 +663,7 @@ mod tests {
     async fn a_body_field_beyond_a_safe_int_is_a_422_pointing_at_it() {
         #[derive(Deserialize)]
         struct Deal {
-            #[allow(dead_code, reason = "only read")]
+            #[expect(dead_code, reason = "only read")]
             amount_minor: SafeInt,
         }
         let app = axum::Router::new().route(

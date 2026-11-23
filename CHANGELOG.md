@@ -25,7 +25,8 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Breaking: `jittered` in the three job queues works in integers and returns `Option<Duration>`
   (`None` when the spread does not fit a `Duration`). `integer_division`, `modulo_arithmetic`,
   the float lints, `checked_conversions`, `unreachable`, `todo` and `unimplemented` are
-  denied across the workspace.
+  denied across the workspace, and so are `allow_attributes` and
+  `allow_attributes_without_reason`: an exception is `#[expect]` with a reason.
 - Breaking: the job queues refuse a setting out of range, where they held it to a limit.
   `Queue::from_pool` returns `Result`, and `QueueOptions::check` (new) is what it and
   `connect` run: a `heartbeat_interval` under 20 ms or over a quarter of `stale_minutes`, a

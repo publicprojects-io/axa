@@ -158,7 +158,10 @@ pub struct ClientAddr(pub Option<IpAddr>);
 impl<S: Send + Sync> FromRequestParts<S> for ClientAddr {
     type Rejection = Infallible;
 
-    #[allow(unknown_lints, clippy::unused_async_trait_impl)]
+    #[expect(
+        clippy::unused_async_trait_impl,
+        reason = "the trait declares the method async; the lint is newer than the minimum Rust"
+    )]
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Infallible> {
         Ok(Self(parts.extensions.get::<IpAddr>().copied()))
     }

@@ -741,7 +741,7 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
     Ok(())
 }
 
-#[allow(
+#[expect(
     clippy::arithmetic_side_effects,
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]

@@ -635,7 +635,7 @@ fn origin_host(origin: &str) -> &str {
     origin.split_once("://").map_or(origin, |(_, host)| host)
 }
 
-#[allow(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
+#[expect(clippy::as_conversions, reason = "RCA-SCOPE-4: tests may use `as`")]
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1481,7 +1481,7 @@ mod tests {
     fn refusing_app() -> Router {
         #[derive(serde::Deserialize)]
         struct Named {
-            #[allow(dead_code)]
+            #[expect(dead_code, reason = "read by the test through Debug only")]
             name: String,
         }
         async fn takes_json(_: axum::Json<Named>) {}

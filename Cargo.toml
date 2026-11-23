@@ -40,6 +40,8 @@ checked_conversions = "deny"
 unreachable = "deny"
 todo = "deny"
 unimplemented = "deny"
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
 
 [package]
 name = "axa"

@@ -1253,13 +1253,13 @@ mod tests {
     }
 
     #[derive(Debug, serde::Deserialize)]
-    #[allow(dead_code, reason = "only deserialized")]
+    #[expect(dead_code, reason = "only deserialized")]
     struct Order {
         items: Vec<Item>,
     }
 
     #[derive(Debug, serde::Deserialize)]
-    #[allow(dead_code, reason = "only deserialized")]
+    #[expect(dead_code, reason = "only deserialized")]
     struct Item {
         name: String,
         count: u8,

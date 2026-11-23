@@ -878,7 +878,7 @@ pub(crate) async fn run_after(
     served
 }
 
-#[allow(
+#[expect(
     clippy::arithmetic_side_effects,
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]

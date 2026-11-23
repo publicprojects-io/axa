@@ -86,7 +86,7 @@ pub async fn ping(db: &Db) -> crate::Result<()> {
         axa_db = "sqlite_sqlx"
     )
 ))]
-#[allow(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
+#[expect(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 fn test_db() -> Db {
     static RUNTIME: std::sync::LazyLock<tokio::runtime::Runtime> =
         std::sync::LazyLock::new(|| tokio::runtime::Runtime::new().expect("a runtime"));
@@ -114,7 +114,7 @@ fn test_db() -> Db {
     sea_orm::DatabaseConnection::default()
 }
 #[cfg(all(test, axa_db = "postgres_diesel"))]
-#[allow(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
+#[expect(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 fn test_db() -> Db {
     let config = axa_postgres_diesel::PoolConfig {
         wait_timeout: std::time::Duration::from_millis(50),
@@ -124,6 +124,7 @@ fn test_db() -> Db {
     axa_postgres_diesel::pool_with_tls(&config, tls).expect("a pool that never connects")
 }
 #[cfg(all(test, axa_db = "mysql_diesel"))]
+#[expect(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 fn test_db() -> Db {
     let config = axa_mysql_diesel::PoolConfig {
         wait_timeout: std::time::Duration::from_millis(50),
@@ -132,19 +133,13 @@ fn test_db() -> Db {
     axa_mysql_diesel::pool(&config).expect("a pool that never connects")
 }
 #[cfg(all(test, axa_db = "sqlite_diesel"))]
+#[expect(clippy::expect_used, reason = "RCA-SCOPE-4: tests may expect")]
 fn test_db() -> Db {
     let config = axa_sqlite_diesel::PoolConfig {
         wait_timeout: std::time::Duration::from_millis(50),
         ..axa_sqlite_diesel::PoolConfig::new("sqlite:///axa-no-such-folder/never.sqlite3")
     };
     axa_sqlite_diesel::pool(&config).expect("a pool that never connects")
-}
-#[cfg(all(test, any(axa_db = "postgres_toasty", axa_db = "mysql_toasty")))]
-fn test_db() -> Db {
-    unimplemented!(
-        "Toasty connects when its handle is made, so a unit test with Toasty as the only \
-         database feature has no context"
-    )
 }
 #[cfg(all(test, axa_db = "none"))]
 fn test_db() -> Db {}
@@ -202,9 +197,13 @@ impl AppContext {
         }
     }
 
-    /// A context for a test, whose database was never opened.
-    #[cfg(test)]
-    #[allow(clippy::unit_arg, dead_code)]
+    /// A context for a test, whose database was never opened. Toasty connects when its
+    /// handle is made, so a Toasty-only build has none.
+    #[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
+    #[cfg_attr(
+        axa_db = "none",
+        expect(clippy::unit_arg, reason = "the handle is `()` without a database")
+    )]
     pub(crate) fn for_test(environment: Environment, config: Config) -> Self {
         Self::new(environment, test_db(), config)
     }
@@ -232,7 +231,7 @@ impl axum::extract::FromRef<AppContext> for axa_webhooks::Verifier {
 }
 
 #[cfg(all(test, feature = "webhooks"))]
-#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
+#[expect(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod webhook_tests {
     use axa_webhooks::{Signer, SigningKey, Verified, Verifier};
     use axum::{Router, body::Body, http::Request, http::StatusCode, routing::post};
@@ -294,7 +293,6 @@ mod webhook_tests {
 
 // Toasty connects when its handle is made, so a Toasty-only build has no context to show.
 #[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
-#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod tests {
     use super::{AppContext, Db};
     use crate::{

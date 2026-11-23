@@ -190,11 +190,11 @@ impl Store {
     // With Redis alone, there is nothing to delete or wait for.
     #[cfg_attr(
         not(feature = "postgres"),
-        allow(
-            unknown_lints,
+        expect(
             unused_variables,
             clippy::unused_async,
-            clippy::unused_async_trait_impl
+            clippy::unused_async_trait_impl,
+            reason = "with Redis alone there is nothing to wait for"
         )
     )]
     pub async fn purge(&self, window: NonZeroU32) -> Result<u64, String> {
@@ -464,7 +464,7 @@ pub async fn by_client_shared(
 }
 
 #[cfg(all(test, feature = "postgres"))]
-#[allow(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
+#[expect(clippy::unwrap_used, reason = "RCA-SCOPE-4: tests may unwrap")]
 mod tests {
     use super::*;
 

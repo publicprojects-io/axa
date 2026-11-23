@@ -583,10 +583,6 @@ where
     }
 }
 
-#[allow(
-    clippy::arithmetic_side_effects,
-    reason = "RCA-SCOPE-4: tests may use plain operators"
-)]
 #[cfg(test)]
 mod tests {
     use axum::{Router, body::Body, routing::post};
@@ -924,7 +920,7 @@ mod tests {
 /// Properties over generated deliveries: what a key signs, that key verifies, inside the
 /// window and to its edge; any other body, id, or time is refused; and no header a
 /// sender makes up panics.
-#[allow(
+#[expect(
     clippy::arithmetic_side_effects,
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]
