@@ -9,64 +9,20 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  # The checks that used to be one job run as these, side by side, so a run takes as long as
+  # the slowest of them and not all of them added up: a green run was about 25 minutes. Each
+  # job restores its own cache. The `check` job at the end is the one result, under the
+  # name that was there before.
+  lint:
+    name: lint (format, clippy on both toolchains, docs, dependency checks)
     runs-on: ubuntu-latest
-    # A green run takes about 15 minutes, and one with a cold cache, after a toolchain or
-    # dependency change, over 30. A cancelled run saves no cache, so the limit leaves room
-    # for a cold one, and a hung test still fails here rather than after six hours.
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       CARGO_TERM_COLOR: always
       RUSTDOCFLAGS: -D warnings
       # The minimum supported version, over the pin in `rust-toolchain.toml`, which
       # `rustup default` would not override.
       RUSTUP_TOOLCHAIN: "1.98"
-    services:
-      postgres:
-        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
-        env:
-          POSTGRES_USER: axa
-          POSTGRES_PASSWORD: axa
-          POSTGRES_DB: axa_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U axa"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      mysql:
-        image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
-        env:
-          MYSQL_ROOT_PASSWORD: axa
-          MYSQL_USER: axa
-          MYSQL_PASSWORD: axa
-          MYSQL_DATABASE: axa_test
-        # 3307 on the runner, which has a MySQL of its own installed.
-        ports:
-          - 3307:3306
-        options: >-
-          --health-cmd "mysqladmin ping -uaxa -paxa --silent"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      redis:
-        image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-      # An S3-compatible endpoint, RustFS 1.0.6, with test credentials and nothing else.
-      s3:
-        image: rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
-        env:
-          RUSTFS_ACCESS_KEY: axatest
-          RUSTFS_SECRET_KEY: axatestsecret
-        ports:
-          - 9000:9000
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -76,10 +32,6 @@ jobs:
       # version and current stable: a lint can pass on one and fail on the other.
       - run: rustup toolchain install stable --profile minimal --component clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      # Runs the tests that need no server, across every test binary at once.
-      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
-        with:
-          tool: cargo-nextest
 
       - name: Format
         run: cargo fmt --all --check
@@ -92,6 +44,64 @@ jobs:
         run: cargo clippy --all-targets --features queue -- -D warnings
       - name: Clippy, sqlx
         run: cargo clippy --all-targets --features postgres-sqlx -- -D warnings
+
+      - name: Clippy, all features
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      # Library code only, where test modules are not built: no `unwrap`, which says
+      # nothing of why it cannot fail, as `expect` does; no `dbg!`, `todo!`, or
+      # `unimplemented!` left behind; and no `mem::forget`, which leaks.
+      - name: Clippy, library code may not unwrap or leak
+        run: >-
+          cargo clippy --workspace --lib --all-features --
+          -D warnings -D clippy::unwrap_used -D clippy::dbg_macro -D clippy::todo
+          -D clippy::unimplemented -D clippy::mem_forget
+
+      # RCA-ENF-5. Production code only: tests and examples
+      # may use plain operators (RCA-SCOPE-4). The path is given, as `rg` reads stdin without one. The
+      # second pattern is the spec's, tightened so that it cannot span statements.
+      - name: Checked arithmetic, no saturating, wrapping or overflowing, and no unwrapped checked result
+        shell: bash
+        run: |
+          skip=(-g '!**/tests/**' -g '!examples/**')
+          if rg -w --type rust '(saturating|wrapping|overflowing)_\w+' "${skip[@]}" .; then exit 1; fi
+          if rg -U --type rust '\.checked_\w+\((?:[^()]|\([^()]*\))*\)\s*\.(unwrap|expect|unwrap_unchecked|unwrap_or_default)\b' "${skip[@]}" .; then exit 1; fi
+
+      - name: Clippy, stable, all features
+        run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Docs
+        run: cargo doc --workspace --no-deps --all-features
+
+      - name: No C database client library in the Diesel crates
+        run: |
+          cargo tree -p axa-postgres-diesel --all-features -e normal > diesel-tree.txt
+          cargo tree -p axa-mysql-diesel --all-features -e normal >> diesel-tree.txt
+          if grep -E 'pq-sys|libpq|mysqlclient|openssl|native-tls' diesel-tree.txt; then exit 1; fi
+
+      - name: No chrono for a service on Postgres
+        run: |
+          cargo tree -e normal -p axa --features queue,postgres-sqlx,outbox,idempotency,ratelimit,cursor-pagination,openapi > chrono-tree.txt
+          cargo tree -e normal -p axa-postgres-job-queue >> chrono-tree.txt
+          if grep -E ' chrono v' chrono-tree.txt; then exit 1; fi
+
+  feature-sets:
+    name: each feature set alone (library check and clippy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
       # Each feature alone, building only the library, so no dev-dependency can turn on
       # what a feature forgot to: `--all-targets` above builds the tests too, and their
       # dev-dependencies can hide a missing tokio feature, as one did for `upload`.
@@ -130,30 +140,27 @@ jobs:
               echo "::endgroup::"
             done
           done
-      - name: Clippy, all features
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-      # Library code only, where test modules are not built: no `unwrap`, which says
-      # nothing of why it cannot fail, as `expect` does; no `dbg!`, `todo!`, or
-      # `unimplemented!` left behind; and no `mem::forget`, which leaks.
-      - name: Clippy, library code may not unwrap or leak
-        run: >-
-          cargo clippy --workspace --lib --all-features --
-          -D warnings -D clippy::unwrap_used -D clippy::dbg_macro -D clippy::todo
-          -D clippy::unimplemented -D clippy::mem_forget
-
-      # RCA-ENF-5. Production code only: tests and examples
-      # may use plain operators (RCA-SCOPE-4). The path is given, as `rg` reads stdin without one. The
-      # second pattern is the spec's, tightened so that it cannot span statements.
-      - name: Checked arithmetic, no saturating, wrapping or overflowing, and no unwrapped checked result
-        shell: bash
-        run: |
-          skip=(-g '!**/tests/**' -g '!examples/**')
-          if rg -w --type rust '(saturating|wrapping|overflowing)_\w+' "${skip[@]}" .; then exit 1; fi
-          if rg -U --type rust '\.checked_\w+\((?:[^()]|\([^()]*\))*\)\s*\.(unwrap|expect|unwrap_unchecked|unwrap_or_default)\b' "${skip[@]}" .; then exit 1; fi
-
-      - name: Clippy, stable, all features
-        run: cargo +stable clippy --workspace --all-targets --all-features -- -D warnings
+  test:
+    name: tests that need no server (default features, queue, sqlx, all features, doctests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      # Runs the tests that need no server, across every test binary at once.
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2.90.1
+        with:
+          tool: cargo-nextest
 
       # nextest runs no doctests, and not `cli_exit`, which has a custom harness, so those
       # run with `cargo test`. See .config/nextest.toml.
@@ -170,6 +177,31 @@ jobs:
         run: cargo test --features queue
       - name: Test, sqlx
         run: cargo test --features postgres-sqlx
+      - name: Doctests, idempotency and paseto
+        run: cargo test --doc --features idempotency,paseto
+      - name: Test, all features
+        run: |
+          cargo nextest run --workspace --all-features --profile ci
+          cargo test --workspace --all-features --doc
+          cargo test --test cli_exit --all-features
+
+  test-databases:
+    name: tests with each other database alone
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
       # Each other database alone, as `AppContext::db`: tests built for one database,
       # such as SQLite refusing a statement timeout, run in no other build.
       - name: Test, each other database alone
@@ -181,28 +213,46 @@ jobs:
             cargo test --features "$feature"
             echo "::endgroup::"
           done
-      - name: Doctests, idempotency and paseto
-        run: cargo test --doc --features idempotency,paseto
-      - name: Test, all features
-        run: |
-          cargo nextest run --workspace --all-features --profile ci
-          cargo test --workspace --all-features --doc
-          cargo test --test cli_exit --all-features
 
-      - name: Docs
-        run: cargo doc --workspace --no-deps --all-features
-
-      - name: No C database client library in the Diesel crates
-        run: |
-          cargo tree -p axa-postgres-diesel --all-features -e normal > diesel-tree.txt
-          cargo tree -p axa-mysql-diesel --all-features -e normal >> diesel-tree.txt
-          if grep -E 'pq-sys|libpq|mysqlclient|openssl|native-tls' diesel-tree.txt; then exit 1; fi
-
-      - name: No chrono for a service on Postgres
-        run: |
-          cargo tree -e normal -p axa --features queue,postgres-sqlx,outbox,idempotency,ratelimit,cursor-pagination,openapi > chrono-tree.txt
-          cargo tree -e normal -p axa-postgres-job-queue >> chrono-tree.txt
-          if grep -E ' chrono v' chrono-tree.txt; then exit 1; fi
+  postgres:
+    name: Postgres tests (and shared rate limits with Redis)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    services:
+      postgres:
+        image: postgres:18-alpine@sha256:10a5c69a83035ab5239f5620d708520e8b28f5aa1f2b20143e6024532edadfb5
+        env:
+          POSTGRES_USER: axa
+          POSTGRES_PASSWORD: axa
+          POSTGRES_DB: axa_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U axa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Postgres tests
         env:
@@ -224,6 +274,45 @@ jobs:
           cargo test -p axa-idempotency-key -- --ignored --test-threads=1
           cargo test --features idempotency --test main -- --ignored --test-threads=1 idempotency::
 
+      - name: Shared rate limits across replicas
+        env:
+          AXA_TEST_DB_URL: postgres://axa:axa@localhost:5432/axa_test
+          AXA_TEST_REDIS_URL: redis://localhost:6379
+        run: cargo test -p axa-request-rate-limit --all-features --test shared -- --ignored --test-threads=1
+
+  mysql:
+    name: MySQL tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    services:
+      mysql:
+        image: mysql:8.4@sha256:a81d043930e51745522bd5c430961cf8286f0a23f0a9a2a6e0108f7ea71b0902
+        env:
+          MYSQL_ROOT_PASSWORD: axa
+          MYSQL_USER: axa
+          MYSQL_PASSWORD: axa
+          MYSQL_DATABASE: axa_test
+        # 3307 on the runner, which has a MySQL of its own installed.
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -uaxa -paxa --silent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
       - name: MySQL tests
         env:
           AXA_TEST_MYSQL_URL: mysql://axa:axa@127.0.0.1:3307/axa_test
@@ -237,6 +326,41 @@ jobs:
           cargo test -p axa-mysql-diesel -- --ignored --test-threads=1
           cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
           cargo test --all-features --test main -- --ignored --test-threads=1 other_databases::
+
+  redis-s3:
+    name: Redis and S3 tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    services:
+      redis:
+        image: redis:8-alpine@sha256:21090af93f8324db2f0f0f4f38a7c60369d47d917e000c3423d89d2ae2883537
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # An S3-compatible endpoint, RustFS 1.0.6, with test credentials and nothing else.
+      s3:
+        image: rustfs/rustfs@sha256:ee717072290bec9b11abfc0365f8310b00df1cd9b3639943edae47bdef05044a
+        env:
+          RUSTFS_ACCESS_KEY: axatest
+          RUSTFS_SECRET_KEY: axatestsecret
+        ports:
+          - 9000:9000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
 
       - name: Redis tests
         env:
@@ -253,11 +377,21 @@ jobs:
           curl -sf --aws-sigv4 "aws:amz:us-east-1:s3" --user axatest:axatestsecret -X PUT http://localhost:9000/axa-test
           cargo test -p axa-storage-with-apache-arrow-and-aws --test storage -- --ignored
 
-      - name: Shared rate limits across replicas
+  # One result for the required-status rule, as the single `check` job was before.
+  check:
+    name: check
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, feature-sets, test, test-databases, postgres, mysql, redis-s3]
+    steps:
+      - name: Every job passed
         env:
-          AXA_TEST_DB_URL: postgres://axa:axa@localhost:5432/axa_test
-          AXA_TEST_REDIS_URL: redis://localhost:6379
-        run: cargo test -p axa-request-rate-limit --all-features --test shared -- --ignored --test-threads=1
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for result in $RESULTS; do
+            [ "$result" = success ] || exit 1
+          done
 
   examples:
     name: examples and the service template
