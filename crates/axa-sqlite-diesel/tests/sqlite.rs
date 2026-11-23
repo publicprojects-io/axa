@@ -327,7 +327,7 @@ async fn dangerously_recreate_refuses_a_name_it_cannot_quote_and_drops_nothing()
 async fn a_pool_that_is_all_in_use_answers_with_an_error_in_time() {
     let config = PoolConfig {
         max_connections: 1,
-        wait_timeout: Duration::from_millis(100),
+        wait_timeout: Duration::from_millis(500),
         ..PoolConfig::new(url(
             "a_pool_that_is_all_in_use_answers_with_an_error_in_time",
         ))

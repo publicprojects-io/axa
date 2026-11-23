@@ -138,7 +138,7 @@ async fn a_pool_that_is_all_in_use_answers_with_an_error_in_time() {
     let uri = std::env::var("AXA_TEST_DB_URL").expect("AXA_TEST_DB_URL");
     let config = PoolConfig {
         max_connections: 1,
-        wait_timeout: Duration::from_millis(100),
+        wait_timeout: Duration::from_millis(500),
         ..PoolConfig::new(uri)
     };
     let pool = connect(&config).await.unwrap();
