@@ -809,7 +809,7 @@ mod tests {
         }
         let whole = ed25519(3);
         let Signing::Ed25519(inner) = &whole.0 else {
-            unreachable!()
+            panic!("an Ed25519 key")
         };
         let mut both = inner.to_bytes().to_vec();
         both.extend_from_slice(&inner.verifying_key().to_bytes());

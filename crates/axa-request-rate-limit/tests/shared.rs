@@ -107,7 +107,7 @@ async fn postgres_replicas_share_one_limit_and_store_no_address() {
     }
     replicas_share_one_limit(store.clone()).await;
     let Store::Postgres(pool) = &store else {
-        unreachable!()
+        panic!("a Postgres store")
     };
     let keys: Vec<String> = sqlx::query_scalar("SELECT key FROM axa_rate_limits")
         .fetch_all(pool)

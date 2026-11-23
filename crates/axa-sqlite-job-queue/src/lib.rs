@@ -718,17 +718,13 @@ impl fmt::Display for Failure {
 }
 
 /// Spread `wait` over its upper half at random, so jobs that failed together do
-/// not all try again at once.
+/// not all try again at once. `None` when the spread does not fit a `Duration`.
 #[must_use]
-pub fn jittered(wait: Duration) -> Duration {
-    let random = Uuid::new_v4().as_u128();
-    #[expect(
-        clippy::cast_precision_loss,
-        clippy::as_conversions,
-        reason = "RCA-EXC-2: below one million, which an f64 holds exactly"
-    )]
-    let fraction = (random % 1_000_000) as f64 / 1_000_000.0;
-    wait.mul_f64(0.5 + fraction / 2.0)
+pub fn jittered(wait: Duration) -> Option<Duration> {
+    // Below one million, so the spread is from one half to the whole of `wait`.
+    let random = u32::try_from(Uuid::new_v4().as_u128() % 1_000_000).ok()?;
+    wait.checked_mul(1_000_000_u32.checked_add(random)?)?
+        .checked_div(2_000_000)
 }
 
 /// How long to wait before the attempt after `attempts`: the delay a job chose,
@@ -742,7 +738,7 @@ pub fn retry_wait(base: Duration, attempts: i32, chosen: Option<Duration>) -> Op
         Some(delay) => (MIN_RETRY_AFTER..=MAX_BACKOFF)
             .contains(&delay)
             .then_some(delay),
-        None => backoff(base, attempts).map(jittered),
+        None => backoff(base, attempts).and_then(jittered),
     }
 }
 
@@ -2610,6 +2606,17 @@ mod tests {
         // A delay out of range has no wait.
         assert_eq!(retry_wait(base, 1, Some(Duration::ZERO)), None);
         assert_eq!(retry_wait(base, 1, Some(Duration::from_hours(9))), None);
+    }
+
+    #[test]
+    fn a_jittered_wait_is_between_half_and_the_whole_and_one_that_does_not_fit_has_none() {
+        let wait = Duration::from_secs(40);
+        for _ in 0..200 {
+            let spread = jittered(wait).unwrap();
+            assert!(spread >= wait / 2 && spread <= wait, "{spread:?}");
+        }
+        assert_eq!(jittered(Duration::ZERO), Some(Duration::ZERO));
+        assert_eq!(jittered(Duration::MAX), None);
     }
 
     #[test]

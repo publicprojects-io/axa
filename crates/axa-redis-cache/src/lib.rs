@@ -779,7 +779,7 @@ mod tests {
         record_logs();
         let cache = memory();
         let Backend::Memory(held) = &cache.backend else {
-            unreachable!("a memory cache")
+            panic!("a memory cache")
         };
         let now = Instant::now();
         Backend::with_memory(held, |held| {
