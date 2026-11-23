@@ -197,6 +197,19 @@ pub(crate) fn backoff(base: Duration, attempts: i32, limit: Duration) -> Option<
     Some(base.checked_mul(factor).unwrap_or(limit).min(limit))
 }
 
+/// One more pause: the count goes up, and the wait is `base` doubled for it, up to
+/// [`MAX_PAUSE`]. `None` only for a count below one, which this never makes.
+fn pause(base: Duration, pauses: &mut i32) -> Option<Duration> {
+    *pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-2
+    backoff(base, *pauses, MAX_PAUSE)
+}
+
+/// The instant of a relay's first heartbeat, `every` from `now`. `None` when that does
+/// not fit an `Instant`, which cannot be waited for (ARI-6).
+fn first_beat(now: Instant, every: Duration) -> Option<Instant> {
+    now.checked_add(every)
+}
+
 /// One more in `figure`, or an error when it does not fit.
 fn count(figure: &mut usize, name: &str) -> Result<(), sqlx::Error> {
     *figure = figure.checked_add(1).ok_or_else(|| overflow(name))?;
@@ -942,25 +955,17 @@ impl Outbox {
                 }
                 Ok(Round::Empty) => {
                     pauses = 0_i32;
-                    self.options.poll_interval
+                    Some(self.options.poll_interval)
                 }
-                Ok(Round::Stalled) => {
-                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-2
-                    let Some(wait) = backoff(self.options.poll_interval, pauses, MAX_PAUSE) else {
-                        tracing::error!(pauses, "outbox relay stopped: its pause count is invalid");
-                        return;
-                    };
-                    wait
-                }
+                Ok(Round::Stalled) => pause(self.options.poll_interval, &mut pauses),
                 Err(error) => {
                     tracing::error!(%error, "outbox relay error");
-                    pauses = pauses.checked_add(1).unwrap_or(i32::MAX); // ARI-2
-                    let Some(wait) = backoff(self.options.poll_interval, pauses, MAX_PAUSE) else {
-                        tracing::error!(pauses, "outbox relay stopped: its pause count is invalid");
-                        return;
-                    };
-                    wait
+                    pause(self.options.poll_interval, &mut pauses)
                 }
+            };
+            let Some(wait) = wait else {
+                tracing::error!(pauses, "outbox relay stopped: its pause count is invalid");
+                return;
             };
             tokio::select! {
                 () = tokio::time::sleep(wait) => {},
@@ -1008,7 +1013,7 @@ impl Outbox {
         };
         let every = self.options.heartbeat_interval;
         // ARI-6: a heartbeat that does not fit in an instant cannot be waited for.
-        let Some(first) = Instant::now().checked_add(every) else {
+        let Some(first) = first_beat(Instant::now(), every) else {
             return Err(sqlx::Error::Protocol(
                 "heartbeat_interval is too large to wait for".to_string(),
             ));
@@ -1219,5 +1224,28 @@ mod tests {
         let error = count(&mut figure, "attempts").unwrap_err();
         assert_eq!(figure, usize::MAX);
         assert!(error.to_string().contains("attempts"));
+    }
+
+    #[test]
+    fn a_pause_doubles_to_a_minute_and_a_count_past_the_type_stays_at_its_maximum() {
+        let base = Duration::from_secs(1);
+        let mut pauses = 0_i32;
+        assert_eq!(pause(base, &mut pauses), Some(base));
+        assert_eq!(pause(base, &mut pauses), Some(base * 2));
+        assert_eq!(pauses, 2_i32);
+        pauses = i32::MAX - 1_i32;
+        assert_eq!(pause(base, &mut pauses), Some(MAX_PAUSE));
+        assert_eq!(pause(base, &mut pauses), Some(MAX_PAUSE));
+        assert_eq!(pauses, i32::MAX);
+    }
+
+    #[test]
+    fn a_first_beat_that_does_not_fit_an_instant_has_no_time() {
+        let now = Instant::now();
+        assert_eq!(
+            first_beat(now, Duration::from_secs(30)),
+            Some(now + Duration::from_secs(30))
+        );
+        assert_eq!(first_beat(now, Duration::MAX), None);
     }
 }
