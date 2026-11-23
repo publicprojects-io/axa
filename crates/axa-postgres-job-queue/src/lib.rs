@@ -884,8 +884,8 @@ pub async fn enqueue_on<'e, E: PgExecutor<'e>>(executor: E, job: &NewJob) -> Res
     }
     let id = Uuid::new_v4();
     let (at, delay) = match job.when {
-        When::Now => (None, 0.0),
-        When::At(at) => (Some(at), 0.0),
+        When::Now => (None, 0.0_f64),
+        When::At(at) => (Some(at), 0.0_f64),
         When::In(delay) => (None, delay.as_secs_f64()),
     };
     let query = sqlx::query(if job.unique_key.is_some() {
@@ -1820,7 +1820,7 @@ impl Queue {
             failed: row.try_get("failed")?,
             cancelled: row.try_get("cancelled")?,
             needs_review: row.try_get("needs_review")?,
-            oldest_ready_seconds: row.try_get::<Option<f64>, _>("oldest")?.unwrap_or(0.0),
+            oldest_ready_seconds: row.try_get::<Option<f64>, _>("oldest")?.unwrap_or(0.0_f64),
         })
     }
 
@@ -2451,11 +2451,11 @@ mod tests {
             assert!(matches!(options.check(), Err(Error::OutOfRange("workers"))));
         }
         assert!(matches!(
-            refused(|o| o.stale_minutes = 0),
+            refused(|o| o.stale_minutes = 0_i32),
             Err(Error::OutOfRange("stale_minutes"))
         ));
         assert!(matches!(
-            refused(|o| o.stale_minutes = -1),
+            refused(|o| o.stale_minutes = -1_i32),
             Err(Error::OutOfRange("stale_minutes"))
         ));
         // A heartbeat over a quarter of the stale time, or under the least.
@@ -2553,11 +2553,11 @@ mod tests {
     #[test]
     fn a_retry_waits_a_jittered_backoff_or_the_delay_the_job_chose() {
         let base = Duration::from_secs(30);
-        for _ in 0..200 {
+        for _ in 0_i32..200_i32 {
             let wait = retry_wait(base, 2, None).unwrap();
             assert!(wait >= base && wait <= base * 2, "{wait:?}");
         }
-        let waits: HashSet<_> = (0..20)
+        let waits: HashSet<_> = (0_i32..20_i32)
             .map(|_| retry_wait(base, 1, None).unwrap())
             .collect();
         assert!(waits.len() > 1, "the waits are spread");
@@ -2573,7 +2573,7 @@ mod tests {
     #[test]
     fn a_jittered_wait_is_between_half_and_the_whole_and_one_that_does_not_fit_has_none() {
         let wait = Duration::from_secs(40);
-        for _ in 0..200 {
+        for _ in 0_i32..200_i32 {
             let spread = jittered(wait).unwrap();
             assert!(spread >= wait / 2 && spread <= wait, "{spread:?}");
         }

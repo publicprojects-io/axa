@@ -699,7 +699,7 @@ mod tests {
     async fn one_answer_is_reused_until_it_goes_stale() {
         let (calls, checks) = counted();
         let router = with_checks(checks.reuse_for(Duration::from_secs(5)));
-        for _ in 0..50 {
+        for _ in 0_i32..50_i32 {
             assert_eq!(answer(router.clone()).await.0, StatusCode::OK);
         }
         assert_eq!(calls.load(Ordering::SeqCst), 1);
@@ -716,7 +716,7 @@ mod tests {
             counter.fetch_add(1, Ordering::SeqCst);
             fails()
         }));
-        for _ in 0..50 {
+        for _ in 0_i32..50_i32 {
             assert_eq!(
                 answer(router.clone()).await.0,
                 StatusCode::SERVICE_UNAVAILABLE
@@ -736,7 +736,7 @@ mod tests {
                 Ok::<(), String>(())
             }
         }));
-        let callers: Vec<_> = (0..20)
+        let callers: Vec<_> = (0_i32..20_i32)
             .map(|_| tokio::spawn(answer(router.clone())))
             .collect();
         for caller in callers {

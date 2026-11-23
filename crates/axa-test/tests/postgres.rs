@@ -45,7 +45,7 @@ async fn exists(name: &str) -> bool {
 
 /// Whether `name` is gone within ten seconds.
 async fn goes(name: &str) -> bool {
-    for _ in 0..100 {
+    for _ in 0_i32..100_i32 {
         if !exists(name).await {
             return true;
         }
@@ -115,7 +115,7 @@ async fn the_database_is_dropped_by_close_or_with_the_guard_even_on_a_panic() {
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn many_tests_starting_together_share_one_template() {
     let migrator = std::sync::Arc::new(migrator("two").await);
-    let tasks: Vec<_> = (0..8)
+    let tasks: Vec<_> = (0_i32..8_i32)
         .map(|_| {
             let migrator = migrator.clone();
             tokio::spawn(async move {

@@ -607,7 +607,7 @@ fn mysql_unavailable(number: u16) -> bool {
 #[cfg(has_sqlx_sqlite)]
 fn sqlite_unavailable(code: &str) -> bool {
     code.parse::<i32>()
-        .is_ok_and(|code| matches!(code & 0xff, 5 | 6 | 8 | 13))
+        .is_ok_and(|code| matches!(code & 0x00ff_i32, 5_i32 | 6_i32 | 8_i32 | 13_i32))
 }
 
 /// Whether a sqlx error, from any database, is one that cannot serve for now: a pool
@@ -1112,7 +1112,7 @@ mod tests {
             json!({
                 "type": "about:blank",
                 "title": "Internal Server Error",
-                "status": 500,
+                "status": 500_i32,
                 "code": "internal_server_error",
             })
         );

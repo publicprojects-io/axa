@@ -477,7 +477,9 @@ mod tests {
     #[test]
     fn a_response_carries_no_total() {
         // PAG-7 and PAG-10.
-        let response = page("/things?limit=2").unwrap().respond(vec![1, 2, 3]);
+        let response = page("/things?limit=2")
+            .unwrap()
+            .respond(vec![1_i32, 2_i32, 3_i32]);
         for header in ["x-total-count", "x-limit", "x-offset"] {
             assert!(response.headers().get(header).is_none(), "{header}");
         }
@@ -487,7 +489,7 @@ mod tests {
     fn the_next_page_is_a_link_and_the_last_page_has_none() {
         // PAG-8.
         let page = page("/things?status=open&limit=2").unwrap();
-        let more = page.respond(vec![1, 2, 3]);
+        let more = page.respond(vec![1_i32, 2_i32, 3_i32]);
         assert_eq!(more.status(), StatusCode::OK);
         let link = more.headers()[LINK].to_str().unwrap();
         assert_eq!(
@@ -497,7 +499,7 @@ mod tests {
                 next_cursor(&page)
             )
         );
-        let last = page.respond(vec![1, 2]);
+        let last = page.respond(vec![1_i32, 2_i32]);
         assert!(last.headers().get(LINK).is_none());
     }
 

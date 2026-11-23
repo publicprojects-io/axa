@@ -87,7 +87,7 @@ fn settings(enable: bool, level: LogLevel, warnings: &[&str]) -> Logger {
 fn formatted(format: Format, ansi: bool) -> String {
     let captured = Captured::default();
     let subscriber = Registry::default().with(logger::init_layer(captured.clone(), &format, ansi));
-    tracing::subscriber::with_default(subscriber, || tracing::warn!(id = 7, "{MESSAGE}"));
+    tracing::subscriber::with_default(subscriber, || tracing::warn!(id = 7_i32, "{MESSAGE}"));
     captured.text()
 }
 

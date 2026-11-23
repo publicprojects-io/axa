@@ -528,7 +528,7 @@ async fn a_relay_killed_mid_batch_loses_nothing() {
         .await
         .unwrap();
     let mut events = Vec::new();
-    for number in 0..20 {
+    for number in 0_i32..20_i32 {
         events.push(add(&pool, &number.to_string()).await);
     }
     let broker = async |pool: &PgPool| -> Vec<Uuid> {
@@ -621,7 +621,7 @@ async fn several_relays_publish_each_event_once() {
     let (outbox, pool) = fresh(options.clone()).await;
     let mut events = HashSet::new();
     let mut transaction = pool.begin().await.unwrap();
-    for number in 0..400 {
+    for number in 0_i32..400_i32 {
         let event = Event::new("person", "updated", number.to_string(), json!({}));
         write(&mut transaction, &event).await.unwrap();
         events.insert(event.event_id);
@@ -630,7 +630,7 @@ async fn several_relays_publish_each_event_once() {
 
     let broker = Broker::default();
     let mut relays = Vec::new();
-    for _ in 0..8 {
+    for _ in 0_i32..8_i32 {
         // Separate connections, as separate processes would have.
         let relay = Outbox::connect_existing(&uri(), options.clone())
             .await
@@ -670,11 +670,11 @@ async fn two_claims_at_once_share_nothing() {
         ..quick()
     };
     let (_outbox, pool) = fresh(options.clone()).await;
-    for number in 0..40 {
+    for number in 0_i32..40_i32 {
         add(&pool, &number.to_string()).await;
     }
     let mut claims = Vec::new();
-    for _ in 0..8 {
+    for _ in 0_i32..8_i32 {
         let outbox = Outbox::connect_existing(&uri(), options.clone())
             .await
             .unwrap();
@@ -703,7 +703,7 @@ async fn a_claim_not_heard_from_comes_back() {
     let again = take(&outbox).await;
     assert_eq!(again.len(), 1);
     assert_eq!(again[0].event_id, event.event_id);
-    assert_eq!(again[0].attempts, 2);
+    assert_eq!(again[0].attempts, 2_i32);
     assert_eq!(
         outcomes(&pool, &event).await,
         ["claimed", "lost", "claimed"]
@@ -775,7 +775,7 @@ async fn a_batch_of_quick_publishes_reports_in_too() {
     .await;
     // Each publish is shorter than the heartbeat, and the batch is much longer.
     let mut events = Vec::new();
-    for number in 0..30 {
+    for number in 0_i32..30_i32 {
         events.push(add(&pool, &number.to_string()).await);
     }
     // The last waits for the test, so that the batch is still held when it looks.
@@ -959,7 +959,7 @@ async fn a_poison_event_does_not_hold_up_other_keys() {
     .await;
     let poison = add(&pool, "poison").await;
     let mut others = Vec::new();
-    for number in 0..10 {
+    for number in 0_i32..10_i32 {
         others.push(add(&pool, &number.to_string()).await);
     }
     let broker = Broker::default();
@@ -1080,7 +1080,7 @@ async fn a_failed_event_can_be_released_by_a_named_person() {
     assert_eq!(reason.as_deref(), Some("cause_fixed"));
     let again = take(&outbox).await;
     assert_eq!(again.len(), 1);
-    assert_eq!(again[0].attempts, 1, "attempts are cleared");
+    assert_eq!(again[0].attempts, 1_i32, "attempts are cleared");
 }
 
 // OBX-8: order.
@@ -1095,7 +1095,7 @@ async fn a_key_goes_out_in_order_across_relays() {
     };
     let (outbox, pool) = fresh(options.clone()).await;
     let mut transaction = pool.begin().await.unwrap();
-    for _ in 0..40 {
+    for _ in 0_i32..40_i32 {
         for key in ["a", "b", "c", "d", "e"] {
             let event = Event::new("person", "updated", key, json!({}));
             write(&mut transaction, &event).await.unwrap();
@@ -1105,7 +1105,7 @@ async fn a_key_goes_out_in_order_across_relays() {
 
     let broker = Broker::default();
     let mut relays = Vec::new();
-    for _ in 0..4 {
+    for _ in 0_i32..4_i32 {
         let relay = Outbox::connect_existing(&uri(), options.clone())
             .await
             .unwrap();
@@ -1239,7 +1239,7 @@ async fn an_outage_charges_nothing_and_stops_the_round() {
     })
     .await;
     let mut events = Vec::new();
-    for number in 0..50 {
+    for number in 0_i32..50_i32 {
         events.push(add(&pool, &number.to_string()).await);
     }
     let tries = Arc::new(AtomicUsize::new(0));
@@ -1278,7 +1278,7 @@ async fn an_outage_charges_nothing_and_stops_the_round() {
 async fn the_events_go_out_once_the_broker_is_back() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
-    for number in 0..5 {
+    for number in 0_i32..5_i32 {
         add(&pool, &number.to_string()).await;
     }
     let up = Arc::new(AtomicUsize::new(0));
@@ -1315,7 +1315,7 @@ async fn a_refusal_called_an_outage_holds_up_only_its_key() {
     let poison = add(&pool, "poison").await;
     let behind = add(&pool, "poison").await;
     let mut others = Vec::new();
-    for number in 0..10 {
+    for number in 0_i32..10_i32 {
         others.push(add(&pool, &number.to_string()).await);
     }
     let broker = Broker::default();
@@ -1368,7 +1368,7 @@ async fn a_retry_waits_for_its_backoff() {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert!((590.0..=600.0).contains(&wait), "{wait}");
+    assert!((590.0_f64..=600.0_f64).contains(&wait), "{wait}");
 }
 
 // OBX-32: a reason is a code.
@@ -1481,9 +1481,9 @@ async fn relays_booting_together_all_connect() {
     let _table = TABLE.lock().await;
     let pool = admin().await;
     // Setup only races when the tables are really missing.
-    for _ in 0..5 {
+    for _ in 0_i32..5_i32 {
         sqlx::query(TABLES).execute(&pool).await.unwrap();
-        let boots: Vec<_> = (0..8)
+        let boots: Vec<_> = (0_i32..8_i32)
             .map(|_| {
                 tokio::spawn(async move { Outbox::connect(&uri(), quick()).await.map(|_| ()) })
             })
@@ -2141,7 +2141,7 @@ async fn a_hold_charges_nothing() {
     .await;
     let event = add(&pool, "1").await;
     let hold = async |_: &Claimed, _: &mut PgConnection| Ok(Decision::Hold);
-    for _ in 0..5 {
+    for _ in 0_i32..5_i32 {
         assert_eq!(outbox.claim(hold, audit).await.unwrap().len(), 0);
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
@@ -2153,7 +2153,7 @@ async fn a_hold_charges_nothing() {
     // Once it goes, it is on its first attempt, with no backoff grown.
     let batch = take(&outbox).await;
     assert_eq!(batch.len(), 1);
-    assert_eq!(batch[0].attempts, 1);
+    assert_eq!(batch[0].attempts, 1_i32);
     assert_eq!(outbox.stats().await.unwrap().held, 0);
 }
 
@@ -2387,7 +2387,7 @@ async fn nothing_is_swept() {
     let relay = Relay::start(&outbox, taking(&broker));
     drained(&outbox).await;
     // Many empty rounds later, the delivered event and its payload are all still there.
-    for _ in 0..20 {
+    for _ in 0_i32..20_i32 {
         take(&outbox).await;
     }
     relay.stop().await;
@@ -2965,7 +2965,12 @@ async fn the_old_table_imports_with_its_states() {
         .unwrap();
     sqlx::query(OLD_TABLE).execute(&pool).await.unwrap();
     let mut old = HashMap::new();
-    for (status, attempts) in [("sent", 1), ("failed", 10), ("pending", 2), ("claimed", 1)] {
+    for (status, attempts) in [
+        ("sent", 1_i32),
+        ("failed", 10_i32),
+        ("pending", 2_i32),
+        ("claimed", 1_i32),
+    ] {
         let event_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO axa_outbox (event_id, topic, kind, key, payload, status, attempts,
@@ -2982,7 +2987,7 @@ async fn the_old_table_imports_with_its_states() {
         old.insert(status, event_id);
     }
     // Safe to run twice.
-    for _ in 0..2 {
+    for _ in 0_i32..2_i32 {
         let mut transaction = pool.begin().await.unwrap();
         for statement in IMPORT_STATEMENTS {
             sqlx::query(statement)
@@ -3112,7 +3117,7 @@ async fn a_publish_in_progress_finishes_and_the_rest_go_back() {
     let _table = TABLE.lock().await;
     let (outbox, pool) = fresh(quick()).await;
     let mut events = Vec::new();
-    for number in 0..5 {
+    for number in 0_i32..5_i32 {
         events.push(add(&pool, &number.to_string()).await);
     }
     let started = Arc::new(tokio::sync::Notify::new());
@@ -3218,7 +3223,7 @@ async fn a_service_can_drive_the_outbox_from_its_own_loop() {
     })
     .await;
     let mut events = Vec::new();
-    for number in 0..4 {
+    for number in 0_i32..4_i32 {
         events.push(add(&pool, &number.to_string()).await);
     }
 

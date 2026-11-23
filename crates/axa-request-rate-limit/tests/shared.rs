@@ -80,7 +80,7 @@ async fn a_window_ends(store: Store) {
         SharedLimiter::new(store, "short", n(1), n(1), &SECRET, WhenDown::Refuse).unwrap();
     assert!(limiter.check("k").await.unwrap().allowed);
     let mut refused = false;
-    for _ in 0..5 {
+    for _ in 0_i32..5_i32 {
         if !limiter.check("k").await.unwrap().allowed {
             refused = true;
             break;

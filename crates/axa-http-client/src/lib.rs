@@ -898,7 +898,7 @@ mod properties {
         fn ipv4_inside_ipv6_is_judged_as_the_ipv4_address(address in v4()) {
             let want = expected(address);
             let [high, low] = [
-                u16::try_from(u32::from(address) >> 16).unwrap(),
+                u16::try_from(u32::from(address) >> 16_i32).unwrap(),
                 u16::try_from(u32::from(address) & 0xffff).unwrap(),
             ];
             let mapped = IpAddr::V6(address.to_ipv6_mapped());

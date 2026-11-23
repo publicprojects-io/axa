@@ -101,7 +101,7 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
     let bad = idp.token(|c| drop(c.as_object_mut().unwrap().remove("aud")));
 
     // The realm's keys load in the background, so wait for a token to pass.
-    for _ in 0..200 {
+    for _ in 0_i32..200_i32 {
         if call(&app, "GET", Some(&good)).await == StatusCode::OK {
             break;
         }

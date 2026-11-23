@@ -78,7 +78,7 @@ async fn every_connection_has_foreign_keys_wal_and_a_busy_timeout() {
     ping(&pool).await.unwrap();
     // Hold several at once, so that each is a different connection.
     let mut held = Vec::new();
-    for _ in 0..3 {
+    for _ in 0_i32..3_i32 {
         let mut conn = pool.acquire().await.unwrap();
         let foreign_keys: i64 = sqlx::query_scalar("PRAGMA foreign_keys")
             .fetch_one(&mut *conn)

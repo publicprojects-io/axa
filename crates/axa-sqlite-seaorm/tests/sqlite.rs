@@ -54,7 +54,7 @@ async fn column(db: &Pool, table: &str, name: &str) -> Option<(String, bool)> {
         .unwrap()?;
     Some((
         row.try_get("", "type").unwrap(),
-        row.try_get::<i32>("", "notnull").unwrap() == 1,
+        row.try_get::<i32>("", "notnull").unwrap() == 1_i32,
     ))
 }
 
@@ -88,8 +88,8 @@ async fn every_connection_has_foreign_keys_wal_and_a_busy_timeout() {
         db.begin().await.unwrap(),
     ];
     for txn in &txns {
-        assert_eq!(scalar::<i32>(txn, "PRAGMA foreign_keys").await, 1);
-        assert_eq!(scalar::<i32>(txn, "PRAGMA busy_timeout").await, 5_000);
+        assert_eq!(scalar::<i32>(txn, "PRAGMA foreign_keys").await, 1_i32);
+        assert_eq!(scalar::<i32>(txn, "PRAGMA busy_timeout").await, 5_000_i32);
         assert_eq!(scalar::<String>(txn, "PRAGMA journal_mode").await, "wal");
     }
 }
@@ -102,8 +102,11 @@ async fn an_in_memory_database_is_shared_by_the_pools_connections() {
         .unwrap();
     let txns = [db.begin().await.unwrap(), db.begin().await.unwrap()];
     for txn in &txns {
-        assert_eq!(scalar::<i32>(txn, "SELECT count(*) FROM things").await, 0);
-        assert_eq!(scalar::<i32>(txn, "PRAGMA foreign_keys").await, 1);
+        assert_eq!(
+            scalar::<i32>(txn, "SELECT count(*) FROM things").await,
+            0_i32
+        );
+        assert_eq!(scalar::<i32>(txn, "PRAGMA foreign_keys").await, 1_i32);
         assert_eq!(scalar::<String>(txn, "PRAGMA journal_mode").await, "memory");
     }
 }
@@ -156,11 +159,11 @@ async fn schema_helpers_against_sqlite() {
              FROM axa_items WHERE name = 'stamped'",
         )
         .await,
-        1
+        1_i32
     );
     assert_eq!(
         scalar::<i32>(&db, "SELECT active FROM axa_items WHERE name = 'stamped'").await,
-        1
+        1_i32
     );
     db.execute_unprepared("DELETE FROM axa_items")
         .await
@@ -358,7 +361,7 @@ mod shared {
                 .await
                 .is_err()
         );
-        assert_eq!(count(&db, "seaorm_people").await, 1);
+        assert_eq!(count(&db, "seaorm_people").await, 1_i32);
     }
 
     #[tokio::test]
@@ -370,16 +373,19 @@ mod shared {
 
         // The parent alone is refused, because a note still refers to it.
         assert!(truncate(&db, &["seaorm_people"]).await.is_err());
-        assert_eq!(count(&db, "seaorm_people").await, 1);
+        assert_eq!(count(&db, "seaorm_people").await, 1_i32);
 
         // Parent first is fine when the child is emptied too.
         truncate(&db, &["seaorm_people", "seaorm_notes"])
             .await
             .unwrap();
-        assert_eq!(count(&db, "seaorm_people").await, 0);
-        assert_eq!(count(&db, "seaorm_notes").await, 0);
+        assert_eq!(count(&db, "seaorm_people").await, 0_i32);
+        assert_eq!(count(&db, "seaorm_notes").await, 0_i32);
         db.execute_unprepared(INSERT_PERSON).await.unwrap();
-        assert_eq!(scalar::<i32>(&db, "SELECT id FROM seaorm_people").await, 1);
+        assert_eq!(
+            scalar::<i32>(&db, "SELECT id FROM seaorm_people").await,
+            1_i32
+        );
     }
 
     #[tokio::test]
@@ -392,14 +398,14 @@ mod shared {
             .await
             .unwrap();
         dangerously_recreate::<Migrator>(&db).await.unwrap();
-        assert_eq!(count(&db, "seaorm_people").await, 0);
+        assert_eq!(count(&db, "seaorm_people").await, 0_i32);
         assert_eq!(
             scalar::<i32>(
                 &db,
                 "SELECT count(*) FROM sqlite_schema WHERE name = 'stray'"
             )
             .await,
-            0
+            0_i32
         );
         db.execute_unprepared(INSERT_PERSON).await.unwrap();
         assert_eq!(

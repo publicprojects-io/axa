@@ -818,14 +818,14 @@ mod tests {
         let cache = memory();
         let acme = cache.for_tenant("acme").unwrap();
         let globex = cache.for_tenant("globex").unwrap();
-        acme.set("report", &1).await.unwrap();
-        globex.set("report", &2).await.unwrap();
-        cache.set("report", &3).await.unwrap();
-        assert_eq!(acme.get::<i32>("report").await.unwrap(), Some(1));
-        assert_eq!(globex.get::<i32>("report").await.unwrap(), Some(2));
-        assert_eq!(cache.get::<i32>("report").await.unwrap(), Some(3));
+        acme.set("report", &1_i32).await.unwrap();
+        globex.set("report", &2_i32).await.unwrap();
+        cache.set("report", &3_i32).await.unwrap();
+        assert_eq!(acme.get::<i32>("report").await.unwrap(), Some(1_i32));
+        assert_eq!(globex.get::<i32>("report").await.unwrap(), Some(2_i32));
+        assert_eq!(cache.get::<i32>("report").await.unwrap(), Some(3_i32));
         assert!(acme.delete("report").await.unwrap());
-        assert_eq!(globex.get::<i32>("report").await.unwrap(), Some(2));
+        assert_eq!(globex.get::<i32>("report").await.unwrap(), Some(2_i32));
         assert_eq!(acme.tenant(), Some("acme"));
         assert_eq!(cache.tenant(), None);
     }

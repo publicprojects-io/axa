@@ -146,7 +146,7 @@ fn tenant_of(parts: &Parts) -> Result<Tenant, TenantRejection> {
         // caller's id, and the attribute's values are not written, as they came from
         // the token.
         tracing::warn!(
-            status = 403,
+            status = 403_i32,
             subject = allowed.claims.sub.as_str(),
             reason = "no_tenant",
             "auth_refused",
@@ -224,7 +224,7 @@ pub async fn refuse_suspended(
             .get::<Allowed>()
             .map(|allowed| allowed.claims.sub.clone());
         tracing::warn!(
-            status = 403,
+            status = 403_i32,
             subject = subject.as_deref(),
             tenant = tenant.as_str(),
             reason = "tenant_suspended",

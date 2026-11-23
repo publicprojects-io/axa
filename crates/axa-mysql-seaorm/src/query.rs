@@ -161,10 +161,10 @@ mod tests {
 
     #[test]
     fn ordering_comparisons_use_their_operators() {
-        assert!(sql(&condition().gt(Column::Age, 1)).contains("`age` > 1"));
-        assert!(sql(&condition().gte(Column::Age, 1)).contains("`age` >= 1"));
-        assert!(sql(&condition().lt(Column::Age, 1)).contains("`age` < 1"));
-        assert!(sql(&condition().lte(Column::Age, 1)).contains("`age` <= 1"));
+        assert!(sql(&condition().gt(Column::Age, 1_i32)).contains("`age` > 1"));
+        assert!(sql(&condition().gte(Column::Age, 1_i32)).contains("`age` >= 1"));
+        assert!(sql(&condition().lt(Column::Age, 1_i32)).contains("`age` < 1"));
+        assert!(sql(&condition().lte(Column::Age, 1_i32)).contains("`age` <= 1"));
     }
 
     #[test]
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn membership_lists_every_value() {
-        assert!(sql(&condition().is_in(Column::Age, [1, 2])).contains("IN (1, 2)"));
+        assert!(sql(&condition().is_in(Column::Age, [1_i32, 2_i32])).contains("IN (1, 2)"));
     }
 
     #[test]
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn several_conditions_must_all_hold() {
-        let text = sql(&condition().eq(Column::Email, "a").gt(Column::Age, 1));
+        let text = sql(&condition().eq(Column::Email, "a").gt(Column::Age, 1_i32));
         assert!(text.contains(" AND "), "{text}");
     }
 

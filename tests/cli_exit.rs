@@ -58,18 +58,18 @@ fn text(bytes: &[u8]) -> String {
 fn parent() {
     // A service's own name and version answer `--version`, and the process exits 0.
     let output = child("parse", &["--version"], "development");
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.status.code(), Some(0_i32));
     assert!(text(&output.stdout).contains("svc 9.9.9"));
 
     let output = child("parse", &["--help"], "development");
-    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(output.status.code(), Some(0_i32));
     assert!(text(&output.stdout).contains("A test service."));
 
     // A bad argument exits as clap does, with 2.
     let output = child("parse", &["--no-such-flag"], "development");
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(2_i32));
     let output = child("trait", &["--no-such-flag"], "development");
-    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.status.code(), Some(2_i32));
 
     // A command that destroys data is refused, with 1 and before anything runs, in
     // production even when confirmed, and anywhere unconfirmed.
@@ -82,7 +82,7 @@ fn parent() {
             let output = run(role, &["db", "reset"], app_env, confirmed);
             assert_eq!(
                 output.status.code(),
-                Some(1),
+                Some(1_i32),
                 "{role} {app_env} {confirmed:?}"
             );
             assert!(text(&output.stderr).contains("refused"), "{role}");
@@ -97,7 +97,11 @@ fn parent() {
             (["db", "status"], "production", None),
         ] {
             let output = run(role, &args, app_env, confirmed);
-            assert_eq!(output.status.code(), Some(0), "{role} {args:?} {app_env}");
+            assert_eq!(
+                output.status.code(),
+                Some(0_i32),
+                "{role} {args:?} {app_env}"
+            );
             assert!(text(&output.stdout).contains("read"), "{role}");
         }
     }

@@ -1864,7 +1864,7 @@ mod tests {
             ..config
         };
         let client = tokio::spawn(async move {
-            for _ in 0..200 {
+            for _ in 0_i32..200_i32 {
                 if let Ok(mut stream) = tokio::net::TcpStream::connect(address).await {
                     stream
                         .write_all(b"GET / HTTP/1.1\r\nhost: x\r\n\r\n")
@@ -1921,7 +1921,7 @@ mod tests {
             .await
         });
         let ask = |port, path| crate::cli::probe("127.0.0.1", port, path, Duration::from_secs(2));
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             if ask(main, "/api/things").await.is_ok() {
                 break;
             }
@@ -1973,7 +1973,7 @@ mod tests {
             .await
         });
         let ask = |port, path| crate::cli::probe("127.0.0.1", port, path, Duration::from_secs(2));
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             if ask(main, "/api/things").await.is_ok() {
                 break;
             }
@@ -2022,7 +2022,7 @@ mod tests {
             .await
         });
         let ask = |port, path| crate::cli::probe("127.0.0.1", port, path, Duration::from_secs(2));
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             if ask(internal, "/_health/live").await.is_ok() {
                 break;
             }

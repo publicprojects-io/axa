@@ -397,7 +397,7 @@ mod tests {
 
     /// Wait up to two seconds for `done` to hold.
     async fn eventually(done: impl Fn() -> bool) -> bool {
-        for _ in 0..200 {
+        for _ in 0_i32..200_i32 {
             if done() {
                 return true;
             }

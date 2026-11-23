@@ -937,11 +937,11 @@ impl Outbox {
         while !*shutdown.borrow() {
             let wait = match self.round(&decide, &publish, &record, &shutdown).await {
                 Ok(Round::Worked) => {
-                    pauses = 0;
+                    pauses = 0_i32;
                     continue;
                 }
                 Ok(Round::Empty) => {
-                    pauses = 0;
+                    pauses = 0_i32;
                     self.options.poll_interval
                 }
                 Ok(Round::Stalled) => {

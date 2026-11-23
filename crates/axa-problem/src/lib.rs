@@ -134,7 +134,7 @@ mod tests {
         let value = serde_json::to_value(Problem::new(StatusCode::NOT_FOUND)).unwrap();
         assert_eq!(
             value,
-            json!({ "type": "about:blank", "title": "Not Found", "status": 404 })
+            json!({ "type": "about:blank", "title": "Not Found", "status": 404_i32 })
         );
     }
 
@@ -145,29 +145,29 @@ mod tests {
             .with_title("Duplicate record")
             .with_detail("Two records match.")
             .with_instance("/api/items/1")
-            .with_extension("candidates", json!([1, 2]));
+            .with_extension("candidates", json!([1_i32, 2_i32]));
         let value = serde_json::to_value(problem).unwrap();
         assert_eq!(value["type"], "https://example.org/problems/duplicate");
         assert_eq!(value["title"], "Duplicate record");
         assert_eq!(value["detail"], "Two records match.");
         assert_eq!(value["instance"], "/api/items/1");
-        assert_eq!(value["candidates"], json!([1, 2]));
+        assert_eq!(value["candidates"], json!([1_i32, 2_i32]));
     }
 
     #[test]
     fn reserved_names_cannot_be_overwritten_by_extensions() {
-        let problem = Problem::new(StatusCode::NOT_FOUND).with_extension("status", json!(200));
+        let problem = Problem::new(StatusCode::NOT_FOUND).with_extension("status", json!(200_i32));
         let value = serde_json::to_value(problem).unwrap();
-        assert_eq!(value["status"], 404);
+        assert_eq!(value["status"], 404_i32);
     }
 
     #[test]
     fn unknown_members_round_trip_as_extensions() {
         let problem: Problem = serde_json::from_value(json!({
-            "type": "about:blank", "title": "x", "status": 400, "balance": 30
+            "type": "about:blank", "title": "x", "status": 400_i32, "balance": 30_i32
         }))
         .unwrap();
-        assert_eq!(problem.extensions["balance"], 30);
+        assert_eq!(problem.extensions["balance"], 30_i32);
     }
 
     #[test]
@@ -186,6 +186,6 @@ mod tests {
             .await
             .unwrap();
         let value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(value["status"], 418);
+        assert_eq!(value["status"], 418_i32);
     }
 }

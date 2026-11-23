@@ -78,7 +78,7 @@ fn start(queue: Queue) -> (Arc<Queue>, watch::Sender<bool>, tokio::task::JoinHan
 }
 
 async fn until(mut done: impl AsyncFnMut() -> bool) {
-    for _ in 0..400 {
+    for _ in 0_i32..400_i32 {
         if done().await {
             return;
         }
@@ -167,7 +167,7 @@ async fn a_process_runs_no_more_jobs_at_once_than_its_loops() {
     .await;
     let gauge = Gauge::default();
     queue.handle("Slow", gauge.handler(60));
-    for _ in 0..24 {
+    for _ in 0_i32..24_i32 {
         queue
             .enqueue("Slow", serde_json::Value::Null)
             .await
@@ -193,7 +193,7 @@ async fn a_limit_holds_one_job_type_and_the_rest_keep_the_loops() {
     queue.handle("Limited", limited.handler(50));
     queue.handle("Free", free.handler(50));
     queue.limit("Limited", 1);
-    for _ in 0..8 {
+    for _ in 0_i32..8_i32 {
         queue
             .enqueue("Limited", serde_json::Value::Null)
             .await
@@ -231,7 +231,7 @@ async fn two_processes_run_each_job_once() {
             }
         });
     }
-    for n in 0..60 {
+    for n in 0_i32..60_i32 {
         first
             .enqueue("Once", serde_json::json!({ "n": n }))
             .await
@@ -348,7 +348,7 @@ async fn a_higher_priority_runs_first() {
             }
         });
     }
-    for (n, priority) in [(1, 0), (2, 5), (3, -1), (4, 5)] {
+    for (n, priority) in [(1_i32, 0), (2_i32, 5), (3_i32, -1), (4_i32, 5)] {
         queue
             .enqueue_job(&NewJob::new("Job", serde_json::json!(n)).priority(priority))
             .await
@@ -384,7 +384,7 @@ async fn a_job_status_follows_it_and_leaves_out_its_arguments() {
     let info = queue.job(ok).await.unwrap().unwrap();
     assert_eq!(
         (info.state, info.attempts, info.name.as_str()),
-        (JobState::Queued, 0, "Gated")
+        (JobState::Queued, 0_i32, "Gated")
     );
     assert!(!format!("{info:?}").contains("fail"));
     let queue = Arc::new(queue);
@@ -395,7 +395,7 @@ async fn a_job_status_follows_it_and_leaves_out_its_arguments() {
     until(async || state(&queue, ok).await == JobState::Running).await;
     let info = queue.job(ok).await.unwrap().unwrap();
     assert!(info.started_at.is_some());
-    assert_eq!(info.attempts, 1);
+    assert_eq!(info.attempts, 1_i32);
     gate.notify_one();
     assert!(run.await.unwrap());
     assert_eq!(state(&queue, ok).await, JobState::Completed);
@@ -470,7 +470,7 @@ async fn cancelling_while_loops_claim_runs_each_job_or_cancels_it_never_both() {
         });
     }
     let mut ids = Vec::new();
-    for n in 0..80 {
+    for n in 0_i32..80_i32 {
         let id = Uuid::new_v4().to_string();
         let job = queue.enqueue("Job", serde_json::json!(id)).await.unwrap();
         ids.push((n, id, job));
@@ -519,7 +519,10 @@ async fn a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_
     assert!(retry(&queue, id).await);
     assert!(!retry(&queue, id).await, "it is queued, not failed");
     let info = queue.job(id).await.unwrap().unwrap();
-    assert_eq!((info.state, info.max_attempts), (JobState::Queued, Some(2)));
+    assert_eq!(
+        (info.state, info.max_attempts),
+        (JobState::Queued, Some(2_i32))
+    );
 
     // A run lost at attempt one still holds its old claim, and its result is
     // refused.
@@ -536,14 +539,14 @@ async fn a_failed_job_retried_gets_one_more_try_and_a_lost_run_cannot_overwrite_
     fail.store(false, Ordering::SeqCst);
     assert!(queue.run_one().await.unwrap());
     let info = queue.job(id).await.unwrap().unwrap();
-    assert_eq!((info.state, info.attempts), (JobState::Completed, 2));
+    assert_eq!((info.state, info.attempts), (JobState::Completed, 2_i32));
 }
 
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
 async fn a_batch_is_queued_whole_or_not_at_all() {
     let queue = fresh(quick()).await;
-    let jobs: Vec<_> = (0..3)
+    let jobs: Vec<_> = (0_i32..3_i32)
         .map(|n| NewJob::new("Job", serde_json::json!(n)))
         .collect();
     let ids = queue.enqueue_all(&jobs).await.unwrap();
@@ -634,7 +637,7 @@ async fn due(pool: &PgPool, name: &str) -> (f64, f64) {
 async fn replicas_ticking_together_queue_each_due_time_once() {
     let mut replicas = Vec::new();
     replicas.push(fresh(quick()).await);
-    for _ in 0..5 {
+    for _ in 0_i32..5_i32 {
         replicas.push(replica(quick()).await);
     }
     for queue in &mut replicas {
@@ -703,11 +706,11 @@ async fn missed_times_queue_one_job_and_the_schedule_keeps_its_place() {
     assert_eq!(jobs_named(queue.pool(), "Tick").await, 2);
     let (since, ahead) = due(queue.pool(), "missed").await;
     assert!(
-        ahead > 0.0 && ahead <= 10.0,
+        ahead > 0.0_f64 && ahead <= 10.0_f64,
         "the next time is ahead: {ahead}"
     );
     assert!(
-        ((since / 10.0) - (since / 10.0).round()).abs() < 0.01,
+        ((since / 10.0) - (since / 10.0).round()).abs() < 0.01_f64,
         "still on the grid of the first time: {since}"
     );
 }
@@ -734,7 +737,7 @@ async fn a_due_time_is_skipped_while_the_last_job_has_not_finished() {
             "skipped while {state}"
         );
         let (_, ahead) = due(queue.pool(), "busy").await;
-        assert!(ahead > 0.0, "the skipped time is passed, not kept");
+        assert!(ahead > 0.0_f64, "the skipped time is passed, not kept");
     }
     for state in ["completed", "failed", "cancelled", "needs_review"] {
         sqlx::query("UPDATE axa_queue SET status = $1")
@@ -770,7 +773,7 @@ async fn due_times_count_from_the_first_and_do_not_drift() {
     run.await.unwrap();
     let (since, _) = due(queue.pool(), "steady").await;
     assert!(
-        (since - since.round()).abs() < 0.01,
+        (since - since.round()).abs() < 0.01_f64,
         "whole seconds from the first: {since}"
     );
     let times: Vec<f64> = sqlx::query_scalar(
@@ -785,7 +788,10 @@ async fn due_times_count_from_the_first_and_do_not_drift() {
     // come and before the next one, however late a busy machine wakes the poller.
     for (n, at) in times.iter().enumerate() {
         let n = f64::from(u32::try_from(n).unwrap());
-        assert!(*at >= n && *at < n + 1.0, "job {n} queued {at} seconds in");
+        assert!(
+            *at >= n && *at < n + 1.0_f64,
+            "job {n} queued {at} seconds in"
+        );
     }
 }
 
@@ -1025,7 +1031,7 @@ async fn a_job_has_no_time_limit_unless_it_is_given_one() {
         Ok::<(), String>(())
     });
     let unlimited = queue
-        .enqueue("Sleep", serde_json::json!(1_500))
+        .enqueue("Sleep", serde_json::json!(1_500_i32))
         .await
         .unwrap();
     assert!(queue.run_one().await.unwrap());
@@ -1034,7 +1040,7 @@ async fn a_job_has_no_time_limit_unless_it_is_given_one() {
 
     let limited = queue
         .enqueue_job(
-            &NewJob::new("Sleep", serde_json::json!(5_000)).timeout(Duration::from_millis(200)),
+            &NewJob::new("Sleep", serde_json::json!(5_000_i32)).timeout(Duration::from_millis(200)),
         )
         .await
         .unwrap();
@@ -1192,9 +1198,9 @@ async fn each_act_is_kept_with_who_and_why_and_a_refused_one_is_not() {
     );
 
     for (id, kind, name, attempts) in [
-        (queued, ActKind::Cancelled, "Nobody", 0),
-        (failed, ActKind::Retried, "Fails", 1),
-        (review, ActKind::Released, "Nobody", 0),
+        (queued, ActKind::Cancelled, "Nobody", 0_i32),
+        (failed, ActKind::Retried, "Fails", 1_i32),
+        (review, ActKind::Released, "Nobody", 0_i32),
     ] {
         let acts = queue.acts(id).await.unwrap();
         assert_eq!(acts.len(), 1, "{kind:?}");
@@ -1426,11 +1432,11 @@ async fn a_job_carries_its_tenant_to_a_handler_that_takes_one() {
     });
     queue.handle("Plain", |_args| async { Ok::<(), String>(()) });
 
-    let job = NewJob::new("Tenanted", serde_json::json!({ "id": 7 })).tenant("acme");
+    let job = NewJob::new("Tenanted", serde_json::json!({ "id": 7_i32 })).tenant("acme");
     assert_eq!(job.tenant_id(), Some("acme"));
     let acme = queue.enqueue_job(&job).await.unwrap();
     let none = queue
-        .enqueue("Tenanted", serde_json::json!({ "id": 8 }))
+        .enqueue("Tenanted", serde_json::json!({ "id": 8_i32 }))
         .await
         .unwrap();
     let plain = queue
@@ -1449,8 +1455,8 @@ async fn a_job_carries_its_tenant_to_a_handler_that_takes_one() {
     assert_eq!(
         seen,
         vec![
-            (Some("acme".to_string()), serde_json::json!({ "id": 7 })),
-            (None, serde_json::json!({ "id": 8 })),
+            (Some("acme".to_string()), serde_json::json!({ "id": 7_i32 })),
+            (None, serde_json::json!({ "id": 8_i32 })),
         ]
     );
     // A handler that takes no tenant never runs a tenant's job.
@@ -1534,7 +1540,7 @@ async fn a_job_with_a_key_is_queued_once_while_it_is_queued_or_running() {
         .unwrap();
     assert_eq!(
         args,
-        serde_json::json!({ "id": 1 }),
+        serde_json::json!({ "id": 1_i32 }),
         "the first job's arguments stand"
     );
 
@@ -1743,7 +1749,11 @@ async fn a_cron_schedule_queues_once_for_missed_times_and_skips_while_busy() {
         due > now - SignedDuration::from_secs(1),
         "the next is the pattern's after now"
     );
-    assert_eq!(due.subsec_microsecond(), 0, "on the pattern's whole second");
+    assert_eq!(
+        due.subsec_microsecond(),
+        0_i32,
+        "on the pattern's whole second"
+    );
     // Due again while its job is still queued: skipped, and moved on.
     set_due(queue.pool(), "secondly", 1.0).await;
     assert_eq!(queue.tick_schedules().await.unwrap(), 0);
@@ -1785,7 +1795,7 @@ async fn a_changed_pattern_takes_its_next_time_from_the_new_one() {
 async fn replicas_ticking_a_cron_schedule_queue_each_due_time_once() {
     let mut replicas = Vec::new();
     replicas.push(fresh(quick()).await);
-    for _ in 0..5 {
+    for _ in 0_i32..5_i32 {
         replicas.push(replica(quick()).await);
     }
     for queue in &mut replicas {
@@ -1837,7 +1847,7 @@ async fn a_job_that_asks_for_a_delay_is_tried_again_after_it() {
                 .unwrap(),
         )
     });
-    let job = NewJob::new("Busy", serde_json::Value::Null).max_attempts(Some(3));
+    let job = NewJob::new("Busy", serde_json::Value::Null).max_attempts(Some(3_i32));
     let id = queue.enqueue_job(&job).await.unwrap();
     assert!(queue.run_one().await.unwrap());
     let info = queue.job(id).await.unwrap().unwrap();
@@ -1909,12 +1919,12 @@ async fn a_job_that_panics_fails_and_its_loop_carries_on() {
     assert_eq!(queue.handled(), HashSet::from(["Panics", "Fine"]));
     queue.ping().await.unwrap();
     let panics = queue
-        .enqueue_limited("Panics", serde_json::Value::Null, Some(1))
+        .enqueue_limited("Panics", serde_json::Value::Null, Some(1_i32))
         .await
         .unwrap();
     assert_eq!(
         queue.job(panics).await.unwrap().unwrap().max_attempts,
-        Some(1)
+        Some(1_i32)
     );
     queue
         .enqueue("Fine", serde_json::Value::Null)
@@ -1923,7 +1933,7 @@ async fn a_job_that_panics_fails_and_its_loop_carries_on() {
     let (queue, stop, run) = start(queue);
     until(async || gauge.done() == 1 && state(&queue, panics).await == JobState::Failed).await;
     let failed = queue.job(panics).await.unwrap().unwrap();
-    assert_eq!(failed.attempts, 1, "its own limit of one try");
+    assert_eq!(failed.attempts, 1_i32, "its own limit of one try");
     let error = failed.error.unwrap();
     assert!(error.contains("the job panicked"), "{error}");
     assert!(!error.contains("own text"), "{error}");

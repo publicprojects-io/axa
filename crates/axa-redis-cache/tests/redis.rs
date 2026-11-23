@@ -267,7 +267,7 @@ async fn every_call_is_bounded_while_the_client_reconnects() {
     proxy.cut();
     // The first call finds the connection gone. Later ones meet the client's
     // retries, which run for seconds without a limit of ours.
-    for _ in 0..4 {
+    for _ in 0_i32..4_i32 {
         let write = tokio::time::timeout(OUTAGE_LIMIT, cache.set("a", &1_u32)).await;
         assert!(write.expect("a call waited out the retries").is_err());
     }
@@ -350,9 +350,9 @@ async fn a_failed_read_is_logged_without_its_key() {
         cache.ping().await.unwrap();
         fail(&proxy);
         record_logs();
-        let loaded = cache.get_or_load(PERSON, || async { Ok::<_, ()>(7) });
+        let loaded = cache.get_or_load(PERSON, || async { Ok::<_, ()>(7_i32) });
         let loaded = tokio::time::timeout(OUTAGE_LIMIT, loaded).await;
-        assert_eq!(loaded.expect("the cache held the request up"), Ok(7));
+        assert_eq!(loaded.expect("the cache held the request up"), Ok(7_i32));
         let lines = logged();
         assert!(
             lines.iter().any(|line| line.contains("cache read failed")),

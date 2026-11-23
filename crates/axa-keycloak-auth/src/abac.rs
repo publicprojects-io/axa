@@ -974,7 +974,7 @@ mod tests {
             "what was there at boot is not loaded again"
         );
         let until = async |wanted: &Policy| {
-            for _ in 0..300 {
+            for _ in 0_i32..300_i32 {
                 if *reloadable.current() == *wanted {
                     return true;
                 }

@@ -1560,7 +1560,7 @@ mod tests {
             serde_json::json!({
                 "type": "about:blank",
                 "title": "Method Not Allowed",
-                "status": 405,
+                "status": 405_i32,
                 "code": "method_not_allowed",
             })
         );
@@ -1574,7 +1574,7 @@ mod tests {
         let response = app().oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
         let problem = problem_of(response).await;
-        assert_eq!(problem["status"], 413);
+        assert_eq!(problem["status"], 413_i32);
         assert!(problem.get("detail").is_none());
     }
 
@@ -1631,7 +1631,7 @@ mod tests {
             serde_json::json!({
                 "type": "about:blank",
                 "title": "Conflict",
-                "status": 409,
+                "status": 409_i32,
                 "code": "conflict",
             })
         );

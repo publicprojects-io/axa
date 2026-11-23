@@ -185,7 +185,7 @@ fn hash_hex(secret: &str) -> String {
     let digest = Sha256::digest(secret.as_bytes());
     let mut hex = String::with_capacity(digest.len().checked_mul(2).unwrap_or(0)) /* ARI-9 */;
     for byte in digest {
-        for nibble in [byte >> 4, byte & 0xf] {
+        for nibble in [byte >> 4_i32, byte & 0xf] {
             if let Some(&digit) = HEX_DIGITS.get(usize::from(nibble)) {
                 hex.push(char::from(digit));
             }

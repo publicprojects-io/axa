@@ -41,7 +41,7 @@ fn sign(attrs: &Value) -> String {
         "sub": "11111111-1111-1111-1111-111111111111",
         "email": "alice@example.com", "name": "Alice",
         "iss": ISSUER, "aud": AUDIENCE,
-        "exp": 11_700_000_000_i64, "iat": 1_700_000_000, "sid": "test-sid", "attrs": attrs,
+        "exp": 11_700_000_000_i64, "iat": 1_700_000_000_i32, "sid": "test-sid", "attrs": attrs,
     })
     .to_string();
     let key = Key::<64>::from(SigningKey::from_bytes(&SEED).to_keypair_bytes());

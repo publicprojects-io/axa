@@ -373,7 +373,7 @@ async fn sigterm_while_migrations_are_pending_stops_the_wait_and_runs_no_job() {
         .await
         .unwrap();
     let id = queue
-        .enqueue("SlowWorker", serde_json::json!(10))
+        .enqueue("SlowWorker", serde_json::json!(10_i32))
         .await
         .unwrap();
     let port = free_port();

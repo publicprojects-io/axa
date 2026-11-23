@@ -317,7 +317,7 @@ mod tests {
         );
         assert!(text.contains("# TYPE tokio_runtime_worker_busy_seconds_total counter"));
         let busy = seconds(&text, "tokio_runtime_worker_busy_seconds_total");
-        for _ in 0..10 {
+        for _ in 0_i32..10_i32 {
             tokio::spawn(async {
                 std::hint::black_box((0..10_000_u64).filter(|n| n % 3 == 0).count())
             })
@@ -333,7 +333,7 @@ mod tests {
         let registry = Registry::new();
         let metrics =
             TokioMetrics::register(&registry, &tokio::runtime::Handle::current()).unwrap();
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             let monitor = metrics.task("queue");
             tokio::spawn(monitor.instrument(async { tokio::task::yield_now().await }))
                 .await

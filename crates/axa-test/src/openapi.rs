@@ -161,14 +161,14 @@ impl Conformance {
                 if parts.len() != wanted.len() {
                     return None;
                 }
-                let mut literal = 0;
+                let mut literal = 0_i32;
                 for (part, segment) in parts.iter().zip(&wanted) {
                     if part.starts_with('{') && part.ends_with('}') {
                         if segment.is_empty() {
                             return None;
                         }
                     } else if part == segment {
-                        literal += 1;
+                        literal += 1_i32;
                     } else {
                         return None;
                     }
@@ -402,7 +402,7 @@ mod tests {
         let conformance = with_paths(&json!({
             "/odd": { "get": { "responses": { "200": {
                 "description": "Odd",
-                "content": { "application/json": { "schema": { "type": 7 } } }
+                "content": { "application/json": { "schema": { "type": 7_i32 } } }
             } } } }
         }));
         let error = mismatch(conformance.check("GET", "/odd", 200, JSON, b"{}"));
@@ -414,7 +414,7 @@ mod tests {
         let place = json!({ "id": ID, "name": "Home", "tags": ["a"] });
         assert_eq!(check("GET", "/api/places/1", 200, JSON, &place), Ok(()));
         // Through a `$ref` to a shared response.
-        let problem = json!({ "status": 404, "title": "Not Found" });
+        let problem = json!({ "status": 404_i32, "title": "Not Found" });
         let kind = Some("application/problem+json");
         assert_eq!(check("GET", "/api/places/1", 404, kind, &problem), Ok(()));
         assert_eq!(
@@ -434,7 +434,7 @@ mod tests {
 
     #[test]
     fn a_body_outside_its_schema_is_named_by_where_it_is_wrong() {
-        let wrong = json!({ "id": "not-a-uuid", "tags": [1], "extra": true });
+        let wrong = json!({ "id": "not-a-uuid", "tags": [1_i32], "extra": true });
         let errors = check("GET", "/api/places/1", 200, JSON, &wrong).unwrap_err();
         let errors = errors.join("\n");
         for part in ["/id", "/tags/0", "name", "extra"] {
@@ -523,7 +523,7 @@ mod tests {
             )
             .route(
                 "/api/places/new",
-                get(|| async { Json(json!({ "id": 1 })) }),
+                get(|| async { Json(json!({ "id": 1_i32 })) }),
             );
         axum_test::TestServer::new(app)
     }

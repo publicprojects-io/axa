@@ -595,7 +595,7 @@ mod tests {
         struct Contact {
             #[validate(email(message = "Enter a whole email address"))]
             email: String,
-            #[validate(length(min = 1))]
+            #[validate(length(min = 1_u64))]
             name: String,
         }
 

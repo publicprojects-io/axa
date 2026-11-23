@@ -872,7 +872,7 @@ impl OutboxOptions {
         let stale = Duration::from_mins(u64::try_from(self.stale_minutes).unwrap_or(0));
         let problem = if self.batch_size < 1 {
             Some("batch_size must be at least 1")
-        } else if self.stale_minutes < 1 {
+        } else if self.stale_minutes < 1_i32 {
             Some("stale_minutes must be at least 1")
         } else if self.heartbeat_interval.is_zero()
             || self
@@ -886,7 +886,7 @@ impl OutboxOptions {
             Some("publish_timeout must be above zero")
         } else if self.poll_interval.is_zero() {
             Some("poll_interval must be above zero")
-        } else if self.max_attempts < 1 {
+        } else if self.max_attempts < 1_i32 {
             Some("max_attempts must be at least 1")
         } else if self.hold_interval.is_zero() || self.hold_interval > Duration::from_hours(24) {
             Some("hold_interval must be above zero and at most a day")
@@ -1170,7 +1170,7 @@ mod tests {
     #[test]
     fn a_denied_field_is_found_at_any_depth() {
         let deny = vec!["nhs_number".to_string(), "password".to_string()];
-        assert_eq!(denied(&json!({ "id": 7 }), &deny), None);
+        assert_eq!(denied(&json!({ "id": 7_i32 }), &deny), None);
         assert_eq!(
             denied(&json!({ "nhs_number": "1" }), &deny),
             Some("nhs_number")
@@ -1182,7 +1182,7 @@ mod tests {
         // A value is not a field name.
         assert_eq!(denied(&json!({ "note": "password" }), &deny), None);
         assert_eq!(denied(&json!(["password"]), &deny), None);
-        assert_eq!(denied(&json!({ "password": 1 }), &[]), None);
+        assert_eq!(denied(&json!({ "password": 1_i32 }), &[]), None);
     }
 
     #[test]
@@ -1201,7 +1201,7 @@ mod tests {
             inner.downcast_ref::<Refused>(),
             Some(Refused::TooLarge { limit: 16, .. })
         ));
-        let secret = Event::new("t", "k", "1", json!({ "secret": 1 }));
+        let secret = Event::new("t", "k", "1", json!({ "secret": 1_i32 }));
         let refused = writer.prepare(&secret).err().unwrap();
         assert!(refused.to_string().contains("secret"), "{refused}");
         assert!(

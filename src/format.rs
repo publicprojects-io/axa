@@ -239,7 +239,7 @@ mod tests {
 
     #[tokio::test]
     async fn json_serializes_with_a_json_content_type() {
-        let response = json(serde_json::json!({ "a": 1 })).unwrap();
+        let response = json(serde_json::json!({ "a": 1_i32 })).unwrap();
         assert_eq!(response.headers()[header::CONTENT_TYPE], "application/json");
         assert_eq!(body_text(response).await, r#"{"a":1}"#);
     }

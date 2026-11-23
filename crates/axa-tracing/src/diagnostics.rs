@@ -221,12 +221,12 @@ mod tests {
         let (lines, _guard) = capture();
         let value = async {
             std::thread::sleep(Duration::from_millis(10));
-            7
+            7_i32
         }
         .watch("blocker", Duration::from_millis(5))
         .await;
         let text = lines.text();
-        assert_eq!(value, 7);
+        assert_eq!(value, 7_i32);
         assert!(text.contains("future_blocked_runtime"), "{text}");
         assert!(text.contains("blocker"), "{text}");
     }

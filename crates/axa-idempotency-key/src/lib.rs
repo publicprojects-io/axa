@@ -940,7 +940,7 @@ fn reused() -> Response {
 /// its key could come free.
 fn wait(running_for: f64, lease_left: f64) -> u64 {
     let ceil = |seconds: f64| {
-        if seconds.is_finite() && seconds > 1.0 {
+        if seconds.is_finite() && seconds > 1.0_f64 {
             // A lease is at most a `ttl`, which fits in a `u64` of seconds.
             #[expect(
                 clippy::cast_possible_truncation,
@@ -1027,7 +1027,7 @@ mod tests {
 
     #[test]
     fn obeying_the_wait_asks_about_a_lost_run_a_handful_of_times_a_day() {
-        let (lease, mut at, mut asked) = (86_400.0, 0.0, 0);
+        let (lease, mut at, mut asked) = (86_400.0_f64, 0.0_f64, 0_i32);
         while at < lease {
             #[expect(
                 clippy::cast_precision_loss,
@@ -1036,9 +1036,9 @@ mod tests {
             )]
             let waited = wait(at, lease - at) as f64;
             at += waited;
-            asked += 1;
+            asked += 1_i32;
         }
-        assert!(asked <= 18, "asked {asked} times");
+        assert!(asked <= 18_i32, "asked {asked} times");
     }
 
     fn headers_with(values: &[&[u8]]) -> HeaderMap {
@@ -1211,7 +1211,7 @@ mod tests {
                 ..stored("done", "a")
             },
             Stored {
-                status: Some(99),
+                status: Some(99_i32),
                 ..stored("done", "a")
             },
             Stored {

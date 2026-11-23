@@ -145,7 +145,7 @@ async fn services_booting_together_all_migrate() {
     let migrator = migrator().await;
     dangerously_recreate(&pool, &migrator).await.unwrap();
     revert(&pool, &migrator, 5).await.unwrap();
-    let boots: Vec<_> = (0..6)
+    let boots: Vec<_> = (0_i32..6_i32)
         .map(|_| {
             tokio::spawn(async {
                 let pool = self::pool().await;

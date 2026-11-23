@@ -106,7 +106,7 @@ mod tests {
 
     #[derive(Validate)]
     struct Fields {
-        #[validate(length(min = 2, message = "Name is too short."))]
+        #[validate(length(min = 2_u64, message = "Name is too short."))]
         name: String,
         #[validate(email(message = "invalid email"))]
         email: String,
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn a_rules_parameters_are_kept() {
         let errors = model("A", "a@example.org").validate().unwrap_err();
-        assert_eq!(errors.errors["name"][0].params["min"], 2);
+        assert_eq!(errors.errors["name"][0].params["min"], 2_i32);
     }
 
     #[cfg(has_seaorm)]

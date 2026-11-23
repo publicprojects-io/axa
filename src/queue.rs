@@ -694,7 +694,7 @@ mod tests {
         let _table = TABLE.lock().await;
         let mut queue = queue().await?;
         queue.register(BusyWorker);
-        let job = NewJob::new("BusyWorker", serde_json::json!(null)).max_attempts(Some(3));
+        let job = NewJob::new("BusyWorker", serde_json::json!(null)).max_attempts(Some(3_i32));
         let id = queue.enqueue_job(&job).await?;
         assert!(queue.run_one().await?);
         let info = queue.job(&id).await?.ok_or("missing")?;
@@ -719,7 +719,7 @@ mod tests {
         let after = queue.enqueue("CountWorker", args).await?;
         let (stop, stopped) = watch::channel(false);
         let running = tokio::spawn(queue.clone().run(stopped));
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             if status_of(&queue, &after).await?.0 == "completed" {
                 break;
             }
@@ -746,7 +746,9 @@ mod tests {
         .await?;
         queue.register(SlowWorker);
         let queue = Arc::new(queue);
-        let id = queue.enqueue("SlowWorker", serde_json::json!(600)).await?;
+        let id = queue
+            .enqueue("SlowWorker", serde_json::json!(600_i32))
+            .await?;
         let worker = {
             let queue = queue.clone();
             tokio::spawn(async move { queue.run_one().await })
@@ -772,7 +774,9 @@ mod tests {
         let mut queue = queue().await?;
         queue.register(SlowWorker);
         let queue = Arc::new(queue);
-        let id = queue.enqueue("SlowWorker", serde_json::json!(200)).await?;
+        let id = queue
+            .enqueue("SlowWorker", serde_json::json!(200_i32))
+            .await?;
         let worker = {
             let queue = queue.clone();
             tokio::spawn(async move { queue.run_one().await })
@@ -915,7 +919,7 @@ mod tests {
             max_connections: 1,
             ..local_server()
         };
-        for _ in 0..50 {
+        for _ in 0_i32..50_i32 {
             if status_of(&queue, &id).await?.0 == "queued" {
                 break;
             }
@@ -1037,10 +1041,12 @@ mod tests {
         let mut queue = queue().await?;
         queue.register(SlowWorker);
         let queue = Arc::new(queue);
-        let id = queue.enqueue("SlowWorker", serde_json::json!(300)).await?;
+        let id = queue
+            .enqueue("SlowWorker", serde_json::json!(300_i32))
+            .await?;
         let (stop, stopped) = watch::channel(false);
         let running = tokio::spawn(queue.clone().run(stopped));
-        for _ in 0..50 {
+        for _ in 0_i32..50_i32 {
             if status_of(&queue, &id).await?.0 == "running" {
                 break;
             }
@@ -1070,10 +1076,10 @@ mod tests {
                 RetryingWorker::max_attempts(),
             )
             .await?;
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             assert!(queue.run_one().await?);
         }
-        assert_eq!(attempts_of(&queue, &id).await?, 3);
+        assert_eq!(attempts_of(&queue, &id).await?, 3_i32);
         assert_eq!(status_of(&queue, &id).await?.0, "failed");
         assert!(!queue.run_one().await?);
         Ok(())
@@ -1085,7 +1091,11 @@ mod tests {
         let _table = TABLE.lock().await;
         let queue = queue().await?;
         let id = queue
-            .enqueue_limited("CountWorker", serde_json::json!({ "fail": false }), Some(3))
+            .enqueue_limited(
+                "CountWorker",
+                serde_json::json!({ "fail": false }),
+                Some(3_i32),
+            )
             .await?;
         make_stale(&queue, &id, 2).await?;
         assert_eq!(queue.requeue_stale().await?, 1);
@@ -1178,7 +1188,7 @@ mod tests {
 
         // Bad arguments fail the job rather than panicking the worker.
         let id = queue
-            .enqueue("CountWorker", serde_json::json!({ "wrong": 1 }))
+            .enqueue("CountWorker", serde_json::json!({ "wrong": 1_i32 }))
             .await?;
         assert!(queue.run_one().await?);
         assert_eq!(status_of(&queue, &id).await?.0, "failed");
@@ -1206,12 +1216,12 @@ mod tests {
             .execute(queue.pool())
             .await?;
         let before = COUNT.load(Ordering::SeqCst);
-        for _ in 0..20 {
+        for _ in 0_i32..20_i32 {
             queue.enqueue("CountWorker", args.clone()).await?;
         }
         let (stop, stopped) = watch::channel(false);
         let running = tokio::spawn(queue.clone().run(stopped));
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             if COUNT.load(Ordering::SeqCst) >= before + 20 {
                 break;
             }
@@ -1236,13 +1246,13 @@ mod tests {
         let uri = std::env::var("AXA_TEST_DB_URL")?;
         let admin = PgPoolOptions::new().connect(&uri).await?;
         // Setup only races when the table is really missing.
-        for _ in 0..5 {
+        for _ in 0_i32..5_i32 {
             for table in ["axa_queue", "axa_job_acts"] {
                 sqlx::query(sqlx::AssertSqlSafe(format!("DROP TABLE IF EXISTS {table}")))
                     .execute(&admin)
                     .await?;
             }
-            let boots: Vec<_> = (0..8)
+            let boots: Vec<_> = (0_i32..8_i32)
                 .map(|_| {
                     let uri = uri.clone();
                     tokio::spawn(async move { Queue::connect(&uri, QueueOptions::default()).await })
@@ -1417,10 +1427,10 @@ mod tests {
                 Ok::<(), Box<dyn std::error::Error>>(())
             }
         };
-        set(old_done, "completed", 30).await?;
-        set(old_failed, "failed", 30).await?;
-        set(new_done.clone(), "completed", 1).await?;
-        set(old_queued.clone(), "queued", 30).await?;
+        set(old_done, "completed", 30_i32).await?;
+        set(old_failed, "failed", 30_i32).await?;
+        set(new_done.clone(), "completed", 1_i32).await?;
+        set(old_queued.clone(), "queued", 30_i32).await?;
 
         assert_eq!(queue.purge_finished().await?, 2);
         assert_eq!(status_of(&queue, &new_done).await?.0, "completed");

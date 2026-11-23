@@ -51,7 +51,7 @@ async fn server() -> u16 {
         .route(
             "/stream",
             get(|| async {
-                let chunks = (0..10).map(|_| Ok::<_, std::io::Error>(vec![b'x'; 1_000]));
+                let chunks = (0_i32..10_i32).map(|_| Ok::<_, std::io::Error>(vec![b'x'; 1_000]));
                 Body::from_stream(futures_stream(chunks)).into_response()
             }),
         );

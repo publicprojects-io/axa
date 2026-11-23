@@ -266,7 +266,7 @@ async fn a_server_error_marks_the_span() {
     let traces = collector.traces.lock().unwrap();
     let span = &traces[0].resource_spans[0].scope_spans[0].spans[0];
     let status = span.status.as_ref().expect("status");
-    assert_eq!(status.code, 2, "{status:?}");
+    assert_eq!(status.code, 2_i32, "{status:?}");
     drop(traces);
     telemetry.shutdown();
 }

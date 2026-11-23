@@ -479,7 +479,7 @@ async fn a_failure_releases_the_key_so_a_retry_runs() {
         let retry = send(&app, write("/failing", "ana", Some(body), body)).await;
         assert_eq!(retry.status(), StatusCode::OK);
         assert!(!retry.headers().contains_key(REPLAYED));
-        assert_eq!(json_of(retry).await["run"], 2);
+        assert_eq!(json_of(retry).await["run"], 2_i32);
         sqlx::query("TRUNCATE axa_idempotency")
             .execute(&pool)
             .await
@@ -600,7 +600,7 @@ async fn of_many_retries_of_an_abandoned_claim_exactly_one_takes_it() {
     let print = fingerprint_of(&pool, "probe").await;
     abandoned_claim(&pool, "ana", "crashed", &print).await;
 
-    let retries = (0..20).map(|_| {
+    let retries = (0_i32..20_i32).map(|_| {
         let app = app.clone();
         tokio::spawn(async move { send(&app, write("/things", "ana", Some("crashed"), "x")).await })
     });
@@ -645,7 +645,7 @@ async fn a_run_that_reports_in_outlives_its_lease() {
     // test's request claimed it first, that request would be run 1 and wait forever.
     started.notified().await;
     // Several leases go by while the first still runs.
-    for _ in 0..4 {
+    for _ in 0_i32..4_i32 {
         tokio::time::sleep(lease).await;
         let waiting = send(&app, write("/long", "ana", Some("k"), "x")).await;
         assert_eq!(waiting.status(), StatusCode::CONFLICT);
@@ -1019,7 +1019,7 @@ async fn a_required_key_refuses_a_request_without_one() {
     assert_eq!((runs.count(), rows(&pool).await), (0, 0));
 
     // With a key it behaves as any other request.
-    for _ in 0..2 {
+    for _ in 0_i32..2_i32 {
         let answer = send(&app, write("/things", "ana", Some("k"), "x")).await;
         assert!(answer.status().is_success());
     }
@@ -1129,7 +1129,7 @@ async fn services_booting_together_all_set_up() {
         .execute(&pool)
         .await
         .unwrap();
-    let boots = (0..6).map(|_| {
+    let boots = (0_i32..6_i32).map(|_| {
         let pool = pool.clone();
         tokio::spawn(async move { setup(&pool).await })
     });

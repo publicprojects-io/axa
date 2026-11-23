@@ -176,7 +176,7 @@ mod tests {
 
     #[tokio::test]
     async fn spawn_works_outside_a_request() {
-        assert_eq!(spawn(async { 1 }).await.unwrap(), 1);
+        assert_eq!(spawn(async { 1_i32 }).await.unwrap(), 1_i32);
     }
 
     #[tokio::test]

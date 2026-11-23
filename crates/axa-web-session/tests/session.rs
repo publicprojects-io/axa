@@ -444,7 +444,7 @@ mod postgres {
         let pool = sqlx::PgPool::connect(&url).await.unwrap();
         let options = production().table_name("axa_test_anonymous");
         let app = pg_app(&pool, &options).await;
-        for _ in 0..20 {
+        for _ in 0_i32..20_i32 {
             Browser::new().get(&app, "/visit").await;
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
@@ -470,7 +470,7 @@ mod postgres {
         let id = browser.get(&app, "/put").await;
 
         let mut row: Option<String> = None;
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             row = sqlx::query_scalar("SELECT session FROM axa_test_sessions WHERE id = $1")
                 .bind(&id)
                 .fetch_optional(&pool)
@@ -525,7 +525,7 @@ mod postgres {
         let mut browser = Browser::new();
         let id = browser.get(&app, "/put").await;
         let select = format!("SELECT count(*) FROM {table} WHERE id = $1");
-        for _ in 0..100 {
+        for _ in 0_i32..100_i32 {
             let rows: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(select.as_str()))
                 .bind(&id)
                 .fetch_one(&pool)

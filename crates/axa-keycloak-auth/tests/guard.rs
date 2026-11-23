@@ -153,7 +153,10 @@ async fn bad_tokens_are_401s() {
     let idp = TestIdp::start().await;
     let app = app(guard(settings(&idp), true));
     let cases = [
-        ("expired", idp.token(|c| c["exp"] = json!(1_000_000_000))),
+        (
+            "expired",
+            idp.token(|c| c["exp"] = json!(1_000_000_000_i32)),
+        ),
         (
             "wrong audience",
             idp.token(|c| c["aud"] = json!(["other-client"])),
@@ -214,7 +217,7 @@ async fn only_a_current_access_token_for_this_audience_passes() {
     }
 
     // The checks refuse the token, not everything that carries one of these claims.
-    let token = idp.token(|c| c["nbf"] = json!(1_000_000_000));
+    let token = idp.token(|c| c["nbf"] = json!(1_000_000_000_i32));
     assert_eq!(
         status(&app, "GET", "/api/places", Some(&token)).await,
         StatusCode::OK

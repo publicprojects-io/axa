@@ -445,7 +445,7 @@ async fn a_caller_who_is_refused_gets_the_refusal_whatever_they_hold() {
 async fn a_tag_covers_what_this_caller_may_see() {
     async fn masked(headers: HeaderMap) -> Json<Value> {
         let may_see = headers.contains_key("x-manager");
-        Json(json!({ "name": "A", "salary": may_see.then_some(100) }))
+        Json(json!({ "name": "A", "salary": may_see.then_some(100_i32) }))
     }
 
     let app = stack(hashed(get(masked)));
@@ -685,10 +685,10 @@ async fn a_timestamp_in_the_body_never_matches_and_does_no_harm() {
     let tick = Arc::new(AtomicUsize::new(0));
     let app = stack(hashed(get(move || {
         let tick = tick.clone();
-        async move { Json(json!({ "open": 3, "as_of": tick.fetch_add(1, Ordering::SeqCst) })) }
+        async move { Json(json!({ "open": 3_i32, "as_of": tick.fetch_add(1, Ordering::SeqCst) })) }
     })));
     let mut held = etag_of(&fetch(&app, "/", &[]).await);
-    for _ in 0..3 {
+    for _ in 0_i32..3_i32 {
         let response = fetch(&app, "/", &[("if-none-match", &held)]).await;
         assert_eq!(response.status(), StatusCode::OK);
         assert_ne!(etag_of(&response), held);
@@ -705,7 +705,7 @@ async fn a_handler_can_leave_a_timestamp_out_of_its_tag() {
         get(move || {
             let tick = tick.clone();
             async move {
-                let payload = json!({ "open": 3 });
+                let payload = json!({ "open": 3_i32 });
                 let tag = ETag::weak_of(&payload).unwrap();
                 let mut body = payload;
                 body["as_of"] = tick.fetch_add(1, Ordering::SeqCst).into();
@@ -720,7 +720,7 @@ async fn a_handler_can_leave_a_timestamp_out_of_its_tag() {
 
 #[tokio::test]
 async fn weak_of_gives_the_tag_the_layer_gives_the_same_json() {
-    let value = json!({ "a": [1, 2], "b": "c" });
+    let value = json!({ "a": [1_i32, 2_i32], "b": "c" });
     let served = value.clone();
     let app = stack(hashed(get(move || async move { Json(served.clone()) })));
     let response = fetch(&app, "/", &[]).await;
@@ -761,7 +761,7 @@ async fn a_layer_that_takes_the_tag_away_means_no_304() {
                 "/",
                 get(move || async move {
                     let tag = ETag::weak("list").unwrap();
-                    (tag, Json(vec![1; rows]))
+                    (tag, Json(vec![1_i32; rows]))
                 }),
             )
             .layer(from_fn(page))
@@ -784,7 +784,7 @@ async fn a_hash_outside_paging_covers_the_page() {
                 "/",
                 get(move || {
                     let rows = served.load(Ordering::SeqCst);
-                    async move { Json(vec![1; rows]) }
+                    async move { Json(vec![1_i32; rows]) }
                 }),
             )
             .layer(from_fn(page))

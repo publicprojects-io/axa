@@ -872,7 +872,7 @@ mod tests {
         );
         let body = axum::body::to_bytes(second.into_body(), usize::MAX).await;
         let body: serde_json::Value = serde_json::from_slice(&body.unwrap()).unwrap();
-        assert_eq!(body["status"], 429);
+        assert_eq!(body["status"], 429_i32);
         assert_eq!(body["code"], "too_many_requests");
     }
 
@@ -880,7 +880,7 @@ mod tests {
     async fn the_probes_are_never_refused_or_counted() {
         let limiter = limiter(1, 60);
         let app = limited(limiter.clone());
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             let response = app
                 .clone()
                 .oneshot(request("/_health/live", None))
@@ -927,7 +927,7 @@ mod tests {
     #[tokio::test]
     async fn failures_lock_a_client_out_and_only_that_client() {
         let app = guarded(limiter(2, 60));
-        for _ in 0..2 {
+        for _ in 0_i32..2_i32 {
             let response = app.clone().oneshot(request("/", Some("203.0.113.9"))).await;
             assert_eq!(response.unwrap().status(), StatusCode::UNAUTHORIZED);
         }
@@ -942,7 +942,7 @@ mod tests {
     async fn success_never_counts_towards_a_lockout() {
         let limiter = limiter(1, 60);
         let app = guarded(limiter.clone());
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             let response = app.clone().oneshot(signed_in("203.0.113.9")).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
         }
@@ -1017,7 +1017,7 @@ mod tests {
             let app = app.clone();
             async move { app.oneshot(request).await.unwrap().status() }
         };
-        for _ in 0..2 {
+        for _ in 0_i32..2_i32 {
             assert_eq!(send(http::Method::POST, "acme").await, StatusCode::OK);
         }
         assert_eq!(
@@ -1034,7 +1034,7 @@ mod tests {
     async fn a_request_with_no_key_is_not_counted() {
         let limiter = limiter(1, 60);
         let app = by_subject(limiter.clone());
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             let response = app.clone().oneshot(as_subject("/", None)).await.unwrap();
             assert_eq!(response.status(), StatusCode::OK);
             assert!(response.headers().get("ratelimit-limit").is_none());
@@ -1047,7 +1047,7 @@ mod tests {
     async fn keyed_probes_are_never_refused_or_counted() {
         let limiter = limiter(1, 60);
         let app = by_subject(limiter.clone());
-        for _ in 0..3 {
+        for _ in 0_i32..3_i32 {
             let response = app
                 .clone()
                 .oneshot(as_subject("/_health/live", Some("ana")))
