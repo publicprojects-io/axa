@@ -576,7 +576,7 @@ still on Axa 0.8 or earlier, and are not published again. `axa` 0.9 has no
 | TRC-4 | `axa-tracing` | `propagate` adds the id to a call to a peer, and keeps a value already there. | `propagate_sends_the_id_and_keeps_one_already_set` |
 | TRC-5 | `axa-tracing` | `spawn` keeps the request id and the span in the new task, and works outside a request. | `a_spawned_task_keeps_the_request_id`, `a_spawned_task_keeps_the_span`, `spawn_works_outside_a_request` |
 | TRC-6 | `axa-tracing` | `Watch::watch` tells a future that blocked a runtime thread from one that only waited. | `a_blocking_future_is_reported`, `a_future_that_only_waits_is_slow_but_not_blocking`, `a_quick_future_is_not_reported` |
-| TRC-7 | `axa-tracing` | A task that wakes late is reported with a snapshot of the runtime, and none of this needs `tokio_unstable`. | `a_stalled_runtime_is_reported`, `a_snapshot_describes_the_runtime` |
+| TRC-7 | `axa-tracing` | A task that wakes late is reported with a snapshot of the runtime, and none of this needs `tokio_unstable`. An interval too large to wait for stops the monitor with an error logged. | `a_stalled_runtime_is_reported`, `a_snapshot_describes_the_runtime`, `an_interval_too_large_to_wait_for_stops_the_monitor_with_an_error` |
 | TRC-8 | `axa-tracing` | `log_panics` logs where a panic happened, and never its text. | `a_panic_is_logged_without_its_text` |
 | TST-1 | `axa-test` | `boot_test` hands back a service's failure to boot for tests. | `a_failed_boot_is_handed_back` |
 | TST-2 | `axa-test` | A request test on a service that cannot boot fails, and its body never runs. | `a_request_test_on_a_service_that_cannot_boot_fails` |

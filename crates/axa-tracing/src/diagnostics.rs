@@ -277,6 +277,22 @@ mod tests {
         assert!(text.contains("workers=1"), "{text}");
     }
 
+    #[tokio::test]
+    async fn an_interval_too_large_to_wait_for_stops_the_monitor_with_an_error() {
+        let (lines, _guard) = capture();
+        let monitor = monitor_runtime(RuntimeMonitor {
+            interval: Duration::MAX,
+            max_lag: Duration::from_millis(10),
+        });
+        // The task ends at once, with nothing to sleep for.
+        tokio::time::timeout(Duration::from_secs(5), monitor)
+            .await
+            .expect("the monitor stopped")
+            .unwrap();
+        let text = lines.text();
+        assert!(text.contains("too large to wait for"), "{text}");
+    }
+
     #[test]
     fn a_panic_is_logged_without_its_text() {
         let _lock = panic_hook_lock();
