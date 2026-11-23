@@ -562,6 +562,10 @@ impl Cache {
 }
 
 #[cfg(test)]
+#[allow(
+    clippy::integer_division,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 mod tests {
     use super::*;
 

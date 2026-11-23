@@ -31,6 +31,7 @@ string_slice = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
+integer_division = "deny"
 
 [package]
 name = "axa"

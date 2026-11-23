@@ -402,6 +402,10 @@ pub fn escape_like(text: &str) -> String {
 )]
 #[cfg(test)]
 #[allow(clippy::string_slice, reason = "RCA-SCOPE-4: tests may slice strings")]
+#[allow(
+    clippy::integer_division,
+    reason = "RCA-SCOPE-4: tests may use plain operators"
+)]
 mod tests {
     use super::*;
 

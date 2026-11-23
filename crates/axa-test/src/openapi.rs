@@ -109,7 +109,7 @@ impl Conformance {
             return fail(format!("{method} {template} documents no responses"));
         };
         let exact = status.to_string();
-        let range = format!("{}XX", status / 100);
+        let range = format!("{}XX", status.div_euclid(100));
         let Some(key) = [exact.as_str(), range.as_str(), "default"]
             .into_iter()
             .find(|key| responses.get(key).is_some())
