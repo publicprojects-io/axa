@@ -131,17 +131,23 @@ impl PoolConfig {
     }
 
     /// A Toasty builder with these settings and `models`, ready to connect.
-    #[must_use]
-    pub fn builder(&self, models: ModelSet) -> toasty::db::Builder {
+    ///
+    /// # Errors
+    ///
+    /// Fails when `max_connections` does not fit the pool's size.
+    pub fn builder(&self, models: ModelSet) -> Result<toasty::db::Builder, Error> {
+        let size = usize::try_from(self.max_connections).map_err(|_| {
+            Error::invalid_driver_configuration("max_connections does not fit the pool's size")
+        })?;
         let wait = Some(Duration::from_millis(self.connect_timeout_ms));
         let mut builder = Db::builder();
         builder
             .models(models)
-            .max_pool_size(usize::try_from(self.max_connections).unwrap_or(usize::MAX))
+            .max_pool_size(size)
             .pool_wait_timeout(wait)
             .pool_create_timeout(wait)
             .pool_max_connection_idle_time(Some(Duration::from_millis(self.idle_timeout_ms)));
-        builder
+        Ok(builder)
     }
 }
 
@@ -151,7 +157,7 @@ impl PoolConfig {
 ///
 /// Fails when the URL is not one Toasty reads, or the database cannot be reached.
 pub async fn connect(config: &PoolConfig, models: ModelSet) -> Result<Pool, Error> {
-    let builder = &mut config.builder(models);
+    let builder = &mut config.builder(models)?;
     let db = match config.session_statement() {
         Some(setup) => {
             let driver = toasty::db::Connect::new(&config.uri).await?;
@@ -347,7 +353,11 @@ async fn applied_ids(pool: &Pool) -> Result<Vec<u64>, Error> {
     .await?;
     let found = match first_field(&found) {
         Some(Value::I64(count)) => *count,
-        _ => 0,
+        _ => {
+            return Err(Error::invalid_result(
+                "the migrations table check returned no count",
+            ));
+        }
     };
     if found == 0 {
         return Ok(Vec::new());
@@ -356,13 +366,29 @@ async fn applied_ids(pool: &Pool) -> Result<Vec<u64>, Error> {
         .column_types([Type::U64])
         .exec(&mut db)
         .await?;
-    Ok(rows
-        .iter()
-        .filter_map(|row| match first_field(std::slice::from_ref(row)) {
-            Some(Value::U64(id)) => Some(*id),
-            _ => None,
+    migration_ids(&rows)
+}
+
+/// The text in the first column of each row, or an error for a row that has none.
+fn first_strings(rows: &[Value]) -> Result<Vec<String>, Error> {
+    rows.iter()
+        .map(|row| match first_field(std::slice::from_ref(row)) {
+            Some(Value::String(name)) => Ok(name.clone()),
+            _ => Err(Error::invalid_result("a table name is not text")),
         })
-        .collect())
+        .collect()
+}
+
+/// The migration id in the first column of each row, or an error for a row that has none.
+fn migration_ids(rows: &[Value]) -> Result<Vec<u64>, Error> {
+    rows.iter()
+        .map(|row| match first_field(std::slice::from_ref(row)) {
+            Some(Value::U64(id)) => Ok(*id),
+            _ => Err(Error::invalid_result(
+                "a recorded migration id is not a number",
+            )),
+        })
+        .collect()
 }
 
 /// The first column of the first row.
@@ -518,13 +544,7 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
     .column_types([Type::String])
     .exec(&mut db)
     .await?;
-    let tables: Vec<String> = rows
-        .iter()
-        .filter_map(|row| match first_field(std::slice::from_ref(row)) {
-            Some(Value::String(name)) => Some(name.clone()),
-            _ => None,
-        })
-        .collect();
+    let tables = first_strings(&rows)?;
     if !tables.is_empty() {
         let names = quote_all(&tables)?.join(", ");
         without_foreign_key_checks(pool, &[format!("DROP TABLE {names}")]).await?;
@@ -536,6 +556,26 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(fields: Vec<Value>) -> Value {
+        Value::Record(toasty_core::stmt::ValueRecord::from_vec(fields))
+    }
+
+    #[test]
+    fn rows_of_the_wrong_shape_are_errors_and_not_skipped() {
+        let names = [
+            row(vec![Value::String("a".into())]),
+            row(vec![Value::String("b".into())]),
+        ];
+        assert_eq!(first_strings(&names).unwrap(), ["a", "b"]);
+        assert!(first_strings(&[row(vec![Value::I64(1)])]).is_err());
+        assert!(first_strings(&[row(vec![])]).is_err());
+        assert!(first_strings(&[Value::I64(1)]).is_err());
+        let ids = [row(vec![Value::U64(1)]), row(vec![Value::U64(7)])];
+        assert_eq!(migration_ids(&ids).unwrap(), [1, 7]);
+        assert!(migration_ids(&[row(vec![Value::I64(1)])]).is_err());
+        assert!(migration_ids(&[row(vec![Value::U64(1)]), Value::Null]).is_err());
+    }
 
     #[test]
     fn session_settings_become_one_set_statement() {

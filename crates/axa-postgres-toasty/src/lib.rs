@@ -111,17 +111,23 @@ impl PoolConfig {
     }
 
     /// A Toasty builder with these settings and `models`, ready to connect.
-    #[must_use]
-    pub fn builder(&self, models: ModelSet) -> toasty::db::Builder {
+    ///
+    /// # Errors
+    ///
+    /// Fails when `max_connections` does not fit the pool's size.
+    pub fn builder(&self, models: ModelSet) -> Result<toasty::db::Builder, Error> {
+        let size = usize::try_from(self.max_connections).map_err(|_| {
+            Error::invalid_driver_configuration("max_connections does not fit the pool's size")
+        })?;
         let wait = Some(Duration::from_millis(self.connect_timeout_ms));
         let mut builder = Db::builder();
         builder
             .models(models)
-            .max_pool_size(usize::try_from(self.max_connections).unwrap_or(usize::MAX))
+            .max_pool_size(size)
             .pool_wait_timeout(wait)
             .pool_create_timeout(wait)
             .pool_max_connection_idle_time(Some(Duration::from_millis(self.idle_timeout_ms)));
-        builder
+        Ok(builder)
     }
 }
 
@@ -236,7 +242,7 @@ fn percent_encode(value: &str) -> String {
 /// Fails when the URL is not one Toasty reads, or the database cannot be reached.
 pub async fn connect(config: &PoolConfig, models: ModelSet) -> Result<Pool, Error> {
     let driver = Retiring(toasty::db::Connect::new(&config.connection_uri()?).await?);
-    let db = config.builder(models).build(driver).await?;
+    let db = config.builder(models)?.build(driver).await?;
     ping(&db).await?;
     Ok(db)
 }
@@ -472,18 +478,40 @@ async fn applied_ids(pool: &Pool) -> Result<Vec<u64>, Error> {
     .column_types([Type::I64])
     .exec(&mut db)
     .await?;
-    if first_i64(&found).unwrap_or(0) == 0 {
+    let tables = first_i64(&found)
+        .ok_or_else(|| Error::invalid_result("the migrations table check returned no count"))?;
+    if tables == 0 {
         return Ok(Vec::new());
     }
     let rows = toasty::sql::query("SELECT id FROM __toasty_migrations")
         .column_types([Type::I64])
         .exec(&mut db)
         .await?;
-    Ok(rows
-        .iter()
-        .filter_map(|row| first_i64(std::slice::from_ref(row)))
-        .filter_map(|id| u64::try_from(id).ok())
-        .collect())
+    migration_ids(&rows)
+}
+
+/// The text in the first column of each row, or an error for a row that has none.
+fn first_strings(rows: &[Value]) -> Result<Vec<String>, Error> {
+    rows.iter()
+        .map(|row| match row {
+            Value::Record(record) => match record.fields.first() {
+                Some(Value::String(name)) => Ok(name.clone()),
+                _ => Err(Error::invalid_result("a table name is not text")),
+            },
+            _ => Err(Error::invalid_result("a table row is not a record")),
+        })
+        .collect()
+}
+
+/// The migration id in the first column of each row, or an error for a row that has none.
+fn migration_ids(rows: &[Value]) -> Result<Vec<u64>, Error> {
+    rows.iter()
+        .map(|row| {
+            first_i64(std::slice::from_ref(row))
+                .and_then(|id| u64::try_from(id).ok())
+                .ok_or_else(|| Error::invalid_result("a recorded migration id is not a number"))
+        })
+        .collect()
 }
 
 /// The first column of the first row, as an integer.
@@ -721,16 +749,7 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
             .column_types([Type::String])
             .exec(&mut db)
             .await?;
-    let tables: Vec<String> = rows
-        .iter()
-        .filter_map(|row| match row {
-            Value::Record(record) => match record.fields.first() {
-                Some(Value::String(name)) => Some(name.clone()),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect();
+    let tables = first_strings(&rows)?;
     if !tables.is_empty() {
         let names = quote_all(&tables)?.join(", ");
         toasty::sql::statement(format!("DROP TABLE {names} CASCADE"))
@@ -748,6 +767,29 @@ pub async fn dangerously_recreate(pool: &Pool, migrations: &MigrationSet) -> Res
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn row(fields: Vec<Value>) -> Value {
+        Value::Record(toasty_core::stmt::ValueRecord::from_vec(fields))
+    }
+
+    #[test]
+    fn rows_of_the_wrong_shape_are_errors_and_not_skipped() {
+        let names = [
+            row(vec![Value::String("a".into())]),
+            row(vec![Value::String("b".into())]),
+        ];
+        assert_eq!(first_strings(&names).unwrap(), ["a", "b"]);
+        assert!(first_strings(&[row(vec![Value::I64(1)])]).is_err());
+        assert!(first_strings(&[row(vec![])]).is_err());
+        assert!(first_strings(&[Value::I64(1)]).is_err());
+        let ids = [row(vec![Value::I64(1)]), row(vec![Value::I64(7)])];
+        assert_eq!(migration_ids(&ids).unwrap(), [1, 7]);
+        assert!(migration_ids(&[row(vec![Value::I64(-1)])]).is_err());
+        assert!(migration_ids(&[row(vec![Value::String("1".into())])]).is_err());
+        assert!(migration_ids(&[row(vec![Value::I64(1)]), Value::Null]).is_err());
+        assert_eq!(first_i64(&[row(vec![Value::I64(3)])]), Some(3));
+        assert_eq!(first_i64(&[]), None);
+    }
 
     /// This connection's backend process id.
     async fn backend(db: &mut Db) -> i32 {
@@ -774,7 +816,7 @@ mod tests {
                 .await
                 .unwrap(),
         );
-        let mut builder = config.builder(toasty::models!());
+        let mut builder = config.builder(toasty::models!()).unwrap();
         builder.pool_health_check_interval(sweep);
         builder.build(driver).await.unwrap()
     }

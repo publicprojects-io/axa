@@ -29,6 +29,10 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `allow_attributes_without_reason`: an exception is `#[expect]` with a reason.
   `default_numeric_fallback` is denied too: a number literal that no type fixes carries its
   suffix, as `0_i32` or `1.0_f64`.
+- Toasty crates: a row read back in a shape it does not have (a table name that is not text, a
+  migration id that is not a number, a missing count) is an error where it was skipped or read
+  as zero, and `PoolConfig::builder` in `axa-postgres-toasty` and `axa-mysql-toasty` returns a
+  `Result`, for a `max_connections` that does not fit the pool's size (breaking).
 - Tests: `make test-fast` and CI's two workspace-wide test steps run the tests that need no server
   with cargo-nextest (`.config/nextest.toml`); doctests and `cli_exit` stay on `cargo test`.
 - `axa-test`'s Postgres template name is the first eight bytes of a SHA-256 of the migrations, in place
