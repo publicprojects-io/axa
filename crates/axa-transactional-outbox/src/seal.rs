@@ -224,6 +224,26 @@ mod tests {
     }
 
     #[test]
+    fn a_blob_too_short_or_of_a_newer_format_has_no_key() {
+        let keys = Keys::new(key(1, 7));
+        let event = Uuid::new_v4();
+        let sealed = keys.seal(event, b"{}").unwrap();
+        // Cut anywhere short of the header, there is no version, id, nonce or body.
+        for len in 0..HEADER_LEN {
+            assert_eq!(
+                keys.open(event, &sealed[..len]),
+                Err(Unopened::NoKey),
+                "{len} bytes"
+            );
+        }
+        // A format this crate does not know.
+        let mut newer = sealed.clone();
+        newer[0] = VERSION + 1;
+        assert_eq!(keys.open(event, &newer), Err(Unopened::NoKey));
+        assert!(keys.open(event, &sealed).is_ok());
+    }
+
+    #[test]
     fn a_sealed_payload_opens_only_for_its_event_and_with_its_key() {
         let keys = Keys::new(key(1, 7));
         let event = Uuid::new_v4();

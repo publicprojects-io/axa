@@ -1035,6 +1035,39 @@ mod tests {
     }
 
     #[test]
+    fn a_refusal_says_what_it_refused() {
+        assert_eq!(
+            Refused::Denied {
+                field: "ssn".into()
+            }
+            .to_string(),
+            "the outbox payload has the denied field `ssn`"
+        );
+        assert!(
+            Refused::NotACode { what: "by" }
+                .to_string()
+                .starts_with("`by` must be 1 to ")
+        );
+        assert_eq!(
+            Refused::NotATenant.to_string(),
+            "the outbox event's tenant is not a tenant id"
+        );
+    }
+
+    #[test]
+    fn an_outcome_displays_as_its_name() {
+        for outcome in [
+            Outcome::Delivered,
+            Outcome::Refused,
+            Outcome::Rejected,
+            Outcome::Failed,
+            Outcome::Lost,
+        ] {
+            assert_eq!(outcome.to_string(), outcome.as_str());
+        }
+    }
+
+    #[test]
     fn the_default_options_are_valid() {
         assert!(fine().validate().is_ok());
         assert!(Writer::new(WriteOptions::default()).is_ok());
