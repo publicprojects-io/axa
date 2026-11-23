@@ -667,6 +667,31 @@ mod tests {
     }
 
     #[test]
+    fn a_tally_that_does_not_add_up_clears_the_cache() {
+        let mut memory = Memory::default();
+        let now = Instant::now();
+        memory.insert("a", "bb".to_string(), now + LIVE, now);
+        memory.insert("c", "dd".to_string(), now + LIVE, now);
+        assert_eq!(memory.bytes, 6);
+        // A removal that takes more than the tally holds is a tally gone wrong.
+        memory.bytes = 1;
+        assert!(memory.remove("a"));
+        assert!(memory.entries.is_empty(), "the cache starts again");
+        assert_eq!(memory.bytes, 0);
+        assert!(!memory.remove("a"), "there is nothing left to remove");
+    }
+
+    #[tokio::test]
+    async fn a_ttl_past_what_an_instant_holds_is_held_for_as_long_as_the_cache_holds_anything() {
+        let cache = memory();
+        cache
+            .set_with_ttl("long", &7_u32, Duration::from_secs(u64::MAX / 2))
+            .await
+            .unwrap();
+        assert_eq!(cache.get::<u32>("long").await.unwrap(), Some(7));
+    }
+
+    #[test]
     fn keys_carry_the_prefix() {
         assert_eq!(full_key("svc", "a"), "svc:a");
         assert_eq!(full_key("", "a"), "a");
