@@ -2446,6 +2446,14 @@ mod tests {
             change(&mut options);
             options.check()
         };
+        // More workers than a `u32` holds (a platform with a narrower `usize` has none).
+        if let Ok(over) = usize::try_from(u64::from(u32::MAX) + 1) {
+            let options = QueueOptions {
+                workers: over,
+                ..QueueOptions::default()
+            };
+            assert!(matches!(options.check(), Err(Error::OutOfRange("workers"))));
+        }
         assert!(matches!(
             refused(|o| o.stale_minutes = 0),
             Err(Error::OutOfRange("stale_minutes"))
