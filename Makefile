@@ -38,12 +38,11 @@ test-ignored:
 	AXA_TEST_REDIS_URL=redis://localhost:6379 \
 	cargo test --all-features -- --ignored
 
-# The public API of each published crate against its last release on crates.io, as CI does
-# (cargo install cargo-semver-checks). It cannot see a changed return type.
+# The public API of every published crate against its last release on crates.io
+# (cargo install cargo-semver-checks). CI checks only the crates a change touches: run
+# `bin/semver BASE` for the same. It cannot see a changed return type.
 semver:
-	cargo semver-checks check-release --workspace --all-features \
-		--exclude axa --exclude axa-sqlite-sqlx --exclude axa-sqlite-seaorm --exclude axa-sqlite-diesel
-	cargo semver-checks check-release -p axa --features "$$(sed -n '/^\[features\]/,/^\[dependencies\]/p' Cargo.toml | grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' =' | grep -v '^sqlite-' | grep -vx default | paste -sd, -)"
+	bin/semver
 
 # Lint and format
 lint:

@@ -1,0 +1,82 @@
+#!/bin/sh
+# Compare the public API of each published crate with its last release on crates.io.
+#
+# A crate whose version is still the published one fails when its API changed in a way
+# that needs a new version. A crate bumped past its release is skipped by the tool: the
+# bump is the signal. It cannot see a changed return type, so read the signature diff too.
+#
+# With a BASE commit, only the crates changed since it are checked, which is what CI does
+# on a push or a pull request. A change to any crate also checks `axa`, which re-exports
+# their types, and a change to `axa` itself checks only it. With no BASE, or one that is
+# not in this clone, every published crate is checked, which takes about 6 minutes.
+#
+# The SQLite sqlx, SeaORM and Diesel crates have no release to compare with, so they are
+# left out, and so are the `sqlite-*` features of `axa`, which the published `axa` lacks.
+# A crate published for the first time needs no change here; one held back needs its name
+# in `unpublished`.
+#
+# Usage: bin/semver [--list] [BASE]
+#   --list   print what would be checked, and check nothing
+set -euf
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) && cd "$ROOT"
+
+unpublished="axa-sqlite-sqlx axa-sqlite-seaorm axa-sqlite-diesel"
+
+list=0
+if [ "${1:-}" = "--list" ]; then
+  list=1
+  shift
+fi
+base=${1:-}
+
+everything() {
+  names=$(ls crates)
+  root=1
+}
+
+if [ -z "$base" ]; then
+  everything
+elif ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+  echo "bin/semver: $base is not in this clone, so every crate is checked" >&2
+  everything
+elif ! changed=$(git diff --name-only "$base...HEAD" 2>/dev/null); then
+  echo "bin/semver: no common ancestor with $base, so every crate is checked" >&2
+  everything
+else
+  names=$(printf '%s\n' "$changed" | sed -n 's|^crates/\([^/]*\)/.*|\1|p' | sort -u)
+  root=0
+  if [ -n "$names" ]; then
+    root=1
+  elif printf '%s\n' "$changed" | grep -qE '^(src/|build\.rs$|Cargo\.toml$)'; then
+    root=1
+  fi
+fi
+
+set --
+for name in $names; do
+  case " $unpublished " in
+    *" $name "*) continue ;;
+  esac
+  [ -d "crates/$name" ] || continue
+  set -- "$@" -p "$name"
+done
+
+# Every feature `axa` has but the SQLite ones, which the published `axa` lacks.
+features=$(sed -n '/^\[features\]/,/^\[dependencies\]/p' Cargo.toml |
+  grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' =' | grep -v '^sqlite-' | grep -vx default | paste -sd, -)
+
+if [ "$list" = 1 ]; then
+  echo "crates: $*"
+  echo "axa: $root"
+  exit 0
+fi
+
+if [ "$#" -gt 0 ]; then
+  cargo semver-checks check-release --all-features "$@"
+fi
+if [ "$root" = 1 ]; then
+  cargo semver-checks check-release -p axa --features "$features"
+fi
+if [ "$#" -eq 0 ] && [ "$root" = 0 ]; then
+  echo "bin/semver: no published crate changed since $base"
+fi

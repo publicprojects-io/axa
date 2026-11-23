@@ -24,9 +24,9 @@ done
 - Run `make semver` before choosing versions: it names a crate whose API changed while
   its version is still the published one. It misses a changed return type, so also read
   `git diff "$LAST_TAG" HEAD -- crates/*/src | grep '^[-+] *pub '`.
-- After the release, add any crate published for the first time to CI's `semver` job
-  and the `Makefile`'s `semver` target, and take it out of their exclude lists if it was
-  held.
+- After the release, take any crate that was held, and is now published, out of
+  `unpublished` in `bin/semver`. CI checks only the crates a change touches, so run
+  `make semver`, which checks every one.
 
 ## 2. Prepare
 

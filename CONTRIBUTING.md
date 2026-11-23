@@ -72,8 +72,10 @@ make test-fast
 
 ### Changing a published crate's public API
 
-CI's `semver` job compares each published crate with its last release on crates.io
-(`make semver` runs it, with `cargo install cargo-semver-checks`). Where a crate's
+CI's `semver` job compares each published crate that a push or pull request changed,
+and `axa` beside it, with its last release on crates.io. `make semver` checks every
+crate, and `bin/semver BASE` the ones changed since a commit; both need
+`cargo install cargo-semver-checks`. Where a crate's
 version is still the published one and its API changed in a way that needs a new
 version, the job fails: bump the crate's `version` in its own `Cargo.toml` and in the
 root `Cargo.toml`, which names it, and say what changed in the CHANGELOG. Before 1.0 a
@@ -83,8 +85,7 @@ The check cannot see everything. A changed return type, such as a function that 
 returns a `Result`, passes it, so those changes need a version bump by hand and a line
 in the upgrade guide. A crate that is already past its release is not checked, as its
 bump is the signal. A new crate, or one that is held back, has no release to compare
-with, so it is left out of the `semver` job's list in `.github/workflows/ci.yml` and the
-`Makefile` until it is published.
+with, so a held one is named in `bin/semver`'s `unpublished` list until it is published.
 
 ### Running Database Tests
 
