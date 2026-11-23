@@ -1,3 +1,8 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! `Idempotency-Key` behind the standard middleware stack, as a service mounts it. These
 //! check where the layer sits: inside compression, inside the guards, and inside what
 //! cuts a request off.

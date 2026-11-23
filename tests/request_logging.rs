@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! Logging from the standard middleware stack.
 //!
 //! This has its own test binary, so its own process. `tracing` caches per

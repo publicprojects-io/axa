@@ -1,3 +1,8 @@
+#![allow(
+    clippy::indexing_slicing,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! Conditional requests behind the standard middleware stack, as a service mounts them.
 
 use std::{

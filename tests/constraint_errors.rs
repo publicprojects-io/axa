@@ -1,3 +1,8 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! What a violated constraint answers, against a real Postgres, because a driver only
 //! reports a violation from a real database error.
 

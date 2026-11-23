@@ -641,10 +641,6 @@ pub enum ReloadError {
 /// Engine unit tests — pure, offline, per
 /// `authorization-attributes.md` §7.
 #[cfg(test)]
-#[expect(
-    clippy::assert_is_empty,
-    reason = "a test asserts an emptiness the lint would rewrite; older Clippy lacks the lint"
-)]
 mod tests {
     use super::*;
 
@@ -925,7 +921,7 @@ mod tests {
         // obligations.
         let plain = policy.evaluate(&claims_with_attrs(&[]), Action::Read, "case");
         assert!(plain.allowed); // default allow-read
-        assert!(plain.obligations.is_empty());
+        assert_eq!(plain.obligations.len(), 0);
     }
 
     const ALLOW_ALL: &str =
@@ -1013,7 +1009,7 @@ mod tests {
         let admin = claims_with_attrs(&[("access", &["admin"])]);
         let d = policy.evaluate(&admin, Action::Write, "place");
         assert!(d.allowed);
-        assert!(d.obligations.is_empty());
+        assert_eq!(d.obligations.len(), 0);
     }
 
     #[test]

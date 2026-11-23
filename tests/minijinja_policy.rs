@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! `axa-minijinja-templates` pages under the production stack.
 #![cfg(feature = "minijinja")]
 

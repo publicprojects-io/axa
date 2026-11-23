@@ -1,3 +1,8 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! A relay under `server::run`, written as a service's `main` would write it, and a
 //! real `SIGTERM`.
 //!

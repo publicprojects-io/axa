@@ -1,4 +1,9 @@
 #![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
+#![allow(
     clippy::arithmetic_side_effects,
     reason = "RCA-SCOPE-4: tests may use plain operators"
 )]

@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! `axa::cli::parse` and `Cli::parse()` as a process meets them: they exit on a bad
 //! argument, on `--help` and `--version`, and, with `1`, on a command that destroys
 //! data where that is refused. A function that exits cannot be called in a test's own

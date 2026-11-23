@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! That a violated constraint is logged as a client's mistake. This has its own test
 //! binary for the reason given in `request_logging.rs`.
 

@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! Limits behind the standard middleware stack, as a service mounts them.
 
 #![cfg(feature = "ratelimit")]

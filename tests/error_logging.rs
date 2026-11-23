@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! What errors write to the log. This has its own test binary for the reason given
 //! in `request_logging.rs`: `tracing` caches per process whether a log site is on.
 

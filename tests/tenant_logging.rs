@@ -1,3 +1,8 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! The tenant on the request span, with `log_tenant`.
 //!
 //! This has its own test binary, so its own process. `tracing` caches per process

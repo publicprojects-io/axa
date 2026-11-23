@@ -1,3 +1,7 @@
+#![allow(
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! `logger::init` as a process sees it: LOG-4, colour goes to a terminal only, and
 //! CFG-16, settings warnings go to stderr.
 //!

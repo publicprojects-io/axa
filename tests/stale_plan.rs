@@ -1,3 +1,7 @@
+#![allow(
+    clippy::expect_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! What a stale plan answers, against a real Postgres, through each library that
 //! reports it with its code. Ignored by default:
 //!

@@ -179,8 +179,7 @@ mod tests {
         let disposition = response
             .headers()
             .get(header::CONTENT_DISPOSITION)
-            .map(|value| value.to_str().unwrap().to_string())
-            .unwrap_or_default();
+            .map_or_else(String::new, |value| value.to_str().unwrap().to_string());
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await
             .unwrap();

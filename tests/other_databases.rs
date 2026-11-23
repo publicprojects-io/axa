@@ -1,3 +1,8 @@
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    reason = "RCA-SCOPE-4: tests may unwrap, expect and index"
+)]
 //! What a violated constraint, and a database that cannot serve for now, answer on MySQL
 //! and SQLite, against real databases, because a driver only reports either from a real
 //! database error. The SQLite tests make a file of their own, so they run in
