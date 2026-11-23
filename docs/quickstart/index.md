@@ -43,7 +43,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axa = "0.21.0"
+axa = "0.22.0"
 axum = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -53,7 +53,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 For a service with a PostgreSQL database using sqlx, add the `postgres-sqlx` feature:
 ```toml
 [dependencies]
-axa = { version = "0.21.0", features = ["postgres-sqlx"] }
+axa = { version = "0.22.0", features = ["postgres-sqlx"] }
 ```
 
 For other databases, use `postgres-seaorm`, `postgres-diesel`, `postgres-toasty`, `mysql-sqlx`, `mysql-seaorm`, `mysql-diesel`, `mysql-toasty`, `sqlite-sqlx`, `sqlite-seaorm`, or `sqlite-diesel`.

@@ -17,7 +17,7 @@ to read the whole path from `main.rs` down. Reach for plain Axum whenever Axa ha
 opinion, because everything Axa returns is plain Axum.
 
 Check the version in the project's `Cargo.toml` before relying on a detail here. This
-skill describes 0.21, and says so where an earlier version differs.
+skill describes 0.22, and says so where an earlier version differs.
 
 ## Where the truth lives
 
@@ -29,6 +29,7 @@ Read these rather than guessing at an API:
 | Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
+| Upgrading to 0.22 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.22/index.md) |
 | Upgrading to 0.21 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.21/index.md) |
 | Upgrading to 0.20 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.20/index.md) |
 | Upgrading to 0.19 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.19/index.md) |
@@ -45,7 +46,7 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.21", features = ["postgres-sqlx", "queue"] }
+axa = { version = "0.22", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 

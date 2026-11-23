@@ -1,6 +1,6 @@
 {
   "name": "axa",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Accessories library for Axum websites, databases, microservices, and more.",
   "repository": "https://github.com/publicprojects-io/axa/",
   "license": "MIT OR Apache-2.0 OR BSD-3-Clause OR GPL-2.0-only OR GPL-3.0-only OR OGL-UK-3.0 OR CC-BY-NC-SA-4.0",
@@ -63,6 +63,7 @@
       "help/upgrading-to-0.17/index.md",
       "help/upgrading-to-0.18/index.md",
       "help/upgrading-to-0.19/index.md",
+      "help/upgrading-to-0.22/index.md",
       "help/upgrading-to-0.21/index.md",
       "help/upgrading-to-0.20/index.md",
       "help/upgrading-to-0.12/index.md"

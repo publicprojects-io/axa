@@ -5,6 +5,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-23
+
+This covers `axa` 0.22.0, `axa-test` 0.13.0, `axa-postgres-job-queue` 0.7.0,
+`axa-mysql-job-queue` 0.5.0, `axa-sqlite-job-queue` 0.3.0, `axa-redis-cache` 0.3.0,
+`axa-idempotency-key` 0.3.0, `axa-accepts-version-negotiation` 0.3.0,
+`axa-postgres-toasty` 0.3.0, `axa-mysql-toasty` 0.3.0, `axa-transactional-outbox` 0.4.1,
+`axa-cursor-pagination` 0.1.3, `axa-http-client` 0.2.1, `axa-mysql-diesel` 0.3.1,
+`axa-postgres-diesel` 0.4.1, `axa-openapi-docs` 0.1.1, `axa-prometheus-metrics` 0.1.3,
+`axa-request-rate-limit` 0.3.4, `axa-tracing` 0.1.1, `axa-web-session` 0.3.2, and
+`axa-webhooks` 0.1.2. No other crate is published. To upgrade, read
+[Upgrading to Axa 0.22](help/upgrading-to-0.22/index.md). The published `axa` lacks the
+`sqlite-*` features, as the SQLite crates stay unpublished.
+
 ### Changed
 
 - Arithmetic follows [`spec/rust-checked-arithmetic`](spec/rust-checked-arithmetic/index.md):

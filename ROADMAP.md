@@ -5,11 +5,18 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.21.0
+## Current Version: 0.22.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.22.0
+- Checked arithmetic across the workspace (`spec/rust-checked-arithmetic`): no wrapping or
+  saturating figure, no fallback for input out of range, and every lint in the spec denied
+  in CI on the minimum Rust and on stable
+- Settings and boot-time mistakes in code are errors, not panics or limits
+- CI in parallel jobs, and nextest for the tests that need no server
 
 ### Version 0.21.0
 - What the consuming services needed: a Redis down at boot no longer stops a service,
