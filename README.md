@@ -17,7 +17,7 @@ Add it from crates.io:
 
 ```toml
 [dependencies]
-axa = "0.22"
+axa = "0.23"
 ```
 
 ### Always included

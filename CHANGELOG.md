@@ -5,7 +5,11 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-This covers `axa` 0.23.0 and `axa-test` 0.14.0. A service that builds `Defaults` with
+## [0.23.0] - 2026-11-24
+
+This covers `axa` 0.23.0 and `axa-test` 0.14.0. No other crate changed what it ships.
+The published `axa` lacks the `sqlite-*` features, as their crates are held for
+RUSTSEC-2026-0459. A service that builds `Defaults` with
 `..Defaults::default()` upgrades by changing the versions, with a database or without.
 See [Upgrading to Axa 0.23](help/upgrading-to-0.23/index.md). The additions come from
 the issues a service moving from Loco filed: #40 to #46.

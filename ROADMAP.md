@@ -5,11 +5,17 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.22.0
+## Current Version: 0.23.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.23.0
+- What a service moving from Loco with its own store needed (issues #40 to #46): HTTP
+  settings in `Defaults`, `AppRoutes::into_app_with`, `Error::with_detail` and a warning
+  when a plain-text answer is dropped, `AppContext::for_test`, `Config::for_task`, a guide
+  to a service with its own store, and a stability and support section here
 
 ### Version 0.22.0
 - Checked arithmetic across the workspace (`spec/rust-checked-arithmetic`): no wrapping or
