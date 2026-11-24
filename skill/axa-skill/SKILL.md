@@ -302,7 +302,9 @@ Read a service's own variables with `config::Settings`, not `std::env::var`, so 
 get the same rules: `let settings = Settings::from_env(&environment);`, then
 `required`, `parsed`, `flag`, and `secret`, which reads `NAME` or a file `NAME_FILE`
 names, and last `settings.finish()?`, which refuses a production boot with any problem
-and otherwise gives back warnings to log.
+and otherwise gives back warnings to log. `renamed(old, Some(new))` notes an old name
+that way; `retired(old, Some(new))`, or `refuse(sentence)` for any problem, is refused in
+every environment.
 
 ## Destructive commands
 

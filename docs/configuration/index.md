@@ -414,6 +414,12 @@ ending is dropped. Setting both `NAME` and `NAME_FILE`, or naming a file that ca
 read, is a problem. `DB_URL` reads the same way, from `DB_URL_FILE`, and either mistake
 there stops the boot in every environment.
 
+A setting the service once read under another name is noted with
+`settings.renamed("UPSTREAM_HOST", Some("UPSTREAM_URL"))`, which, like any problem, is
+refused in production and a warning elsewhere. Where the service's rule is that an old
+name never boots, in development and tests too, use `settings.retired(..)` in its place.
+`settings.refuse(sentence)` notes any problem that way.
+
 ---
 
 ## Configuration Precedence

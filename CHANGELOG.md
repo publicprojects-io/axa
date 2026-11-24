@@ -5,6 +5,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `Settings::refuse`, a problem `finish` refuses in every environment, and
+  `Settings::retired`, which refuses a service's own old setting name that way, for a
+  service whose rule is that an old name never boots, in development and tests too.
+  `Settings::renamed`, and `axa`'s own old names, still refuse only in production
+  (CFG-34).
+
 ## [0.23.0] - 2026-11-24
 
 This covers `axa` 0.23.0 and `axa-test` 0.14.0. No other crate changed what it ships.

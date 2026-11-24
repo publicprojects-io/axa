@@ -11,7 +11,10 @@
 //! [`Logger::warnings`] for [`logger::init`] to write out. A blank value counts
 //! as unset, because that is what a compose file sends for an unset variable.
 
-use std::{cell::RefCell, fmt};
+use std::{
+    cell::{Cell, RefCell},
+    fmt,
+};
 
 use crate::{
     Environment, Error, Result,
@@ -549,7 +552,8 @@ fn refuse_renamed<F: Fn(&str) -> Option<String>>(
 ///
 /// [`Config`] reads Axa's own settings with it, and a service reads its own the same
 /// way. [`Settings::finish`] then refuses to boot a production-like environment with
-/// any problem, and elsewhere hands the problems back as warnings.
+/// any problem, and elsewhere hands the problems back as warnings. A problem noted with
+/// [`Settings::refuse`], or by [`Settings::retired`], is refused in every environment.
 ///
 /// # Examples
 ///
@@ -574,6 +578,7 @@ pub struct Settings<F> {
     lookup: F,
     production: bool,
     problems: RefCell<Vec<String>>,
+    refused: Cell<bool>,
 }
 
 impl Settings<fn(&str) -> Option<String>> {
@@ -592,6 +597,7 @@ impl<F: Fn(&str) -> Option<String>> fmt::Debug for Settings<F> {
         f.debug_struct("Settings")
             .field("production", &self.production)
             .field("problems", &self.problems.borrow())
+            .field("refused", &self.refused.get())
             .finish_non_exhaustive()
     }
 }
@@ -604,6 +610,7 @@ impl<F: Fn(&str) -> Option<String>> Settings<F> {
             lookup,
             production: environment.is_production_like(),
             problems: RefCell::new(Vec::new()),
+            refused: Cell::new(false),
         }
     }
 
@@ -618,14 +625,30 @@ impl<F: Fn(&str) -> Option<String>> Settings<F> {
     /// than run on a default nobody chose, and is warned about elsewhere. Returns
     /// whether `old` was set.
     pub fn renamed(&self, old: &str, new: Option<&str>) -> bool {
-        if self.optional(old).is_none() {
+        let Some(problem) = self.renamed_problem(old, new) else {
             return false;
-        }
-        self.problem(match new {
+        };
+        self.problem(problem);
+        true
+    }
+
+    /// [`Settings::renamed`], but refused in every environment, as by
+    /// [`Settings::refuse`], for a service whose own rule is that an old name never
+    /// boots, in development and tests as in production. Returns whether `old` was set.
+    pub fn retired(&self, old: &str, new: Option<&str>) -> bool {
+        let Some(problem) = self.renamed_problem(old, new) else {
+            return false;
+        };
+        self.refuse(problem);
+        true
+    }
+
+    fn renamed_problem(&self, old: &str, new: Option<&str>) -> Option<String> {
+        self.optional(old)?;
+        Some(match new {
             Some(new) => format!("{old} is no longer read: set {new}"),
             None => format!("{old} is no longer read, and nothing takes its place"),
-        });
-        true
+        })
     }
 
     /// The value of `name`. An unset one is a problem.
@@ -687,6 +710,13 @@ impl<F: Fn(&str) -> Option<String>> Settings<F> {
         self.problems.borrow_mut().push(problem.into());
     }
 
+    /// Note a problem that [`Settings::finish`] refuses in every environment, not only
+    /// a production-like one. It must quote no secret.
+    pub fn refuse(&self, problem: impl Into<String>) {
+        self.refused.set(true);
+        self.problem(problem);
+    }
+
     /// The value of `name`, or `default` when unset. A blank value is kept.
     pub fn text(&self, name: &str, default: &str) -> String {
         (self.lookup)(name).unwrap_or_else(|| default.to_string())
@@ -744,11 +774,12 @@ impl<F: Fn(&str) -> Option<String>> Settings<F> {
     ///
     /// # Errors
     ///
-    /// Fails in a production-like environment when there is any problem, naming them
-    /// all. Elsewhere it gives the problems back, for the service to log as warnings.
+    /// Fails in a production-like environment when there is any problem, and in every
+    /// environment when one was noted with [`Settings::refuse`], naming them all.
+    /// Otherwise it gives the problems back, for the service to log as warnings.
     pub fn finish(self) -> Result<Vec<String>> {
         let problems = self.problems.into_inner();
-        if self.production && !problems.is_empty() {
+        if (self.production || self.refused.get()) && !problems.is_empty() {
             return Err(Error::string(&format!(
                 "invalid settings: {}",
                 problems.join("; ")
@@ -1482,6 +1513,55 @@ mod tests {
         assert_eq!(
             gone.finish().unwrap(),
             ["SVC_OLD is no longer read, and nothing takes its place"]
+        );
+    }
+
+    #[test]
+    fn a_service_may_refuse_its_retired_settings_in_every_environment() {
+        let set = |name: &str| (name == "SVC_OLD").then(|| "on".to_string());
+        for environment in [
+            Environment::Development,
+            Environment::Test,
+            Environment::Production,
+        ] {
+            let settings = Settings::from_lookup(&environment, set);
+            assert!(settings.retired("SVC_OLD", Some("SVC_NEW")));
+            assert!(!settings.retired("SVC_UNSET", None));
+            let _: u32 = settings.parsed("SVC_OLD", 1);
+            let error = settings.finish().unwrap_err().to_string();
+            // The refusal names every problem, the warnings with it.
+            assert!(
+                error.contains("SVC_OLD is no longer read: set SVC_NEW")
+                    && error.contains("SVC_OLD=\"on\" is not a valid number"),
+                "{environment:?}: {error}"
+            );
+        }
+        // Blank counts as unset, and with nothing set nothing is refused.
+        let blank = |name: &str| (name == "SVC_OLD").then(|| " ".to_string());
+        let settings = Settings::from_lookup(&Environment::Development, blank);
+        assert!(!settings.retired("SVC_OLD", None));
+        assert_eq!(settings.finish().unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn a_refused_problem_fails_every_environment_and_others_only_production() {
+        let read = |environment| {
+            let settings = Settings::from_lookup(&environment, |_: &str| None);
+            settings.problem("SVC_REGION is not served");
+            settings
+        };
+        let development = read(Environment::Development);
+        assert_eq!(development.finish().unwrap(), ["SVC_REGION is not served"]);
+        let development = read(Environment::Development);
+        development.refuse("SVC_MODE=legacy is gone");
+        assert_eq!(
+            development.problems(),
+            ["SVC_REGION is not served", "SVC_MODE=legacy is gone"]
+        );
+        let error = development.finish().unwrap_err().to_string();
+        assert!(
+            error.contains("SVC_REGION is not served; SVC_MODE=legacy is gone"),
+            "{error}"
         );
     }
 
