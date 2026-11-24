@@ -2747,6 +2747,33 @@ mod tests {
         assert!(error.to_string().contains("1 to 200 characters"), "{error}");
     }
 
+    /// A run whose time cannot be worked out is stopped and given up on, not left to run
+    /// with no limit. `check` refuses such options, so the queue is built without it.
+    #[tokio::test]
+    async fn a_run_with_a_time_too_large_to_compute_is_lost_and_not_run() {
+        let pool = PgPoolOptions::new()
+            .connect_lazy("postgres://u@localhost/none")
+            .unwrap();
+        let mut queue = Queue::from_pool(pool, QueueOptions::default()).unwrap();
+        let claim = |timeout| Claimed {
+            id: Uuid::nil(),
+            name: "J".to_string(),
+            args: serde_json::Value::Null,
+            attempts: 1,
+            limit: 1,
+            timeout,
+            tenant: None,
+        };
+        let job = || -> JobFuture { Box::pin(async { Ok(()) }) };
+        // A job time limit that passes the end of time.
+        let outcome = queue.supervise(job(), &claim(Some(Duration::MAX))).await;
+        assert!(matches!(&outcome, Outcome::Lost(why) if why == TIMING));
+        // A stale time that is negative, so there is no time to give up at.
+        queue.options.stale_minutes = -1_i32;
+        let outcome = queue.supervise(job(), &claim(None)).await;
+        assert!(matches!(&outcome, Outcome::Lost(why) if why == TIMING));
+    }
+
     #[tokio::test]
     async fn a_schedule_added_twice_is_refused_at_boot() {
         let pool = PgPoolOptions::new()
