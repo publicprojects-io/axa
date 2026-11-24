@@ -267,6 +267,91 @@ pub fn parse_vars(params: &[String]) -> Result<Vars> {
     Ok(Vars::from_cli_args(pairs))
 }
 
+impl Cli {
+    /// The environment the command runs in: `--environment` when it is given, and
+    /// otherwise `APP_ENV`, as [`Environment::from_env`] reads it.
+    #[must_use]
+    pub fn environment(&self) -> Environment {
+        self.environment
+            .as_deref()
+            .map_or_else(Environment::from_env, Environment::parse)
+    }
+
+    /// The configuration for this command, read from the process environment: see
+    /// [`Cli::config_from_lookup`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Config::from_lookup`].
+    pub fn config(&self, environment: &Environment, defaults: &Defaults) -> Result<Config> {
+        self.config_from_lookup(environment, defaults, |name| std::env::var(name).ok())
+    }
+
+    /// The configuration for this command: [`Config::for_task_from_lookup`] for `task`,
+    /// which does not listen and so is not refused for a setting only a server reads,
+    /// and [`Config::from_lookup`] for any other, with the command's `--binding` and
+    /// `--port` applied, as [`Config::apply_cli`] does.
+    ///
+    /// # Errors
+    ///
+    /// As [`Config::from_lookup`].
+    pub fn config_from_lookup(
+        &self,
+        environment: &Environment,
+        defaults: &Defaults,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Result<Config> {
+        let mut config = if matches!(self.command, Command::Task { .. }) {
+            Config::for_task_from_lookup(environment, defaults, lookup)?
+        } else {
+            Config::from_lookup(environment, defaults, lookup)?
+        };
+        config.apply_cli(self);
+        Ok(config)
+    }
+}
+
+/// Answer `check` and `health`, which open nothing, so a service calls this first and
+/// they work with its database or store missing. `None` for any other command, which is
+/// the service's to run.
+///
+/// ```no_run
+/// # async fn run(cli: axa::cli::Cli) -> axa::Result<()> {
+/// use axa::config::Defaults;
+///
+/// let environment = cli.environment();
+/// let defaults = Defaults::default();
+/// if let Some(answered) = axa::cli::answer(&cli, &environment, &defaults).await {
+///     return answered;
+/// }
+/// let config = cli.config(&environment, &defaults)?;
+/// # Ok(())
+/// # }
+/// ```
+pub async fn answer(
+    cli: &Cli,
+    environment: &Environment,
+    defaults: &Defaults,
+) -> Option<Result<()>> {
+    answer_from(cli, environment, defaults, |name| std::env::var(name).ok()).await
+}
+
+/// [`answer`], reading settings through `lookup` rather than the process environment.
+pub async fn answer_from(
+    cli: &Cli,
+    environment: &Environment,
+    defaults: &Defaults,
+    lookup: impl Fn(&str) -> Option<String>,
+) -> Option<Result<()>> {
+    match &cli.command {
+        Command::Check => Some(check_with(environment, defaults, lookup)),
+        Command::Health { ready, port } => {
+            Some(health_from(environment, defaults, *ready, *port, lookup).await)
+        }
+        Command::Start { .. } | Command::Db { .. } | Command::Task { .. } => None,
+    }
+}
+
 /// Run the `check` command: read the configuration as a real start would, and
 /// print the report. Call it before connecting to anything.
 ///
@@ -903,6 +988,64 @@ mod tests {
         let (given, server) = answering("HTTP/1.1 204 No Content\r\n\r\n").await;
         health_with(&config, true, Some(given)).await.unwrap();
         assert!(server.await.unwrap().starts_with("GET /_health/ready "));
+    }
+
+    #[test]
+    fn the_environment_flag_beats_app_env() {
+        let cli = Cli::try_parse_from(["service", "check", "--environment", "production"]).unwrap();
+        assert_eq!(cli.environment(), Environment::Production);
+        let cli = Cli::try_parse_from(["service", "check"]).unwrap();
+        assert_eq!(cli.environment(), Environment::from_env());
+    }
+
+    #[test]
+    fn a_commands_configuration_is_read_as_a_task_or_a_start_would_read_it() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let listener = |name: &str| (name == "CORS_ALLOWED_ORIGINS").then(|| "*".to_string());
+        let production = Environment::Production;
+        let task = Cli::try_parse_from(["service", "task", "verify"]).unwrap();
+        assert!(
+            task.config_from_lookup(&production, &defaults, listener)
+                .is_ok()
+        );
+        let start = Cli::try_parse_from(["service", "start", "--port", "4000"]).unwrap();
+        assert!(
+            start
+                .config_from_lookup(&production, &defaults, listener)
+                .is_err()
+        );
+        // The command's flags are applied.
+        let config = start
+            .config_from_lookup(&Environment::Development, &defaults, |_| None)
+            .unwrap();
+        assert_eq!(config.server.port, 4000);
+    }
+
+    #[tokio::test]
+    async fn answer_takes_check_and_health_and_leaves_the_rest() {
+        async fn answered(args: &[&str]) -> Option<bool> {
+            let defaults = Defaults {
+                database: "",
+                ..Defaults::default()
+            };
+            let cli = Cli::try_parse_from(args).unwrap();
+            let refused = |name: &str| (name == "PORT").then(|| "nope".to_string());
+            answer_from(&cli, &Environment::Production, &defaults, refused)
+                .await
+                .map(|result| result.is_ok())
+        }
+        assert_eq!(answered(&["service", "check"]).await, Some(false));
+        assert_eq!(answered(&["service", "health"]).await, Some(false));
+        for args in [
+            &["service", "start"][..],
+            &["service", "task"],
+            &["service", "db", "status"],
+        ] {
+            assert_eq!(answered(args).await, None, "{args:?}");
+        }
     }
 
     #[test]

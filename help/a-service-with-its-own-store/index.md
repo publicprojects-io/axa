@@ -102,28 +102,19 @@ open the store itself, from the same opener the server uses, so the path cannot 
 An argument naming another file lets a task check a restored backup, which is never at
 the path the service has open.
 
-Build the task's configuration with `Config::for_task`. It does not read the settings
-only a listening server uses, such as `PORT` or `CORS_ALLOWED_ORIGINS`, so a task an
-operator runs while the server is misconfigured is not refused for them:
+Build the configuration with `cli.config`, which uses `Config::for_task` for a task. That
+does not read the settings only a listening server uses, such as `PORT` or
+`CORS_ALLOWED_ORIGINS`, so a task an operator runs while the server is misconfigured is
+not refused for them:
 
 ```rust,ignore
 pub async fn run(cli: Cli) -> axa::Result<()> {
-    let environment = cli
-        .environment
-        .as_deref()
-        .map_or_else(Environment::from_env, Environment::parse);
-    if matches!(cli.command, Command::Check) {
-        return axa::cli::check(&environment, &defaults());
+    let environment = cli.environment();
+    // `check` and `health` open nothing, so they work with the store missing.
+    if let Some(answered) = axa::cli::answer(&cli, &environment, &defaults()).await {
+        return answered;
     }
-    if let Command::Health { ready, port } = cli.command {
-        return axa::cli::health(&environment, &defaults(), ready, port).await;
-    }
-    let mut config = if matches!(cli.command, Command::Task { .. }) {
-        Config::for_task(&environment, &defaults())?
-    } else {
-        Config::from_env(&environment, &defaults())?
-    };
-    config.apply_cli(&cli);
+    let config = cli.config(&environment, &defaults())?;
     axa::logger::init(env!("CARGO_CRATE_NAME"), &config.logger);
     let mut ctx = AppContext::new(environment, (), config);
     match cli.command {
@@ -132,14 +123,7 @@ pub async fn run(cli: Cli) -> axa::Result<()> {
             axa::server::serve(router(&ctx)?, &ctx.config.server).await
         }
         Command::Task { name, params } => {
-            let tasks = tasks();
-            let Some(name) = name else {
-                for task in tasks.list() {
-                    println!("{}\t{}", task.name, task.detail);
-                }
-                return Ok(());
-            };
-            tasks.run(&name, &ctx, &axa::cli::parse_vars(&params)?).await
+            tasks().run_or_list(name.as_deref(), &ctx, &params).await
         }
         Command::Db { .. } => Err(axa::Error::string(
             "this service keeps its data in its own store, not in a database of Axa's",

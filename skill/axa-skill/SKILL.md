@@ -196,8 +196,10 @@ let cli = axa::cli::parse(
 # }
 ```
 
-Answer `Command::Check` with `axa::cli::check`, and `Command::Health { ready, port }` with
-`axa::cli::health`, before connecting to anything. `service health` is the container's
+Answer `check` and `health` with `axa::cli::answer(&cli, &environment, &defaults)` before
+connecting to anything; it gives `None` for the other commands. Read the configuration
+with `cli.config(&environment, &defaults)`, which uses `Config::for_task` for a task, and
+answer `Command::Task` with `tasks.run_or_list(name.as_deref(), &ctx, &params)`. `service health` is the container's
 health check in an image with no `curl`.
 
 ## Writing handlers

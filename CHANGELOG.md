@@ -5,6 +5,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `Cli::environment`, `Cli::config`, `cli::answer`, and `Tasks::run_or_list`, which take
+  in the command dispatch every service wrote by hand: the environment from the flag or
+  `APP_ENV`, `check` and `health` answered before anything opens, `Config::for_task` for
+  a task with the `start` flags applied, and the task list for `task` with no name
+  (CLI-15, TSK-4).
+
 ## [0.23.1] - 2026-11-24
 
 This covers `axa` 0.23.1, which only adds to 0.23.0: a service upgrades by changing the

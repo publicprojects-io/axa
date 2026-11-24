@@ -129,7 +129,7 @@ Then add the part Loco did for you, which is what makes the flow readable:
 ```rust,ignore
 use axa::{
     Environment, Error, Result,
-    cli::{Cli, Command, DbCommand, parse_vars},
+    cli::{Cli, Command, DbCommand},
     config::{Config as ServiceConfig, Defaults, MB},
     server,
     task::Tasks,
@@ -185,24 +185,15 @@ impl App {
     }
 
     pub async fn run(cli: Cli) -> Result<()> {
-        let environment = cli
-            .environment
-            .as_deref()
-            .map_or_else(Environment::from_env, Environment::parse);
-        // Before anything connects, so it works with the database down.
-        if matches!(cli.command, Command::Check) {
-            return axa::cli::check(&environment, &defaults());
+        let environment = cli.environment();
+        // `check` and `health`, before anything connects, so they work with the
+        // database down.
+        if let Some(answered) = axa::cli::answer(&cli, &environment, &defaults()).await {
+            return answered;
         }
-        if let Command::Health { ready, port } = cli.command {
-            return axa::cli::health(&environment, &defaults(), ready, port).await;
-        }
-        // A task does not listen, so it is not refused for a server-only setting.
-        let mut config = if matches!(cli.command, Command::Task { .. }) {
-            ServiceConfig::for_task(&environment, &defaults())?
-        } else {
-            ServiceConfig::from_env(&environment, &defaults())?
-        };
-        config.apply_cli(&cli);
+        // `Config::for_task` for a task, which does not listen, so it is not refused
+        // for a server-only setting, and the `start` flags applied.
+        let config = cli.config(&environment, &defaults())?;
         let ctx = Self::context(environment, config).await?;
         axa::logger::init(env!("CARGO_CRATE_NAME"), &ctx.config.logger);
         if ctx.config.database.auto_migrate && !matches!(cli.command, Command::Db { .. }) {
@@ -217,13 +208,7 @@ impl App {
             Command::Task { name, params } => {
                 let mut tasks = Tasks::default();
                 Self::register_tasks(&mut tasks);
-                let Some(name) = name else {
-                    for task in tasks.list() {
-                        println!("{}\t{}", task.name, task.detail);
-                    }
-                    return Ok(());
-                };
-                tasks.run(&name, &ctx, &parse_vars(&params)?).await
+                tasks.run_or_list(name.as_deref(), &ctx, &params).await
             }
             Command::Check | Command::Health { .. } => Ok(()), // Answered above.
         }

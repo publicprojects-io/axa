@@ -547,13 +547,16 @@ process stays refused whatever the flag says. `Cli::parse()` refuses them too.
 `check` validates the configuration, prints the effective settings with passwords
 and other secrets redacted, and exits, non-zero if refused. It connects to nothing,
 and it knows only the settings Axa reads. `Config::apply_cli` applies the `start`
-overrides.
+overrides, and `cli.config(&environment, &defaults)` reads the configuration for the
+command, as `Config::for_task` for a task, with those overrides applied.
 
 `health` asks the server running on this machine for `/_health/live`, or
 `/_health/ready` with `--ready`, and exits non-zero unless it answers `2xx` within 5
 seconds, so an image with no `curl` can still have a container health check:
 `HEALTHCHECK CMD ["/service", "health"]`. A service answers it with
-`axa::cli::health` before it connects to anything.
+`axa::cli::health` before it connects to anything, or answers both with
+`axa::cli::answer(&cli, &environment, &defaults)`, which gives `None` for the other
+commands.
 
 ### Tasks
 
@@ -584,7 +587,8 @@ tasks.register(Greet);
 ```
 
 Build a task's context from `Config::for_task`, so that a setting only the server reads
-cannot block it.
+cannot block it. `tasks.run_or_list(name.as_deref(), &ctx, &params)` answers the `task`
+command: it lists the tasks when no name is given.
 
 ### Background jobs
 

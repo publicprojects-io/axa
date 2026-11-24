@@ -102,6 +102,38 @@ impl Tasks {
         }
         task.run(ctx, vars).await
     }
+
+    /// The `task` command: run `name` with `params`, its `key:value` arguments, or with
+    /// no name print each task's name and description, one to a line, separated by a
+    /// tab.
+    ///
+    /// # Errors
+    ///
+    /// As [`Tasks::run`], or when a parameter has no `:`.
+    pub async fn run_or_list(
+        &self,
+        name: Option<&str>,
+        ctx: &AppContext,
+        params: &[String],
+    ) -> Result<()> {
+        let Some(name) = name else {
+            print!("{}", self.listing());
+            return Ok(());
+        };
+        self.run(name, ctx, &crate::cli::parse_vars(params)?).await
+    }
+
+    /// What `task` with no name prints.
+    fn listing(&self) -> String {
+        let mut text = String::new();
+        for task in self.list() {
+            text.push_str(&task.name);
+            text.push('\t');
+            text.push_str(&task.detail);
+            text.push('\n');
+        }
+        text
+    }
 }
 
 #[cfg(all(
@@ -179,6 +211,25 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("missing task argument: by"));
+    }
+
+    #[tokio::test]
+    async fn the_task_command_lists_with_no_name_and_runs_with_one() {
+        let mut tasks = Tasks::default();
+        tasks.register(Count);
+        assert_eq!(tasks.listing(), "count\tCounts\n");
+        tasks.run_or_list(None, &context(), &[]).await.unwrap();
+        // A name reaches `run`, through the same argument parsing as `parse_vars`.
+        let error = tasks
+            .run_or_list(Some("nope"), &context(), &[])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("unknown task: nope"), "{error}");
+        let error = tasks
+            .run_or_list(Some("count"), &context(), &["by".to_string()])
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("expected key:value"), "{error}");
     }
 
     #[test]
