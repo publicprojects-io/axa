@@ -1283,7 +1283,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None)?;
-        let ctx = AppContext::for_test(Environment::Test, config);
+        let ctx = AppContext::with_test_db(Environment::Test, config);
         assert!(!warn_if_unserved(&ctx, false));
         Ok(())
     }
@@ -1495,7 +1495,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None)?;
-        let mut ctx = AppContext::for_test(Environment::Test, config);
+        let mut ctx = AppContext::with_test_db(Environment::Test, config);
         ctx.queue_provider = Some(Arc::new(queue().await?));
         assert!(warn_if_unserved(&ctx, false));
         assert!(!warn_if_unserved(&ctx, true));
@@ -1513,7 +1513,7 @@ mod tests {
         let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
             (name == "WORKER_MODE").then(|| "BackgroundQueue".to_string())
         })?;
-        let mut ctx = AppContext::for_test(Environment::Test, config);
+        let mut ctx = AppContext::with_test_db(Environment::Test, config);
         let queue = Arc::new(queue().await?);
         ctx.queue_provider = Some(queue.clone());
         let id = CountWorker::perform_later(&ctx, Args { fail: false }).await?;
@@ -1550,7 +1550,7 @@ mod tests {
         let config = Config::from_lookup(&Environment::Test, &defaults, |name| {
             (name == "WORKER_MODE").then(|| "BackgroundQueue".to_string())
         })?;
-        let mut ctx = AppContext::for_test(Environment::Test, config);
+        let mut ctx = AppContext::with_test_db(Environment::Test, config);
         let mut queue = queue().await?;
         queue.register(TimedWorker);
         let queue = Arc::new(queue);

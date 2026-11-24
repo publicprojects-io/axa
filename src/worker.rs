@@ -272,7 +272,7 @@ mod tests {
             (name == "WORKER_MODE").then(|| mode.to_string())
         })
         .unwrap();
-        AppContext::for_test(Environment::Test, config)
+        AppContext::with_test_db(Environment::Test, config)
     }
 
     #[test]

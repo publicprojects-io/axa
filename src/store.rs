@@ -141,7 +141,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let ctx = AppContext::for_test(Environment::Test, config);
+        let ctx = AppContext::with_test_db(Environment::Test, config);
         let (mut parts, ()) = Request::new(()).into_parts();
         let Err(error) = SharedStore::<u8>::from_request_parts(&mut parts, &ctx).await else {
             panic!("nothing was stored");

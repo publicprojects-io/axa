@@ -238,6 +238,33 @@ impl Error {
     pub fn wrap(err: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Any(Box::new(err))
     }
+
+    /// A problem with `status`, its reason as the `code`, and `detail` sent as the
+    /// `detail`: the sentence a caller needs, such as where a deleted record's history
+    /// is. The standard stack drops a handler's plain-text body, so this is the shape
+    /// for a handler that returned `(StatusCode, String)`:
+    ///
+    /// ```
+    /// use axa::Error;
+    /// use axum::http::StatusCode;
+    ///
+    /// let gone = Error::with_detail(StatusCode::GONE, "the history is at /history/1");
+    /// ```
+    ///
+    /// The sentence is sent as written, whatever the status, so it must quote nothing
+    /// the caller should not see.
+    #[must_use]
+    pub fn with_detail(status: StatusCode, detail: impl Into<String> + AsRef<str>) -> Self {
+        let detail = (!detail.as_ref().is_empty()).then(|| detail.into());
+        Self::CustomError(
+            status,
+            ErrorDetail {
+                code: reason_code(status),
+                detail,
+                errors: None,
+            },
+        )
+    }
 }
 
 /// A rejected value in the URL. The rejection's own text quotes the value, so it is
@@ -1152,6 +1179,21 @@ mod tests {
             problem_of(Error::CustomError(status, ErrorDetail::with_reason("odd"))).await;
         assert_eq!(kept, status);
         assert_eq!(body["title"], "Error");
+    }
+
+    #[tokio::test]
+    async fn an_error_with_a_detail_keeps_its_sentence_and_takes_its_status_reason() {
+        let (status, body) = problem_of(Error::with_detail(
+            StatusCode::NOT_IMPLEMENTED,
+            "send a PUT",
+        ))
+        .await;
+        assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+        assert_eq!(body["code"], "not_implemented");
+        assert_eq!(body["detail"], "send a PUT");
+        let (_, body) = problem_of(Error::with_detail(StatusCode::GONE, "")).await;
+        assert_eq!(body["code"], "gone");
+        assert!(body.get("detail").is_none(), "{body}");
     }
 
     /// Pinned as text, as this is what a client parses and what the upgrade guide shows.

@@ -149,7 +149,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        AppContext::for_test(Environment::Test, config)
+        AppContext::with_test_db(Environment::Test, config)
     }
 
     #[tokio::test]

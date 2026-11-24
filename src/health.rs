@@ -431,7 +431,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        AppContext::for_test(Environment::Test, config)
+        AppContext::with_test_db(Environment::Test, config)
     }
 
     async fn answer(router: axum::Router) -> (StatusCode, String) {
@@ -803,7 +803,7 @@ mod database_tests {
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         // A connection that was never opened cannot answer a ping.
-        let ctx = AppContext::for_test(Environment::Test, config);
+        let ctx = AppContext::with_test_db(Environment::Test, config);
         let router = AppRoutes::with_default_routes().into_router(ctx);
         let request = Request::builder().uri(READY).body(Body::empty()).unwrap();
         let response = router.clone().oneshot(request).await.unwrap();
@@ -844,7 +844,7 @@ mod named_database_tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let ctx = AppContext::for_test(Environment::Test, config);
+        let ctx = AppContext::with_test_db(Environment::Test, config);
         let answer = ctx.health_checks.answer(built_in(&ctx, false)).await;
         assert_eq!(answer.failed, ["database"]);
     }
@@ -867,7 +867,7 @@ mod sqlx_tests {
         let config =
             crate::config::Config::from_lookup(&crate::Environment::Test, &defaults, |_| None)
                 .unwrap();
-        let ctx = AppContext::for_test(crate::Environment::Test, config);
+        let ctx = AppContext::with_test_db(crate::Environment::Test, config);
         let answer = ctx.health_checks.answer(built_in(&ctx, false)).await;
         assert_eq!(answer.failed, ["database"]);
     }

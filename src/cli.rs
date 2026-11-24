@@ -674,6 +674,20 @@ mod tests {
     }
 
     #[test]
+    fn check_reports_a_services_own_http_defaults() {
+        let defaults = Defaults {
+            database: "",
+            request_timeout_seconds: Some(10),
+            ..Defaults::default()
+        };
+        let text = check_report(&Environment::Production, &defaults, |_| None).unwrap();
+        assert!(
+            text.lines().any(|l| l == "REQUEST_TIMEOUT_SECONDS=10"),
+            "{text}"
+        );
+    }
+
+    #[test]
     fn check_never_prints_a_password() {
         let text = report(
             &[

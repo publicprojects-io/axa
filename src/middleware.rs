@@ -182,12 +182,26 @@ fn is_bare(content_type: Option<&HeaderValue>) -> bool {
 /// sent. The headers stay, as a `405`'s `allow` and a `429`'s `retry-after` mean
 /// something.
 async fn shape_refusals(request: Request, next: Next) -> Response {
+    let route = request
+        .extensions()
+        .get::<MatchedPath>()
+        .map(|path| (request.method().clone(), path.as_str().to_string()));
     let response = next.run(request).await;
     let status = response.status();
-    if !(status.is_client_error() || status.is_server_error())
-        || !is_bare(response.headers().get(header::CONTENT_TYPE))
-    {
+    let content_type = response.headers().get(header::CONTENT_TYPE);
+    if !(status.is_client_error() || status.is_server_error()) || !is_bare(content_type) {
         return response;
+    }
+    // Text on a matched route was written by its handler or an extractor, and is lost.
+    if let Some((method, template)) = route.filter(|_| content_type.is_some())
+        && first_replacement(&method, &template, status)
+    {
+        tracing::warn!(
+            "a plain-text {status} answer on {method} {template} was sent as a problem with \
+             no detail, so its text was dropped; return an axa::Error, such as \
+             Error::with_detail, to send a sentence, or take an extractor's rejection as \
+             a Result"
+        );
     }
     let (mut parts, _) = response.into_parts();
     let (problem, body) = crate::error::refusal_response(status).into_parts();
@@ -195,6 +209,22 @@ async fn shape_refusals(request: Request, next: Next) -> Response {
     parts.headers.remove(header::CONTENT_LENGTH);
     parts.headers.extend(problem.headers);
     Response::from_parts(parts, body)
+}
+
+/// How many replaced answers [`first_replacement`] remembers. Templates and statuses are
+/// few, so this holds every pair a service has, and bounds the set if one is not.
+const REPLACEMENTS_REMEMBERED: usize = 1_024;
+
+/// Whether this is the first plain-text answer replaced for this method, route
+/// template, and status, so that each is warned of once and a busy route does not fill
+/// the log.
+fn first_replacement(method: &Method, template: &str, status: StatusCode) -> bool {
+    static SEEN: std::sync::LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> =
+        std::sync::LazyLock::new(std::sync::Mutex::default);
+    let mut seen = SEEN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    seen.len() < REPLACEMENTS_REMEMBERED && seen.insert(format!("{method} {template} {status}"))
 }
 
 /// `method` with a body limit of its own, replacing the service-wide limit there, for
@@ -1612,6 +1642,65 @@ mod tests {
             assert_eq!(problem["status"], status.as_u16());
             assert!(!problem.to_string().contains("1234567"), "{problem}");
         }
+    }
+
+    /// A writer the log is captured in.
+    #[derive(Clone, Default)]
+    struct Captured(Arc<std::sync::Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_replaced_plain_text_answer_is_warned_of_once_per_route_and_status() {
+        async fn says_why() -> (StatusCode, &'static str) {
+            (StatusCode::NOT_IMPLEMENTED, "send a PUT")
+        }
+        async fn only_a_status() -> StatusCode {
+            StatusCode::SERVICE_UNAVAILABLE
+        }
+        let router = Router::new()
+            .route("/warned/{id}", get(says_why))
+            .route("/unwarned/{id}", get(only_a_status));
+        let app = apply(router, &config()).unwrap();
+        let log = Captured::default();
+        let writer = log.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || writer.clone())
+            .with_ansi(false)
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        for path in ["/warned/1", "/warned/2", "/unwarned/1"] {
+            let response = app.clone().oneshot(get_request(path)).await.unwrap();
+            assert!(problem_of(response).await.get("detail").is_none());
+        }
+        let text = String::from_utf8(log.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(text.matches("WARN").count(), 1, "{text}");
+        assert!(
+            text.contains("501 Not Implemented answer on GET /warned/{id}"),
+            "{text}"
+        );
+        assert!(text.contains("Error::with_detail"), "{text}");
+        assert!(!text.contains("send a PUT"), "{text}");
+    }
+
+    #[test]
+    fn each_replacement_is_new_once() {
+        let method = Method::DELETE;
+        assert!(first_replacement(&method, "/once/{id}", StatusCode::GONE));
+        assert!(!first_replacement(&method, "/once/{id}", StatusCode::GONE));
+        assert!(first_replacement(
+            &method,
+            "/once/{id}",
+            StatusCode::CONFLICT
+        ));
     }
 
     #[tokio::test]

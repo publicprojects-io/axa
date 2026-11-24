@@ -172,6 +172,26 @@ Each item waits until two services request it, or one has a compelling safety ca
 - **Minor versions** (0.x.0): Breaking changes, new features
 - **Major version 1.0**: Stabilization of API, comprehensive feature set
 
+## Stability and Support
+
+This says what happens today, so that a service can decide whether to stay on a minor.
+
+- **Each minor may break.** Before 1.0, Cargo treats `0.21` and `0.22` as incompatible,
+  so `axa = "0.21"` never selects 0.22, and each move is by hand. Each minor has an
+  upgrading guide in [`help/`](help), whose first lines say which services upgrade by
+  changing the versions alone, and the changelog entry says the same.
+- **Fixes go into the newest minor.** Security fixes and bug fixes are released as a new
+  version of the newest minor, or in the next one. No earlier minor has had a backport.
+  A service on an earlier minor gets a fix by upgrading, and the upgrading guides are
+  how.
+- **Releases are frequent.** In November 2026 a new minor came every day or two. A service
+  with a minimum publish age, such as Cargo's `global-min-publish-age`, can stay on the
+  previous minor until the new one is old enough. That minor keeps working, and gets no
+  fixes.
+- **1.0 has no date.** It waits on the items under "Future: Version 1.0.0" above. No
+  crate in the family is at 1.0.
+- **The minimum Rust version** is two releases behind stable, in every crate.
+
 ---
 
 ## See Also

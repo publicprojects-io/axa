@@ -58,7 +58,9 @@ library:
   SQLite library than sqlx allows in one build.
 
 [Choosing a database and library](help/choosing-a-database/index.md) compares every pair,
-with what each database supports and a decision tree.
+with what each database supports and a decision tree. A service whose data lives in a
+store of its own turns on none of them: see
+[A service with its own store](help/a-service-with-its-own-store/index.md).
 
 MySQL takes TLS from the URL's `ssl-mode`, which production requires, in every MySQL
 crate alike. The SQLite crates build `libsqlite3-sys` 0.37, which has RUSTSEC-2026-0459,
@@ -228,14 +230,16 @@ let reports = Routes::new()
 ### Middleware
 
 `AppRoutes::into_app` applies this stack, or call `middleware::apply` on any
-router. A service with layers of its own, such as an auth guard, adds them first and
-applies the stack last, because a layer added afterwards sits outside it. Its responses
-get no request id, security headers, or CORS headers, it has no panic or timeout
-protection, and it reads response bodies compressed:
+router. A service with layers of its own, such as an auth guard or a rate limit, gives
+them to `into_app_with`, which puts them inside the stack. A layer added to the router
+`into_app` returns sits outside it: its responses get no request id, security headers,
+or CORS headers, it has no panic or timeout protection, and it reads response bodies
+compressed.
 
 ```rust,ignore
-let router = routes.into_router(ctx.clone()).layer(from_fn(require_auth));
-let router = axa::middleware::apply(router, &ctx.config.http)?;
+let router = routes.into_app_with(ctx.clone(), |router| {
+    Ok(router.layer(from_fn(require_auth)))
+})?;
 ```
 
 From the outside in:
@@ -348,7 +352,10 @@ these for you.
 `ErrorDetail::errors` sets. The standard stack makes Axum's own refusals problems too:
 an unmatched path's `404`, a wrong method's `405`, and an extractor's rejection. It
 treats any error sent as plain text or with no `content-type` the same way and drops
-the text, so a handler that has something to say returns an `Error`.
+the text, so a handler that has something to say returns an `Error`, such as
+`Error::with_detail(StatusCode::GONE, "the history is at ...")`. The first time it drops
+a handler's text on a route, it logs a warning naming the method, the route, and the
+status.
 
 A JSON body that parses but holds a value of the wrong type is a `422` whose `errors`
 says where, never what: `[{"pointer": "#/items/1/count"}]`.
@@ -366,7 +373,13 @@ an `Option` to match.
 
 There are no config files. A service states its defaults in code, and the
 environment overrides them, so what a deployment runs with is visible in one
-place.
+place. `Defaults` holds the database name, the ports, the body limit, the pool and
+migration settings, the request time limit, the CORS origins, HSTS, and compression.
+
+`Config::for_task` reads the settings for a task, leaving out those only a listening
+server uses, in `config::LISTENER_ONLY`, so a misconfigured port or CORS origin does not
+stop an operator's task. `AppContext::for_test(db)` is a context for a service's own
+tests that reads no variables.
 
 | Variable | Effect |
 |---|---|
@@ -569,6 +582,9 @@ impl Task for Greet {
 let mut tasks = Tasks::default();
 tasks.register(Greet);
 ```
+
+Build a task's context from `Config::for_task`, so that a setting only the server reads
+cannot block it.
 
 ### Background jobs
 
@@ -819,7 +835,8 @@ how to move a service across.
 
 ## Relationship to Loco
 
-To upgrade from 0.21, read [Upgrading to Axa 0.22](help/upgrading-to-0.22/index.md),
+To upgrade from 0.22, read [Upgrading to Axa 0.23](help/upgrading-to-0.23/index.md),
+from 0.21, [Upgrading to Axa 0.22](help/upgrading-to-0.22/index.md),
 from 0.20, [Upgrading to Axa 0.21](help/upgrading-to-0.21/index.md),
 from 0.19, [Upgrading to Axa 0.20](help/upgrading-to-0.20/index.md),
 from 0.18, [Upgrading to Axa 0.19](help/upgrading-to-0.19/index.md),

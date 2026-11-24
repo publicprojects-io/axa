@@ -284,8 +284,46 @@ impl AppRoutes {
     ///
     /// Fails when a configured CORS origin is invalid.
     pub fn into_app(self, ctx: AppContext) -> Result<Router> {
+        self.into_app_with(ctx, Ok)
+    }
+
+    /// The routes as a router with a service's own layers, such as a rate limit or an
+    /// authentication guard, and then the standard middleware around them all.
+    ///
+    /// `layers` gets the routes with no middleware and gives them back with its own.
+    /// They sit inside the standard stack, so a refusal one of them writes, such as a
+    /// `429` or a `401`, has a request id and the security headers, is shaped as a
+    /// problem, and is bound by the timeout and the panic guard. A layer added to the
+    /// router [`into_app`](Self::into_app) returns sits outside all of that, and only a
+    /// test that reads those headers would see it.
+    ///
+    /// ```
+    /// use axa::prelude::*;
+    /// use axum::{http::StatusCode, middleware::from_fn};
+    ///
+    /// # fn app(ctx: AppContext) -> axa::Result<axum::Router> {
+    /// async fn list() -> &'static str { "[]" }
+    ///
+    /// AppRoutes::with_default_routes()
+    ///     .add_route(Routes::new().prefix("/api/things").add("/", get(list)))
+    ///     .into_app_with(ctx, |router| {
+    ///         Ok(router.layer(from_fn(|request, next: axum::middleware::Next| async move {
+    ///             next.run(request).await
+    ///         })))
+    ///     })
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Fails when `layers` does, or as [`into_app`](Self::into_app) does.
+    pub fn into_app_with(
+        self,
+        ctx: AppContext,
+        layers: impl FnOnce(Router) -> Result<Router>,
+    ) -> Result<Router> {
         let config: std::sync::Arc<Config> = ctx.config.clone();
-        middleware::apply(self.into_router(ctx), &config.http)
+        middleware::apply(layers(self.into_router(ctx))?, &config.http)
     }
 }
 
@@ -346,7 +384,7 @@ mod tests {
         };
         let mut config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
         config.http.timeout_seconds = seconds;
-        AppContext::for_test(Environment::Test, config)
+        AppContext::with_test_db(Environment::Test, config)
     }
 
     async fn status(router: Router, method: &str, path: &str) -> StatusCode {
@@ -488,6 +526,35 @@ mod tests {
             .unwrap();
         let response = router.oneshot(request).await.unwrap();
         assert!(response.headers().contains_key(middleware::X_REQUEST_ID));
+    }
+
+    #[tokio::test]
+    async fn a_services_own_layer_sits_inside_the_standard_middleware() {
+        use axum::{middleware::from_fn, response::IntoResponse};
+        // A layer that refuses every request itself, as a rate limit would.
+        let refuse = |router: Router| {
+            Ok(router.layer(from_fn(
+                |_: Request<Body>, _: axum::middleware::Next| async {
+                    StatusCode::TOO_MANY_REQUESTS.into_response()
+                },
+            )))
+        };
+        let router = table().into_app_with(context(), refuse).unwrap();
+        let request = Request::builder()
+            .uri("/api/things")
+            .body(Body::empty())
+            .unwrap();
+        let response = router.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(response.headers().contains_key(middleware::X_REQUEST_ID));
+        assert!(response.headers().contains_key("x-content-type-options"));
+        assert_eq!(
+            response.headers()[axum::http::header::CONTENT_TYPE],
+            "application/problem+json"
+        );
+
+        let failing = table().into_app_with(context(), |_| Err(crate::Error::string("no")));
+        assert!(failing.is_err());
     }
 
     fn method_names(router: &MethodRouter<AppContext>) -> Vec<String> {

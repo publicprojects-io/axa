@@ -5,6 +5,39 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+This covers `axa` 0.23.0 and `axa-test` 0.14.0. A service that builds `Defaults` with
+`..Defaults::default()` upgrades by changing the versions, with a database or without.
+See [Upgrading to Axa 0.23](help/upgrading-to-0.23/index.md). The additions come from
+the issues a service moving from Loco filed: #40 to #46.
+
+### Breaking
+
+- `Defaults` has four more fields, so a `Defaults { .. }` naming every field does not
+  compile: add `..Defaults::default()`.
+
+### Added
+
+- `Defaults::request_timeout_seconds`, `cors_origins`, `hsts`, and `compression`, so a
+  service states those in code; the variables still win, and production still refuses
+  `*` (CFG-32, #41).
+- `AppRoutes::into_app_with`, which puts a service's own layers inside the standard
+  middleware, so a rate limit's `429` or a guard's `401` has a request id and the
+  security headers (RTE-10, #42).
+- `Error::with_detail`, a problem with a sentence as its `detail` (ERR-21, #43).
+- A warning, once per method, route template, and status, when the standard stack drops
+  a handler's plain-text answer (ERR-22, #43).
+- `AppContext::for_test`, a `test` context in one call (SRV-21, #40).
+- `Config::for_task` and `for_task_from_lookup`, which leave out the settings in
+  `config::LISTENER_ONLY`, so a task is not refused for a server-only setting (CFG-33,
+  #45).
+- [A service with its own store](help/a-service-with-its-own-store/index.md) (#44), and a
+  support section in `ROADMAP.md` (#46).
+- CI has a `semver` job, and the `Makefile` a `semver` target, both through `bin/semver`:
+  `cargo semver-checks` compares each published crate a change touched, and `axa` with
+  every feature but the held `sqlite-*` ones, with its last release on crates.io. CI
+  checks only what changed, as all of them take about 13 minutes. A change to a public API at a version that is
+  still the published one fails. It cannot see a changed return type.
+
 ### Changed
 
 - `bin/coverage` and `bin/benchmarks` are `bin/test-coverage` and `bin/test-benchmarks`,
@@ -14,14 +47,6 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `cookie` is 0.18.3, which fixes RUSTSEC-2026-0594 (private cookie nonces could repeat in
   forked processes). It was published under two days before the update, so the lockfile
   took it with the publish-age check off for that one crate.
-
-### Added
-
-- CI has a `semver` job, and the `Makefile` a `semver` target, both through `bin/semver`:
-  `cargo semver-checks` compares each published crate a change touched, and `axa` with
-  every feature but the held `sqlite-*` ones, with its last release on crates.io. CI
-  checks only what changed, as all of them take about 13 minutes. A change to a public API at a version that is
-  still the published one fails. It cannot see a changed return type.
 
 ## [0.22.0] - 2026-11-23
 

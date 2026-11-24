@@ -20,7 +20,8 @@
 //!
 //! # Where the layers go
 //!
-//! Add them inside `axa::middleware::apply`, which is where the client's address is
+//! Add them inside `axa::middleware::apply`, as `AppRoutes::into_app_with` does, which is
+//! where the client's address is
 //! worked out and where a refusal gets its request id and security headers. Add them
 //! after the authentication layer, so that they sit outside it and see its `401`s.
 //!

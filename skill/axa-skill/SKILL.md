@@ -29,6 +29,8 @@ Read these rather than guessing at an API:
 | Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
+| Upgrading to 0.23 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.23/index.md) |
+| A service with its own store, not one of Axa's databases | [Guide](https://github.com/publicprojects-io/axa/blob/main/help/a-service-with-its-own-store/index.md) |
 | Upgrading to 0.22 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.22/index.md) |
 | Upgrading to 0.21 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.21/index.md) |
 | Upgrading to 0.20 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.20/index.md) |

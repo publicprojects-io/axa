@@ -196,7 +196,12 @@ impl App {
         if let Command::Health { ready, port } = cli.command {
             return axa::cli::health(&environment, &defaults(), ready, port).await;
         }
-        let mut config = ServiceConfig::from_env(&environment, &defaults())?;
+        // A task does not listen, so it is not refused for a server-only setting.
+        let mut config = if matches!(cli.command, Command::Task { .. }) {
+            ServiceConfig::for_task(&environment, &defaults())?
+        } else {
+            ServiceConfig::from_env(&environment, &defaults())?
+        };
         config.apply_cli(&cli);
         let ctx = Self::context(environment, config).await?;
         axa::logger::init(env!("CARGO_CRATE_NAME"), &ctx.config.logger);
@@ -244,7 +249,17 @@ Router order differs from Loco on purpose: `after_routes` adds your layers first
 guard's `401` has no request id, security headers, or CORS headers, a preflight reaches
 the guard, and that layer gets no panic or timeout protection. A layer that reads a
 response body would also get it compressed. It compiles and passes any test that only
-checks the status, so test a refusal's headers.
+checks the status, so test a refusal's headers. Where the layers are built without
+awaiting anything, `AppRoutes::into_app_with` puts them in the right place:
+`routes.into_app_with(ctx.clone(), |router| Ok(router.layer(guard)))`.
+
+A Loco handler that returned `(StatusCode, String)` loses its text: the standard stack
+sends a problem with no `detail` in its place, and logs a warning naming the route the
+first time. Return `Error::with_detail(status, sentence)` where the caller needs the
+sentence.
+
+A service's own tests and tools can take `AppContext::for_test(db)`, a context in the
+`test` environment that reads no variables, in place of building a `Config` by hand.
 
 If you override `init_logger`, call it before falling back to
 `axa::logger::init`. Replace `init_env_filter::<Self>(a, b)` with

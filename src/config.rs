@@ -68,6 +68,19 @@ pub struct Defaults {
     /// service that shares a database it does not own. Production never does
     /// unless `DB_AUTO_MIGRATE` says so.
     pub auto_migrate: bool,
+    /// The request time limit in seconds, `0` for none, unless
+    /// `REQUEST_TIMEOUT_SECONDS` says otherwise. `None` is axa's: 60 in production and
+    /// none elsewhere. A number here holds in every environment.
+    pub request_timeout_seconds: Option<u64>,
+    /// The CORS origins, unless `CORS_ALLOWED_ORIGINS` says otherwise. `None` is axa's:
+    /// none in production and `*` elsewhere. Production refuses `*` from here too.
+    pub cors_origins: Option<&'static [&'static str]>,
+    /// Whether to send HSTS, unless `HTTP_HSTS` says otherwise. `None` is axa's: on in
+    /// production and off elsewhere.
+    pub hsts: Option<bool>,
+    /// Whether to compress answers, unless `HTTP_COMPRESSION` says otherwise. `None` is
+    /// axa's: on in production and off elsewhere.
+    pub compression: Option<bool>,
 }
 
 impl Default for Defaults {
@@ -81,6 +94,10 @@ impl Default for Defaults {
             connect_timeout: DEFAULT_CONNECT_TIMEOUT,
             idle_timeout: DEFAULT_IDLE_TIMEOUT,
             auto_migrate: true,
+            request_timeout_seconds: None,
+            cors_origins: None,
+            hsts: None,
+            compression: None,
         }
     }
 }
@@ -472,6 +489,41 @@ pub const RENAMED: &[(&str, Option<&str>)] = &[
     ("HTTP_CSP", Some("HTTP_CONTENT_SECURITY_POLICY")),
     ("LOCO_ENV", Some("APP_ENV")),
 ];
+
+/// The settings only a listening server uses, which a task does not read: see
+/// [`Config::for_task_from_lookup`]. `HOST` is not one, as a task may build links with it.
+pub const LISTENER_ONLY: &[&str] = &[
+    "PORT",
+    "BINDING",
+    "INTERNAL_PORT",
+    "PROXY_PROTOCOL_FROM",
+    "HTTP_REQUEST_HEADER_READ_TIMEOUT_SECONDS",
+    "KEEP_ALIVE_TIMEOUT_SECONDS",
+    "SEND_STALL_TIMEOUT_SECONDS",
+    "MAX_CONNECTIONS",
+    "SHUTDOWN_TIMEOUT_SECONDS",
+    "SHUTDOWN_DRAIN_SECONDS",
+    "HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT",
+    "HTTP_COMPRESSION",
+    "REQUEST_TIMEOUT_SECONDS",
+    "CORS_ALLOWED_ORIGINS",
+    "TRUSTED_PROXIES",
+    "HTTP_HSTS",
+    "HSTS_MAX_AGE_SECONDS",
+    "HTTP_CONTENT_SECURITY_POLICY",
+    "HTTP_PERMISSIONS_POLICY",
+    "HTTP_LOG_TENANT",
+];
+
+/// Whether `name` is in [`LISTENER_ONLY`], or is an old name of one in [`RENAMED`].
+fn listener_only(name: &str) -> bool {
+    let current = RENAMED
+        .iter()
+        .find(|(old, _)| *old == name)
+        .and_then(|(_, new)| *new)
+        .unwrap_or(name);
+    LISTENER_ONLY.contains(&current)
+}
 
 /// Note each of [`RENAMED`] that is set, and in production refuse at once, naming them.
 fn refuse_renamed<F: Fn(&str) -> Option<String>>(
@@ -871,6 +923,7 @@ fn proxy_nets<F: Fn(&str) -> Option<String>>(vars: &Settings<F>, name: &str) -> 
 
 fn cors_origins<F: Fn(&str) -> Option<String>>(
     vars: &Settings<F>,
+    defaults: &Defaults,
     production: bool,
 ) -> Result<Vec<String>> {
     let origins: Vec<String> = match (vars.lookup)("CORS_ALLOWED_ORIGINS") {
@@ -880,8 +933,11 @@ fn cors_origins<F: Fn(&str) -> Option<String>>(
             .filter(|origin| !origin.is_empty())
             .map(str::to_string)
             .collect(),
-        None if production => Vec::new(),
-        None => vec!["*".to_string()],
+        None => match defaults.cors_origins {
+            Some(origins) => origins.iter().map(|origin| (*origin).to_string()).collect(),
+            None if production => Vec::new(),
+            None => vec!["*".to_string()],
+        },
     };
     if production && origins.iter().any(|origin| origin == "*") {
         return Err(Error::string(
@@ -964,6 +1020,49 @@ impl Config {
         Self::from_lookup(environment, defaults, |name| std::env::var(name).ok())
     }
 
+    /// Build configuration for a task, reading overrides from the process environment.
+    /// See [`Config::for_task_from_lookup`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Config::for_task_from_lookup`].
+    pub fn for_task(environment: &Environment, defaults: &Defaults) -> Result<Self> {
+        Self::for_task_from_lookup(environment, defaults, |name| std::env::var(name).ok())
+    }
+
+    /// Build configuration for a task, which does not listen: as
+    /// [`Config::from_lookup`], but the settings in [`LISTENER_ONLY`], and the old names
+    /// of them in [`RENAMED`], are not read and keep their defaults. So a task an operator
+    /// runs while the service is misconfigured, such as one that checks a restored
+    /// backup, is not refused for a port or a CORS origin it never uses. The database,
+    /// logging, and worker settings are read and refused as they are for a start.
+    ///
+    /// ```
+    /// use axa::{Environment, config::{Config, Defaults}};
+    ///
+    /// let defaults = Defaults { database: "", ..Defaults::default() };
+    /// let lookup = |name: &str| (name == "CORS_ALLOWED_ORIGINS").then(|| "*".to_string());
+    /// assert!(Config::from_lookup(&Environment::Production, &defaults, lookup).is_err());
+    /// assert!(Config::for_task_from_lookup(&Environment::Production, &defaults, lookup).is_ok());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// As [`Config::from_lookup`], for every setting a task reads.
+    pub fn for_task_from_lookup(
+        environment: &Environment,
+        defaults: &Defaults,
+        lookup: impl Fn(&str) -> Option<String>,
+    ) -> Result<Self> {
+        Self::from_lookup(environment, defaults, |name| {
+            if listener_only(name) {
+                None
+            } else {
+                lookup(name)
+            }
+        })
+    }
+
     /// Build configuration for `environment`, reading overrides through
     /// `lookup`.
     ///
@@ -1002,7 +1101,7 @@ impl Config {
         refuse_renamed(&vars, production)?;
 
         let uri = database_uri(&vars, environment, defaults)?;
-        let cors_origins = cors_origins(&vars, production)?;
+        let cors_origins = cors_origins(&vars, defaults, production)?;
 
         let level = if test {
             logger::LogLevel::Warn
@@ -1065,14 +1164,21 @@ impl Config {
             database: database(&vars, defaults, environment, uri),
             http: Http {
                 body_limit: vars.parsed("HTTP_REQUEST_BODY_LIMIT_BYTE_COUNT", defaults.body_limit),
-                compression: vars.flag("HTTP_COMPRESSION", production),
-                timeout_seconds: vars
-                    .parsed("REQUEST_TIMEOUT_SECONDS", if production { 60 } else { 0 }),
+                compression: vars.flag(
+                    "HTTP_COMPRESSION",
+                    defaults.compression.unwrap_or(production),
+                ),
+                timeout_seconds: vars.parsed(
+                    "REQUEST_TIMEOUT_SECONDS",
+                    defaults
+                        .request_timeout_seconds
+                        .unwrap_or(if production { 60 } else { 0 }),
+                ),
                 timeout_overrides: Vec::new(),
                 cross_site_paths: Vec::new(),
                 cors_origins,
                 trusted_proxies: proxy_nets(&vars, "TRUSTED_PROXIES"),
-                hsts: vars.flag("HTTP_HSTS", production),
+                hsts: vars.flag("HTTP_HSTS", defaults.hsts.unwrap_or(production)),
                 hsts_max_age: vars.parsed("HSTS_MAX_AGE_SECONDS", DEFAULT_HSTS_MAX_AGE),
                 csp: content_security_policy(&vars, production),
                 permissions_policy: permissions_policy(&vars),
@@ -1589,6 +1695,99 @@ mod tests {
         let lookup = |name: &str| (name == "DB_AUTO_MIGRATE").then(|| "on".to_string());
         let config = Config::from_lookup(&Environment::Development, &defaults, lookup).unwrap();
         assert!(config.database.auto_migrate);
+    }
+
+    #[test]
+    fn a_service_can_state_its_own_http_defaults() {
+        let defaults = Defaults {
+            database: "",
+            request_timeout_seconds: Some(10),
+            cors_origins: Some(&["https://app.example"]),
+            hsts: Some(false),
+            compression: Some(false),
+            ..Defaults::default()
+        };
+        for environment in [Environment::Development, Environment::Production] {
+            let config = Config::from_lookup(&environment, &defaults, |_| None).unwrap();
+            assert_eq!(config.http.timeout_seconds, 10, "{environment}");
+            assert_eq!(config.http.cors_origins, ["https://app.example"]);
+            assert!(
+                !config.http.hsts && !config.http.compression,
+                "{environment}"
+            );
+        }
+        let lookup = |name: &str| match name {
+            "REQUEST_TIMEOUT_SECONDS" => Some("30".to_string()),
+            "CORS_ALLOWED_ORIGINS" => Some("https://other.example".to_string()),
+            "HTTP_HSTS" | "HTTP_COMPRESSION" => Some("on".to_string()),
+            _ => None,
+        };
+        let config = Config::from_lookup(&Environment::Production, &defaults, lookup).unwrap();
+        assert_eq!(config.http.timeout_seconds, 30);
+        assert_eq!(config.http.cors_origins, ["https://other.example"]);
+        assert!(config.http.hsts && config.http.compression);
+    }
+
+    #[test]
+    fn production_refuses_a_wildcard_cors_origin_from_a_services_defaults() {
+        let defaults = Defaults {
+            database: "",
+            cors_origins: Some(&["*"]),
+            ..Defaults::default()
+        };
+        let error = Config::from_lookup(&Environment::Production, &defaults, |_| None).unwrap_err();
+        assert!(
+            error.to_string().contains("CORS_ALLOWED_ORIGINS"),
+            "{error}"
+        );
+        let config = Config::from_lookup(&Environment::Development, &defaults, |_| None).unwrap();
+        assert_eq!(config.http.cors_origins, ["*"]);
+    }
+
+    #[test]
+    fn a_task_is_not_refused_for_a_setting_only_the_listener_reads() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let listener = |name: &str| match name {
+            "CORS_ALLOWED_ORIGINS" => Some("*".to_string()),
+            "PORT" | "HTTP_HSTS" => Some("nope".to_string()),
+            "HEADER_READ_TIMEOUT_SECONDS" => Some("5".to_string()),
+            _ => None,
+        };
+        let production = Environment::Production;
+        assert!(Config::from_lookup(&production, &defaults, listener).is_err());
+        let config = Config::for_task_from_lookup(&production, &defaults, listener).unwrap();
+        assert_eq!(config.server.port, defaults.port);
+        assert_eq!(config.http.cors_origins, Vec::<String>::new());
+        assert_eq!(config.logger.warnings, Vec::<String>::new());
+
+        // What a task reads is refused as it is for a start.
+        let task = |name: &str| match name {
+            "DB_READ_ONLY" | "LOG_LEVEL" => Some("tru".to_string()),
+            "HOST" => Some("https://example.org".to_string()),
+            _ => listener(name),
+        };
+        let error = Config::for_task_from_lookup(&production, &defaults, task).unwrap_err();
+        assert!(error.to_string().contains("LOG_LEVEL"), "{error}");
+        let config =
+            Config::for_task_from_lookup(&Environment::Development, &defaults, task).unwrap();
+        assert_eq!(config.server.host, "https://example.org");
+    }
+
+    #[test]
+    fn every_listener_only_name_is_a_setting_axa_reads() {
+        let config = with(&[], &Environment::Development).unwrap();
+        let names: Vec<&str> = config
+            .settings()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        for name in LISTENER_ONLY {
+            assert!(names.contains(name), "{name}");
+        }
+        assert!(!LISTENER_ONLY.contains(&"HOST"));
     }
 
     #[test]

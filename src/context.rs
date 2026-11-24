@@ -197,14 +197,51 @@ impl AppContext {
         }
     }
 
-    /// A context for a test, whose database was never opened. Toasty connects when its
-    /// handle is made, so a Toasty-only build has none.
+    /// A context for a service's own tests and tools: the `test` environment, axa's
+    /// settings at their defaults with nothing read from the process environment, an
+    /// empty store, and `db` as the handle. A service with no database passes `()`:
+    ///
+    /// ```
+    /// # #[cfg(not(any(feature = "postgres-sqlx", feature = "postgres-seaorm",
+    /// #     feature = "postgres-diesel", feature = "postgres-toasty", feature = "mysql-sqlx",
+    /// #     feature = "mysql-seaorm", feature = "mysql-diesel", feature = "mysql-toasty",
+    /// #     feature = "sqlite-sqlx", feature = "sqlite-seaorm", feature = "sqlite-diesel")))]
+    /// # fn main() -> axa::Result<()> {
+    /// let ctx = axa::AppContext::for_test(())?;
+    /// assert_eq!(ctx.environment, axa::Environment::Test);
+    /// # Ok(())
+    /// # }
+    /// # #[cfg(any(feature = "postgres-sqlx", feature = "postgres-seaorm",
+    /// #     feature = "postgres-diesel", feature = "postgres-toasty", feature = "mysql-sqlx",
+    /// #     feature = "mysql-seaorm", feature = "mysql-diesel", feature = "mysql-toasty",
+    /// #     feature = "sqlite-sqlx", feature = "sqlite-seaorm", feature = "sqlite-diesel"))]
+    /// # fn main() {}
+    /// ```
+    ///
+    /// No database name is set, so nothing here connects. A service with a database
+    /// opens its own test handle and passes it, or uses `axa-test`'s `boot_test`.
+    ///
+    /// # Errors
+    ///
+    /// None in practice: it fails only if axa's own defaults for the `test`
+    /// environment stopped being valid, which a test in axa checks.
+    pub fn for_test(db: Db) -> crate::Result<Self> {
+        let defaults = crate::config::Defaults {
+            database: "",
+            ..crate::config::Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None)?;
+        Ok(Self::new(Environment::Test, db, config))
+    }
+
+    /// A context for axa's own tests, whose database was never opened. Toasty connects
+    /// when its handle is made, so a Toasty-only build has none.
     #[cfg(all(test, not(any(axa_db = "postgres_toasty", axa_db = "mysql_toasty"))))]
     #[cfg_attr(
         axa_db = "none",
         expect(clippy::unit_arg, reason = "the handle is `()` without a database")
     )]
-    pub(crate) fn for_test(environment: Environment, config: Config) -> Self {
+    pub(crate) fn with_test_db(environment: Environment, config: Config) -> Self {
         Self::new(environment, test_db(), config)
     }
 }
@@ -249,7 +286,7 @@ mod webhook_tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let ctx = AppContext::for_test(Environment::Test, config);
+        let ctx = AppContext::with_test_db(Environment::Test, config);
         if let Some(verifier) = verifier {
             ctx.shared_store.insert(verifier);
         }
@@ -307,7 +344,7 @@ mod tests {
             ..Defaults::default()
         };
         let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
-        let ctx = AppContext::for_test(Environment::Test, config);
+        let ctx = AppContext::with_test_db(Environment::Test, config);
         let text = format!("{ctx:?}");
         assert!(text.starts_with("AppContext {"), "{text}");
         assert!(
@@ -324,5 +361,23 @@ mod tests {
         }
         #[cfg(feature = "queue")]
         assert!(text.contains("queue_provider: None"), "{text}");
+    }
+
+    #[test]
+    #[cfg_attr(
+        axa_db = "none",
+        expect(clippy::unit_arg, reason = "the handle is `()` without a database")
+    )]
+    fn a_test_context_takes_one_call_and_reads_nothing_from_the_process() {
+        let ctx = AppContext::for_test(super::test_db()).unwrap();
+        assert_eq!(ctx.environment, Environment::Test);
+        assert_eq!(ctx.config.database.uri, "");
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let expected = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        assert_eq!(ctx.config.settings(), expected.settings());
+        assert!(ctx.shared_store.get::<u8>().is_none());
     }
 }
