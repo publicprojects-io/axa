@@ -11,6 +11,9 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with `make test-coverage` and `make test-benchmarks` to run them.
 - The lockfile is updated within the version ranges.
 - CI's `taiki-e/install-action` is 2.90.5.
+- `cookie` is 0.18.3, which fixes RUSTSEC-2026-0594 (private cookie nonces could repeat in
+  forked processes). It was published under two days before the update, so the lockfile
+  took it with the publish-age check off for that one crate.
 
 ### Added
 
