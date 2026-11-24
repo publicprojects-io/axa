@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-24
+
+This covers `axa` 0.24.0 and `axa-test` 0.15.0. No other crate changed what it ships.
+Nothing is removed or changed, so a service upgrades by changing the versions. See
+[Upgrading to Axa 0.24](help/upgrading-to-0.24/index.md). The published `axa` still
+lacks the `sqlite-*` features, as their crates are held for RUSTSEC-2026-0459.
+
 ### Added
 
 - `Cli::environment`, `Cli::config`, `cli::answer`, and `Tasks::run_or_list`, which take

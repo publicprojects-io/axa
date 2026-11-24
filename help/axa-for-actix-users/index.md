@@ -120,7 +120,7 @@ async fn main() -> Result<()> {
 
 ```toml
 [dependencies]
-axa = "0.23"
+axa = "0.24"
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```

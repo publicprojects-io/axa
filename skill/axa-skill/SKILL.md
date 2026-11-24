@@ -29,6 +29,7 @@ Read these rather than guessing at an API:
 | Everything Axa provides, with examples | [README](https://github.com/publicprojects-io/axa/blob/main/README.md) |
 | Exact behaviour, and the test proving it | [Specification](https://github.com/publicprojects-io/axa/blob/main/spec/index.md) |
 | What changed between versions | [Changelog](https://github.com/publicprojects-io/axa/blob/main/CHANGELOG.md) |
+| Upgrading to 0.24 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.24/index.md) |
 | Upgrading to 0.23 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.23/index.md) |
 | A service with its own store, not one of Axa's databases | [Guide](https://github.com/publicprojects-io/axa/blob/main/help/a-service-with-its-own-store/index.md) |
 | Upgrading to 0.22 | [Upgrade guide](https://github.com/publicprojects-io/axa/blob/main/help/upgrading-to-0.22/index.md) |
@@ -48,12 +49,12 @@ Read these rather than guessing at an API:
 
 ```toml
 [dependencies]
-axa = { version = "0.23", features = ["postgres-sqlx", "queue"] }
+axa = { version = "0.24", features = ["postgres-sqlx", "queue"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-axa-test = "0.14"
+axa-test = "0.15"
 ```
 
 Turn on only the features a service uses, since each one adds to what an auditor must

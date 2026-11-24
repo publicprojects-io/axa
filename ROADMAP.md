@@ -5,11 +5,15 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.23.1
+## Current Version: 0.24.0
 
 ---
 
 ## Recently Completed
+
+### Version 0.24.0
+- `Cli::environment`, `Cli::config`, `cli::answer`, and `Tasks::run_or_list`, which take
+  in the command dispatch every service wrote by hand
 
 ### Version 0.23.1
 - `Settings::refuse` and `Settings::retired`, so a service refuses its own old setting
