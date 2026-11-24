@@ -1212,7 +1212,7 @@ The rest of the suite runs under every set.
   S3-compatible server, RustFS, over plain `http`. Amazon S3 itself, and `https` to a
   real endpoint, are not exercised.
 - **Benchmarks.** CI compiles the standalone benchmarks but does not run them.
-  `bin/benchmarks` writes the [report](../docs/benchmarks/index.md) only from a run in
+  `bin/test-benchmarks` writes the [report](../docs/benchmarks/index.md) only from a run in
   which the middleware, primitives, and SQLite benchmarks all measured, and records the
   revision, Rust version, host, and databases. Its timings are from one machine, and
   Postgres and MySQL appear only when a run had them.

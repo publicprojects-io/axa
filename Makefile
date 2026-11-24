@@ -1,7 +1,7 @@
 # Makefile for axa development
 # Provides common commands for building, testing, and development
 
-.PHONY: semver test-fast all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
+.PHONY: test-coverage test-benchmarks semver test-fast all build test lint doc clean fmt check ci-minimum-supported-rust-version fuzz bench coverage mutants mutants-diff
 
 # Default target
 all: check
@@ -122,6 +122,14 @@ fuzz:
 # AXA_BENCH_MYSQL_URL to include Postgres and MySQL; SQLite always runs.
 bench:
 	cd benchmarks && cargo bench
+
+# The coverage report, committed in docs/coverage (bin/test-coverage).
+test-coverage:
+	bin/test-coverage
+
+# The benchmark report, committed in docs/benchmarks (bin/test-benchmarks).
+test-benchmarks:
+	bin/test-benchmarks
 
 # Test coverage, with cargo-tarpaulin, into the output-dir that tarpaulin.toml names.
 coverage:

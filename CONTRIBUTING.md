@@ -125,7 +125,7 @@ AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
   reports and the directory they go to. Its two sections, every feature and then `axa`
   with no database, are merged into one report. It covers the tests that need no
   server; add `-- --include-ignored --test-threads=1` with the database and S3 URLs set
-  to include the rest, as CI runs them. `bin/coverage` does the same and commits the
+  to include the rest, as CI runs them. `bin/test-coverage` does the same and commits the
   report in [`docs/coverage/`](docs/coverage/). CI's coverage job runs the tests that
   need no server and fails when a section of `tarpaulin.toml` measures under 52% of lines.
   No one run shows the real figure, as the server tests, the no-database section, and
@@ -139,7 +139,7 @@ AXA_TEST_S3_URL=http://axatest:axatestsecret@localhost:9000/axa-test \
   key, and page of 50 on
   SQLite, and on Postgres and MySQL when `AXA_BENCH_POSTGRES_URL` and
   `AXA_BENCH_MYSQL_URL` name a database for them. Each makes and drops the table
-  `axa_bench_items`. `bin/benchmarks` runs the same package with `cargo criterion` and
+  `axa_bench_items`. `bin/test-benchmarks` runs the same package with `cargo criterion` and
   writes the report in [`docs/benchmarks/`](docs/benchmarks/), with the revision, Rust
   version, host, and databases that produced it, then commits it (`--no-commit` skips
   that). It replaces the report only when the middleware, primitives, and SQLite

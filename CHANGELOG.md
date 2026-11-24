@@ -5,6 +5,13 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `bin/coverage` and `bin/benchmarks` are `bin/test-coverage` and `bin/test-benchmarks`,
+  with `make test-coverage` and `make test-benchmarks` to run them.
+- The lockfile is updated within the version ranges.
+- CI's `taiki-e/install-action` is 2.90.5.
+
 ### Added
 
 - CI has a `semver` job, and the `Makefile` a `semver` target, both through `bin/semver`:

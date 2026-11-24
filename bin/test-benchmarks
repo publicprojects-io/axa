@@ -6,7 +6,7 @@
 # a failed runner or an empty stream exits nonzero and leaves the last report in place.
 # Postgres and MySQL run when AXA_BENCH_POSTGRES_URL and AXA_BENCH_MYSQL_URL are set.
 #
-# Usage: bin/benchmarks [--no-commit]
+# Usage: bin/test-benchmarks [--no-commit]
 set -euf
 BASE=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) && cd "$BASE"
 dst="docs/benchmarks"
@@ -14,13 +14,13 @@ commit=1
 case "${1-}" in
     "") ;;
     --no-commit) commit=0 ;;
-    *) echo "usage: bin/benchmarks [--no-commit]" >&2; exit 2 ;;
+    *) echo "usage: bin/test-benchmarks [--no-commit]" >&2; exit 2 ;;
 esac
 
 tmp=$(mktemp -d) && trap 'rm -rf "$tmp"' EXIT
 
 if ! cargo criterion --manifest-path benchmarks/Cargo.toml --message-format=json >"$tmp/index.json"; then
-    echo "bin/benchmarks: cargo criterion failed; $dst is unchanged" >&2
+    echo "bin/test-benchmarks: cargo criterion failed; $dst is unchanged" >&2
     exit 1
 fi
 
@@ -49,12 +49,12 @@ missing=0
 printf '%s\n' "$required" >"$tmp/required"
 while IFS= read -r id; do
     if ! measured "$id"; then
-        echo "bin/benchmarks: no measurement for \"$id\"" >&2
+        echo "bin/test-benchmarks: no measurement for \"$id\"" >&2
         missing=1
     fi
 done <"$tmp/required"
 if [ "$missing" -ne 0 ]; then
-    echo "bin/benchmarks: incomplete run; $dst is unchanged" >&2
+    echo "bin/test-benchmarks: incomplete run; $dst is unchanged" >&2
     exit 1
 fi
 
@@ -63,7 +63,7 @@ measured "databases/postgres: ping" && backends="$backends, postgres"
 measured "databases/mysql: ping" && backends="$backends, mysql"
 
 if ! criterion-table <"$tmp/index.json" >"$tmp/index.md" || ! grep -q '^| ' "$tmp/index.md"; then
-    echo "bin/benchmarks: criterion-table produced no table; $dst is unchanged" >&2
+    echo "bin/test-benchmarks: criterion-table produced no table; $dst is unchanged" >&2
     exit 1
 fi
 

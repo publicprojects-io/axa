@@ -26,7 +26,7 @@ One release decision remains, and the other two items are done:
    rejects it, so CI starts a disposable RustFS endpoint. A client writes through a
    signed `PUT`, Axa reads the object under its prefix, and a signed `GET` returns the
    replaced bytes, before the test removes the objects.
-3. **Performance evidence.** Done as T-59. `bin/benchmarks` runs the standalone package
+3. **Performance evidence.** Done as T-59. `bin/test-benchmarks` runs the standalone package
    and keeps the last successful report when a run fails or is incomplete. The
    [report](docs/benchmarks/index.md) gives the middleware timings and the machine and
    build that produced them. The first run had found that criterion-table rejects an
