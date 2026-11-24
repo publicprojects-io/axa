@@ -51,7 +51,7 @@ allow_attributes_without_reason = "deny"
 
 [package]
 name = "axa"
-version = "0.23.0"
+version = "0.23.1"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]

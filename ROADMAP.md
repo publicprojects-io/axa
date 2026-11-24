@@ -5,11 +5,15 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.23.0
+## Current Version: 0.23.1
 
 ---
 
 ## Recently Completed
+
+### Version 0.23.1
+- `Settings::refuse` and `Settings::retired`, so a service refuses its own old setting
+  names in every environment, as a customer's spec asked
 
 ### Version 0.23.0
 - What a service moving from Loco with its own store needed (issues #40 to #46): HTTP

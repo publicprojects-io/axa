@@ -5,6 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-11-24
+
+This covers `axa` 0.23.1, which only adds to 0.23.0: a service upgrades by changing the
+version. `axa-test` 0.14.0 works with it unchanged. The published `axa` still lacks the
+`sqlite-*` features, as their crates are held for RUSTSEC-2026-0459.
+
 ### Added
 
 - `Settings::refuse`, a problem `finish` refuses in every environment, and
