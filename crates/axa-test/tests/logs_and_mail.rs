@@ -14,6 +14,7 @@ async fn logs_are_captured_for_the_test_and_a_secret_can_be_checked_absent() {
     assert_eq!(lines[0]["fields"]["message"], "sign-in refused");
     assert_eq!(lines[0]["fields"]["user"], "ada");
     assert!(logs.contains("sign-in refused"));
+    assert!(!logs.contains("never logged"), "{}", logs.text());
     logs.assert_absent("hunter2");
     logs.clear();
     assert_eq!(logs.lines(), Vec::<serde_json::Value>::new());

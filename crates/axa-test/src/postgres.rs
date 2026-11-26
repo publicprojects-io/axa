@@ -109,11 +109,11 @@ pub fn template_name(migrator: &Migrator) -> String {
         digest.update(&*migration.checksum);
     }
     // The first eight bytes, as one number: a template's name is sixteen hex digits.
-    let hash = digest
-        .finalize()
-        .iter()
-        .take(8)
-        .fold(0_u64, |hash, byte| (hash << 8_u32) | u64::from(*byte));
+    let mut first = [0_u8; 8];
+    for (to, from) in first.iter_mut().zip(digest.finalize().iter()) {
+        *to = *from;
+    }
+    let hash = u64::from_be_bytes(first);
     format!("{TEMPLATE_PREFIX}{hash:016x}")
 }
 
@@ -451,7 +451,12 @@ mod tests {
     fn a_clone_name_says_when_it_was_made() {
         let name = clone_name();
         let made = made_at(&name).unwrap();
-        assert!(now().abs_diff(made) < 5, "{name}");
+        // Against the clock itself, so a `now` that is wrong cannot agree with itself.
+        let clock = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        assert!(clock.abs_diff(made) < 5, "{name}");
         assert_eq!(made_at("axa_test_template_cbf29ce484222325"), None);
         assert_eq!(made_at("axa_test_template_cbf29ce484222325_partial"), None);
         assert_eq!(made_at("someone_elses"), None);

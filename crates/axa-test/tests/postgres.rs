@@ -113,6 +113,45 @@ async fn the_database_is_dropped_by_close_or_with_the_guard_even_on_a_panic() {
 
 #[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL"]
+async fn a_new_database_sweeps_old_clones_no_session_uses_and_leaves_new_ones() {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let (old, new) = (
+        format!("axa_test_{}_1_0", now - 600),
+        format!("axa_test_{now}_1_0"),
+    );
+    let mut connection = PgConnection::connect_with(&server()).await.unwrap();
+    for name in [&old, &new] {
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DROP DATABASE IF EXISTS \"{name}\""
+        )))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!("CREATE DATABASE \"{name}\"")))
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    let db = TestDatabase::new(&migrator("one").await).await.unwrap();
+    assert!(
+        !exists(&old).await,
+        "a clone abandoned ten minutes ago is swept"
+    );
+    assert!(exists(&new).await, "a clone made just now is left");
+    db.close().await;
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+        "DROP DATABASE IF EXISTS \"{new}\""
+    )))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
 async fn many_tests_starting_together_share_one_template() {
     let migrator = std::sync::Arc::new(migrator("two").await);
     let tasks: Vec<_> = (0_i32..8_i32)

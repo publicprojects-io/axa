@@ -410,6 +410,24 @@ mod tests {
     }
 
     #[test]
+    fn only_a_json_body_with_a_schema_is_read_as_json() {
+        let conformance = with_paths(&json!({
+            "/text": { "get": { "responses": { "200": {
+                "description": "Text with a schema, which is not JSON's to check",
+                "content": { "text/plain": { "schema": { "type": "object" } } }
+            } } } },
+            "/loose": { "get": { "responses": { "200": {
+                "description": "JSON with no schema",
+                "content": { "application/json": {} }
+            } } } }
+        }));
+        let text = conformance.check("GET", "/text", 200, Some("text/plain"), b"not json");
+        assert_eq!(text, Ok(()));
+        let loose = conformance.check("GET", "/loose", 200, JSON, b"not json either");
+        assert_eq!(loose, Ok(()));
+    }
+
+    #[test]
     fn a_documented_answer_conforms() {
         let place = json!({ "id": ID, "name": "Home", "tags": ["a"] });
         assert_eq!(check("GET", "/api/places/1", 200, JSON, &place), Ok(()));
