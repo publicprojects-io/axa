@@ -2482,7 +2482,11 @@ mod tests {
         let warnings = settings.finish().unwrap().join("; ");
         assert!(warnings.contains("UPSTREAM_TOKEN_LENGTH"), "{warnings}");
         assert!(!warnings.contains("hunter2"), "{warnings}");
-        assert!(!settings_debug().contains("hunter2"));
+        let debug = settings_debug();
+        assert!(!debug.contains("hunter2"), "{debug}");
+        // It still says what it holds, short of the values.
+        assert!(debug.starts_with("Settings {"), "{debug}");
+        assert!(debug.contains("production: false"), "{debug}");
     }
 
     /// The `Debug` text of settings that hold a secret.

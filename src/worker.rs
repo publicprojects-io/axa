@@ -64,36 +64,7 @@ where
     where
         Self: Sized + 'static,
     {
-        match ctx.config.workers {
-            WorkerMode::BackgroundQueue => {
-                #[cfg(feature = "queue")]
-                {
-                    let job = crate::queue::job::<Self, A>(&args)?.run_in(delay);
-                    enqueue(ctx, &job).await
-                }
-                #[cfg(not(feature = "queue"))]
-                {
-                    let _ = (args, delay);
-                    no_queue()
-                }
-            }
-            WorkerMode::ForegroundBlocking => {
-                Self::build(ctx).perform(args).await?;
-                Ok(Uuid::new_v4().to_string())
-            }
-            WorkerMode::BackgroundAsync => {
-                let worker = Self::build(ctx);
-                tokio::spawn(async move {
-                    if !delay.is_zero() {
-                        tokio::time::sleep(delay).await;
-                    }
-                    if let Err(error) = worker.perform(args).await {
-                        tracing::error!(%error, "background job failed");
-                    }
-                });
-                Ok(Uuid::new_v4().to_string())
-            }
-        }
+        dispatch::<Self, A>(ctx, args, delay, None).await
     }
 
     /// Run or enqueue a job for `tenant`, per [`WorkerMode`], and return its id. The
@@ -115,34 +86,7 @@ where
                 "a job's tenant must be a tenant id".to_string(),
             ));
         }
-        let tenant = tenant.to_string();
-        match ctx.config.workers {
-            WorkerMode::BackgroundQueue => {
-                #[cfg(feature = "queue")]
-                {
-                    let job = crate::queue::job::<Self, A>(&args)?.tenant(tenant);
-                    enqueue(ctx, &job).await
-                }
-                #[cfg(not(feature = "queue"))]
-                {
-                    let _ = (args, tenant);
-                    no_queue()
-                }
-            }
-            WorkerMode::ForegroundBlocking => {
-                Self::build(ctx).perform_for(Some(tenant), args).await?;
-                Ok(Uuid::new_v4().to_string())
-            }
-            WorkerMode::BackgroundAsync => {
-                let worker = Self::build(ctx);
-                tokio::spawn(async move {
-                    if let Err(error) = worker.perform_for(Some(tenant), args).await {
-                        tracing::error!(%error, "background job failed");
-                    }
-                });
-                Ok(Uuid::new_v4().to_string())
-            }
-        }
+        dispatch::<Self, A>(ctx, args, Duration::ZERO, Some(tenant.to_string())).await
     }
 
     /// Tries a job of this worker gets with the queue, including the first.
@@ -187,6 +131,69 @@ where
                     .to_string(),
             )),
         }
+    }
+}
+
+/// Run or enqueue a job of `W` per the context's [`WorkerMode`], no sooner than `delay`
+/// from now, for `tenant` when there is one, and return its id. A job with no tenant runs
+/// in [`BackgroundWorker::perform`] and one with a tenant in
+/// [`BackgroundWorker::perform_for`].
+async fn dispatch<W, A>(
+    ctx: &AppContext,
+    args: A,
+    delay: Duration,
+    tenant: Option<String>,
+) -> Result<String>
+where
+    W: BackgroundWorker<A> + 'static,
+    A: Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    match ctx.config.workers {
+        WorkerMode::BackgroundQueue => {
+            #[cfg(feature = "queue")]
+            {
+                let job = crate::queue::job::<W, A>(&args)?.run_in(delay);
+                let job = match tenant {
+                    Some(tenant) => job.tenant(tenant),
+                    None => job,
+                };
+                enqueue(ctx, &job).await
+            }
+            #[cfg(not(feature = "queue"))]
+            {
+                let _ = (args, delay, tenant);
+                no_queue()
+            }
+        }
+        WorkerMode::ForegroundBlocking => {
+            run::<W, A>(&W::build(ctx), tenant, args).await?;
+            Ok(Uuid::new_v4().to_string())
+        }
+        WorkerMode::BackgroundAsync => {
+            let worker = W::build(ctx);
+            tokio::spawn(async move {
+                if !delay.is_zero() {
+                    tokio::time::sleep(delay).await;
+                }
+                if let Err(error) = run::<W, A>(&worker, tenant, args).await {
+                    tracing::error!(%error, "background job failed");
+                }
+            });
+            Ok(Uuid::new_v4().to_string())
+        }
+    }
+}
+
+/// Run one job in this process: in `perform` when it has no tenant, and in
+/// `perform_for` when it has one.
+async fn run<W, A>(worker: &W, tenant: Option<String>, args: A) -> Result<()>
+where
+    W: BackgroundWorker<A>,
+    A: Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    match tenant {
+        Some(tenant) => worker.perform_for(Some(tenant), args).await,
+        None => worker.perform(args).await,
     }
 }
 

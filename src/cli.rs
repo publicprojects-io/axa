@@ -1046,6 +1046,23 @@ mod tests {
         ] {
             assert_eq!(answered(args).await, None, "{args:?}");
         }
+        // `answer` reads the process environment and leaves the same commands.
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let check = Cli::try_parse_from(["service", "check"]).unwrap();
+        assert!(
+            answer(&check, &Environment::Test, &defaults)
+                .await
+                .is_some()
+        );
+        let start = Cli::try_parse_from(["service", "start"]).unwrap();
+        assert!(
+            answer(&start, &Environment::Test, &defaults)
+                .await
+                .is_none()
+        );
     }
 
     #[test]
