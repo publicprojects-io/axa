@@ -223,8 +223,8 @@ fn is_public_v6(address: Ipv6Addr) -> bool {
     if segments[0] & 0xe000 != 0x2000 {
         // NAT64, 64:ff9b::/96, reaches the IPv4 address in its last 32 bits.
         if segments[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
-            let [.., high, low] = segments;
-            return is_public_v4(Ipv4Addr::from((u32::from(high) << 16) | u32::from(low)));
+            let [.., a, b, c, d] = address.octets();
+            return is_public_v4(Ipv4Addr::new(a, b, c, d));
         }
         return false;
     }
@@ -233,9 +233,10 @@ fn is_public_v6(address: Ipv6Addr) -> bool {
         // address, and documentation, 2001:db8::/32.
         0x2001 => segments[1] >= 0x0200 && segments[1] != 0x0db8,
         // 6to4, 2002::/16, reaches the IPv4 address in its next 32 bits.
-        0x2002 => is_public_v4(Ipv4Addr::from(
-            (u32::from(segments[1]) << 16) | u32::from(segments[2]),
-        )),
+        0x2002 => {
+            let [_, _, a, b, c, d, ..] = address.octets();
+            is_public_v4(Ipv4Addr::new(a, b, c, d))
+        }
         // Documentation, 3fff::/20.
         0x3fff => segments[1] >= 0x1000,
         _ => true,
