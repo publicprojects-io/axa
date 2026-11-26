@@ -297,8 +297,20 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn the_runtime_is_read_at_each_scrape() {
         let registry = Registry::new();
-        let _metrics =
+        let metrics =
             TokioMetrics::register(&registry, &tokio::runtime::Handle::current()).unwrap();
+        // Each family a scrape gathers is one the collector describes.
+        let described: Vec<String> = metrics
+            .desc()
+            .iter()
+            .map(|desc| desc.fq_name.clone())
+            .collect();
+        for family in registry.gather() {
+            assert!(
+                described.contains(&family.name().to_string()),
+                "{described:?}"
+            );
+        }
         let text = render(&registry);
         assert_eq!(sample(&text, "tokio_runtime_workers"), "2");
         assert!(

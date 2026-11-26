@@ -30,6 +30,11 @@ async fn round_trip(storage: &Storage) {
         storage.get_limited(&key, 11).await,
         Err(Error::TooLarge { size: 12 })
     ));
+    assert_eq!(
+        storage.get_limited(&key, 12).await.unwrap().as_deref(),
+        Some(&b"twelve bytes"[..]),
+        "an object of exactly the limit is read"
+    );
     storage.put(&key, Bytes::from_static(b"two")).await.unwrap();
     assert_eq!(
         storage.head(&key).await.unwrap().unwrap().size,

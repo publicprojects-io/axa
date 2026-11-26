@@ -163,6 +163,7 @@ mod tests {
         let found = drift(&routes, &document, &[]);
         assert_eq!(found.undocumented, ["put /a", "get /b"]);
         assert_eq!(found.unmounted, Vec::<String>::new());
+        assert!(!found.is_empty(), "drift on one side is drift");
     }
 
     #[test]
@@ -172,6 +173,7 @@ mod tests {
         let found = drift(&route("/a", &["GET"]), &document, &[]);
         assert_eq!(found.unmounted, ["put /a", "get /gone"]);
         assert_eq!(found.undocumented, Vec::<String>::new());
+        assert!(!found.is_empty(), "drift on the other side is drift too");
     }
 
     #[test]
