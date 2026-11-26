@@ -277,6 +277,25 @@ mod tests {
         assert!(text.contains("workers=1"), "{text}");
     }
 
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_runtime_that_keeps_up_is_not_reported() {
+        let (lines, _guard) = capture();
+        let monitor = monitor_runtime(RuntimeMonitor {
+            interval: Duration::from_millis(5),
+            max_lag: Duration::from_hours(1),
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        monitor.abort();
+        let text = lines.text();
+        assert!(!text.contains("runtime_lagging"), "{text}");
+    }
+
+    #[test]
+    fn a_duration_is_logged_in_whole_milliseconds_and_saturates() {
+        assert_eq!(millis(Duration::from_micros(1_500_999)), 1_500);
+        assert_eq!(millis(Duration::MAX), u64::MAX);
+    }
+
     #[tokio::test]
     async fn an_interval_too_large_to_wait_for_stops_the_monitor_with_an_error() {
         let (lines, _guard) = capture();

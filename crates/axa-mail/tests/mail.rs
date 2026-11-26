@@ -246,6 +246,19 @@ async fn a_failure_says_whether_sending_again_later_may_work() {
     ))
     .await;
     assert!(!never.is_transient(), "a 5xx: {never}");
+    // A server that does not speak SMTP fails the same way next time.
+    let garbled = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = garbled.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        let (mut stream, _) = garbled.accept().await.unwrap();
+        stream.write_all(b"this is not smtp\r\n").await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    });
+    let nonsense = send(format!("smtp://127.0.0.1:{port}")).await;
+    assert!(
+        !nonsense.is_transient(),
+        "a reply that is not SMTP: {nonsense}"
+    );
     let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = closed.local_addr().unwrap().port();
     drop(closed);

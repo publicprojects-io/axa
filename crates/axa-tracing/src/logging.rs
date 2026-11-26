@@ -193,6 +193,10 @@ mod tests {
             digits.parse().unwrap()
         };
         assert!(number("idle_ms") >= 30, "{text}");
+        assert!(
+            number("busy_ms") >= 5,
+            "the time inside it is counted: {text}"
+        );
         assert!(number("busy_ms") < number("idle_ms"), "{text}");
     }
 }
