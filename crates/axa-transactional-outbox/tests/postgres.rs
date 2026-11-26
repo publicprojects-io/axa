@@ -567,6 +567,9 @@ async fn a_relay_killed_mid_batch_loses_nothing() {
     let replacement = Outbox::connect_existing(&uri(), quick()).await.unwrap();
     assert_eq!(replacement.recover(record::nothing).await.unwrap(), 0);
     go_quiet(&pool).await;
+    // Once it has, the eight claimed with the dead relay go back, and are counted.
+    assert_eq!(replacement.recover(record::nothing).await.unwrap(), 8);
+    assert_eq!(replacement.recover(record::nothing).await.unwrap(), 0);
 
     let pool_for_publisher = pool.clone();
     let relay = Relay::start(&replacement, move |event| {

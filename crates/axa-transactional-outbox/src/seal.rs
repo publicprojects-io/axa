@@ -289,6 +289,20 @@ mod tests {
     }
 
     #[test]
+    fn a_key_whose_id_is_held_already_is_ignored() {
+        let keys = Keys::new(key(2, 9))
+            .and_open_with(key(2, 8))
+            .and_open_with(key(1, 7))
+            .and_open_with(key(1, 6));
+        let ids: Vec<u8> = keys.older.iter().map(Key::id).collect();
+        assert_eq!(ids, [1]);
+        // The first key with an id is the one kept.
+        let event = Uuid::new_v4();
+        let sealed = Keys::new(key(1, 7)).seal(event, b"kept").unwrap();
+        assert_eq!(keys.open(event, &sealed).unwrap(), b"kept");
+    }
+
+    #[test]
     fn debug_text_leaves_out_the_key() {
         let keys = Keys::new(Key::new(3, b"a service secret of thirty-two b").unwrap());
         for text in [format!("{keys:?}"), format!("{:?}", keys.current)] {

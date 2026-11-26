@@ -1076,6 +1076,42 @@ mod tests {
     }
 
     #[test]
+    fn options_at_their_bounds_are_kept() {
+        let edges = [
+            OutboxOptions {
+                batch_size: 1,
+                ..fine()
+            },
+            OutboxOptions {
+                stale_minutes: 1,
+                heartbeat_interval: Duration::from_secs(30),
+                ..fine()
+            },
+            OutboxOptions {
+                max_attempts: 1,
+                ..fine()
+            },
+            OutboxOptions {
+                hold_interval: Duration::from_hours(24),
+                ..fine()
+            },
+        ];
+        for options in edges {
+            assert!(options.validate().is_ok(), "{options:?}");
+        }
+    }
+
+    #[test]
+    fn a_code_may_be_as_long_as_the_limit_and_a_tenant_may_hold_digits_and_hyphens() {
+        let longest = "x".repeat(MAX_REASON_CHARS);
+        assert!(check_code(&longest, "reason").is_ok());
+        assert!(check_code(&format!("{longest}x"), "reason").is_err());
+        for tenant in ["acme", "acme-2", "a1b2", "7"] {
+            assert!(is_tenant_id(tenant), "{tenant}");
+        }
+    }
+
+    #[test]
     fn options_that_cannot_work_are_refused() {
         let bad = [
             OutboxOptions {
