@@ -658,12 +658,43 @@ mod tests {
         let mut memory = Memory::default();
         let now = Instant::now();
         let later = now + Duration::from_secs(5);
-        let half = "x".repeat(MEMORY_LIMIT / 2);
-        memory.insert("stale", half.clone(), later, now);
-        memory.insert("live", half, now + LIVE, now);
-        memory.insert("new", "y".repeat(16), later + LIVE, later);
+        // Two that fit together, so only the third fills the cache.
+        let most = "x".repeat(MEMORY_LIMIT / 2 - 64);
+        memory.insert("stale", most.clone(), later, now);
+        memory.insert("live", most, now + LIVE, now);
+        assert_eq!(memory.entries.len(), 2, "both fit");
+        // At `later` the first has expired, exactly, and goes to make room.
+        memory.insert("new", "y".repeat(256), later + LIVE, later);
         assert!(memory.entries.contains_key("live"));
+        assert!(memory.entries.contains_key("new"));
         assert!(!memory.entries.contains_key("stale"));
+    }
+
+    #[test]
+    fn an_entry_of_exactly_the_limit_and_a_cache_filled_to_it_are_kept() {
+        let now = Instant::now();
+        let mut memory = Memory::default();
+        memory.insert("k", "x".repeat(MEMORY_LIMIT - 1), now + LIVE, now);
+        assert_eq!(memory.bytes, MEMORY_LIMIT);
+        assert!(memory.entries.contains_key("k"));
+
+        let mut memory = Memory::default();
+        let half = "x".repeat(MEMORY_LIMIT / 2 - 1);
+        memory.insert("a", half.clone(), now + LIVE, now);
+        memory.insert("b", half, now + LIVE, now);
+        assert_eq!(memory.bytes, MEMORY_LIMIT);
+        assert_eq!(
+            memory.entries.len(),
+            2,
+            "full to the byte, and nothing dropped"
+        );
+    }
+
+    #[test]
+    fn the_limits_are_those_the_spec_names() {
+        // RDS-6: at most 32 MB; and a TTL too large for the clock is held a year.
+        assert_eq!(MEMORY_LIMIT, 33_554_432);
+        assert_eq!(MEMORY_MAX_TTL.as_secs(), 31_536_000);
     }
 
     #[test]
