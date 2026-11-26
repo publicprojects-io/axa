@@ -1297,7 +1297,9 @@ mod tests {
             .unwrap();
         assert!(!format!("{limiter:?}").contains("integration-7"));
         let keyed = limiter.key(|_: &Request| Some("x"));
-        assert!(!format!("{keyed:?}").contains("integration-7"));
+        let printed = format!("{keyed:?}");
+        assert!(!printed.contains("integration-7"), "{printed}");
+        assert!(printed.starts_with("Keyed { limiter: "), "{printed}");
     }
 
     // The warning about one proxy.

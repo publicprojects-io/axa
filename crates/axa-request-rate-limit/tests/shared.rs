@@ -126,6 +126,11 @@ async fn postgres_replicas_share_one_limit_and_store_no_address() {
         1,
         "the ended one-second window is purged, and the open minute windows kept"
     );
+    assert_eq!(
+        store.purge(n(1)).await.unwrap(),
+        0,
+        "nothing is left to purge"
+    );
 }
 
 #[tokio::test]
@@ -162,6 +167,42 @@ async fn a_purge_keeps_a_longer_limit_s_open_window() {
         hourly.check("k").await.unwrap().remaining,
         0,
         "the hourly count survived the purge"
+    );
+}
+
+/// A request through `by_client_shared`: its status, and its `RateLimit-Remaining`.
+async fn through(app: &Router) -> (StatusCode, Option<String>) {
+    let response = app
+        .clone()
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let remaining = response
+        .headers()
+        .get("ratelimit-remaining")
+        .map(|value| value.to_str().unwrap().to_string());
+    (response.status(), remaining)
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_REDIS_URL"]
+async fn the_middleware_lets_a_request_through_within_the_limit_and_refuses_past_it() {
+    let limiter = SharedLimiter::new(
+        redis_store().await,
+        "mw",
+        n(1),
+        n(60),
+        &SECRET,
+        WhenDown::Refuse,
+    )
+    .unwrap();
+    let app = Router::new()
+        .route("/", get(|| async { "ok" }))
+        .layer(from_fn_with_state(limiter, by_client_shared));
+    assert_eq!(through(&app).await, (StatusCode::OK, Some("0".to_string())));
+    assert_eq!(
+        through(&app).await,
+        (StatusCode::TOO_MANY_REQUESTS, Some("0".to_string()))
     );
 }
 
