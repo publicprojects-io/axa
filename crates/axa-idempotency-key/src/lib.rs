@@ -1319,6 +1319,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_least_ttl_and_lease_and_a_lease_as_long_as_the_ttl_are_kept() {
+        assert_eq!(keys().ttl(MIN_LEASE).unwrap().lease(), MIN_LEASE);
+        let least = keys().rerun_abandoned_after(MIN_LEASE).unwrap();
+        assert_eq!(least.lease(), MIN_LEASE);
+        let hour = Duration::from_hours(1);
+        let even = keys()
+            .ttl(hour)
+            .unwrap()
+            .rerun_abandoned_after(hour)
+            .unwrap();
+        assert_eq!(even.lease(), hour);
+    }
+
+    #[test]
+    fn a_length_is_eight_big_endian_bytes() {
+        assert_eq!(length_bytes(0), [0; 8]);
+        assert_eq!(length_bytes(0x0102), [0, 0, 0, 0, 0, 0, 1, 2]);
+        assert_eq!(length_bytes(usize::MAX)[7], 0xff);
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_row_is_answered_as_unavailable() {
+        let response = unreadable();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert!(body.contains("idempotency_unavailable"), "{body}");
+    }
+
+    #[tokio::test]
     async fn the_debug_text_holds_only_settings() {
         let pool = PgPool::connect_lazy("postgres://user:secret@localhost/none").unwrap();
         let keys = Idempotency::new(pool, |_| None);
