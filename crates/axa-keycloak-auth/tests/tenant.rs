@@ -179,6 +179,33 @@ async fn a_suspended_tenant_is_refused_from_its_next_request() {
 }
 
 #[test]
+fn from_claims_takes_only_one_value_that_is_a_tenant_id() {
+    use axa_keycloak_auth::Claims;
+    let claims = |tenant: serde_json::Value| -> Claims {
+        serde_json::from_value(json!({
+            "sub": "0c4f1e2a", "email": "", "name": "", "iss": "", "aud": "",
+            "exp": 0_i64, "iat": 0_i64, "sid": "", "attrs": { "tenant": tenant },
+        }))
+        .unwrap()
+    };
+    let tenant = Tenant::from_claims(&claims(json!(["acme"])), "tenant").unwrap();
+    assert_eq!(tenant.to_string(), "acme");
+    assert!(Tenant::from_claims(&claims(json!(["acme"])), "org").is_none());
+    for values in [
+        json!([]),
+        json!(["acme", "globex"]),
+        json!(["Acme"]),
+        json!(["acme."]),
+        json!(["-acme"]),
+    ] {
+        assert!(
+            Tenant::from_claims(&claims(values.clone()), "tenant").is_none(),
+            "{values}"
+        );
+    }
+}
+
+#[test]
 fn a_tenant_id_is_a_dns_label_in_lower_case() {
     use axa_keycloak_auth::is_tenant_id;
     assert!(is_tenant_id("acme-2"));

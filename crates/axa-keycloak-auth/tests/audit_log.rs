@@ -13,7 +13,8 @@ use std::{
 };
 
 use axa_keycloak_auth::{
-    Guard, GuardConfig, KeycloakSettings, KeycloakVerifier, Policy, ReloadablePolicy, middleware,
+    Guard, GuardConfig, KeycloakSettings, KeycloakVerifier, Policy, ReloadablePolicy, Tenant,
+    middleware,
 };
 use axum::{
     Router,
@@ -65,7 +66,15 @@ fn with_client(app: Router) -> Router {
 }
 
 async fn call(app: &Router, method: &str, token: Option<&str>) -> StatusCode {
-    let mut request = Request::builder().method(method).uri("/api/places");
+    send(app, method, "/api/places", token).await
+}
+
+async fn call_path(app: &Router, path: &str, token: Option<&str>) -> StatusCode {
+    send(app, "GET", path, token).await
+}
+
+async fn send(app: &Router, method: &str, path: &str, token: Option<&str>) -> StatusCode {
+    let mut request = Request::builder().method(method).uri(path);
     if let Some(token) = token {
         request = request.header(AUTHORIZATION, format!("Bearer {token}"));
     }
@@ -81,7 +90,7 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
         url: idp.base_url.clone(),
         realm: "mxi".to_string(),
         audiences: vec!["mxi-api".to_string()],
-        role_map: serde_json::from_value(json!({})).unwrap(),
+        role_map: serde_json::from_value(json!({ "acme-member": { "tenant": ["acme"] } })).unwrap(),
         require_verified_email: true,
     };
     let guard = Guard::new(
@@ -94,6 +103,10 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
             .route(
                 "/api/places",
                 get(|| async { "ok" }).post(|| async { "ok" }),
+            )
+            .route(
+                "/api/tenant",
+                get(|tenant: Tenant| async move { tenant.to_string() }),
             )
             .layer(from_fn_with_state(Arc::new(guard), middleware)),
     );
@@ -133,6 +146,25 @@ async fn a_refusal_leaves_one_audit_line_and_an_allowed_request_none() {
 
     // An allowed request leaves no such line.
     assert_eq!(call(&app, "GET", Some(&good)).await, StatusCode::OK);
+    let line = log.take();
+    assert!(!line.contains("auth_refused"), "{line}");
+
+    // A caller with no tenant, refused by the extractor after the guard let them in:
+    // the line names who and why. A caller with one leaves none.
+    assert_eq!(
+        call_path(&app, "/api/tenant", Some(&good)).await,
+        StatusCode::FORBIDDEN
+    );
+    let line = log.take();
+    assert!(line.contains("auth_refused"), "{line}");
+    assert!(line.contains("status=403"), "{line}");
+    assert!(line.contains("reason=\"no_tenant\""), "{line}");
+    assert!(line.contains("subject=\"0c4f1e2a"), "{line}");
+    let member = idp.token(|claims| claims["realm_access"] = json!({ "roles": ["acme-member"] }));
+    assert_eq!(
+        call_path(&app, "/api/tenant", Some(&member)).await,
+        StatusCode::OK
+    );
     let line = log.take();
     assert!(!line.contains("auth_refused"), "{line}");
 }

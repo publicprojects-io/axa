@@ -703,5 +703,12 @@ mod tests {
             [("Access".to_string(), vec!["write".to_string()])].into(),
         );
         assert!(s.validate().is_err(), "uppercase attribute key");
+        // Digits, `_`, `-`, and `.` are part of a token.
+        let mut s = settings();
+        s.role_map.insert(
+            "x".into(),
+            [("tier_2".to_string(), vec!["eu-west.1".to_string()])].into(),
+        );
+        assert!(s.validate().is_ok(), "digits and punctuation in a token");
     }
 }
