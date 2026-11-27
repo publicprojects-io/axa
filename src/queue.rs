@@ -1637,6 +1637,27 @@ mod tests {
         assert!(ids.iter().all(|id| Uuid::parse_str(id).is_ok()), "{ids:?}");
         let after = queue.counts().await?;
         assert_eq!(after.ready, before.ready + 2);
+
+        // The same on a transaction: the ids are the jobs', and a rollback takes them back.
+        let two = [
+            NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+            NewJob::new("CountWorker", serde_json::json!({ "fail": false })),
+        ];
+        let mut transaction = queue.pool().begin().await?;
+        let ids = enqueue_all_on(&mut transaction, &two).await?;
+        transaction.commit().await?;
+        assert_eq!(ids.len(), 2);
+        for id in &ids {
+            let found: i64 = sqlx::query_scalar("SELECT count(*) FROM axa_queue WHERE id = $1")
+                .bind(Uuid::parse_str(id)?)
+                .fetch_one(queue.pool())
+                .await?;
+            assert_eq!(found, 1, "{id}");
+        }
+        let mut transaction = queue.pool().begin().await?;
+        enqueue_all_on(&mut transaction, &two).await?;
+        transaction.rollback().await?;
+        assert_eq!(queue.counts().await?.ready, after.ready + 2);
         Ok(())
     }
 }

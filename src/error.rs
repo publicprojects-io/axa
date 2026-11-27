@@ -1040,6 +1040,69 @@ mod tests {
         (status, body)
     }
 
+    /// A database error of a given kind, as a driver reports a broken constraint.
+    #[cfg(all(feature = "model", has_sqlx))]
+    #[derive(Debug)]
+    struct Broke(fn() -> sqlx::error::ErrorKind);
+
+    #[cfg(all(feature = "model", has_sqlx))]
+    impl std::fmt::Display for Broke {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("a secret row broke a constraint")
+        }
+    }
+
+    #[cfg(all(feature = "model", has_sqlx))]
+    impl std::error::Error for Broke {}
+
+    #[cfg(all(feature = "model", has_sqlx))]
+    impl sqlx::error::DatabaseError for Broke {
+        fn message(&self) -> &'static str {
+            "a secret row broke a constraint"
+        }
+        fn as_error(&self) -> &(dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn as_error_mut(&mut self) -> &mut (dyn std::error::Error + Send + Sync + 'static) {
+            self
+        }
+        fn into_error(self: Box<Self>) -> Box<dyn std::error::Error + Send + Sync + 'static> {
+            self
+        }
+        fn kind(&self) -> sqlx::error::ErrorKind {
+            (self.0)()
+        }
+    }
+
+    #[cfg(all(feature = "model", has_sqlx))]
+    #[test]
+    fn a_broken_constraint_answers_the_same_from_sqlx_or_from_a_model() {
+        use sqlx::error::ErrorKind;
+        type Kind = fn() -> ErrorKind;
+        let sqlx_error = |kind| sqlx::Error::Database(Box::new(Broke(kind)));
+        let kinds: [(Kind, Option<Broken>); 5] = [
+            (|| ErrorKind::UniqueViolation, Some(ALREADY_EXISTS)),
+            (|| ErrorKind::ForeignKeyViolation, Some(REFERENCE)),
+            (|| ErrorKind::CheckViolation, Some(OUT_OF_RANGE)),
+            (|| ErrorKind::NotNullViolation, Some(MISSING)),
+            (|| ErrorKind::Other, None),
+        ];
+        for (kind, expected) in kinds {
+            let plain = Error::Sqlx(sqlx_error(kind));
+            let model = Error::Model(crate::model::ModelError::Sqlx(sqlx_error(kind)));
+            assert_eq!(broken(&plain), expected);
+            assert_eq!(broken(&model), expected);
+        }
+        // An outage reached through a model is an outage too.
+        assert!(unavailable(&Error::Model(crate::model::ModelError::Sqlx(
+            sqlx::Error::PoolTimedOut
+        ))));
+        assert!(!unavailable(&Error::Model(crate::model::ModelError::Sqlx(
+            sqlx::Error::RowNotFound
+        ))));
+        assert!(!unavailable(&Error::NotFound));
+    }
+
     #[cfg(has_sqlx)]
     #[tokio::test]
     async fn a_sqlx_pool_with_no_connection_is_unavailable() {
@@ -1115,6 +1178,46 @@ mod tests {
         for code in ["19", "1", "2067", "not a number"] {
             assert!(!sqlite_unavailable(code), "{code}");
         }
+    }
+
+    #[cfg(any(has_sqlx_postgres, feature = "postgres-toasty"))]
+    #[test]
+    fn postgres_read_only_lost_connections_and_shutdowns_are_unavailable() {
+        // Read-only, too many connections, a connection class 08, and an operator
+        // intervention class 57P, such as a server shutting down or starting up.
+        for code in ["25006", "53300", "08000", "08006", "57P01", "57P03"] {
+            assert!(postgres_unavailable(code), "{code}");
+        }
+        // A duplicate, a statement timeout, and a syntax error are not.
+        for code in ["23505", "57014", "42601", ""] {
+            assert!(!postgres_unavailable(code), "{code}");
+        }
+    }
+
+    #[cfg(feature = "postgres-toasty")]
+    #[test]
+    fn each_postgres_constraint_code_names_its_problem() {
+        assert_eq!(broken_by_postgres_code("23505"), Some(ALREADY_EXISTS));
+        assert_eq!(broken_by_postgres_code("23503"), Some(REFERENCE));
+        assert_eq!(broken_by_postgres_code("23514"), Some(OUT_OF_RANGE));
+        assert_eq!(broken_by_postgres_code("23502"), Some(MISSING));
+        assert_eq!(broken_by_postgres_code("42601"), None);
+    }
+
+    #[cfg(feature = "mysql-toasty")]
+    #[test]
+    fn each_mysql_constraint_number_names_its_problem() {
+        for (numbers, broken) in [
+            (&[1062, 1586][..], ALREADY_EXISTS),
+            (&[1216, 1217, 1451, 1452], REFERENCE),
+            (&[3819], OUT_OF_RANGE),
+            (&[1048, 1364], MISSING),
+        ] {
+            for number in numbers {
+                assert_eq!(broken_by_mysql_number(*number), Some(broken), "{number}");
+            }
+        }
+        assert_eq!(broken_by_mysql_number(1064), None);
     }
 
     #[cfg(any(has_sqlx_mysql, feature = "mysql-toasty"))]

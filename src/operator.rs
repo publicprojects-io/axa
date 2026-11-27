@@ -391,6 +391,22 @@ mod tests {
                 .or(Operator::basic("ops", "a-long-password-1").unwrap());
         let shown = format!("{operator:?}");
         assert_eq!(shown, "Operator { bearer: 1, basic: 1 }");
+        // Uneven counts, so a count of the wrong scheme cannot read the same.
+        let more = operator.or(Operator::bearer(&"b".repeat(MIN_TOKEN_BYTES)).unwrap());
+        assert_eq!(format!("{more:?}"), "Operator { bearer: 2, basic: 1 }");
+    }
+
+    #[test]
+    fn a_credential_at_each_length_limit_is_kept_and_one_past_it_is_refused() {
+        assert!(Operator::bearer(&"t".repeat(MIN_TOKEN_BYTES)).is_ok());
+        assert!(Operator::bearer(&"t".repeat(MIN_TOKEN_BYTES - 1)).is_err());
+        assert!(Operator::bearer(&"t".repeat(MAX_CREDENTIAL_BYTES)).is_ok());
+        assert!(Operator::bearer(&"t".repeat(MAX_CREDENTIAL_BYTES + 1)).is_err());
+        assert!(Operator::basic("ops", &"p".repeat(MIN_PASSWORD_BYTES)).is_ok());
+        assert!(Operator::basic("ops", &"p".repeat(MIN_PASSWORD_BYTES - 1)).is_err());
+        // `ops:` and 764 bytes make 768, which base64 makes exactly 1024; one more is 1028.
+        assert!(Operator::basic("ops", &"p".repeat(764)).is_ok());
+        assert!(Operator::basic("ops", &"p".repeat(765)).is_err());
     }
 
     #[test]

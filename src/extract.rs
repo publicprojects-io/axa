@@ -448,6 +448,18 @@ mod tests {
         assert_eq!(change.nickname.value().map(String::as_str), Some("Ada"));
         assert_eq!(change.size, Patch::Value(3));
         assert_eq!(change.size.into_option(), Some(Some(3)));
+        // Each state is only itself.
+        for (patch, missing, null) in [
+            (Patch::<u8>::Missing, true, false),
+            (Patch::Null, false, true),
+            (Patch::Value(3), false, false),
+        ] {
+            assert_eq!(
+                (patch.is_missing(), patch.is_null()),
+                (missing, null),
+                "{patch:?}"
+            );
+        }
     }
 
     #[test]
@@ -537,6 +549,13 @@ mod tests {
         ] {
             let (status, body) = post_form(kind, body).await;
             assert_eq!(status, expected, "{body}");
+            // A form of the wrong type says which type to send.
+            let says_type = body.contains("Send the form as application/x-www-form-urlencoded");
+            assert_eq!(
+                says_type,
+                expected == StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "{body}"
+            );
             assert!(body.contains("\"detail\""), "{body}");
             assert!(!body.contains("secret"), "{body}");
             let code = expected.canonical_reason().unwrap();

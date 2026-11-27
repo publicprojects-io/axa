@@ -287,6 +287,19 @@ mod tests {
         assert_eq!(AddWorker::class_name(), "AddWorker");
     }
 
+    #[test]
+    fn a_worker_sets_no_attempts_or_time_limit_unless_it_says() {
+        assert_eq!(<AddWorker as BackgroundWorker<Args>>::max_attempts(), None);
+        assert_eq!(<AddWorker as BackgroundWorker<Args>>::timeout(), None);
+    }
+
+    #[test]
+    fn a_tenant_id_may_hold_digits_and_hyphens() {
+        for id in ["acme", "acme-2", "a1", "7"] {
+            assert!(is_tenant_id(id), "{id}");
+        }
+    }
+
     #[tokio::test]
     async fn foreground_jobs_run_before_returning_and_report_failure() {
         let ctx = context("ForegroundBlocking");
@@ -427,6 +440,8 @@ mod tests {
         .await
         .unwrap();
         assert!(Uuid::parse_str(&delayed).is_ok(), "{delayed}");
+        // Long enough for an undelayed job to have run, and well short of the delay.
+        tokio::time::sleep(Duration::from_millis(50)).await;
         assert_eq!(LATER.load(Ordering::SeqCst), 0, "not before its delay");
         assert!(eventually(|| LATER.load(Ordering::SeqCst) == 5).await);
 

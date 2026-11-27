@@ -1357,6 +1357,20 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn each_worker_mode_is_read_by_its_name_and_no_other_name_is() {
+        for (name, mode) in [
+            ("ForegroundBlocking", WorkerMode::ForegroundBlocking),
+            (" BackgroundAsync ", WorkerMode::BackgroundAsync),
+            ("BackgroundQueue", WorkerMode::BackgroundQueue),
+        ] {
+            assert_eq!(super::worker_mode(name), Some(mode), "{name:?}");
+        }
+        for other in ["", "foreground", "Background"] {
+            assert_eq!(super::worker_mode(other), None, "{other:?}");
+        }
+    }
+
     use super::*;
     use std::collections::HashMap;
 
@@ -2116,6 +2130,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(config.database.application_name, "");
+
+        // With none set, the database name names the service only when Postgres keeps it.
+        let named = |database: &'static str| {
+            let defaults = Defaults {
+                database,
+                ..Defaults::default()
+            };
+            Config::from_lookup(&Environment::Development, &defaults, |_| None)
+                .unwrap()
+                .database
+                .application_name
+        };
+        assert_eq!(named("orders"), "orders");
+        assert_eq!(named("has space"), "");
     }
 
     /// Only a `SQLite` build can ask for what only Postgres and `MySQL` have.

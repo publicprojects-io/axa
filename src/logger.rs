@@ -239,6 +239,22 @@ fn subscriber(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn each_level_is_read_by_its_name() {
+        use super::LogLevel;
+        for (name, level) in [
+            ("off", LogLevel::Off),
+            ("trace", LogLevel::Trace),
+            ("debug", LogLevel::Debug),
+            (" INFO ", LogLevel::Info),
+            ("warn", LogLevel::Warn),
+            ("error", LogLevel::Error),
+        ] {
+            assert_eq!(LogLevel::from_name(name), Some(level), "{name:?}");
+        }
+        assert_eq!(LogLevel::from_name("loud"), None);
+    }
+
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},

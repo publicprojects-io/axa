@@ -291,5 +291,6 @@ mod tests {
         for text in ["", "junk", "10.0.0.0/33", "fd00::/129", "10.0.0.0/x", "/8"] {
             assert_eq!(text.parse::<ProxyNet>(), Err(InvalidProxyNet), "{text}");
         }
+        assert_eq!(InvalidProxyNet.to_string(), "not an address or CIDR range");
     }
 }

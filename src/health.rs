@@ -683,6 +683,19 @@ mod tests {
         assert_eq!(body, refused(r#"["slow"]"#));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_longer_time_limit_lets_a_check_past_the_default_pass() {
+        // Three seconds is past DEFAULT_TIME_LIMIT, so only the limit set here passes it.
+        let checks = Checks::new()
+            .time_limit(Duration::from_secs(5))
+            .add("steady", || async {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                Ok::<(), String>(())
+            });
+        let (status, _) = answer(with_checks(checks)).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
     async fn boom() -> Result<(), String> {
         panic!("boom")
     }

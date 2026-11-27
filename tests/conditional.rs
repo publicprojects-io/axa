@@ -656,6 +656,8 @@ async fn server_sent_events_reach_the_caller_as_they_are_sent() {
 
 #[tokio::test]
 async fn a_body_at_the_limit_is_tagged_and_one_past_it_is_not() {
+    // CND-11: the limit is 8 MB.
+    assert_eq!(MAX_BODY, 8_388_608);
     let sized = |size: usize| async move {
         let app = stack(hashed(get(move || async move { vec![b'x'; size] })));
         fetch(&app, "/", &[]).await

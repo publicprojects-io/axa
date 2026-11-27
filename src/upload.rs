@@ -572,6 +572,17 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_field_of_exactly_its_limit_is_kept() {
+        let limits = Limits {
+            field_bytes: 10,
+            ..Limits::default()
+        };
+        let (status, body) = send(limits, &[("note", None, None, b"0123456789")]).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["fields"], json!([["note", "0123456789"]]));
+    }
+
+    #[tokio::test]
     async fn a_file_of_a_type_not_accepted_is_a_415() {
         let limits = Limits {
             accept: Some(vec!["image/png"]),

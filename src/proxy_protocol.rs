@@ -167,6 +167,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_v2_header_of_exactly_the_limit_is_read() {
+        // An IPv4 client, then a NOOP TLV (type 0x04) that pads the rest to the limit.
+        let mut rest = vec![192, 0, 2, 7, 10, 0, 0, 1];
+        rest.extend(51000_u16.to_be_bytes());
+        rest.extend(443_u16.to_be_bytes());
+        let pad = V2_MAX_REST - rest.len() - 3;
+        rest.push(0x04);
+        rest.extend(u16::try_from(pad).unwrap().to_be_bytes());
+        rest.extend(vec![0; pad]);
+        assert_eq!(rest.len(), V2_MAX_REST);
+        let (client, _) = read(&v2(1, 0x11, &rest)).await;
+        assert_eq!(client.unwrap(), "192.0.2.7:51000".parse().unwrap());
+    }
+
+    #[tokio::test]
     async fn a_header_that_names_no_client_keeps_the_peer() {
         let peer: SocketAddr = PEER.parse().unwrap();
         assert_eq!(read(b"PROXY UNKNOWN\r\n").await.0.unwrap(), peer);

@@ -2065,6 +2065,16 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
+    #[test]
+    fn only_an_entry_ending_slash_star_is_a_prefix_and_it_holds_no_bare_prefix() {
+        assert!(path_matches("/forms/*", "/forms/a"));
+        assert!(!path_matches("/forms/*", "/forms/"));
+        assert!(!path_matches("/forms/*", "/forms"));
+        // Without the slash, `*` is only a character of an exact path.
+        assert!(!path_matches("/forms*", "/formsx"));
+        assert!(path_matches("/forms*", "/forms*"));
+    }
+
     #[tokio::test]
     async fn a_listed_prefix_lets_the_paths_below_it_through_and_no_other() {
         let router = Router::new()

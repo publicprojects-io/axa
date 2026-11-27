@@ -230,6 +230,12 @@ fn shorten(name: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
+    #[test]
+    fn an_extension_as_long_as_the_limit_is_dropped_for_the_stem() {
+        assert_eq!(shorten("abcdefgh.pdf", 4), "abcd");
+        assert_eq!(shorten("abcdefgh.pdf", 5), "a.pdf");
+    }
+
     async fn body_text(response: Response) -> String {
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
             .await

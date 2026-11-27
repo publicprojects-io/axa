@@ -193,6 +193,38 @@ mod tests {
         assert_eq!(RUNS.load(Ordering::SeqCst), 2);
     }
 
+    struct Ordinary;
+
+    #[async_trait]
+    impl Task for Ordinary {
+        fn task(&self) -> TaskInfo {
+            TaskInfo {
+                name: "ordinary".to_string(),
+                detail: "Runs anywhere".to_string(),
+            }
+        }
+
+        async fn run(&self, _ctx: &AppContext, _vars: &Vars) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn a_task_for_any_environment_runs_in_production() {
+        let defaults = Defaults {
+            database: "",
+            ..Defaults::default()
+        };
+        let config = Config::from_lookup(&Environment::Test, &defaults, |_| None).unwrap();
+        let production = AppContext::with_test_db(Environment::Production, config);
+        let mut tasks = Tasks::default();
+        tasks.register(Ordinary);
+        tasks
+            .run("ordinary", &production, &Vars::default())
+            .await
+            .unwrap();
+    }
+
     #[tokio::test]
     async fn an_unknown_task_is_an_error() {
         let error = Tasks::default()
