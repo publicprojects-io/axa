@@ -1,6 +1,6 @@
 [package]
 name = "axa-http-client"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2024"
 rust-version.workspace = true
 authors = ["Joel Parker Henderson <joel@joelparkerhenderson.com>"]

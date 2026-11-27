@@ -5,6 +5,26 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-11-27
+
+This covers `axa` 0.24.1, `axa-http-client` 0.2.2, and `axa-test` 0.15.1, which change
+nothing a service calls: a service upgrades by changing the versions. The published `axa`
+still lacks the `sqlite-*` features, as their crates are held for RUSTSEC-2026-0459.
+
+### Changed
+
+- `axa` asks for `axa-cursor-pagination` 0.1.4, so `axa::cursor_pagination` always has
+  `CursorPage::fill` and `next_link_at` (below), and for `axa-http-client` 0.2.2.
+- `BackgroundWorker::perform_in` and `perform_later_for` run, queue, or spawn a job
+  through one dispatch, where each had its own. What each does is unchanged.
+- `axa-http-client` 0.2.2 reads the IPv4 address inside a NAT64 or 6to4 address from its
+  bytes. The addresses it refuses are unchanged.
+- `axa-test` 0.15.1 names a migration template from its digest's first eight bytes as
+  before, read with `from_be_bytes`, so every template name is unchanged.
+- Tests a `cargo mutants` sweep found missing, in `axa` and most subcrates. Among them,
+  a Redis cache eviction test that passed without evicting, and the shared rate limit
+  middleware, untested while its store answered.
+
 ## Subcrates - 2026-11-27
 
 `axa-cursor-pagination` 0.1.4, with no new `axa`: `axa` 0.24.0 asks for

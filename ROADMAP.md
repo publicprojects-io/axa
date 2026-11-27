@@ -5,11 +5,17 @@ This document outlines the planned development path for axa. See
 
 ---
 
-## Current Version: 0.24.0
+## Current Version: 0.24.1
 
 ---
 
 ## Recently Completed
+
+### Version 0.24.1
+- `CursorPage::fill` and `next_link_at` through `axa::cursor_pagination`, which now asks
+  for `axa-cursor-pagination` 0.1.4, so a list a record policy filters is not short for
+  the rows the caller may not see, as a customer asked; and the tests a mutation sweep
+  of every crate that needs no database found missing
 
 ### Version 0.24.0
 - `Cli::environment`, `Cli::config`, `cli::answer`, and `Tasks::run_or_list`, which take
