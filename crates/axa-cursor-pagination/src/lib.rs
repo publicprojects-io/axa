@@ -15,8 +15,32 @@
 //! a later page skip or repeat one row, so order every list by something that
 //! ends in a unique column, such as `ORDER BY created_at, id`, so that the order
 //! itself is stable.
+//!
+//! # Pages a record policy filters
+//!
+//! A list whose rows the caller may or may not see, row by row, should not fetch one
+//! page and drop what the caller may not see: the page comes back short, which says
+//! that rows were hidden, and how many. [`CursorPage::fill`] reads on instead, in
+//! batches, until the page is full, and the next page starts right after the last row
+//! it returned, so nothing is skipped or shown twice. Its read budget, `max_scan`,
+//! caps what one request may read, so a caller who can see almost nothing cannot make
+//! every request read the whole table. [`CursorPage::next_link_at`] is the piece it
+//! is built on, for a service that reads ahead its own way.
+//!
+//! What this does not hide:
+//!
+//! - Time. A page that skipped many hidden rows takes longer to answer, which a
+//!   careful caller could notice. That is a far weaker hint than a short page, but
+//!   it is not none.
+//! - A page that spent its budget. It can come back short, with a next link that
+//!   starts where the reading stopped. That says only that something was skipped.
+//! - Rows that change between pages, which can still skip or repeat one row, as
+//!   above.
+//!
+//! A policy written as SQL conditions gives exact pages with no reading ahead, where
+//! the policy can be said in SQL.
 
-use std::fmt;
+use std::{fmt, future::Future};
 
 use axum::{
     Json,
@@ -175,13 +199,59 @@ impl std::error::Error for PageError {}
 /// assert!(link.starts_with("</things?status=open&limit=2&cursor="));
 /// assert!(link.ends_with(r#">; rel="next""#));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct CursorPage {
     limit: u64,
     offset: u64,
     /// `LIMIT` and `OFFSET` as signed numbers, checked to fit when the page is read.
     bounds: (i64, i64),
-    next: String,
+    /// Where the next page starts, checked to fit when the page is read.
+    next_offset: u64,
+    /// What a cursor for another position is signed with and for: the key, whose
+    /// `Debug` hides it, and the hash of the query and context.
+    key: CursorKey,
+    query: [u8; 32],
+    /// The path and the query parts but `cursor`, in the order given, for the link.
+    path: String,
+    parts: Vec<String>,
+}
+
+// By hand, as a key cannot be compared: two pages are the same when they have the same
+// numbers and query, and their key signs a cursor the same.
+impl PartialEq for CursorPage {
+    fn eq(&self, other: &Self) -> bool {
+        (self.limit, self.offset, self.bounds, self.next_offset)
+            == (other.limit, other.offset, other.bounds, other.next_offset)
+            && self.query == other.query
+            && self.path == other.path
+            && self.parts == other.parts
+            && self.key.encode(0, &self.query) == other.key.encode(0, &other.query)
+    }
+}
+
+impl Eq for CursorPage {}
+
+/// A page that [`CursorPage::fill`] filled: the rows it kept, and the `Link` to the
+/// next page, if more may follow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Filled<T> {
+    /// The page's rows, at most its limit.
+    pub rows: Vec<T>,
+    /// `Link: rel="next"`, or `None` when the list has ended.
+    pub next: Option<HeaderValue>,
+}
+
+impl<T: Serialize> Filled<T> {
+    /// The rows as a bare JSON array, with `Link: rel="next"` when there is one. There
+    /// is no total.
+    #[must_use]
+    pub fn respond(self) -> Response {
+        let mut response = Json(self.rows).into_response();
+        if let Some(link) = self.next {
+            response.headers_mut().insert(LINK, link);
+        }
+        response
+    }
 }
 
 /// The query a cursor belongs to: the path and the parameters other than
@@ -314,22 +384,33 @@ impl CursorPage {
         let (Some(rows), Some(skip), Ok(_)) = (rows, skip, i64::try_from(next_offset)) else {
             return Err(PageError::BadCursor);
         };
-        let bounds = (rows, skip);
-        let next_cursor = key.encode(next_offset, &query);
-        let mut next_query: Vec<&str> = parts
-            .iter()
-            .copied()
-            .filter(|part| name(part) != "cursor")
-            .collect();
-        let cursor_part = format!("cursor={next_cursor}");
-        next_query.push(&cursor_part);
-        let next = format!("<{}?{}>; rel=\"next\"", uri.path(), next_query.join("&"));
         Ok(Self {
             limit,
             offset,
-            bounds,
-            next,
+            bounds: (rows, skip),
+            next_offset,
+            key: key.clone(),
+            query,
+            path: uri.path().to_string(),
+            parts: parts
+                .iter()
+                .filter(|part| name(part) != "cursor")
+                .map(|part| (*part).to_string())
+                .collect(),
         })
+    }
+
+    /// `Link: rel="next"` for a page that starts at `offset`, with this page's query.
+    fn link(&self, offset: u64) -> Option<HeaderValue> {
+        let cursor = format!("cursor={}", self.key.encode(offset, &self.query));
+        let mut query: Vec<&str> = self.parts.iter().map(String::as_str).collect();
+        query.push(&cursor);
+        HeaderValue::from_str(&format!(
+            "<{}?{}>; rel=\"next\"",
+            self.path,
+            query.join("&")
+        ))
+        .ok()
     }
 
     /// Rows to return.
@@ -363,10 +444,127 @@ impl CursorPage {
         (rows, more)
     }
 
-    /// The `Link` header for the next page.
+    /// The `Link` header for the next page, which starts right after this one.
     #[must_use]
     pub fn next_link(&self) -> Option<HeaderValue> {
-        HeaderValue::from_str(&self.next).ok()
+        self.link(self.next_offset)
+    }
+
+    /// The `Link` header for a next page that starts at `offset`, signed for this
+    /// page's path, filters, and context, as for a page that read ahead past rows it
+    /// did not return. The cursor is the one `next_link` makes, at another position.
+    ///
+    /// `None` for an offset at or before this page's own, so a mistake cannot send a
+    /// caller round the same page for ever, and for one whose page could not be read,
+    /// as its end would not fit SQL.
+    #[must_use]
+    pub fn next_link_at(&self, offset: u64) -> Option<HeaderValue> {
+        if offset <= self.offset {
+            return None;
+        }
+        let end = offset.checked_add(self.limit)?;
+        i64::try_from(end).ok()?;
+        self.link(offset)
+    }
+
+    /// Fill this page from `fetch`, keeping only the rows `keep` accepts, as for a list
+    /// a record policy filters row by row.
+    ///
+    /// `fetch(limit, offset)` reads up to `limit` rows from `offset`, in the list's
+    /// order. It is asked for a page and one row more at a time, and again until the
+    /// page is full, the list ends, or `max_scan` rows have been read. A budget below
+    /// one such batch is raised to one. Choose it per list, such as ten times the page.
+    ///
+    /// The next page starts right after the last row this page returned, so rows read
+    /// past it, such as the one that showed more follow, are read again there, and
+    /// nothing is skipped or shown twice. There is a next link when a row `keep`
+    /// accepts follows the full page, and when the budget ran out first, from where
+    /// the reading stopped. Such a page may be short, which says only that rows were
+    /// skipped. There is none when the list ended. With every row kept, this is one
+    /// fetch, of [`CursorPage::bounds`], as [`CursorPage::respond`] needs.
+    ///
+    /// ```
+    /// use axa_cursor_pagination::{CursorKey, CursorLimits, CursorPage};
+    /// # fn block_on<F: std::future::Future>(future: F) -> F::Output {
+    /// #     let mut future = std::pin::pin!(future);
+    /// #     let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+    /// #     loop {
+    /// #         if let std::task::Poll::Ready(out) = future.as_mut().poll(&mut cx) { return out; }
+    /// #     }
+    /// # }
+    ///
+    /// let key = CursorKey::new(&[7; 32]).unwrap();
+    /// let limits = CursorLimits { default_limit: 50, max_limit: 200 };
+    /// let page = CursorPage::new(&key, limits, &"/tickets?limit=2".parse().unwrap()).unwrap();
+    /// // Ten tickets, of which the caller may see the even ones.
+    /// let table: Vec<u32> = (0..10).collect();
+    /// let fetch = async |limit: i64, offset: i64| {
+    ///     let (from, to) = (offset as usize, (offset + limit) as usize);
+    ///     Ok::<_, std::convert::Infallible>(table[from.min(10)..to.min(10)].to_vec())
+    /// };
+    /// let filled = block_on(page.fill(20, fetch, |ticket| ticket % 2 == 0)).unwrap();
+    /// assert_eq!(filled.rows, [0, 2]);
+    /// // Ticket 4 showed more follow, and the next page starts at 3, after ticket 2.
+    /// assert!(filled.next.is_some());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// The first error `fetch` returns.
+    pub async fn fill<T, E, F, Fut, K>(
+        &self,
+        max_scan: u64,
+        mut fetch: F,
+        mut keep: K,
+    ) -> Result<Filled<T>, E>
+    where
+        F: FnMut(i64, i64) -> Fut,
+        Fut: Future<Output = Result<Vec<T>, E>>,
+        K: FnMut(&T) -> bool,
+    {
+        let want = usize::try_from(self.limit).unwrap_or(usize::MAX);
+        let batch = self.limit.saturating_add(1);
+        let budget = max_scan.max(batch);
+        let mut rows = Vec::new();
+        // The next row to read, and where a page after the last row kept starts.
+        let mut position = self.offset;
+        let mut after_kept = self.offset;
+        let mut scanned = 0_u64;
+        loop {
+            let ask = batch.min(budget.saturating_sub(scanned));
+            let (Ok(limit), Ok(offset)) = (i64::try_from(ask), i64::try_from(position)) else {
+                // Past what SQL can name, which a page that is read never starts at.
+                return Ok(Filled { rows, next: None });
+            };
+            let read = fetch(limit, offset).await?;
+            let got = u64::try_from(read.len()).unwrap_or(u64::MAX);
+            for row in read {
+                let at = position;
+                position = position.saturating_add(1);
+                if !keep(&row) {
+                    continue;
+                }
+                if rows.len() >= want {
+                    // A row past the full page that the caller may see: more follow.
+                    return Ok(Filled {
+                        rows,
+                        next: self.next_link_at(after_kept),
+                    });
+                }
+                rows.push(row);
+                after_kept = at.saturating_add(1);
+            }
+            scanned = scanned.saturating_add(got);
+            if got < ask {
+                return Ok(Filled { rows, next: None });
+            }
+            if scanned >= budget {
+                return Ok(Filled {
+                    rows,
+                    next: self.next_link_at(position),
+                });
+            }
+        }
     }
 
     /// `rows`, fetched with [`CursorPage::bounds`], as a bare JSON array, with
@@ -424,7 +622,7 @@ mod tests {
 
     /// The cursor in a page's next link.
     fn next_cursor(page: &CursorPage) -> String {
-        let link = page.next.clone();
+        let link = page.next_link().unwrap().to_str().unwrap().to_string();
         let start = link.find("cursor=").unwrap() + "cursor=".len();
         let end = link[start..].find(['&', '>']).unwrap() + start;
         link[start..end].to_string()
@@ -651,6 +849,185 @@ mod tests {
         }
     }
 
+    /// Run a future whose every await is ready, as `fill` over a table in memory is.
+    pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
+        let mut future = std::pin::pin!(future);
+        let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
+        loop {
+            if let std::task::Poll::Ready(out) = future.as_mut().poll(&mut cx) {
+                return out;
+            }
+        }
+    }
+
+    /// The offset a page's next link starts at.
+    fn link_offset(page: &CursorPage, link: &HeaderValue) -> u64 {
+        let uri: Uri = link
+            .to_str()
+            .unwrap()
+            .trim_start_matches('<')
+            .split('>')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        CursorPage::new(&key(), LIMITS, &uri)
+            .map_or_else(|_| panic!("{page:?}"), |next| next.offset())
+    }
+
+    #[test]
+    fn a_next_link_may_start_at_any_offset_past_the_page() {
+        // PAG-16.
+        let first = CursorPage::new_in(
+            &key(),
+            LIMITS,
+            &"/todos?status=open&limit=3".parse().unwrap(),
+            "acme",
+        )
+        .unwrap();
+        let link = first.next_link_at(7).unwrap();
+        let uri: Uri = link
+            .to_str()
+            .unwrap()
+            .trim_start_matches('<')
+            .split('>')
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let next = CursorPage::new_in(&key(), LIMITS, &uri, "acme").unwrap();
+        assert_eq!((next.offset(), next.limit()), (7, 3));
+        assert!(
+            link.to_str()
+                .unwrap()
+                .starts_with("</todos?status=open&limit=3&cursor=")
+        );
+        assert_eq!(
+            CursorPage::new_in(&key(), LIMITS, &uri, "globex"),
+            Err(PageError::BadCursor)
+        );
+        // At the page's own end, it is the next link.
+        assert_eq!(first.next_link_at(3), first.next_link());
+
+        let later = CursorPage::new_in(&key(), LIMITS, &uri, "acme").unwrap();
+        for back in [0, 6, 7] {
+            assert_eq!(later.next_link_at(back), None, "{back}");
+        }
+        assert!(later.next_link_at(8).is_some());
+        let last = u64::try_from(i64::MAX).unwrap();
+        assert_eq!(later.next_link_at(last), None, "its end would not fit SQL");
+        assert_eq!(later.next_link_at(u64::MAX), None);
+        assert!(later.next_link_at(last - 3).is_some());
+    }
+
+    #[test]
+    fn a_page_keeps_its_key_out_of_its_debug_text_and_compares_by_what_it_signs() {
+        let printed = format!("{:?}", page("/things?limit=2").unwrap());
+        assert!(printed.contains("CursorKey(..)"), "{printed}");
+        assert!(!printed.contains("thirty-two"), "{printed}");
+        assert_eq!(page("/things?limit=2"), page("/things?limit=2"));
+        let other = CursorKey::new(&[9; 32]).unwrap();
+        let theirs = CursorPage::new(&other, LIMITS, &"/things?limit=2".parse().unwrap()).unwrap();
+        assert_ne!(page("/things?limit=2").unwrap(), theirs);
+        assert_ne!(
+            page("/things?limit=2").unwrap(),
+            page("/things?limit=3").unwrap()
+        );
+    }
+
+    /// `fill` over `table`, where `true` is a row the caller may see, recording each read.
+    fn fill_over(uri: &str, table: &[bool], max_scan: u64) -> (Filled<usize>, Vec<(i64, i64)>) {
+        let page = page(uri).unwrap();
+        let reads = std::cell::RefCell::new(Vec::new());
+        let fetch = async |limit: i64, offset: i64| {
+            reads.borrow_mut().push((limit, offset));
+            let from = usize::try_from(offset).unwrap().min(table.len());
+            let to = usize::try_from(offset + limit).unwrap().min(table.len());
+            Ok::<_, ()>((from..to).collect::<Vec<usize>>())
+        };
+        let filled = block_on(page.fill(max_scan, fetch, |row| table[*row])).unwrap();
+        (filled, reads.into_inner())
+    }
+
+    #[test]
+    fn with_every_row_kept_fill_is_one_read_and_the_usual_next_link() {
+        // PAG-17.
+        let table = [true; 10];
+        let (filled, reads) = fill_over("/things?limit=3", &table, 30);
+        assert_eq!(filled.rows, [0, 1, 2]);
+        assert_eq!(reads, [(4, 0)], "one read, of the page's bounds");
+        assert_eq!(filled.next, page("/things?limit=3").unwrap().next_link());
+        let (last, _) = fill_over("/things?limit=3", &table[..3], 30);
+        assert_eq!((last.rows, last.next), (vec![0, 1, 2], None));
+    }
+
+    #[test]
+    fn fill_reads_on_past_hidden_rows_and_the_next_page_starts_after_the_last_returned() {
+        // PAG-17: rows 1, 2, 4, and 6 are hidden.
+        let table = [true, false, false, true, false, true, false, true, true];
+        let (filled, reads) = fill_over("/things?limit=3", &table, 30);
+        assert_eq!(filled.rows, [0, 3, 5]);
+        assert_eq!(
+            reads,
+            [(4, 0), (4, 4)],
+            "in batches of the page and one more"
+        );
+        let page = page("/things?limit=3").unwrap();
+        let link = filled.next.unwrap();
+        assert_eq!(
+            link_offset(&page, &link),
+            6,
+            "row 7, read to see more follow, is read again"
+        );
+    }
+
+    #[test]
+    fn fill_ends_without_a_link_when_no_row_the_caller_sees_follows() {
+        // PAG-17.
+        let table = [true, false, true, false, false, false];
+        let (filled, _) = fill_over("/things?limit=2", &table, 30);
+        assert_eq!((filled.rows, filled.next), (vec![0, 2], None));
+        let (empty, _) = fill_over("/things?limit=2", &[false; 5], 30);
+        assert_eq!((empty.rows, empty.next), (Vec::new(), None));
+    }
+
+    #[test]
+    fn a_spent_budget_ends_the_page_with_a_link_from_where_the_reading_stopped() {
+        // PAG-18.
+        let mut table = vec![false; 40];
+        table[0] = true;
+        table[30] = true;
+        let (filled, reads) = fill_over("/things?limit=3", &table, 10);
+        assert_eq!(filled.rows, [0]);
+        assert_eq!(
+            reads
+                .iter()
+                .try_fold(0_i64, |total, (limit, _)| total.checked_add(*limit)),
+            Some(10),
+            "{reads:?}"
+        );
+        let page = page("/things?limit=3").unwrap();
+        assert_eq!(link_offset(&page, &filled.next.unwrap()), 10);
+        // A budget below one batch reads one batch, so the page still moves on.
+        let (small, reads) = fill_over("/things?limit=3", &table, 0);
+        assert_eq!(reads, [(4, 0)]);
+        assert_eq!(link_offset(&page, &small.next.unwrap()), 4);
+    }
+
+    #[test]
+    fn a_failed_read_is_the_fills_error_and_a_filled_page_responds_as_a_page() {
+        let page = page("/things?limit=2").unwrap();
+        let failing = async |_: i64, _: i64| Err::<Vec<u8>, _>("down");
+        assert_eq!(block_on(page.fill(10, failing, |_| true)), Err("down"));
+        let table = [true; 5];
+        let (filled, _) = fill_over("/things?limit=2", &table, 10);
+        let link = filled.next.clone().unwrap();
+        let response = filled.respond();
+        assert_eq!(response.headers()[LINK], link);
+        let (last, _) = fill_over("/things?limit=2", &table[..1], 10);
+        assert!(last.respond().headers().get(LINK).is_none());
+    }
+
     #[test]
     fn a_length_is_eight_big_endian_bytes() {
         assert_eq!(length_bytes(0x0102), [0, 0, 0, 0, 0, 0, 1, 2]);
@@ -804,6 +1181,39 @@ mod properties {
                 }
             }
             prop_assert_eq!(unescaped, text);
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn following_filled_pages_shows_each_visible_row_once_in_order(
+            table in prop::collection::vec(any::<bool>(), 0..120),
+            limit in 1..=8_u64,
+            max_scan in 0..40_u64,
+        ) {
+            // PAG-17 and PAG-18: whatever is hidden and whatever the budget, the pages
+            // together are exactly the rows the caller may see, and every link moves on.
+            let key = key(7);
+            let mut uri: Uri = format!("/things?limit={limit}").parse().unwrap();
+            let mut shown = Vec::new();
+            let mut last_offset = None;
+            for _ in 0..=table.len() {
+                let page = CursorPage::new(&key, LIMITS, &uri).unwrap();
+                prop_assert!(last_offset.is_none_or(|last| page.offset() > last));
+                last_offset = Some(page.offset());
+                let fetch = async |limit: i64, offset: i64| {
+                    let from = usize::try_from(offset).unwrap().min(table.len());
+                    let to = usize::try_from(offset + limit).unwrap().min(table.len());
+                    Ok::<_, ()>((from..to).collect::<Vec<usize>>())
+                };
+                let filled = super::tests::block_on(page.fill(max_scan, fetch, |row| table[*row])).unwrap();
+                prop_assert!(filled.rows.len() <= usize::try_from(limit).unwrap());
+                shown.extend(filled.rows);
+                let Some(link) = filled.next else { break };
+                uri = link.to_str().unwrap().trim_start_matches('<').split('>').next().unwrap().parse().unwrap();
+            }
+            let visible: Vec<usize> = (0..table.len()).filter(|row| table[*row]).collect();
+            prop_assert_eq!(shown, visible);
         }
     }
 

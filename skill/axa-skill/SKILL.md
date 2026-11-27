@@ -265,6 +265,13 @@ health check in an image with no `curl`.
   return `page.respond(rows)`. Where tenants share the service, use
   `CursorPage::new_in(&key, limits, &uri, tenant.as_str())?`, so a cursor from one
   tenant is refused in another.
+- Where a record policy hides some rows from some callers, do not fetch one page and
+  drop what the caller may not see: the short page says rows were hidden. Use
+  `page.fill(max_scan, |limit, offset| fetch(limit, offset), |row| may_see(row)).await?`
+  and answer `filled.respond()`. It reads on in batches until the page is full, at most
+  `max_scan` rows, such as ten times the page, and the next page starts after the last
+  row returned. A page that spends the budget may still be short, and a slow page
+  still hints at hidden rows.
 - Order every list by something ending in a unique column, such as
   `ORDER BY created_at, id`.
 - Pass user text for `LIKE` through `escape_like` and bind it with `ESCAPE '\'`.

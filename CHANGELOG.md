@@ -5,6 +5,14 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `axa-cursor-pagination` 0.1.4: `CursorPage::next_link_at`, a next link at any offset past
+  the page, and `CursorPage::fill`, which fills a page from a list a record policy filters
+  row by row, reading on in batches up to a read budget, so a page is not short for the
+  rows the caller may not see. The next page starts right after the last row returned,
+  and the cursor format is unchanged, so existing cursors still hold (PAG-16 to PAG-18).
+
 ## [0.24.0] - 2026-11-24
 
 This covers `axa` 0.24.0 and `axa-test` 0.15.0. No other crate changed what it ships.
