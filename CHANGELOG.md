@@ -5,6 +5,12 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## Subcrates - 2026-11-27
+
+`axa-cursor-pagination` 0.1.4, with no new `axa`: `axa` 0.24.0 asks for
+`axa-cursor-pagination` `0.1.3`, which 0.1.4 meets, so `cargo update` brings it to a
+service that pages through `axa::cursor_pagination`.
+
 ### Added
 
 - `axa-cursor-pagination` 0.1.4: `CursorPage::next_link_at`, a next link at any offset past
