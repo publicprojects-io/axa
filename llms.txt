@@ -150,6 +150,8 @@ Each of these gives the same things for its library:
 - **Diesel** needs no C database client library: no `libpq` or `libmysqlclient`. `AppContext::db` is a Diesel pool.
 - **Toasty** is before 1.0, and its migrations go forward only. `AppContext::db` is a `toasty::Db`. There is no SQLite Toasty crate.
 
+- [axa-mssql](crates/axa-mssql/README.md) (feature `mssql`): SQL Server pooling, migrations, and test resets, over the pure-Rust `mssql` driver, a maintained fork of Tiberius, with the same shape. It is not `AppContext::db`, and `axa` answers its errors as for the other databases.
+
 ### Authentication
 
 - [axa-paseto-auth](crates/axa-paseto-auth/README.md) (feature `paseto`): PASETO bearer authentication, ABAC enforcement, and a tenant from the verified token, for Axum services

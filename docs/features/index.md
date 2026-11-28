@@ -53,6 +53,7 @@ Each feature is named for its database and library:
 - **SQLite with sqlx** → Add `axa = { version = "0.24.1", features = ["sqlite-sqlx"] }`
 - **SQLite with SeaORM** → Add `axa = { version = "0.24.1", features = ["sqlite-seaorm"] }`
 - **SQLite with Diesel** → Add `axa = { version = "0.24.1", features = ["sqlite-diesel"] }`
+- **SQL Server** → Add the `mssql` feature, from the release after 0.24.1, for `axa::mssql` (`axa-mssql`): a pool, migrations, and test resets over the `mssql` driver, beside any database feature above or none. It is not `AppContext::db`.
 
 **Recommendation**: Use `postgres-sqlx` unless you have existing code in another library. SeaORM adds models and schema helpers. Diesel needs no C database client library. Toasty is before 1.0, and its migrations go forward only. For SQLite, only sqlx and SeaORM are published: the Diesel and Toasty crates are in the repository but not on crates.io.
 

@@ -151,6 +151,7 @@ jobs:
           cargo clippy --all-targets --features sqlite-sqlx -- -D warnings
           cargo clippy --all-targets --features sqlite-seaorm -- -D warnings
           cargo clippy --all-targets --features sqlite-diesel -- -D warnings
+          cargo clippy --all-targets --features mssql -- -D warnings
 
       # Each subcrate feature alone, read from the manifests so a new one is covered:
       # code behind one feature can lint clean only beside another, as `redis` did
@@ -267,7 +268,7 @@ jobs:
         run: |
           for feature in postgres-seaorm postgres-diesel postgres-toasty \
             mysql-sqlx mysql-seaorm mysql-diesel mysql-toasty \
-            sqlite-sqlx sqlite-seaorm sqlite-diesel; do
+            sqlite-sqlx sqlite-seaorm sqlite-diesel mssql; do
             echo "::group::$feature"
             cargo test --features "$feature"
             echo "::endgroup::"
@@ -466,6 +467,49 @@ jobs:
           cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
           cargo test --all-features --test main -- --ignored --test-threads=1 other_databases::
 
+  sqlserver:
+    name: SQL Server tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTDOCFLAGS: -D warnings
+      # The minimum supported version, over the pin in `rust-toolchain.toml`, which
+      # `rustup default` would not override.
+      RUSTUP_TOOLCHAIN: "1.98"
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest@sha256:4525e3efac9f3e241cb003bb2ff2a82818b502f37e12049d788b1a9fa7e13b7f
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Axa_test_2026x
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Axa_test_2026x -b -Q 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: rustup toolchain install 1.98 --profile minimal --component rustfmt,clippy
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: SQL Server tests
+        env:
+          MSSQL_CONTAINER: ${{ job.services.mssql.id }}
+          AXA_TEST_MSSQL_URL: "server=tcp:127.0.0.1,1433;user=sa;password=Axa_test_2026x;database=axa_test;TrustServerCertificate=true"
+        # The tests drop every table in the database they are given, so they get one of
+        # their own rather than `master`.
+        run: |
+          docker exec "$MSSQL_CONTAINER" /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P Axa_test_2026x -b -Q "CREATE DATABASE axa_test"
+          cargo test -p axa-mssql -- --ignored --test-threads=1
+          cargo test --features mssql --lib -- --ignored broken_sql_server
+
   redis-s3:
     name: Redis and S3 tests
     runs-on: ubuntu-latest
@@ -572,6 +616,7 @@ jobs:
       - postgres-outbox
       - postgres
       - mysql
+      - sqlserver
       - redis-s3
       - semver
     steps:

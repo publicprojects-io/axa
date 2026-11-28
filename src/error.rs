@@ -143,6 +143,11 @@ pub enum Error {
     #[cfg(has_toasty)]
     #[error(transparent)]
     Toasty(#[from] toasty_crate::Error),
+    /// A SQL Server failure, from `axa-mssql`. Becomes `409` or `422` for a violated
+    /// constraint, `503` when the database cannot serve for now, and otherwise `500`.
+    #[cfg(feature = "mssql")]
+    #[error(transparent)]
+    Mssql(#[from] axa_mssql::Error),
     /// Any other error.
     #[error(transparent)]
     Any(#[from] Box<dyn std::error::Error + Send + Sync>),
@@ -223,6 +228,14 @@ from_diesel_crate!(
 impl From<diesel_crates::diesel::result::Error> for Error {
     fn from(error: diesel_crates::diesel::result::Error) -> Self {
         Self::Diesel(DieselError::Query(error))
+    }
+}
+
+/// A SQL Server query's own error, as the `mssql` driver's functions return it.
+#[cfg(feature = "mssql")]
+impl From<axa_mssql::mssql::error::Error> for Error {
+    fn from(error: axa_mssql::mssql::error::Error) -> Self {
+        Self::Mssql(axa_mssql::Error::Query(error))
     }
 }
 
@@ -559,21 +572,21 @@ fn json_pointer(rejection: &JsonRejection) -> Option<String> {
 /// own text goes nowhere, because it names the row, the column, and the value.
 type Broken = (StatusCode, &'static str, &'static str);
 
-#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
 const ALREADY_EXISTS: Broken = (StatusCode::CONFLICT, "conflict", "Resource already exists");
-#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
 const REFERENCE: Broken = (
     StatusCode::CONFLICT,
     "conflict",
     "It refers to a resource that does not exist, or is referred to",
 );
-#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
 const OUT_OF_RANGE: Broken = (
     StatusCode::UNPROCESSABLE_ENTITY,
     "unprocessable_entity",
     "A value is outside what this field allows",
 );
-#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
 const MISSING: Broken = (
     StatusCode::UNPROCESSABLE_ENTITY,
     "unprocessable_entity",
@@ -789,9 +802,25 @@ fn broken_toasty(error: &toasty_crate::Error) -> Option<Broken> {
     None
 }
 
+/// What a SQL Server error that broke a constraint answers, from its error number.
+#[cfg(feature = "mssql")]
+fn broken_mssql(error: &axa_mssql::Error) -> Option<Broken> {
+    use axa_mssql::Violation;
+    let axa_mssql::Error::Query(error) = error else {
+        return None;
+    };
+    match axa_mssql::violation(error)? {
+        Violation::Unique => Some(ALREADY_EXISTS),
+        Violation::ForeignKey => Some(REFERENCE),
+        Violation::Check => Some(OUT_OF_RANGE),
+        Violation::NotNull => Some(MISSING),
+        _ => None,
+    }
+}
+
 /// Whether `error` is the database unable to serve for now, which is the service's
 /// trouble, and passes, so it answers `503` with `Retry-After`.
-#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
 fn unavailable(error: &Error) -> bool {
     match error {
         #[cfg(has_sqlx)]
@@ -810,19 +839,21 @@ fn unavailable(error: &Error) -> bool {
         Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
             toasty_unavailable(error)
         }
+        #[cfg(feature = "mssql")]
+        Error::Mssql(error) => error.is_unavailable(),
         _ => false,
     }
 }
 
 /// With no database, nothing can be unavailable.
-#[cfg(not(any(has_sqlx, has_seaorm, has_diesel, has_toasty)))]
+#[cfg(not(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql")))]
 fn unavailable(_error: &Error) -> bool {
     false
 }
 
 /// What a write that broke a unique, foreign key, check, or not-null constraint
 /// answers. Any other database error is not the caller's, and gets `None`.
-#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+#[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
 fn broken(error: &Error) -> Option<Broken> {
     match error {
         #[cfg(has_sqlx)]
@@ -841,12 +872,14 @@ fn broken(error: &Error) -> Option<Broken> {
         Error::Toasty(error) | Error::Model(crate::model::ModelError::Toasty(error)) => {
             broken_toasty(error)
         }
+        #[cfg(feature = "mssql")]
+        Error::Mssql(error) => broken_mssql(error),
         _ => None,
     }
 }
 
 /// With no database, nothing can break a constraint.
-#[cfg(not(any(has_sqlx, has_seaorm, has_diesel, has_toasty)))]
+#[cfg(not(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql")))]
 fn broken(_error: &Error) -> Option<Broken> {
     None
 }
@@ -956,6 +989,8 @@ impl IntoResponse for Error {
             Self::Diesel(_) => internal(),
             #[cfg(has_toasty)]
             Self::Toasty(_) => internal(),
+            #[cfg(feature = "mssql")]
+            Self::Mssql(_) => internal(),
         };
         problem(status, detail).into_response()
     }
@@ -1017,7 +1052,7 @@ mod tests {
         (status, body)
     }
 
-    #[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+    #[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
     /// The answer to a database that cannot serve for now: a `503` problem with the
     /// `code` `unavailable` and a `retry-after`, quoting none of the driver's text.
     async fn assert_unavailable(error: Error) {
@@ -1032,7 +1067,7 @@ mod tests {
         assert!(!body.to_string().contains("secret"), "{body}");
     }
 
-    #[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty))]
+    #[cfg(any(has_sqlx, has_seaorm, has_diesel, has_toasty, feature = "mssql"))]
     async fn problem_of_response(response: Response) -> (StatusCode, Value) {
         let status = response.status();
         assert_eq!(response.headers()[CONTENT_TYPE], PROBLEM_JSON);
@@ -1126,6 +1161,75 @@ mod tests {
     async fn a_sea_orm_pool_with_no_connection_is_unavailable() {
         let error = sea_orm::DbErr::ConnectionAcquire(sea_orm::error::ConnAcquireErr::Timeout);
         assert_unavailable(error.into()).await;
+    }
+
+    #[cfg(feature = "mssql")]
+    #[tokio::test]
+    async fn a_sql_server_with_no_connection_or_a_lost_one_is_unavailable() {
+        use axa_mssql::{PoolError, mssql::error::Error as MssqlError};
+        assert_unavailable(axa_mssql::Error::Pool(PoolError::Closed).into()).await;
+        let lost = std::io::Error::new(std::io::ErrorKind::ConnectionReset, "secret");
+        assert_unavailable(MssqlError::from(lost).into()).await;
+        // A driver's own fault is a bug here, not an outage, and breaks no constraint.
+        let fault: Error = MssqlError::Protocol("secret".into()).into();
+        assert!(!unavailable(&fault));
+        assert_eq!(broken(&fault), None);
+        let (status, body) = problem_of(fault).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(!body.to_string().contains("secret"), "{body}");
+        assert_eq!(
+            broken(&axa_mssql::Error::Migration("x".into()).into()),
+            None
+        );
+    }
+
+    #[cfg(feature = "mssql")]
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_MSSQL_URL"]
+    async fn a_broken_sql_server_constraint_answers_as_on_other_databases() {
+        let uri = std::env::var("AXA_TEST_MSSQL_URL").expect("AXA_TEST_MSSQL_URL");
+        let pool = axa_mssql::connect(&axa_mssql::PoolConfig::new(uri))
+            .await
+            .unwrap();
+        let mut connection = pool.get().await.unwrap();
+        let mut run = async |sql: &str| -> std::result::Result<(), axa_mssql::mssql::error::Error> {
+            connection.simple_query(sql).await?.into_results().await?;
+            Ok(())
+        };
+        run("DROP TABLE IF EXISTS axa_error_check").await.unwrap();
+        run(
+            "CREATE TABLE axa_error_check (id INT PRIMARY KEY, size INT NOT NULL CHECK (size > 0),
+            parent INT REFERENCES axa_error_check (id))",
+        )
+        .await
+        .unwrap();
+        run("INSERT INTO axa_error_check VALUES (1, 1, NULL)")
+            .await
+            .unwrap();
+        for (sql, status) in [
+            (
+                "INSERT INTO axa_error_check VALUES (1, 1, NULL)",
+                StatusCode::CONFLICT,
+            ),
+            (
+                "INSERT INTO axa_error_check VALUES (2, 0, NULL)",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                "INSERT INTO axa_error_check VALUES (3, NULL, NULL)",
+                StatusCode::UNPROCESSABLE_ENTITY,
+            ),
+            (
+                "INSERT INTO axa_error_check VALUES (4, 1, 99)",
+                StatusCode::CONFLICT,
+            ),
+        ] {
+            let error: Error = run(sql).await.unwrap_err().into();
+            let (got, body) = problem_of(error).await;
+            assert_eq!(got, status, "{sql}: {body}");
+            assert!(!body.to_string().contains("axa_error_check"), "{body}");
+        }
+        run("DROP TABLE axa_error_check").await.unwrap();
     }
 
     #[cfg(has_diesel)]

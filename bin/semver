@@ -20,7 +20,8 @@
 set -euf
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd -P) && cd "$ROOT"
 
-unpublished="axa-sqlite-sqlx axa-sqlite-seaorm axa-sqlite-diesel"
+# axa-mssql is new, and has no release to compare with until its first.
+unpublished="axa-sqlite-sqlx axa-sqlite-seaorm axa-sqlite-diesel axa-mssql"
 
 list=0
 if [ "${1:-}" = "--list" ]; then
@@ -61,9 +62,10 @@ for name in $names; do
   set -- "$@" -p "$name"
 done
 
-# Every feature `axa` has but the SQLite ones, which the published `axa` lacks.
+# Every feature `axa` has but the SQLite ones, which the published `axa` lacks, and
+# `mssql`, which it lacks until the release that adds it.
 features=$(sed -n '/^\[features\]/,/^\[dependencies\]/p' Cargo.toml |
-  grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' =' | grep -v '^sqlite-' | grep -vx default | paste -sd, -)
+  grep -oE '^[a-z][a-z0-9-]* =' | tr -d ' =' | grep -v '^sqlite-' | grep -vx default | grep -vx mssql | paste -sd, -)
 
 if [ "$list" = 1 ]; then
   echo "crates: $*"

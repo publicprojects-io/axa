@@ -208,7 +208,11 @@ T-25 is done, in 0.16.0, as `axa_request_rate_limit::shared`, behind its `postgr
 `Limiter` does, rather than a token bucket.
 
 On 2026-11-16 the maintainer approved the new dependencies for T-38, T-39, and T-40, and
-declined T-54's.
+declined T-54's. On 2026-11-28 the maintainer approved the `mssql` crate, a maintained fork
+of `tiberius`, for T-54, with a pool on the `deadpool` the Diesel crates already use.
+
+T-54 is built, as `axa-mssql` and `axa`'s `mssql` feature (MSS-1 to MSS-18, ERR-23), and
+not yet released.
 
 T-38 is done, in 0.16.0, as `axa_prometheus_metrics::runtime::TokioMetrics`, behind the
 crate's `tokio` feature and `axa`'s `prometheus-tokio` (PRM-3). It reads only the runtime
@@ -243,7 +247,7 @@ T-40 is done, in 0.16.0, as `axa_test::openapi::Conformance`, behind `axa-test`'
 | T-40 | An OpenAPI conformance check in `axa-test`, testing real response bodies against the documented schema | `axa-test` | M | `jsonschema`, dev only | Poem |
 | T-41 | Captured logs and mail in `axa-test` | `axa-test` | S | None | Loco, tuwunel |
 | T-42 | A trailing-slash policy: a `308` to the mounted form, keeping the query, without getting around the auth crates' own checks | `src/routes.rs` | S | None | Topcoat, Poem |
-| T-54 | SQL Server: a crate with the usual shape (`Pool`, `PoolConfig`, `connect`, `ping`, `migrate`, `pending`, `truncate`, `dangerously_recreate`, `is_unique_violation`, `quote_identifier`), session settings, and `503` answers in `axa`. Only `tiberius` reaches SQL Server: sqlx dropped it in 0.7, SeaORM has it only in SeaORM X, and Diesel and Toasty have none. Asked for on 2026-11-15, held: no service named, and the dependencies not approved | New crate `axa-mssql-tiberius` | M | `tiberius`, and a pool such as `bb8-tiberius` | — |
+| T-54 | SQL Server: a crate with the usual shape (`Pool`, `PoolConfig`, `connect`, `ping`, `migrate`, `pending`, `truncate`, `dangerously_recreate`, `is_unique_violation`, `quote_identifier`), session settings, and `503` answers in `axa`. Only `tiberius` and its fork `mssql` reach SQL Server: sqlx dropped it in 0.7, SeaORM has it only in SeaORM X, and Diesel and Toasty have none. Asked for on 2026-11-15; `mssql` approved on 2026-11-28. Built, not yet released | New crate `axa-mssql` | M | `mssql`, on `deadpool` | — |
 
 ## Multi-tenancy
 

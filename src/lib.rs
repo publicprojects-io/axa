@@ -152,6 +152,8 @@ pub use axa_mail as mail;
 pub use axa_maud_templates as maud;
 #[cfg(feature = "minijinja")]
 pub use axa_minijinja_templates as minijinja;
+#[cfg(feature = "mssql")]
+pub use axa_mssql as mssql;
 #[cfg(feature = "mysql-diesel")]
 pub use axa_mysql_diesel as mysql_diesel;
 #[cfg(feature = "mysql-seaorm")]

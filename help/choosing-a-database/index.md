@@ -17,6 +17,10 @@ resets tests.
   `libmysqlclient` to link.
 - **MySQL because the organization runs it: `mysql-sqlx`.**
 - **One machine, no database server: SQLite**, once its crates are published (below).
+- **SQL Server because the organization runs it: `mssql`.** One crate,
+  `axa-mssql`, over the `mssql` driver: the same shape, its own T-SQL migrations, and
+  `409`, `422`, and `503` answers as for the others. It is not `AppContext::db`, has no
+  model layer, and none of the Postgres-only features below.
 
 ## Pick the database
 

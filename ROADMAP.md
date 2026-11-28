@@ -149,8 +149,8 @@ This document outlines the planned development path for axa. See
 
 ## Next
 
-Stages 1 and 2 are done, and all of Stage 3 but T-54, held because its dependencies were
-declined on 2026-11-16.
+Stages 1 to 3 are done. T-54, SQL Server, is built as `axa-mssql` over the `mssql` driver
+approved on 2026-11-28, and waits for the next release.
 
 ---
 
@@ -160,7 +160,7 @@ declined on 2026-11-16.
 
 Each item waits until two services request it, or one has a compelling safety case:
 
-- **T-54**: SQL Server, over `tiberius`, held: its dependencies were declined on 2026-11-16
+- **T-54**: SQL Server, as `axa-mssql` over `mssql`, a maintained fork of `tiberius`: built, not yet released
 
 ---
 

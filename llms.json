@@ -242,6 +242,10 @@
       "crate": "axa-sqlite-diesel"
     },
     {
+      "name": "mssql",
+      "crate": "axa-mssql"
+    },
+    {
       "name": "maud",
       "crate": "axa-maud-templates"
     }
@@ -582,6 +586,13 @@
       "description": "Toasty connections, migrations, and test resets for Axum services, on MySQL.",
       "feature": "mysql-toasty",
       "readme": "crates/axa-mysql-toasty/README.md"
+    },
+    {
+      "name": "axa-mssql",
+      "version": "0.1.0",
+      "description": "SQL Server pooling, migrations, and test resets for Axum services, over the pure-Rust mssql driver.",
+      "feature": "mssql",
+      "readme": "crates/axa-mssql/README.md"
     },
     {
       "name": "axa-sqlite-sqlx",

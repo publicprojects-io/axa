@@ -143,6 +143,10 @@ mysql-toasty = ["dep:axa-mysql-toasty", "model"]
 sqlite-sqlx = ["dep:axa-sqlite-sqlx", "dep:sqlx", "sqlx/sqlite", "model"]
 sqlite-seaorm = ["dep:sea-orm", "sea-orm/sqlx-sqlite", "dep:axa-sqlite-seaorm", "dep:sqlx", "sqlx/sqlite", "model"]
 sqlite-diesel = ["dep:axa-sqlite-diesel", "model"]
+# SQL Server pooling, migrations, and test resets, as `axa::mssql`, with its errors
+# answered as the other databases' are. It is not one of the database features above:
+# it adds no `axa::model` and no `AppContext::db`.
+mssql = ["dep:axa-mssql"]
 # Model errors and validation, for every database. Each database feature turns it on.
 model = ["dep:validator"]
 # The Postgres job queue, worker pool, and schedules, from `axa-postgres-job-queue`.
@@ -220,6 +224,7 @@ axa-postgres-toasty = { version = "0.3.0", path = "crates/axa-postgres-toasty", 
 axa-mysql-sqlx = { version = "0.2.0", path = "crates/axa-mysql-sqlx", optional = true }
 axa-mysql-seaorm = { version = "0.2.0", path = "crates/axa-mysql-seaorm", optional = true }
 axa-mysql-diesel = { version = "0.3.1", path = "crates/axa-mysql-diesel", optional = true }
+axa-mssql = { version = "0.1.0", path = "crates/axa-mssql", optional = true }
 axa-mysql-toasty = { version = "0.3.0", path = "crates/axa-mysql-toasty", optional = true }
 axa-sqlite-sqlx = { version = "0.1.0", path = "crates/axa-sqlite-sqlx", optional = true }
 axa-sqlite-seaorm = { version = "0.1.0", path = "crates/axa-sqlite-seaorm", optional = true }

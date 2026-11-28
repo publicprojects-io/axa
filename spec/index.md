@@ -209,6 +209,7 @@ decompression (MID-29), body limit, panic catching.
 | ERR-20 | `extract::SafeInt` holds an integer within `MAX_SAFE_INT`, 2^53 - 1, either way, which every JSON client reads exactly. One beyond it is refused when read, so a body field of that type is the `422` of ERR-15 pointing at it, and refused by `SafeInt::new` when made. | `a_safe_int_holds_what_a_json_client_holds_exactly_and_no_more`, `a_body_field_beyond_a_safe_int_is_a_422_pointing_at_it` |
 | ERR-21 | `Error::with_detail` is a problem with the given status, that status's reason as its `code` as in ERR-10, and the sentence as `detail`, which an empty sentence leaves out. | `an_error_with_a_detail_keeps_its_sentence_and_takes_its_status_reason` |
 | ERR-22 | When the standard stack drops the text of a `text/plain` answer on a matched route (ERR-13), it logs a warning naming the method, the route template, and the status, and never the text, once for each of them, remembering at most 1,024. | `a_replaced_plain_text_answer_is_warned_of_once_per_route_and_status`, `each_replacement_is_new_once` |
+| ERR-23 | With the `mssql` feature, a SQL Server error answers as ERR-8 says: a broken unique constraint or foreign key `409`, a check or missing value `422`, quoting nothing; no connection, or one lost, `503` with `Retry-After`; and the driver's own fault a generic `500`. | `a_sql_server_with_no_connection_or_a_lost_one_is_unavailable`, `a_broken_sql_server_constraint_answers_as_on_other_databases` |
 
 The body of a failed request, with a `detail` and with none:
 
@@ -1015,6 +1016,33 @@ so they run in `cargo test`.
 | SLD-15 | `axa-sqlite-diesel` | `dangerously_recreate` refuses a table name `quote_identifier` refuses and drops nothing. | `dangerously_recreate_refuses_a_name_it_cannot_quote_and_drops_nothing` |
 | SLD-16 | `axa-sqlite-diesel` | A pool that is all in use answers a caller with an error within its `wait_timeout`, and serves again once a connection is returned. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time` |
 
+### 4.21.1 SQL Server
+
+`axa-mssql`, the `mssql` feature, has the shape of the other database crates, over the
+`mssql` driver and a `deadpool` pool, with migrations of its own. Its tests need
+`AXA_TEST_MSSQL_URL`, an ADO.NET connection string to a database they may empty.
+
+| Id | Requirement | Test |
+|---|---|---|
+| MSS-1 | No C database library, ODBC, or other TLS stack is linked: TLS is `rustls` with `ring`. | `cargo tree -p axa-mssql -e normal` shows no `openssl`, `native-tls`, or `odbc` |
+| MSS-2 | The `Debug` text of `PoolConfig` and of the pool leaves the connection string out, and neither an unreadable string's error nor a refused login quotes its password. | `debug_text_leaves_out_the_connection_string`, `a_bad_connection_string_is_refused_without_its_password`, `a_wrong_password_is_an_error_that_leaves_the_password_out` |
+| MSS-3 | A connection string is ADO.NET, or JDBC under `jdbc:` in any case, and `command_timeout` reaches the driver. | `ado_and_jdbc_strings_are_read`, `the_command_timeout_reaches_the_driver` |
+| MSS-4 | A name reaches SQL only through `quote_identifier`, which puts a plain lower-case identifier of up to 128 characters in brackets and refuses anything else. | `identifiers_are_quoted_with_brackets`, `unsafe_identifiers_are_refused`, `quote_all_fails_on_any_bad_name` |
+| MSS-5 | Every new connection runs the session settings as one batch: `XACT_ABORT ON` unless `xact_abort` is off, and `LOCK_TIMEOUT` when `lock_timeout_ms` is set. `truncate` leaves them as they were. | `session_settings_become_one_batch`, `every_connection_starts_with_the_session_settings_and_truncate_keeps_them` |
+| MSS-6 | A connection goes back into use with any transaction a caller left open rolled back. | `a_transaction_left_open_is_rolled_back_before_the_connection_is_used_again` |
+| MSS-7 | A server that sends nothing for `command_timeout` fails the query with a timed-out I/O error, and the next caller gets a connection that works. | `a_stalled_server_fails_the_query_and_the_pool_drops_the_connection` |
+| MSS-8 | A pool that is all in use answers with an error within `wait_timeout`, a closed pool fails `ping`, and each, like a server that cannot be reached, is unavailable. | `a_pool_that_is_all_in_use_answers_with_an_error_in_time`, `a_closed_pool_fails_its_ping`, `an_unreachable_server_is_unavailable` |
+| MSS-9 | A list of migrations is refused unless each version is above zero and the one before, and each description is 1 to 200 characters with no control character. A line holding only `GO` splits a migration into batches. A migration's checksum is the 64-bit FNV-1a of its `up` text. | `a_list_of_migrations_that_cannot_run_is_refused`, `a_migration_splits_on_go_lines_only`, `a_checksum_follows_the_up_text_only`, `a_migration_names_itself_and_may_have_a_down` |
+| MSS-10 | `migrate` applies each pending migration once, in order, every batch of it, and returns how many ran; `pending` names those not applied; `revert` undoes the newest `steps`, stopping at the start. | `migrations_apply_revert_and_list_what_is_pending` |
+| MSS-11 | A migration changed after it was applied stops `migrate` and `revert`. One applied and missing from the list, as during a rolling deploy, is left alone by `migrate`, and stops `revert`, as does one with no `down`. | `a_migration_changed_after_it_ran_is_refused_and_one_gone_from_the_list_is_left`, `a_changed_migration_is_found_and_one_left_out_is_not` |
+| MSS-12 | A migration that fails is rolled back whole, its earlier batches included, is not recorded, and lets the migration lock go. | `a_failed_migration_is_rolled_back_whole_and_not_recorded` |
+| MSS-13 | Services migrating together all succeed, and each migration runs once, under SQL Server's application lock. | `services_booting_together_all_migrate_and_each_migration_runs_once` |
+| MSS-14 | `violation` names a unique constraint or index (2627, 2601), a foreign key from either end and a check (547, told apart by the constraint's kind), and a missing value (515); `is_unique_violation` holds for the first only. None of them, and no error from the client itself, is unavailable. | `each_broken_constraint_is_named_and_none_is_unavailable`, `errors_from_the_client_are_neither_violations_nor_unavailable` |
+| MSS-15 | `is_unavailable` holds for a lost connection, failed TLS, a redirect, and SQL Server's numbers for a read-only or unreadable database, one not open, a server shutting down or paused, and Azure SQL busy or throttled; not for a deadlock or lock timeout. `Error::is_unavailable` holds too for any pool failure. | `a_lost_connection_or_failed_tls_is_unavailable`, `the_unavailable_numbers_are_ones_that_pass`, `a_write_to_a_read_only_database_is_unavailable` |
+| MSS-16 | `truncate` empties the named tables in one transaction, in any order the foreign keys between them allow, and restarts each identity column at its first value, one that never handed out a value included. No tables is not an error. | `truncate_empties_tables_in_any_order_and_restarts_their_ids` |
+| MSS-17 | `truncate` refuses an unsafe name before anything is emptied, and fails and empties nothing while a row in a table not named refers to one in them. | `truncate_refuses_to_leave_a_reference_dangling_and_empties_nothing` |
+| MSS-18 | `dangerously_recreate` drops every table in the default schema, whatever refers to it and whatever no migration made, with its views, procedures, functions, sequences, synonyms, and types, and migrates from the first migration. | `dangerously_recreate_drops_every_table_and_migrates_from_nothing` |
+
 ### 4.22 Uploads
 
 Behind the `upload` feature.
@@ -1178,6 +1206,8 @@ AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-job-queue -- --ignored --
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-sqlx -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-seaorm -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-diesel -- --ignored --test-threads=1
+AXA_TEST_MSSQL_URL='server=tcp:...;database=axa_test;...' cargo test -p axa-mssql -- --ignored --test-threads=1
+AXA_TEST_MSSQL_URL='server=tcp:...;database=axa_test;...' cargo test --features mssql --lib -- --ignored broken_sql_server
 AXA_TEST_MYSQL_URL=mysql://... cargo test -p axa-mysql-toasty -- --ignored --test-threads=1
 AXA_TEST_MYSQL_URL=mysql://... cargo test --all-features --test main -- --ignored --test-threads=1 other_databases::
 AXA_TEST_REDIS_URL=redis://... cargo test -p axa-redis-cache -- --ignored

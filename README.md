@@ -57,6 +57,12 @@ library:
   `toasty::Db`. There is no SQLite Toasty crate, as its SQLite driver needs a newer
   SQLite library than sqlx allows in one build.
 
+SQL Server has one crate, [`axa-mssql`](crates/axa-mssql), the `mssql` feature, with the
+same shape over the pure-Rust `mssql` driver, a maintained fork of Tiberius. It is not
+one of the database features above: it is not `AppContext::db`, and a service queries
+with the driver on a connection from its pool. `axa` answers its errors as for the
+other databases.
+
 [Choosing a database and library](help/choosing-a-database/index.md) compares every pair,
 with what each database supports and a decision tree. A service whose data lives in a
 store of its own turns on none of them: see

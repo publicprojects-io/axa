@@ -5,6 +5,19 @@ is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `axa-mssql` 0.1.0, SQL Server pooling, migrations, and test resets, over the
+  `mssql` driver, a maintained fork of Tiberius, and a `deadpool` pool, with TLS
+  through `rustls`. It has the shape of the other database crates, with migrations of
+  its own: a list of T-SQL migrations, each in a transaction, `GO` splitting batches,
+  under a lock so services booting together take turns. Each connection gets
+  `XACT_ABORT ON` and, when asked, a `LOCK_TIMEOUT` (MSS-1 to MSS-18, T-54).
+- The `mssql` feature of `axa` re-exports it as `axa::mssql` and answers its errors
+  as for the other databases: `409` or `422` for a broken constraint, `503` with
+  `Retry-After` when the database cannot serve for now (ERR-23). It is not a database
+  feature: it adds no `axa::model` and is not `AppContext::db`.
+
 ## [0.24.1] - 2026-11-27
 
 This covers `axa` 0.24.1, `axa-http-client` 0.2.2, and `axa-test` 0.15.1, which change
