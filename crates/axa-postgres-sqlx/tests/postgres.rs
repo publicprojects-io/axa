@@ -343,6 +343,36 @@ async fn row_security_holds_only_for_a_role_without_bypass_on_a_forced_table() {
 }
 
 #[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn only_the_stale_plan_code_with_its_message_is_a_stale_plan() {
+    use axa_postgres_sqlx::is_stale_plan;
+    let pool = pool().await;
+    for (code, message) in [
+        ("P0001", "cached plan must not change result type"),
+        ("0A000", "some other feature is not supported"),
+    ] {
+        let error = sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "DO $$ BEGIN RAISE EXCEPTION '{message}' USING ERRCODE = '{code}'; END $$"
+        )))
+        .execute(&pool)
+        .await
+        .unwrap_err();
+        assert!(!is_stale_plan(&error), "{error:?}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn status_lists_a_migration_with_no_down_file() {
+    let pool = pool().await;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/simple-migrations");
+    let migrator = Migrator::new(path).await.expect("load migrations");
+    let rows = status(&pool, &migrator).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].description, "create tags");
+}
+
+#[tokio::test]
 #[ignore = "needs AXA_TEST_DB_URL and drops every table in it"]
 async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
     use axa_postgres_sqlx::{is_stale_plan, note_stale_plan};
@@ -538,4 +568,51 @@ async fn a_background_migration_named_twice_or_badly_is_refused() {
         matches!(blank, Err(sqlx::Error::Configuration(_))),
         "{blank:?}"
     );
+}
+
+/// A background migration named `name`, to check the name alone.
+fn named(name: &str) -> Background {
+    Background {
+        name: String::from(name).leak(),
+        statements: &[],
+    }
+}
+
+#[tokio::test]
+async fn a_background_name_may_be_200_characters_and_no_more_or_hold_a_control() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .acquire_timeout(std::time::Duration::from_secs(2))
+        .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
+        .unwrap();
+    let refused =
+        |result: &Result<_, sqlx::Error>| matches!(result, Err(sqlx::Error::Configuration(_)));
+    // A name the check keeps gets as far as connecting, which fails here.
+    let at_limit = run_background(&pool, &[named(&"é".repeat(200))]).await;
+    assert!(!refused(&at_limit), "{at_limit:?}");
+    let past = run_background(&pool, &[named(&"é".repeat(201))]).await;
+    assert!(refused(&past), "{past:?}");
+    let control = run_background(&pool, &[named("notes\tby item")]).await;
+    assert!(refused(&control), "{control:?}");
+}
+
+#[test]
+fn row_security_holds_only_with_no_bypass_and_no_unprotected_table() {
+    use axa_postgres_sqlx::RowSecurity;
+    let security = |bypasses: bool, unprotected: &[&str]| RowSecurity {
+        role: "app".into(),
+        bypasses,
+        unprotected: unprotected.iter().map(ToString::to_string).collect(),
+    };
+    assert!(security(false, &[]).holds());
+    assert!(!security(true, &[]).holds());
+    assert!(!security(false, &["todos"]).holds());
+}
+
+#[tokio::test]
+async fn a_closed_pool_fails_its_ping() {
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .connect_lazy("postgres://axa:axa@127.0.0.1:1/axa")
+        .unwrap();
+    pool.close().await;
+    assert!(ping(&pool).await.is_err());
 }

@@ -29,6 +29,14 @@ async fn database(test: &str) -> Pool {
     connect(&PoolConfig::new(url(test))).await.expect("connect")
 }
 
+#[tokio::test]
+async fn a_closed_pool_fails_its_ping() {
+    let db = database("closed").await;
+    axa_sqlite_seaorm::ping(&db).await.unwrap();
+    db.close_by_ref().await.unwrap();
+    assert!(axa_sqlite_seaorm::ping(&db).await.is_err());
+}
+
 async fn scalar<T>(db: &impl ConnectionTrait, sql: &str) -> T
 where
     T: axa_sqlite_seaorm::sea_orm::TryGetable,

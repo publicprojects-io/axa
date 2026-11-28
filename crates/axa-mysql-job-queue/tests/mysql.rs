@@ -1130,6 +1130,8 @@ async fn a_schedule_gone_from_code_is_archived_kept_and_restored_when_it_returns
     let listed = new.schedules().await.unwrap();
     let retired = listed.iter().find(|s| s.name == "retired").unwrap();
     assert!(retired.archived_at.is_some());
+    let kept = listed.iter().find(|s| s.name == "kept").unwrap();
+    assert!(kept.archived_at.is_none());
     assert_eq!(retired.interval, Some(Duration::from_secs(1)));
     assert_eq!(retired.last_job, Some(leftover));
     assert_eq!(retired.last_state, Some(JobState::Queued));
@@ -1410,6 +1412,23 @@ async fn a_missing_acts_trigger_stops_the_queue() {
         setup().await;
         assert!(Queue::connect_existing(&uri(), quick()).await.is_ok());
     }
+    // A trigger of another name on the same event does not stand in for it.
+    for change in [
+        "DROP TRIGGER axa_job_acts_refuse_update",
+        "CREATE TRIGGER axa_job_acts_stray BEFORE UPDATE ON axa_job_acts FOR EACH ROW SET @axa_stray = 1",
+    ] {
+        sqlx::raw_sql(change).execute(queue.pool()).await.unwrap();
+    }
+    let error = Queue::connect_existing(&uri(), quick())
+        .await
+        .expect_err("a stray trigger")
+        .to_string();
+    assert!(error.contains("axa_job_acts_refuse_update"), "{error}");
+    sqlx::raw_sql("DROP TRIGGER axa_job_acts_stray")
+        .execute(queue.pool())
+        .await
+        .unwrap();
+    setup().await;
     // `connect` makes them.
     sqlx::query("DROP TABLE axa_job_acts")
         .execute(queue.pool())
@@ -1417,6 +1436,68 @@ async fn a_missing_acts_trigger_stops_the_queue() {
         .unwrap();
     assert!(Queue::connect(&uri(), quick()).await.is_ok());
     assert!(Queue::connect_existing(&uri(), quick()).await.is_ok());
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn a_closed_pool_fails_its_ping() {
+    let queue = fresh(quick()).await;
+    queue.ping().await.unwrap();
+    queue.pool().close().await;
+    assert!(queue.ping().await.is_err());
+}
+
+/// Make job `id` look like one a worker took two hours ago and then died.
+async fn abandon(queue: &Queue, id: Uuid, attempts: i32) {
+    sqlx::query(
+        "UPDATE axa_queue SET status = 'running', attempts = ?,
+            started_at = UTC_TIMESTAMP(6) - INTERVAL 2 HOUR,
+            updated_at = UTC_TIMESTAMP(6) - INTERVAL 2 HOUR
+         WHERE id = ?",
+    )
+    .bind(attempts)
+    .bind(id)
+    .execute(queue.pool())
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn a_stale_job_with_tries_left_is_queued_again_and_one_without_fails() {
+    let queue = fresh(quick()).await;
+    let left = queue
+        .enqueue_job(&NewJob::new("Stale", serde_json::Value::Null).max_attempts(Some(3_i32)))
+        .await
+        .unwrap();
+    let spent = queue
+        .enqueue_job(&NewJob::new("Stale", serde_json::Value::Null).max_attempts(Some(1_i32)))
+        .await
+        .unwrap();
+    abandon(&queue, left, 1).await;
+    abandon(&queue, spent, 1).await;
+    assert_eq!(queue.requeue_stale().await.unwrap(), 1);
+    assert_eq!(state(&queue, left).await, JobState::Queued);
+    assert_eq!(state(&queue, spent).await, JobState::Failed);
+    assert_eq!(queue.requeue_stale().await.unwrap(), 0);
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_MYSQL_URL"]
+async fn a_queue_starting_recovers_a_job_a_dead_worker_left() {
+    let mut queue = fresh(quick()).await;
+    let gauge = Gauge::default();
+    queue.handle("Stale", gauge.handler(0));
+    let id = queue
+        .enqueue_job(&NewJob::new("Stale", serde_json::Value::Null).max_attempts(Some(3_i32)))
+        .await
+        .unwrap();
+    abandon(&queue, id, 1).await;
+    let (queue, stop, run) = start(queue);
+    until(async || state(&queue, id).await == JobState::Completed).await;
+    stop.send(true).unwrap();
+    run.await.unwrap();
+    assert_eq!(gauge.done(), 1);
 }
 
 /// A tenant and the arguments, as a handler that takes a tenant saw them.

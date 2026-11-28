@@ -554,3 +554,74 @@ async fn every_connection_starts_with_the_session_settings() {
         .await
         .unwrap();
 }
+
+mod one_table {
+    use axa_mysql_seaorm::{
+        sea_orm,
+        sea_orm::{ConnectionTrait, Set, entity::prelude::*},
+        truncate_table,
+    };
+
+    use super::database;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "seaorm_tags")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_MYSQL_URL"]
+    async fn truncate_table_empties_its_entitys_table_and_leaves_the_rest() {
+        let db = database().await;
+        for statement in [
+            "DROP TABLE IF EXISTS seaorm_tags",
+            "DROP TABLE IF EXISTS seaorm_other",
+            "CREATE TABLE seaorm_tags (id BIGINT AUTO_INCREMENT PRIMARY KEY, name TEXT NOT NULL)",
+            "CREATE TABLE seaorm_other (id INT PRIMARY KEY)",
+            "INSERT INTO seaorm_other (id) VALUES (1)",
+        ] {
+            db.execute_unprepared(statement).await.unwrap();
+        }
+        ActiveModel {
+            name: Set("urgent".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        assert_eq!(Entity::find().all(&db).await.unwrap().len(), 1);
+        truncate_table(&db, Entity).await.unwrap();
+        assert_eq!(Entity::find().all(&db).await.unwrap(), Vec::<Model>::new());
+        let other = db
+            .query_one_raw(sea_orm::Statement::from_string(
+                db.get_database_backend(),
+                "SELECT COUNT(*) AS n FROM seaorm_other",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<i64>("", "n")
+            .unwrap();
+        assert_eq!(other, 1, "another table keeps its rows");
+        db.execute_unprepared("DROP TABLE seaorm_tags, seaorm_other")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_MYSQL_URL"]
+    async fn a_closed_pool_fails_its_ping() {
+        let db = database().await;
+        axa_mysql_seaorm::ping(&db).await.unwrap();
+        db.close_by_ref().await.unwrap();
+        assert!(axa_mysql_seaorm::ping(&db).await.is_err());
+    }
+}

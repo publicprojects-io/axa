@@ -24,6 +24,15 @@ use axa_mysql_sqlx::{
     status, truncate,
 };
 
+#[tokio::test]
+async fn a_closed_pool_fails_its_ping() {
+    let pool = sqlx::mysql::MySqlPoolOptions::new()
+        .connect_lazy("mysql://axa:axa@127.0.0.1:1/axa")
+        .unwrap();
+    pool.close().await;
+    assert!(ping(&pool).await.is_err());
+}
+
 fn uri() -> String {
     std::env::var("AXA_TEST_MYSQL_URL").expect("AXA_TEST_MYSQL_URL")
 }

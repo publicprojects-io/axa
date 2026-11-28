@@ -241,6 +241,22 @@ async fn truncate_empties_tables_and_resets_their_counters() {
 }
 
 #[tokio::test]
+async fn truncate_empties_a_database_with_no_autoincrement_table() {
+    let pool = pool("truncate_empties_a_database_with_no_autoincrement_table").await;
+    run(
+        &pool,
+        "CREATE TABLE plain (id INTEGER PRIMARY KEY, name TEXT)",
+    )
+    .await
+    .unwrap();
+    run(&pool, "INSERT INTO plain (name) VALUES ('a')")
+        .await
+        .unwrap();
+    truncate(&pool, &["plain"]).await.unwrap();
+    assert_eq!(count(&pool, "SELECT count(*) AS n FROM plain").await, 0);
+}
+
+#[tokio::test]
 async fn truncate_refuses_to_leave_a_reference_dangling() {
     let pool = pool_of_one("truncate_refuses_to_leave_a_reference_dangling").await;
     migrate(&pool, migrations()).await.unwrap();

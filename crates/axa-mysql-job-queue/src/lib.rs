@@ -2915,8 +2915,30 @@ mod tests {
     #[test]
     fn a_schedule_ignores_a_delay_on_its_job() {
         let job = NewJob::new("J", serde_json::Value::Null).run_in(Duration::from_hours(1));
-        let schedule = Schedule::every("s", Duration::from_secs(5), job).unwrap();
+        let schedule = Schedule::every("s", Duration::from_secs(5), job.clone()).unwrap();
         assert_eq!(schedule.job.when, When::Now);
+        let schedule = Schedule::cron("c", "0 2 * * *", job).unwrap();
+        assert_eq!(schedule.job.when, When::Now);
+    }
+
+    #[test]
+    fn a_schedule_name_may_be_200_bytes_and_no_more() {
+        let job = || NewJob::new("J", serde_json::Value::Null);
+        let every = |name: String| Schedule::every(name, Duration::from_secs(5), job());
+        assert!(every("s".repeat(200)).is_ok());
+        assert!(matches!(every("s".repeat(201)), Err(Error::Schedule(_))));
+        assert!(Schedule::cron("s".repeat(200), "0 2 * * *", job()).is_ok());
+        assert!(Schedule::cron("s".repeat(201), "0 2 * * *", job()).is_err());
+    }
+
+    #[test]
+    fn a_tenant_id_is_lower_case_letters_digits_and_inner_hyphens() {
+        for id in ["acme", "a1", "42", "acme-2"] {
+            assert!(is_tenant_id(id), "{id}");
+        }
+        for id in ["", "Acme", "-acme", "acme-", "a_b", "a.b"] {
+            assert!(!is_tenant_id(id), "{id}");
+        }
     }
 
     #[test]

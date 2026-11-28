@@ -468,3 +468,106 @@ async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
         .await
         .unwrap();
 }
+
+mod one_table {
+    use axa_postgres_seaorm::{
+        sea_orm,
+        sea_orm::{ConnectionTrait, Set, entity::prelude::*},
+        truncate_table,
+    };
+
+    use super::database;
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel)]
+    #[sea_orm(table_name = "seaorm_tags")]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i64,
+        pub name: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    impl ActiveModelBehavior for ActiveModel {}
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn truncate_table_empties_its_entitys_table_and_leaves_the_rest() {
+        let db = database().await;
+        for statement in [
+            "DROP TABLE IF EXISTS seaorm_tags",
+            "DROP TABLE IF EXISTS seaorm_other",
+            "CREATE TABLE seaorm_tags (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL)",
+            "CREATE TABLE seaorm_other (id INT PRIMARY KEY)",
+            "INSERT INTO seaorm_other (id) VALUES (1)",
+        ] {
+            db.execute_unprepared(statement).await.unwrap();
+        }
+        ActiveModel {
+            name: Set("urgent".to_string()),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .unwrap();
+        assert_eq!(Entity::find().all(&db).await.unwrap().len(), 1);
+        truncate_table(&db, Entity).await.unwrap();
+        assert_eq!(Entity::find().all(&db).await.unwrap(), Vec::<Model>::new());
+        let other = db
+            .query_one_raw(sea_orm::Statement::from_string(
+                db.get_database_backend(),
+                "SELECT COUNT(*) AS n FROM seaorm_other",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get::<i64>("", "n")
+            .unwrap();
+        assert_eq!(other, 1, "another table keeps its rows");
+        db.execute_unprepared("DROP TABLE seaorm_tags, seaorm_other")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "needs AXA_TEST_DB_URL"]
+    async fn a_closed_pool_fails_its_ping() {
+        let db = database().await;
+        axa_postgres_seaorm::ping(&db).await.unwrap();
+        db.close_by_ref().await.unwrap();
+        assert!(axa_postgres_seaorm::ping(&db).await.is_err());
+    }
+}
+
+#[test]
+fn row_security_holds_only_with_no_bypass_and_no_unprotected_table() {
+    use axa_postgres_seaorm::RowSecurity;
+    let security = |bypasses: bool, unprotected: &[&str]| RowSecurity {
+        role: "app".into(),
+        bypasses,
+        unprotected: unprotected.iter().map(ToString::to_string).collect(),
+    };
+    assert!(security(false, &[]).holds());
+    assert!(!security(true, &[]).holds());
+    assert!(!security(false, &["todos"]).holds());
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn only_the_stale_plan_code_with_its_message_is_a_stale_plan() {
+    use axa_postgres_seaorm::is_stale_plan;
+    let db = database().await;
+    for (code, message) in [
+        ("P0001", "cached plan must not change result type"),
+        ("0A000", "some other feature is not supported"),
+    ] {
+        let error = db
+            .execute_unprepared(&format!(
+                "DO $$ BEGIN RAISE EXCEPTION '{message}' USING ERRCODE = '{code}'; END $$"
+            ))
+            .await
+            .unwrap_err();
+        assert!(!is_stale_plan(&error), "{error:?}");
+    }
+}

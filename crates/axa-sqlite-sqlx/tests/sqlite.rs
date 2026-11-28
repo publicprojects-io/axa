@@ -132,6 +132,27 @@ async fn an_in_memory_pool_is_one_database_with_foreign_keys_on() {
 }
 
 #[tokio::test]
+async fn a_closed_pool_fails_its_ping() {
+    let pool = pool("closed").await;
+    ping(&pool).await.unwrap();
+    pool.close().await;
+    assert!(ping(&pool).await.is_err());
+}
+
+#[tokio::test]
+async fn status_lists_a_migration_with_no_down_file() {
+    let pool = pool("simple-migrations").await;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/simple-migrations");
+    let migrator = Migrator::new(path).await.expect("load migrations");
+    let rows = status(&pool, &migrator).await.unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].description, "create tags");
+    assert!(!rows[0].applied);
+    migrate(&pool, &migrator).await.unwrap();
+    assert!(status(&pool, &migrator).await.unwrap()[0].applied);
+}
+
+#[tokio::test]
 async fn migrations_apply_revert_and_list_what_is_pending() {
     let pool = pool("migrations").await;
     let migrator = migrator().await;

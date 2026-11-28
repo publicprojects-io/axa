@@ -370,3 +370,29 @@ async fn a_stale_plan_retires_the_connection_and_the_next_attempt_works() {
         .await
         .unwrap();
 }
+
+#[test]
+fn row_security_holds_only_with_no_bypass_and_no_unprotected_table() {
+    use axa_postgres_diesel::RowSecurity;
+    let security = |bypasses: bool, unprotected: &[&str]| RowSecurity {
+        role: "app".into(),
+        bypasses,
+        unprotected: unprotected.iter().map(ToString::to_string).collect(),
+    };
+    assert!(security(false, &[]).holds());
+    assert!(!security(true, &[]).holds());
+    assert!(!security(false, &["todos"]).holds());
+}
+
+#[tokio::test]
+#[ignore = "needs AXA_TEST_DB_URL"]
+async fn another_database_error_is_not_a_stale_plan() {
+    use axa_postgres_diesel::is_stale_plan;
+    let pool = pool().await;
+    let mut connection = pool.get().await.unwrap();
+    let error = diesel::sql_query("SELECT * FROM axa_no_such_table")
+        .execute(&mut connection)
+        .await
+        .unwrap_err();
+    assert!(!is_stale_plan(&error), "{error:?}");
+}
